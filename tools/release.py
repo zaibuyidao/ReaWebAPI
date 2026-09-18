@@ -35,8 +35,9 @@ def descriptor(version):
     for platform, name in native_files():
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/extension/{name}'
         lines.append(f'  [{platform} extension] {name} {url}')
-    lines += ['@changelog', '  Dockable WebView runtime with JavaScript access to REAPER APIs.',
-              '  Keep floating windows above their REAPER owner.', '  Install native extensions and Linux WebKit helpers only.']
+    lines += ['@changelog', '  Restore window placement and docking, and capture WebView keyboard input.',
+              '  Add host events, Undo batches, continuous controls and runtime diagnostics.',
+              '  Isolate document reloads and project changes with bounded main-thread scheduling.']
     return '\n'.join(lines) + '\n'
 
 

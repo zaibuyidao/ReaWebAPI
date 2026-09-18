@@ -1,6 +1,7 @@
 #pragma once
 #include "core.hpp"
 #include <cerrno>
+#include <chrono>
 #include <deque>
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -30,7 +31,8 @@ public:
     output_.push_back(std::move(line));
   }
   void pump(const std::function<void(const Json&)>& receive) {
-    for (int n = 0; n < 32 && !output_.empty(); ++n) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1);
+    for (int n = 0; n < 32 && !output_.empty() && std::chrono::steady_clock::now() < deadline; ++n) {
       const auto& line = output_.front();
       const auto count = ::send(fd_, line.data() + offset_, line.size() - offset_, MSG_NOSIGNAL);
       if (count < 0 && errno == EINTR) continue;
@@ -41,20 +43,22 @@ public:
       if (offset_ == line.size()) { output_.pop_front(); offset_ = 0; }
     }
     char buffer[16384];
-    for (int n = 0; n < 32; ++n) {
+    for (int n = 0; n < 64 && std::chrono::steady_clock::now() < deadline; ++n) {
+      const auto newline = input_.find('\n');
+      if (newline != std::string::npos) {
+        if (newline > 1024 * 1024) throw std::runtime_error("WebKit IPC message limit exceeded");
+        auto message = Json::parse(input_.substr(0, newline));
+        input_.erase(0, newline + 1);
+        receive(message);
+        continue;
+      }
       const auto count = recv(fd_, buffer, sizeof(buffer), 0);
       if (count < 0 && errno == EINTR) continue;
       if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
       if (count <= 0) throw std::runtime_error("WebKit process disconnected");
       input_.append(buffer, static_cast<size_t>(count));
-      size_t newline;
-      while ((newline = input_.find('\n')) != std::string::npos) {
-        if (newline > 1024 * 1024) throw std::runtime_error("WebKit IPC message limit exceeded");
-        auto message = Json::parse(input_.substr(0, newline));
-        input_.erase(0, newline + 1);
-        receive(message);
-      }
-      if (input_.size() > 1024 * 1024) throw std::runtime_error("WebKit IPC message limit exceeded");
+      if (input_.size() > 1024 * 1024 && input_.find('\n') == std::string::npos)
+        throw std::runtime_error("WebKit IPC message limit exceeded");
     }
   }
 };

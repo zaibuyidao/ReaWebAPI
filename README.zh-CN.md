@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-REAPER 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/JavaScript。Lua 负责打开页面，JavaScript 通过注入的 `reaper` 对象异步调用原生 API。
+REAPER 6.60+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/JavaScript。Lua 负责打开页面，JavaScript 通过注入的 `reaper` 对象异步调用原生 API。
 
 ## 安装
 
@@ -18,9 +18,9 @@ REAPER 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/JavaScrip
 
 退出 REAPER，把扩展放入资源目录的 `UserPlugins/`，再重启。Linux 还需将同架构的 `reawebapi-webview-<arch>` 辅助程序放在 `.so` 旁边。
 
-每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.1.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
+每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.2.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
 
-运行 Demo 时，将平台 ZIP 合并到 REAPER 资源目录，在 Action List 加载 `Scripts/ReaWebAPI/Example/Example.lua`。选中轨道，点击 **Get selected track name**。页面上的 **Dock / Undock** 可切换停靠和浮动。
+运行 Demo 时，将平台 ZIP 合并到 REAPER 资源目录，在 Action List 加载 `Scripts/ReaWebAPI/Example/Example.lua`。Demo 会跟随轨道选择自动更新。声像滑块演示连续写入合并，**Center pan (Undo)** 演示 Undo 批处理，**Runtime diagnostics** 显示宿主状态。**Dock / Undock** 可切换停靠和浮动。
 
 ## API
 
@@ -31,23 +31,39 @@ local id = reaper.ReaWebOpen(directory .. "index.html")
 if id == 0 then reaper.ShowConsoleMsg(reaper.ReaWeb_GetLastError() .. "\n") end
 ```
 
-Lua 还提供 `ReaWeb_Close(id)`、`ReaWeb_IsOpen(id)`、`ReaWeb_DevTools(id)`、`ReaWeb_SetDocked(id, boolean)` 和 `ReaWeb_IsDocked(id)`。`SetDocked` 返回切换后的停靠状态。Lua 相对路径从 `<资源目录>/Scripts/` 解析。返回窗口 ID 表示初始化请求已接受，异步错误会写入 REAPER 控制台。
+Lua 提供 `ReaWeb_Close`、`ReaWeb_IsOpen`、`ReaWeb_IsReady`、`ReaWeb_Focus`、`ReaWeb_DevTools`、`ReaWeb_SetDocked`、`ReaWeb_IsDocked` 和 `ReaWeb_GetDiagnostics`，均接收窗口 ID。`SetDocked` 另接收布尔值，返回实际停靠状态。`GetDiagnostics` 返回 JSON。相对路径从 `<资源目录>/Scripts/` 解析，异步加载错误写入 REAPER 控制台。
 
 ```javascript
+await reaper.ready;
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) console.log(await reaper.GetTrackName(track));
-await reaper.ReaWeb_SetDocked(true);
+const unsubscribe = await reaper.ReaWeb_On('selectionchange', state => console.log(state.count));
 ```
 
 页面无需导入桥接脚本。当前支持轨道数量、选择、名称，以及 `D_VOL`、`D_PAN`、`B_MUTE`、`I_SOLO` 的读写，另有窗口控制和 `GetAppVersion()`。完整列表见 [TypeScript 声明](runtime/reaper.d.ts)，也可调用 `ReaWeb_GetCapabilities()` 查询。JavaScript 窗口控制方法作用于当前页面，无需传 ID。`ReaWebOpen(path)` 从当前 HTML 所在目录解析新页面的相对路径。
 
-工程参数目前仅支持当前工程（`0` 或 `null`）。轨道句柄只在所属窗口和工程内有效，删除轨道或切换工程后应重新获取。调用失败时 Promise 抛出带有 `code` 和 `message` 的错误。超时不会取消已排队的原生调用，写操作不应自动重试。
+工程参数目前仅支持当前工程（`0` 或 `null`）。轨道句柄只在所属窗口和工程内有效，删除轨道或切换工程后应重新获取。调用失败时 Promise 抛出带有 `code`、`message` 和可选 `details` 的错误。页面重载会丢弃旧页面队列，切换或重新载入工程后旧请求会被拒绝。请求超过 25 秒尚未开始执行时会过期，已开始的调用无法取消。超时后应核对状态，写操作不要自动重试。
+
+通用宿主接口：
+
+| 能力 | JavaScript |
+| --- | --- |
+| 就绪、诊断 | `ready`、`ReaWeb_GetDiagnostics()` |
+| 窗口控制 | `ReaWeb_Focus()`、`ReaWeb_SetTitle(title)`、`ReaWeb_GetWindowState()` |
+| 键盘策略 | `ReaWeb_SetKeyboardCapture(boolean)`，默认捕获，关闭后遵循 REAPER 的快捷键规则 |
+| 事件 | `ReaWeb_On(name, callback)`，返回可重复调用的异步取消订阅函数 |
+| 批处理、Undo | `ReaWeb_Batch(calls, { undoLabel })`，每组最多 32 个调用 |
+| 连续参数 | `ReaWeb_SetTrackValueLatest(track, key, value)`，被合并的等待值返回 `superseded: true` |
+
+事件包含 `projectchange`、`selectionchange`、`windowstatechange`，提供初始状态并合并后续变化。工程和选择事件约每 100 ms 检查一次，适合刷新界面，不用于逐条记录编辑历史。批处理会预先校验参数，并同步结束 Undo 和刷新保护。中途失败返回 `BATCH_FAILED` 及已完成的结果，不回滚已经发生的修改。连续参数合并需要显式使用对应接口，不改变普通 API 的逐次调用行为，也不自动创建拖动手势的 Undo 分组。
 
 ## 运行环境
 
 Windows 使用 WebView2，macOS 使用 WKWebView，Linux 通过独立共享进程运行 WebKitGTK。所有窗口共用浏览器 profile。Windows/Linux 数据位于 `<资源目录>/ReaWebAPI/WebViewData/`。macOS 在该目录保存 profile ID，实际存储位置由 WebKit 管理。
 
-浮动窗口归属 REAPER，切换停靠会保留页面和 JavaScript 状态。Windows/Linux 可用 Demo 的 **Developer Tools** 按钮调试。macOS 需启用 Safari 开发者功能，再从 **Develop** 菜单检查 REAPER 页面。macOS 构建使用 ad-hoc 签名，未做公证。
+浮动窗口归属 REAPER，切换停靠会保留页面和 JavaScript 状态。窗口位置、尺寸、最大化和停靠状态保存于 `<资源目录>/ReaWebAPI/WindowState/`，按页面路径和同时打开的实例序号区分。恢复时会校正超出屏幕的位置。Windows/Linux 可用 Demo 的 **Developer Tools** 按钮调试。macOS 需启用 Safari 开发者功能，再从 **Develop** 菜单检查 REAPER 页面。macOS 构建使用 ad-hoc 签名，未做公证。
+
+REAPER API 始终在主线程执行，窗口轮流处理请求，桥接调度采用每轮 2 ms 的软预算。单个原生调用和停靠操作无法抢占。桥接 JSON 解析、序列化及状态文件写入交给工作线程，队列和消息大小均有限制。
 
 仅加载可信的本地页面。当前桥接提供明确实现的一组 API，尚未覆盖整个 REAPER API。浏览器 profile 共用，存储 key 建议加上工具名称前缀。
 

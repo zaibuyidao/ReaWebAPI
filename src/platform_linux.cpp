@@ -32,6 +32,7 @@ class LinuxProcess {
   std::set<int> parked_;
 public:
   std::string error;
+  std::string version;
   std::map<int, WindowOptions> listeners;
   explicit LinuxProcess(const fs::path& data) {
     if (!getenv("DISPLAY")) throw std::runtime_error("ReaWebAPI requires an X11 or XWayland display on Linux");
@@ -81,12 +82,17 @@ public:
     try {
       channel_->pump([this](const Json& message) {
         const auto op = message.at("op").get<std::string>();
-        if (op == "ready") { ready_ = true; return; }
+        if (op == "ready") {
+          if (message.value("protocol", 0) != 1 || message.value("version", "") != REAWEB_VERSION)
+            throw std::runtime_error("WebKit helper version does not match the extension. Install both files from the same release");
+          version = message.value("browserVersion", ""); ready_ = true; return;
+        }
         if (op == "parked") { parked_.insert(message.at("id").get<int>()); return; }
         auto it = listeners.find(message.at("id").get<int>());
         if (it == listeners.end()) return;
         if (op == "message") it->second.on_message(message.at("message").get<std::string>());
         else if (op == "error") it->second.on_error(message.at("error").get<std::string>());
+        else if (op == "navigating" && it->second.on_navigation) it->second.on_navigation();
       });
       if (!ready_ && std::chrono::steady_clock::now() - started_ > std::chrono::seconds(15))
         throw std::runtime_error("WebKit process did not start within 15 seconds");
@@ -111,8 +117,16 @@ class LinuxWindow final : public Window {
   int id_;
   std::unique_ptr<SwellWindow> window_;
   Json geometry_;
+  mutable Json normal_;
+  bool maximized_ = false;
   std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
 public:
+  unsigned native_state() const {
+    using State = unsigned (*)(void*);
+    static auto state = reinterpret_cast<State>(dlsym(RTLD_DEFAULT, "gdk_window_get_state"));
+    auto native = SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow");
+    return state && native ? state(native) : 0;
+  }
   LinuxWindow(std::shared_ptr<LinuxProcess> process, int id, WindowOptions options) : process_(std::move(process)), id_(id) {
     window_ = std::make_unique<SwellWindow>(options.title, options.parent, [this] {
       try { process_->send({{"id", id_}, {"op", "focus"}}); } catch (...) {}
@@ -148,14 +162,18 @@ public:
     ClientToScreen(handle, &origin);
     ScreenToClient(ancestor, &origin);
     Json next = {{"id", id_}, {"op", "geometry"}, {"parent", get_xid(native)}, {"x", origin.x}, {"y", origin.y},
-      {"width", rect.right - rect.left}, {"height", rect.bottom - rect.top}, {"visible", IsWindowVisible(handle) != 0}};
+      {"width", rect.right - rect.left}, {"height", rect.bottom - rect.top}, {"visible", visible()}};
     if (geometry_ != next) { process_->send(next); geometry_ = std::move(next); }
   }
   void evaluate(const std::string& script) override { process_->send({{"id", id_}, {"op", "eval"}, {"script", script}}); }
   void devtools() override { process_->send({{"id", id_}, {"op", "devtools"}}); }
   bool closed() const override { return window_->closed() || !process_->error.empty(); }
   void* native_handle() const override { return window_->handle(); }
-  void prepare_dock() override { window_->prepare_dock(); prepare_undock(); }
+  void prepare_dock() override {
+    normal_ = placement(); maximized_ = (native_state() & 4) != 0;
+    if (maximized_) ShowWindow(static_cast<HWND>(window_->handle()), SW_RESTORE);
+    window_->prepare_dock(); prepare_undock();
+  }
   void prepare_undock() override {
     if (!geometry_.is_null()) {
       // Invalidate even on timeout so the next pump can reattach a late acknowledgement.
@@ -163,7 +181,31 @@ public:
       process_->park(id_);
     }
   }
-  void restore_floating() override { window_->restore_floating(); }
+  void restore_floating() override {
+    window_->restore_floating();
+    if (!normal_.is_null()) restore_placement(normal_);
+    if (maximized_) ShowWindow(static_cast<HWND>(window_->handle()), SW_SHOWMAXIMIZED);
+  }
+  void focus() override { window_->focus(); }
+  void set_title(const std::string& title) override { window_->set_title(title); }
+  bool visible() const override { return window_->visible() && !(native_state() & 2); }
+  bool focused() const override { return window_->focused(); }
+  Json placement() const override {
+    const bool maximized = (native_state() & 4) != 0;
+    if (!maximized) normal_ = window_->placement();
+    auto value = normal_.is_null() ? window_->placement() : normal_;
+    if (!value.is_null()) value["maximized"] = maximized;
+    return value;
+  }
+  void restore_placement(const Json& value) override {
+    normal_ = value;
+    window_->restore_placement(value);
+    maximized_ = value.value("maximized", false);
+    if (maximized_) ShowWindow(static_cast<HWND>(window_->handle()), SW_SHOWMAXIMIZED);
+  }
+  Json diagnostics() const override {
+    return {{"backend", "WebKitGTK"}, {"browserVersion", process_->version}, {"helperProtocol", 1}};
+  }
 };
 class LinuxPlatform final : public Platform {
   fs::path data_;

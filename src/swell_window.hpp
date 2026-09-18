@@ -11,6 +11,12 @@ public:
   bool closed() const;
   void prepare_dock();
   void restore_floating();
+  void focus();
+  void set_title(const std::string& title);
+  bool visible() const;
+  bool focused() const;
+  Json placement() const;
+  void restore_placement(const Json& value);
 private:
   HWND window_ = nullptr;
   HWND owner_ = nullptr;

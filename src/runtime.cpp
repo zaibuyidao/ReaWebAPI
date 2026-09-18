@@ -1,20 +1,45 @@
 #include "runtime.hpp"
 #include "bridge_script.hpp"
-#include <vector>
+#include <algorithm>
 #include <limits>
+#include <vector>
 
 namespace reaweb {
 Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock)
-  : host_(std::move(host)), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), main_thread_(std::this_thread::get_id()) {}
+  : host_(std::move(host)), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), main_thread_(std::this_thread::get_id()) {
+  project_ = host_.current_project();
+  host_generation_ = host_.project_generation ? host_.project_generation() : 0;
+  project_epoch_ = 1;
+}
 Runtime::~Runtime() {
-  for (const auto& item : sessions_) detach(*item.second);
+  for (const auto& item : sessions_) {
+    try { persist(*item.second, true); detach(*item.second); } catch (...) {}
+  }
   sessions_.clear();
   platform_.reset();
 }
-
 void Runtime::check_thread() const {
   if (std::this_thread::get_id() != main_thread_)
     throw Error("WRONG_THREAD", "ReaWebAPI must be called from REAPER's main thread");
+}
+void Runtime::fail(Session& session, const std::string& message) {
+  session.last_error = message;
+  session.failed = true;
+  if (!session.closing) session.closing_since = Clock::now();
+  session.closing = true;
+  log_(message);
+}
+void Runtime::navigate(Session& session) {
+  ++session.generation;
+  session.ready = false;
+  session.document.clear();
+  session.queue.clear();
+  session.events.clear();
+  session.subscriptions.clear();
+  session.outstanding = session.output_pending = 0;
+  session.capture_keyboard = true;
+  session.started = Clock::now();
+  session.bridge->reset_handles();
 }
 int Runtime::open(const std::string& path, const fs::path& base) {
   check_thread();
@@ -28,25 +53,49 @@ int Runtime::open(const std::string& path, const fs::path& base) {
   }
   const auto id = ++next_id_;
   auto session = std::make_shared<Session>();
+  session->id = id;
   session->entry = entry;
+  std::set<int> slots;
+  for (const auto& item : sessions_) if (item.second->entry == entry) slots.insert(item.second->slot);
+  while (slots.count(session->slot)) ++session->slot;
+  auto key = state_key(entry.generic_u8string(), session->slot);
+  session->ident = "ReaWebAPI:" + key;
+  session->state_path = resource_ / "ReaWebAPI" / "WindowState" / (key + ".json");
+  session->title = "ReaWebAPI — " + entry.parent_path().filename().u8string();
   session->bridge = std::make_unique<Bridge>(host_, Bridge::Controls{
-    [this, entry](const std::string& path) { return open(path, entry.parent_path()); },
+    [this, entry](const std::string& next) { return open(next, entry.parent_path()); },
     [this, id] { close(id); }, [this, id] { devtools(id); },
-    [this, id](bool docked) { return set_docked(id, docked); }, [this, id] { return is_docked(id); }
+    [this, id](bool docked) { return set_docked(id, docked); }, [this, id] { return is_docked(id); },
+    [this, id](const std::string& method, const Json& args) { return host_call(id, method, args); }
   }, std::to_string(id));
   std::weak_ptr<Session> weak = session;
-  session->window = platform_->open(WindowOptions{entry, bridge_script,
-    "ReaWebAPI — " + entry.parent_path().filename().u8string(),
-    [weak](std::string message) {
+  session->window = platform_->open(WindowOptions{entry, bridge_script, session->title,
+    [this, weak](std::string message) {
       if (auto s = weak.lock(); s && !s->closing) {
-        if (message.size() <= 65536 && s->queue.size() < 256) s->queue.push_back(std::move(message));
-        else s->closing = true;
+        Work work;
+        work.session = s->id; work.generation = s->generation; work.project = project_epoch_;
+        work.text = std::move(message); work.reply = true;
+        if (work.text.size() > 65536 || s->outstanding >= 256 || !worker_.submit(std::move(work)))
+          fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.");
+        else ++s->outstanding;
       }
-    }, [log = log_, weak](std::string error) {
-      log(error);
-      if (auto s = weak.lock()) s->closing = true;
-    }, dock_.parent});
-  sessions_.emplace(id, std::move(session));
+    }, [this, weak](std::string error) {
+      if (auto s = weak.lock()) fail(*s, error);
+    }, dock_.parent, [this, weak] { if (auto s = weak.lock()) navigate(*s); }});
+  sessions_.emplace(id, session);
+  try {
+    auto cached = state_cache_.find(session->ident);
+    session->saved_state = cached != state_cache_.end() ? cached->second : read_state(session->state_path, entry.generic_u8string());
+    if (!session->saved_state.is_null()) {
+      session->window->restore_placement(session->saved_state["placement"]);
+      const auto dock_id = session->saved_state.value("dockId", -1);
+      if (dock_.remember && dock_id >= 0) dock_.remember(session->ident, dock_id);
+      if (session->saved_state.value("docked", false)) set_docked(id, true);
+    }
+  } catch (const std::exception& e) {
+    session->last_error = std::string("Window state was not restored: ") + e.what();
+    log_(session->last_error);
+  }
   return id;
 }
 bool Runtime::is_open(int id) const {
@@ -54,46 +103,69 @@ bool Runtime::is_open(int id) const {
   auto it = sessions_.find(id);
   return it != sessions_.end() && !it->second->closing && !it->second->window->closed();
 }
+bool Runtime::is_ready(int id) const {
+  check_thread();
+  return is_open(id) && sessions_.at(id)->ready;
+}
 bool Runtime::close(int id) {
   check_thread();
   auto it = sessions_.find(id);
   if (it == sessions_.end()) return false;
+  if (!it->second->closing) it->second->closing_since = Clock::now();
   it->second->closing = true;
   return true;
 }
 bool Runtime::devtools(int id) {
   check_thread();
-  auto it = sessions_.find(id);
-  if (it == sessions_.end()) return false;
-  it->second->window->devtools();
+  if (!is_open(id)) return false;
+  sessions_.at(id)->window->devtools();
   return true;
+}
+bool Runtime::focus(int id) {
+  check_thread();
+  if (!is_open(id)) return false;
+  auto& window = *sessions_.at(id)->window;
+  if (is_docked(id) && dock_.activate) dock_.activate(window.native_handle());
+  window.focus();
+  return true;
+}
+bool Runtime::captures_keyboard(void* handle, const std::function<bool(void*, void*)>& is_child) const {
+  check_thread();
+  for (const auto& item : sessions_) {
+    const auto& s = *item.second;
+    auto root = s.window->native_handle();
+    if (!s.closing && !s.window->closed() && s.capture_keyboard && root &&
+        (root == handle || is_child(root, handle))) return true;
+  }
+  return false;
 }
 bool Runtime::is_docked(int id) const {
   check_thread();
   auto it = sessions_.find(id);
-  if (it == sessions_.end() || it->second->window->closed() || !dock_.index) return false;
+  if (it == sessions_.end() || !dock_.index) return false;
   auto handle = it->second->window->native_handle();
   return handle && dock_.index(handle) >= 0;
 }
 bool Runtime::set_docked(int id, bool docked) {
   check_thread();
-  auto it = sessions_.find(id);
-  if (it == sessions_.end() || it->second->closing || it->second->window->closed())
-    throw Error("WINDOW_CLOSED", "Window is no longer open");
-  auto& session = *it->second;
+  if (!is_open(id)) throw Error("WINDOW_CLOSED", "Window is no longer open");
+  auto& session = *sessions_.at(id);
   auto handle = session.window->native_handle();
   if (!handle || !dock_.index || !dock_.add || !dock_.remove || !dock_.activate)
     throw Error("DOCK_UNAVAILABLE", "REAPER docking APIs are unavailable");
   if (docked == is_docked(id)) return docked;
   if (docked) {
+    persist(session);
     session.window->prepare_dock();
-    dock_.add(handle, session.entry.parent_path().filename().u8string(), "ReaWebAPI:" + session.entry.generic_u8string());
+    dock_.add(handle, session.title, session.ident);
     if (!is_docked(id)) {
       session.window->restore_floating();
       throw Error("DOCK_FAILED", "REAPER did not accept the window into its Docker");
     }
     dock_.activate(handle);
   } else {
+    const auto index = dock_.index(handle);
+    if (dock_.remember && index >= 0) dock_.remember(session.ident, index);
     session.window->prepare_undock();
     dock_.remove(handle);
     session.window->restore_floating();
@@ -106,32 +178,244 @@ void Runtime::detach(const Session& session) {
     if (handle && dock_.index(handle) >= 0) dock_.remove(handle);
   }
 }
+Json Runtime::window_state(const Session& s) const {
+  return {{"id", s.id}, {"title", s.title}, {"docked", is_docked(s.id)},
+    {"visible", s.window->visible()}, {"focused", s.window->focused()}, {"keyboardCapture", s.capture_keyboard}};
+}
+Json Runtime::diagnostics(int id) const {
+  check_thread();
+  auto it = sessions_.find(id);
+  if (it == sessions_.end()) {
+    auto closed = closed_diagnostics_.find(id);
+    if (closed != closed_diagnostics_.end()) return closed->second;
+    throw Error("WINDOW_CLOSED", "Unknown window id");
+  }
+  const auto& s = *it->second;
+  Json result = s.window->diagnostics();
+  result.update({{"version", REAWEB_VERSION}, {"protocol", 1}, {"window", window_state(s)},
+    {"stage", s.closing ? "closing" : s.ready ? "ready" : "loading"}, {"documentGeneration", s.generation},
+    {"projectEpoch", project_epoch_}, {"pendingCalls", s.outstanding}, {"queuedCalls", s.queue.size()},
+    {"processedCalls", s.processed}, {"lastError", s.last_error}, {"schedulerBudgetMs", 2}});
+  return result;
+}
+Json Runtime::host_call(int id, const std::string& method, const Json& args) {
+  auto& s = *sessions_.at(id);
+  if (method == "ReaWeb_GetDiagnostics") return diagnostics(id);
+  if (method == "ReaWeb_GetWindowState") return window_state(s);
+  if (method == "ReaWeb_Focus") return focus(id);
+  if (method == "ReaWeb_SetTitle") {
+    if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected a window title");
+    auto title = args[0].get<std::string>();
+    if (title.empty() || title.size() > 256 || title.find('\0') != std::string::npos)
+      throw Error("INVALID_ARGUMENT", "Title must contain 1 to 256 UTF-8 bytes without NUL");
+    s.window->set_title(title); s.title = std::move(title);
+    if (is_docked(id) && dock_.refresh) dock_.refresh(s.window->native_handle());
+    return true;
+  }
+  if (method == "ReaWeb_SetKeyboardCapture") {
+    if (!args[0].is_boolean()) throw Error("INVALID_ARGUMENT", "Expected a boolean");
+    s.capture_keyboard = args[0].get<bool>();
+    return s.capture_keyboard;
+  }
+  if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected an event name");
+  auto name = args[0].get<std::string>();
+  if (name != "projectchange" && name != "selectionchange" && name != "windowstatechange")
+    throw Error("UNKNOWN_EVENT", "Unknown host event");
+  if (method == "ReaWeb_Unsubscribe") { s.subscriptions.erase(name); s.events.erase(name); return true; }
+  s.subscriptions.insert(name);
+  if (name == "windowstatechange") return window_state(s);
+  if (name == "projectchange") return project_event_;
+  return selection_event_;
+}
+void Runtime::reply(Session& session, Work work, Json response) {
+  if (response.contains("error")) session.last_error = response["error"].value("message", "Native error");
+  work.kind = Work::Encode;
+  work.counted_output = true;
+  work.data = std::move(response);
+  work.text.clear();
+  if (!worker_.submit(std::move(work))) fail(session, "Bridge output queue limit exceeded");
+  else ++session.output_pending;
+}
+void Runtime::emit(Session& session, const std::string& name, Json data) {
+  if (session.ready && !session.closing && (name == "projectchange" || session.subscriptions.count(name)))
+    session.events[name] = std::move(data);
+}
+void Runtime::observe(Clock::time_point deadline) {
+  const auto project = host_.current_project();
+  const auto generation = host_.project_generation ? host_.project_generation() : 0;
+  if (project_ != project || host_generation_ != generation) {
+    project_ = project;
+    host_generation_ = generation;
+    ++project_epoch_;
+    project_changes_ = -1;
+    selection_index_ = 0; selection_count_ = -1; last_selection_hash_ = 0;
+    selection_event_ = nullptr;
+    for (auto& item : sessions_) item.second->bridge->reset_handles();
+    next_observation_ = Clock::now();
+  }
+  if (Clock::now() < next_observation_) return;
+  const auto changes = host_.change_count ? host_.change_count(project_) : 0;
+  Json next{{"projectEpoch", project_epoch_}, {"changeCount", changes}};
+  if (next != project_event_) {
+    project_event_ = next;
+    for (auto& item : sessions_) emit(*item.second, "projectchange", next);
+  }
+  if (changes != project_changes_) { project_changes_ = changes; selection_index_ = 0; selection_count_ = -1; }
+  bool wanted = false;
+  for (const auto& item : sessions_) wanted = wanted || item.second->subscriptions.count("selectionchange");
+  if (wanted) {
+    const auto count = host_.count_selected_tracks(project_);
+    if (count != selection_count_ || selection_index_ == 0) {
+      selection_count_ = count; selection_index_ = 0; selection_hash_ = 14695981039346656037ull;
+    }
+    // Scan large selections incrementally. Events invalidate a selection, they do not copy every track.
+    for (int n = 0; n < 64 && selection_index_ < count && Clock::now() < deadline; ++n, ++selection_index_) {
+      auto track = host_.get_selected_track(project_, selection_index_);
+      if (!track || !host_.valid_track(project_, track)) { selection_index_ = 0; selection_count_ = -1; return; }
+      for (auto byte : host_.track_guid(track)) { selection_hash_ ^= byte; selection_hash_ *= 1099511628211ull; }
+    }
+    if (selection_index_ < count) return;
+    if (last_selection_hash_ != selection_hash_ || selection_event_.is_null()) {
+      last_selection_hash_ = selection_hash_;
+      selection_event_ = {{"projectEpoch", project_epoch_}, {"revision", ++selection_revision_}, {"count", count}};
+      for (auto& item : sessions_) emit(*item.second, "selectionchange", selection_event_);
+    }
+    selection_index_ = 0;
+  }
+  next_observation_ = Clock::now() + std::chrono::milliseconds(100);
+}
+void Runtime::persist(Session& s, bool force) {
+  Json state = s.pending_state;
+  if (s.window->native_handle()) {
+    const bool docked = is_docked(s.id);
+    Json placement;
+    if (docked) {
+      if (s.pending_state.is_object()) placement = s.pending_state["placement"];
+      else if (s.saved_state.is_object()) placement = s.saved_state["placement"];
+    }
+    if (placement.is_null()) placement = s.window->placement();
+    if (placement.is_null()) return;
+    int index = dock_.index ? dock_.index(s.window->native_handle()) : -1;
+    if (index < 0 && s.pending_state.is_object()) index = s.pending_state.value("dockId", -1);
+    if (index < 0 && s.saved_state.is_object()) index = s.saved_state.value("dockId", -1);
+    state = {{"schema", 1}, {"entry", s.entry.generic_u8string()}, {"placement", placement}, {"docked", docked}, {"dockId", index}};
+  } else if (!force || state.is_null()) return;
+  if (state != s.pending_state) { s.pending_state = state; s.state_changed = Clock::now(); }
+  if (state == s.saved_state || (!force && Clock::now() - s.state_changed < std::chrono::milliseconds(500))) return;
+  Work work; work.kind = Work::Save; work.session = s.id; work.path = s.state_path; work.data = state;
+  if (worker_.submit(std::move(work))) {
+    s.saved_state = std::move(state);
+    if (state_cache_.size() >= 256) state_cache_.erase(state_cache_.begin());
+    state_cache_[s.ident] = s.saved_state;
+  } else { s.last_error = "Window state save queue is full"; log_(s.last_error); }
+}
 void Runtime::tick() {
   check_thread();
   if (ticking_) return;
   ticking_ = true;
   struct Reset { bool& value; ~Reset() { value = false; } } reset{ticking_};
+  const auto deadline = Clock::now() + std::chrono::milliseconds(2);
   if (platform_) platform_->pump();
-  // Snapshot permits a bridge call to create another window during dispatch.
-  std::vector<std::shared_ptr<Session>> active;
-  for (auto& item : sessions_) active.push_back(item.second);
-  for (auto& s : active) {
-    if (s->closing || s->window->closed()) continue;
-    s->bridge->observe_project();
-    for (int n = 0; n < 32 && !s->queue.empty() && !s->closing; ++n) {
-      auto message = std::move(s->queue.front());
-      s->queue.pop_front();
-      const auto response = s->bridge->dispatch(message);
-      // ASCII JSON keeps U+2028/U+2029 and arbitrary track names safe in JS source.
-      s->window->evaluate("window.__reawebReceive(" + response.dump(-1, ' ', true, Json::error_handler_t::replace) + ");");
+  observe(deadline);
+  Work work;
+  for (int n = 0; n < 128 && Clock::now() < deadline && worker_.take(work); ++n) {
+    auto it = sessions_.find(work.session);
+    if (it == sessions_.end()) { if (work.kind == Work::Fault) log_(work.text); continue; }
+    auto& s = *it->second;
+    if (work.kind == Work::Fault) {
+      if (work.path.empty()) fail(s, work.text);
+      else { s.last_error = work.text; log_(work.text); }
+      continue;
+    }
+    if (work.generation != s.generation || s.window->closed()) continue;
+    if (work.kind == Work::Request) {
+      if (!s.closing) s.queue.push_back(std::move(work));
+    } else if (work.kind == Work::Script) {
+      try { s.window->evaluate(work.text); }
+      catch (const std::exception& e) { fail(s, e.what()); }
+      if (work.reply && s.outstanding) --s.outstanding;
+      if (work.counted_output && s.output_pending) --s.output_pending;
     }
   }
-  for (auto it = sessions_.begin(); it != sessions_.end();) {
-    if (it->second->closing || it->second->window->closed()) {
-      detach(*it->second);
-      it = sessions_.erase(it);
+  // One request per window per pass. The next tick resumes after the last serviced window.
+  for (int n = 0, idle = 0; n < 64 && !sessions_.empty() && Clock::now() < deadline; ++n) {
+    auto it = sessions_.upper_bound(cursor_);
+    if (it == sessions_.end()) it = sessions_.begin();
+    cursor_ = it->first;
+    auto s = it->second;
+    if (s->closing || s->window->closed() || s->queue.empty()) {
+      if (++idle >= static_cast<int>(sessions_.size())) break;
+      continue;
     }
-    else ++it;
+    idle = 0;
+    if (host_.current_project() != project_ || (host_.project_generation && host_.project_generation() != host_generation_))
+      observe(deadline);
+    auto request = std::move(s->queue.front()); s->queue.pop_front();
+    const auto& data = request.data;
+    Json response;
+    try {
+      const auto method = data.at("method").get<std::string>();
+      const auto document = data.value("document", std::string());
+      if (document.empty()) throw Error("INVALID_REQUEST", "A document token is required");
+      if (Clock::now() - request.received > std::chrono::seconds(25)) throw Error("REQUEST_EXPIRED", "Request expired before native execution");
+      if (data.contains("expiresAt")) {
+        const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        if (!data["expiresAt"].is_number_integer()) throw Error("INVALID_REQUEST", "Invalid request deadline");
+        if (data["expiresAt"].get<double>() <= static_cast<double>(now))
+          throw Error("REQUEST_EXPIRED", "Request expired before native execution");
+      }
+      if (method == "__reawebHello") {
+        if (data["args"] != Json::array({1})) throw Error("PROTOCOL_MISMATCH", "Unsupported bridge protocol");
+        if (s->ready && s->document != document) throw Error("DOCUMENT_STALE", "Reload the page to start a new document");
+        s->document = document; s->ready = true;
+        auto query = data; query["method"] = "ReaWeb_GetCapabilities"; query["args"] = Json::array();
+        response = s->bridge->dispatch_request(query);
+        response["result"]["windowId"] = s->id;
+        response["result"]["projectEpoch"] = project_epoch_;
+      } else {
+        if (!s->ready || s->document != document) throw Error("DOCUMENT_STALE", "The bridge document is no longer active");
+        const bool project_call = method.rfind("ReaWeb", 0) != 0 || method == "ReaWeb_Batch";
+        if (project_call && (request.project != project_epoch_ || data.value("project", project_epoch_) != project_epoch_))
+          throw Error("PROJECT_CHANGED", "The current project changed. Refresh the tool state before trying again.", {{"projectEpoch", project_epoch_}});
+        response = s->bridge->dispatch_request(data);
+      }
+    } catch (const Error& e) { response = error_response(data, e.code, e.what(), e.details); }
+    catch (const std::exception& e) { response = error_response(data, "INVALID_REQUEST", e.what()); }
+    ++s->processed;
+    reply(*s, std::move(request), std::move(response));
+  }
+  for (auto it = sessions_.begin(); it != sessions_.end();) {
+    auto& s = *it->second;
+    try {
+      s.window->tick();
+      if (s.closing || s.window->closed()) {
+        // Close requests get a bounded chance to flush their reply before destroying the page.
+        if (s.closing && !s.window->closed() && s.output_pending && Clock::now() - s.closing_since < std::chrono::milliseconds(250)) { ++it; continue; }
+        persist(s, true);
+        auto final_state = diagnostics(s.id);
+        final_state["stage"] = s.failed ? "failed" : "closed";
+        final_state["window"]["visible"] = final_state["window"]["focused"] = false;
+        final_state["pendingCalls"] = final_state["queuedCalls"] = 0;
+        if (closed_diagnostics_.size() >= 32) closed_diagnostics_.erase(closed_diagnostics_.begin());
+        closed_diagnostics_[s.id] = std::move(final_state);
+        detach(s); it = sessions_.erase(it); continue;
+      }
+      if (!s.ready && Clock::now() - s.started > std::chrono::seconds(30)) fail(s, "WebView bridge did not become ready within 30 seconds");
+      auto state = window_state(s);
+      if (state != s.last_state) { s.last_state = state; emit(s, "windowstatechange", std::move(state)); }
+      persist(s);
+      if (s.output_pending < 16) {
+        for (auto& event : s.events) {
+          Work output; output.kind = Work::Encode; output.session = s.id; output.generation = s.generation;
+          output.counted_output = true;
+          output.data = {{"document", s.document}, {"event", event.first}, {"sequence", ++s.event_sequence}, {"data", event.second}};
+          if (worker_.submit(std::move(output))) ++s.output_pending;
+          else { fail(s, "Bridge event queue limit exceeded"); break; }
+        }
+        s.events.clear();
+      }
+    } catch (const std::exception& e) { fail(s, e.what()); }
+    ++it;
   }
 }
 }

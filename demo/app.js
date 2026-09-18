@@ -1,6 +1,8 @@
 'use strict';
-const ui = Object.fromEntries(['status', 'track-count', 'track-name', 'read-track', 'devtools', 'dock', 'activity', 'error', 'version'].map(id => [id, document.getElementById(id)]));
-const events = [];
+const ui = Object.fromEntries(['status', 'track-count', 'track-name', 'read-track', 'devtools', 'dock', 'activity', 'error', 'version', 'pan', 'pan-value', 'center-pan', 'diagnostics', 'diagnostic-output'].map(id => [id, document.getElementById(id)]));
+const events = [], dispose = [];
+let selectedTrack = null, refreshWanted = false, refreshing = false, dockBusy = false;
+let pendingPan = Promise.resolve();
 function log(message) {
   const time = new Date().toLocaleTimeString([], { hour12: false });
   events.unshift(`${time}  ${message}`);
@@ -15,68 +17,89 @@ function report(error) {
 }
 async function run(action) {
   ui.error.hidden = true;
-  ui['read-track'].disabled = true;
   try { await action(); } catch (error) { report(error); }
-  finally { ui['read-track'].disabled = !window.reaper; }
 }
-ui['read-track'].addEventListener('click', () => run(async () => {
-  const track = await reaper.GetSelectedTrack(0, 0);
-  if (!track) {
-    ui['track-name'].textContent = 'No track selected.';
-    log('Select a track in REAPER and try again.');
-  } else {
-    const name = await reaper.GetTrackName(track);
-    ui['track-name'].textContent = name;
-    log(`Selected Track: ${name}`);
+function showPan(value) {
+  ui.pan.value = value;
+  ui['pan-value'].textContent = Number(value).toFixed(2);
+}
+async function refresh() {
+  refreshWanted = true;
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    do {
+      refreshWanted = false;
+      const track = await reaper.GetSelectedTrack(0, 0);
+      const calls = [{ method: 'CountTracks', args: [0] }];
+      if (track) calls.push({ method: 'GetTrackName', args: [track] }, { method: 'GetMediaTrackInfo_Value', args: [track, 'D_PAN'] });
+      const [count, name, pan] = await reaper.ReaWeb_Batch(calls);
+      if (refreshWanted) continue;
+      selectedTrack = track;
+      ui['track-name'].textContent = name ?? 'No track selected.';
+      ui['track-count'].textContent = `${count} ${count === 1 ? 'track' : 'tracks'} in project`;
+      ui.pan.disabled = ui['center-pan'].disabled = !track;
+      if (document.activeElement !== ui.pan) showPan(pan ?? 0);
+    } while (refreshWanted);
+  } catch (error) {
+    selectedTrack = null;
+    ui.pan.disabled = ui['center-pan'].disabled = true;
+    // Project/selection events schedule the next read. Writes are never retried.
+    if (!['PROJECT_CHANGED', 'STALE_HANDLE', 'WINDOW_CLOSED'].includes(error.code)) report(error);
+  } finally {
+    refreshing = false;
+    if (refreshWanted) void refresh();
   }
-  const count = await reaper.CountTracks(0);
-  ui['track-count'].textContent = `${count} ${count === 1 ? 'track' : 'tracks'} in project`;
-}));
-ui.devtools.addEventListener('click', () => run(async () => {
-  await reaper.ReaWeb_DevTools();
-  log('Developer Tools opened. Check the Console tab.');
-}));
+}
+ui['read-track'].addEventListener('click', () => run(async () => { await refresh(); log('Track data refreshed.'); }));
+ui.devtools.addEventListener('click', () => run(async () => { await reaper.ReaWeb_DevTools(); log('Developer Tools opened.'); }));
 function showDockState(docked) {
   ui.dock.textContent = docked ? 'Undock' : 'Dock';
   ui.dock.setAttribute('aria-pressed', String(docked));
 }
-let dockBusy = false;
-ui.dock.addEventListener('click', async () => {
+ui.dock.addEventListener('click', () => run(async () => {
   if (dockBusy) return;
-  dockBusy = true;
-  ui.dock.disabled = true;
-  ui.error.hidden = true;
+  dockBusy = true; ui.dock.disabled = true;
   try {
     const docked = await reaper.ReaWeb_SetDocked(!(await reaper.ReaWeb_IsDocked()));
-    showDockState(docked);
-    log(docked ? 'Window docked in REAPER.' : 'Window undocked.');
-  } catch (error) { report(error); }
-  finally { dockBusy = false; ui.dock.disabled = false; }
+    showDockState(docked); log(docked ? 'Window docked in REAPER.' : 'Window undocked.');
+  } finally { dockBusy = false; ui.dock.disabled = false; }
+}));
+ui.pan.addEventListener('input', () => {
+  const track = selectedTrack, value = Number(ui.pan.value);
+  ui['pan-value'].textContent = value.toFixed(2);
+  if (track) pendingPan = reaper.ReaWeb_SetTrackValueLatest(track, 'D_PAN', value).catch(report);
 });
-// REAPER can also move a Docker tab through its own menus.
-const dockTimer = setInterval(async () => {
-  if (!window.reaper || document.hidden || dockBusy || ui.dock.disabled) return;
-  dockBusy = true;
-  try { showDockState(await reaper.ReaWeb_IsDocked()); }
-  catch (error) { report(error); clearInterval(dockTimer); }
-  finally { dockBusy = false; }
-}, 1000);
-window.addEventListener('pagehide', () => clearInterval(dockTimer));
+ui['center-pan'].addEventListener('click', () => run(async () => {
+  if (!selectedTrack) return;
+  const track = selectedTrack;
+  ui.pan.disabled = true;
+  try {
+    await pendingPan;
+    await reaper.ReaWeb_Batch([{ method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] }], { undoLabel: 'ReaWebAPI: center track pan' });
+    showPan(0); log('Pan centered. Undo is available in REAPER.');
+  } finally { ui.pan.disabled = !selectedTrack; }
+}));
+ui.diagnostics.addEventListener('click', () => run(async () => {
+  ui['diagnostic-output'].textContent = JSON.stringify(await reaper.ReaWeb_GetDiagnostics(), null, 2);
+  ui['diagnostic-output'].hidden = false;
+}));
+window.addEventListener('pagehide', () => { for (const off of dispose) void off(); });
 run(async () => {
   if (!window.reaper) {
     ui.status.textContent = 'Outside REAPER';
-    ui.devtools.disabled = true;
+    for (const control of ['read-track', 'devtools', 'dock', 'diagnostics']) ui[control].disabled = true;
     throw new Error('Load Example.lua from the REAPER Action List to open this demo.');
   }
-  const [version, count, capabilities] = await Promise.all([
-    reaper.GetAppVersion(), reaper.CountTracks(0), reaper.ReaWeb_GetCapabilities()
-  ]);
-  ui.status.textContent = 'Runtime connected';
-  ui.status.classList.add('connected');
-  ui['track-count'].textContent = `${count} ${count === 1 ? 'track' : 'tracks'} in project`;
+  const capabilities = await reaper.ready;
+  const version = await reaper.GetAppVersion();
+  ui.status.textContent = 'Runtime connected'; ui.status.classList.add('connected');
   ui.version.textContent = `REAPER ${version} / ReaWebAPI ${capabilities.version}`;
-  showDockState(await reaper.ReaWeb_IsDocked());
+  await reaper.ReaWeb_SetTitle('ReaWebAPI · Track Inspector');
+  dispose.push(await reaper.ReaWeb_On('windowstatechange', state => showDockState(state.docked)));
+  dispose.push(await reaper.ReaWeb_On('selectionchange', () => { selectedTrack = null; void refresh(); }));
+  dispose.push(await reaper.ReaWeb_On('projectchange', () => { void refresh(); }));
   ui.dock.disabled = false;
-  log(`Connected · ${capabilities.methods.length} APIs available`);
-  log('Select a track, then press the button.');
+  await refresh();
+  log('Connected. Selection and project changes update this page automatically.');
 });

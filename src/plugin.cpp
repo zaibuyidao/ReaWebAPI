@@ -1,6 +1,7 @@
 #include <reaper_plugin.h>
 #include "runtime.hpp"
 #include <cstring>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -11,6 +12,14 @@ int (*register_api)(const char*, void*) = nullptr;
 void (*console)(const char*) = nullptr;
 std::string last_error;
 std::vector<std::pair<std::string, void*>> registrations;
+std::atomic<uint64_t> project_generation{0};
+project_config_extension_t project_events{
+  [](const char*, ProjectStateContext*, bool, project_config_extension_t*) { return false; },
+  [](ProjectStateContext*, bool, project_config_extension_t*) {},
+  [](bool is_undo, project_config_extension_t*) {
+    // A file load can reuse the same ReaProject address. Undo is an edit, not a new project lifetime.
+    if (!is_undo) project_generation.fetch_add(1, std::memory_order_relaxed);
+  }, nullptr};
 
 void log_error(const std::string& text) {
   last_error = text;
@@ -31,6 +40,12 @@ bool ReaWeb_IsOpen(int id) { return guarded([&] { return runtime->is_open(id); }
 bool ReaWeb_DevTools(int id) { return guarded([&] { return runtime->devtools(id); }, false); }
 bool ReaWeb_SetDocked(int id, bool docked) { return guarded([&] { return runtime->set_docked(id, docked); }, false); }
 bool ReaWeb_IsDocked(int id) { return guarded([&] { return runtime->is_docked(id); }, false); }
+bool ReaWeb_IsReady(int id) { return guarded([&] { return runtime->is_ready(id); }, false); }
+bool ReaWeb_Focus(int id) { return guarded([&] { return runtime->focus(id); }, false); }
+const char* ReaWeb_GetDiagnostics(int id) {
+  static std::string value;
+  return guarded([&]() -> const char* { value = runtime->diagnostics(id).dump(); return value.c_str(); }, "{}");
+}
 const char* ReaWeb_GetLastError() { return last_error.c_str(); }
 void* open_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWebOpen(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
@@ -40,6 +55,15 @@ template<bool (*Fn)(int)> void* id_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(Fn(id)));
 }
 void* error_vararg(void**, int) { return const_cast<char*>(ReaWeb_GetLastError()); }
+void* diagnostics_vararg(void** args, int count) {
+  return const_cast<char*>(ReaWeb_GetDiagnostics(count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0));
+}
+int window_info(HWND window, INT_PTR type) {
+  if (!runtime || (type != 0 && type != 1)) return 0;
+  return guarded([&] { return runtime->captures_keyboard(window, [](void* parent, void* child) {
+    return IsChild(static_cast<HWND>(parent), static_cast<HWND>(child)) != 0;
+  }) ? 1 : 0; }, 0);
+}
 void* dock_vararg(void** args, int count) {
   if (count < 2) return nullptr;
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_SetDocked(
@@ -94,6 +118,10 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     auto set_value = load<bool (*)(MediaTrack*, const char*, double)>(rec, "SetMediaTrackInfo_Value");
     auto version = load<const char* (*)()>(rec, "GetAppVersion");
     auto update = load<void (*)()>(rec, "UpdateArrange");
+    auto changes = load<int (*)(ReaProject*)>(rec, "GetProjectStateChangeCount");
+    auto begin_undo = load<void (*)(ReaProject*)>(rec, "Undo_BeginBlock2");
+    auto end_undo = load<void (*)(ReaProject*, const char*, int)>(rec, "Undo_EndBlock2");
+    auto prevent_refresh = load<void (*)(int)>(rec, "PreventUIRefresh");
     Host host;
     host.current_project = [enum_projects] { return enum_projects(-1, nullptr, 0); };
     host.count_tracks = [count_tracks](void* p) { return count_tracks(static_cast<ReaProject*>(p)); };
@@ -116,21 +144,29 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       return std::string(buffer.data());
     };
     host.get_track_value = [get_value](void* t, const std::string& key) { return get_value(static_cast<MediaTrack*>(t), key.c_str()); };
-    host.set_track_value = [set_value, update](void* t, const std::string& key, double value) {
-      auto ok = set_value(static_cast<MediaTrack*>(t), key.c_str(), value);
-      if (ok) update();
-      return ok;
+    host.set_track_value = [set_value](void* t, const std::string& key, double value) {
+      return set_value(static_cast<MediaTrack*>(t), key.c_str(), value);
     };
     host.version = [version] { return std::string(version()); };
+    host.change_count = [changes](void* project) { return changes(static_cast<ReaProject*>(project)); };
+    host.project_generation = [] { return project_generation.load(std::memory_order_relaxed); };
+    host.begin_undo = [begin_undo](void* project) { begin_undo(static_cast<ReaProject*>(project)); };
+    host.end_undo = [end_undo](void* project, const std::string& label) { end_undo(static_cast<ReaProject*>(project), label.c_str(), -1); };
+    host.prevent_refresh = prevent_refresh;
+    host.update_arrange = update;
     auto add_dock = load<void (*)(HWND, const char*, const char*, bool)>(rec, "DockWindowAddEx");
     auto remove_dock = load<void (*)(HWND)>(rec, "DockWindowRemove");
     auto dock_index = load<int (*)(HWND, bool*)>(rec, "DockIsChildOfDock");
     auto activate_dock = load<void (*)(HWND)>(rec, "DockWindowActivate");
+    auto remember_dock = load<void (*)(const char*, int)>(rec, "Dock_UpdateDockID");
+    auto refresh_dock = reinterpret_cast<void (*)(HWND)>(rec->GetFunc("DockWindowRefreshForHWND"));
     DockApi dock{rec->hwnd_main,
       [add_dock](void* h, const std::string& title, const std::string& ident) { add_dock(static_cast<HWND>(h), title.c_str(), ident.c_str(), true); },
       [remove_dock](void* h) { remove_dock(static_cast<HWND>(h)); },
       [dock_index](void* h) { bool floating = false; return dock_index(static_cast<HWND>(h), &floating); },
-      [activate_dock](void* h) { activate_dock(static_cast<HWND>(h)); }};
+      [activate_dock](void* h) { activate_dock(static_cast<HWND>(h)); },
+      [remember_dock](const std::string& ident, int index) { remember_dock(ident.c_str(), index); },
+      [refresh_dock](void* h) { if (refresh_dock) refresh_dock(static_cast<HWND>(h)); }};
     runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
     add_api("ReaWebOpen", reinterpret_cast<void*>(ReaWebOpen), reinterpret_cast<void*>(open_vararg),
       "int\0const char*\0path\0Open local HTML. Relative paths resolve under resource/Scripts. Returns a window id, or 0 on failure.\0");
@@ -146,6 +182,14 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       "bool\0int,bool\0windowId,docked\0Dock or float the window. Returns the resulting docked state.\0");
     add_api("ReaWeb_IsDocked", reinterpret_cast<void*>(ReaWeb_IsDocked), reinterpret_cast<void*>(id_vararg<ReaWeb_IsDocked>),
       "bool\0int\0windowId\0Return whether the window belongs to a REAPER Docker.\0");
+    add_api("ReaWeb_IsReady", reinterpret_cast<void*>(ReaWeb_IsReady), reinterpret_cast<void*>(id_vararg<ReaWeb_IsReady>),
+      "bool\0int\0windowId\0Return whether the current document completed its bridge handshake.\0");
+    add_api("ReaWeb_Focus", reinterpret_cast<void*>(ReaWeb_Focus), reinterpret_cast<void*>(id_vararg<ReaWeb_Focus>),
+      "bool\0int\0windowId\0Activate the Docker tab or floating window and focus its WebView.\0");
+    add_api("ReaWeb_GetDiagnostics", reinterpret_cast<void*>(ReaWeb_GetDiagnostics), reinterpret_cast<void*>(diagnostics_vararg),
+      "const char*\0int\0windowId\0Return JSON diagnostics for the window, or an empty object on error.\0");
+    add_registration("hwnd_info", reinterpret_cast<void*>(window_info));
+    add_registration("projectconfig", &project_events);
     add_registration("timer", reinterpret_cast<void*>(timer));
     return 1;
   } catch (const std::exception& e) { log_error(e.what()); unload(); return 0; }

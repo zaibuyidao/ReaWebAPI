@@ -3,6 +3,7 @@
 #include <wrl.h>
 #include <WebView2.h>
 #include <vector>
+#include <algorithm>
 
 namespace reaweb {
 using Microsoft::WRL::ComPtr;
@@ -37,6 +38,8 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   bool closed_ = false, want_devtools_ = false;
   RECT floating_rect_{};
   bool maximized_ = false;
+  std::string browser_version_;
+  bool visible_ = true;
 public:
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto self = reinterpret_cast<WinWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -78,6 +81,9 @@ public:
   void fail(const std::string& error) { closed_ = true; options_.on_error(error); }
   void initialize(ICoreWebView2Environment* environment) {
     if (closed_) return;
+    LPWSTR version = nullptr;
+    if (SUCCEEDED(environment->get_BrowserVersionString(&version))) browser_version_ = utf8(version);
+    CoTaskMemFree(version);
     auto weak = weak_from_this();
     const auto hr = environment->CreateCoreWebView2Controller(hwnd_, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
       [weak](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
@@ -121,6 +127,7 @@ public:
         LPWSTR uri = nullptr; args->get_Uri(&uri);
         auto self = weak.lock();
         if (!self || !same_document(utf8(uri), self->uri_)) args->put_Cancel(TRUE);
+        else if (self->options_.on_navigation) self->options_.on_navigation();
         CoTaskMemFree(uri); return S_OK;
       }).Get(), &token), "add_NavigationStarting");
     check(webview_->add_FrameNavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>(
@@ -140,6 +147,16 @@ public:
         if (auto self = weak.lock()) self->fail("WebView2 process failed; reopen the tool");
         return S_OK;
       }).Get(), &token), "add_ProcessFailed");
+    check(webview_->add_NavigationCompleted(Callback<ICoreWebView2NavigationCompletedEventHandler>(
+      [weak](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+        BOOL success = FALSE; args->get_IsSuccess(&success);
+        if (!success) {
+          COREWEBVIEW2_WEB_ERROR_STATUS status{}; args->get_WebErrorStatus(&status);
+          if (status != COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED)
+            if (auto self = weak.lock()) self->fail("WebView2 navigation failed: " + std::to_string(status));
+        }
+        return S_OK;
+      }).Get(), &token), "add_NavigationCompleted");
     check(webview_->AddScriptToExecuteOnDocumentCreated(wide(options_.script).c_str(),
       Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
         [weak](HRESULT result, LPCWSTR) -> HRESULT {
@@ -162,9 +179,67 @@ public:
     if (webview_) webview_->OpenDevToolsWindow();
   }
   bool closed() const override { return closed_; }
+  bool visible() const override {
+    auto root = hwnd_ ? GetAncestor(hwnd_, GA_ROOT) : nullptr;
+    return hwnd_ && IsWindowVisible(hwnd_) && (!root || !IsIconic(root));
+  }
+  bool focused() const override {
+    auto focus = GetFocus();
+    return hwnd_ && (focus == hwnd_ || IsChild(hwnd_, focus));
+  }
+  void tick() override {
+    const bool next = visible();
+    if (controller_ && next != visible_) { controller_->put_IsVisible(next); visible_ = next; }
+  }
+  void focus() override {
+    if (closed_ || !hwnd_) return;
+    if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+    SetForegroundWindow(GetAncestor(hwnd_, GA_ROOT));
+    SetFocus(hwnd_);
+    if (controller_) controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+  }
+  void set_title(const std::string& title) override { SetWindowTextW(hwnd_, wide(title).c_str()); }
+  Json diagnostics() const override {
+    return {{"backend", "WebView2"}, {"browserVersion", browser_version_}, {"controllerReady", controller_ != nullptr},
+      {"controllerVisible", visible_}};
+  }
+  Json placement() const override {
+    if (!hwnd_) return nullptr;
+    RECT rect = floating_rect_;
+    bool maximized = maximized_;
+    if (!(GetWindowLongPtrW(hwnd_, GWL_STYLE) & WS_CHILD)) {
+      WINDOWPLACEMENT placement{}; placement.length = sizeof(placement);
+      if (!GetWindowPlacement(hwnd_, &placement)) return nullptr;
+      rect = placement.rcNormalPosition;
+      MONITORINFO monitor{sizeof(monitor)};
+      if (GetMonitorInfoW(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST), &monitor))
+        OffsetRect(&rect, monitor.rcWork.left - monitor.rcMonitor.left, monitor.rcWork.top - monitor.rcMonitor.top);
+      maximized = placement.showCmd == SW_SHOWMAXIMIZED ||
+        (placement.showCmd == SW_SHOWMINIMIZED && (placement.flags & WPF_RESTORETOMAXIMIZED));
+    }
+    return {{"x", rect.left}, {"y", rect.top}, {"width", rect.right - rect.left}, {"height", rect.bottom - rect.top}, {"maximized", maximized}};
+  }
+  void restore_placement(const Json& value) override {
+    RECT rect{value.at("x").get<LONG>(), value.at("y").get<LONG>(), 0, 0};
+    const auto width = value.at("width").get<LONG>(), height = value.at("height").get<LONG>();
+    rect.right = rect.left + width; rect.bottom = rect.top + height;
+    MONITORINFO monitor{sizeof(monitor)};
+    GetMonitorInfoW(MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST), &monitor);
+    const auto w = std::min(width, monitor.rcWork.right - monitor.rcWork.left);
+    const auto h = std::min(height, monitor.rcWork.bottom - monitor.rcWork.top);
+    rect.left = std::clamp(rect.left, monitor.rcWork.left, monitor.rcWork.right - w);
+    rect.top = std::clamp(rect.top, monitor.rcWork.top, monitor.rcWork.bottom - h);
+    rect.right = rect.left + w; rect.bottom = rect.top + h;
+    floating_rect_ = rect;
+    maximized_ = value.value("maximized", false);
+    if (IsZoomed(hwnd_) || IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+    SetWindowPos(hwnd_, nullptr, rect.left, rect.top, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    ShowWindow(hwnd_, maximized_ ? SW_SHOWMAXIMIZED : SW_SHOWNOACTIVATE);
+  }
   void* native_handle() const override { return hwnd_; }
   void prepare_dock() override {
-    maximized_ = IsZoomed(hwnd_) != FALSE;
+    const auto saved = placement();
+    maximized_ = saved.value("maximized", false);
     if (maximized_) ShowWindow(hwnd_, SW_RESTORE);
     GetWindowRect(hwnd_, &floating_rect_);
   }
@@ -172,11 +247,10 @@ public:
     SetParent(hwnd_, nullptr);
     SetWindowLongPtrW(hwnd_, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN);
     SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(options_.parent));
-    SetWindowPos(hwnd_, nullptr, floating_rect_.left, floating_rect_.top,
-      floating_rect_.right - floating_rect_.left, floating_rect_.bottom - floating_rect_.top,
-      SWP_NOZORDER | SWP_FRAMECHANGED);
-    ShowWindow(hwnd_, maximized_ ? SW_SHOWMAXIMIZED : SW_SHOW);
+    restore_placement({{"x", floating_rect_.left}, {"y", floating_rect_.top},
+      {"width", floating_rect_.right - floating_rect_.left}, {"height", floating_rect_.bottom - floating_rect_.top}, {"maximized", maximized_}});
     if (controller_) controller_->NotifyParentWindowPositionChanged();
+    focus();
   }
 };
 

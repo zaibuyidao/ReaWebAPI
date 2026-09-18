@@ -9,6 +9,8 @@ struct DockApi {
   std::function<void(void*)> remove;
   std::function<int(void*)> index;
   std::function<void(void*)> activate;
+  std::function<void(const std::string&, int)> remember;
+  std::function<void(void*)> refresh;
 };
 struct WindowOptions {
   fs::path entry;
@@ -17,6 +19,7 @@ struct WindowOptions {
   std::function<void(std::string)> on_message;
   std::function<void(std::string)> on_error;
   void* parent = nullptr;
+  std::function<void()> on_navigation;
 };
 class Window {
 public:
@@ -28,6 +31,14 @@ public:
   virtual void prepare_dock() {}
   virtual void prepare_undock() {}
   virtual void restore_floating() {}
+  virtual void tick() {}
+  virtual void focus() {}
+  virtual void set_title(const std::string&) {}
+  virtual bool visible() const { return !closed(); }
+  virtual bool focused() const { return false; }
+  virtual Json placement() const { return nullptr; }
+  virtual void restore_placement(const Json&) {}
+  virtual Json diagnostics() const { return {{"backend", "unknown"}}; }
 };
 class Platform {
 public:

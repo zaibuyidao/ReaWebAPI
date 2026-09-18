@@ -36,6 +36,10 @@
   isClosed = true;
   options.on_error("WKWebView content process terminated; reopen the tool");
 }
+- (void)webView:(WKWebView*)webView didStartProvisionalNavigation:(WKNavigation*)navigation {
+  (void)webView; (void)navigation;
+  if (!isClosed && options.on_navigation) options.on_navigation();
+}
 - (void)webView:(WKWebView*)webView didFailProvisionalNavigation:(WKNavigation*)navigation withError:(NSError*)error {
   (void)webView; (void)navigation;
   if (error.code != NSURLErrorCancelled) {
@@ -52,6 +56,8 @@ class MacWindow final : public Window {
   std::unique_ptr<SwellWindow> window_;
   WKWebView* webview_;
   ReaWebDelegate* delegate_;
+  mutable Json normal_;
+  bool maximized_ = false;
 public:
   MacWindow(WindowOptions options, WKWebsiteDataStore* data, WKProcessPool* pool) {
     delegate_ = [ReaWebDelegate new];
@@ -94,8 +100,37 @@ public:
   }
   bool closed() const override { return delegate_->isClosed || window_->closed(); }
   void* native_handle() const override { return window_->handle(); }
-  void prepare_dock() override { window_->prepare_dock(); }
-  void restore_floating() override { window_->restore_floating(); }
+  void prepare_dock() override {
+    maximized_ = webview_.window.zoomed;
+    if (maximized_) [webview_.window zoom:nil];
+    window_->prepare_dock();
+  }
+  void restore_floating() override {
+    window_->restore_floating();
+    if (maximized_ && !webview_.window.zoomed) [webview_.window zoom:nil];
+  }
+  void focus() override { window_->focus(); [webview_.window makeFirstResponder:webview_]; }
+  void set_title(const std::string& title) override { window_->set_title(title); }
+  bool visible() const override { return window_->visible() && !webview_.hiddenOrHasHiddenAncestor && !webview_.window.miniaturized; }
+  bool focused() const override {
+    auto responder = webview_.window.firstResponder;
+    return webview_.window.keyWindow && [responder isKindOfClass:[NSView class]] &&
+      [(NSView*)responder isDescendantOf:webview_];
+  }
+  Json placement() const override {
+    if (!webview_.window.zoomed) normal_ = window_->placement();
+    auto value = webview_.window.zoomed && !normal_.is_null() ? normal_ : window_->placement();
+    if (!value.is_null()) value["maximized"] = webview_.window.zoomed != NO;
+    return value;
+  }
+  void restore_placement(const Json& value) override {
+    normal_ = value;
+    window_->restore_placement(value);
+    if (value.value("maximized", false) && !webview_.window.zoomed) [webview_.window zoom:nil];
+  }
+  Json diagnostics() const override {
+    return {{"backend", "WKWebView"}, {"browserVersion", [[[NSBundle bundleForClass:[WKWebView class]] objectForInfoDictionaryKey:@"CFBundleVersion"] UTF8String] ?: "system"}};
+  }
 };
 class MacPlatform final : public Platform {
   WKWebsiteDataStore* data_;

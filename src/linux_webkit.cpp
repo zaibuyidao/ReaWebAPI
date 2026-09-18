@@ -78,6 +78,13 @@ public:
         static_cast<Page*>(data)->fail(error->message);
       return FALSE;
     }), this);
+    g_signal_connect(view_, "load-changed", G_CALLBACK(+[](WebKitWebView*, WebKitLoadEvent event, gpointer data) {
+      if (event == WEBKIT_LOAD_STARTED) {
+        auto self = static_cast<Page*>(data);
+        try { self->channel_.send({{"id", self->id_}, {"op", "navigating"}}); }
+        catch (const std::exception& error) { self->fail(error.what()); }
+      }
+    }), this);
     plug_ = gtk_plug_new(0);
     g_object_ref_sink(plug_);
     // GtkPlug emits delete-event when parked on the X11 root. The native host owns closing.
@@ -143,7 +150,8 @@ struct Process {
     auto manager = webkit_website_data_manager_new("base-data-directory", data, "base-cache-directory", cache.c_str(), nullptr);
     context = webkit_web_context_new_with_website_data_manager(manager);
     g_object_unref(manager);
-    channel.send({{"op", "ready"}});
+    channel.send({{"op", "ready"}, {"protocol", 1}, {"version", REAWEB_VERSION}, {"browserVersion",
+      std::to_string(webkit_get_major_version()) + "." + std::to_string(webkit_get_minor_version()) + "." + std::to_string(webkit_get_micro_version())}});
   }
   ~Process() { pages.clear(); g_object_unref(context); }
   void pump() {
