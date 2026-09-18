@@ -35,6 +35,8 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   ComPtr<ICoreWebView2Controller> controller_;
   ComPtr<ICoreWebView2> webview_;
   bool closed_ = false, want_devtools_ = false;
+  RECT floating_rect_{};
+  bool maximized_ = false;
 public:
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto self = reinterpret_cast<WinWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -46,10 +48,12 @@ public:
     if (self) {
       if (msg == WM_SIZE && self->controller_) {
         RECT rect{}; GetClientRect(hwnd, &rect); self->controller_->put_Bounds(rect);
+      } else if (msg == WM_MOVE && self->controller_) {
+        self->controller_->NotifyParentWindowPositionChanged();
       } else if (msg == WM_SETFOCUS && self->controller_) {
         self->controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
       } else if (msg == WM_CLOSE) {
-        DestroyWindow(hwnd); return 0;
+        self->closed_ = true; return 0;
       } else if (msg == WM_NCDESTROY) {
         self->closed_ = true; self->hwnd_ = nullptr;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -58,9 +62,11 @@ public:
     return DefWindowProcW(hwnd, msg, wp, lp);
   }
   WinWindow(WindowOptions options, HINSTANCE instance) : options_(std::move(options)), uri_(file_uri(options_.entry)) {
-    hwnd_ = CreateWindowExW(0, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, CW_USEDEFAULT, 860, 640, nullptr, nullptr, instance, this);
+    hwnd_ = CreateWindowExW(0, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+      CW_USEDEFAULT, CW_USEDEFAULT, 860, 640, static_cast<HWND>(options_.parent), nullptr, instance, this);
     if (!hwnd_) throw std::runtime_error("CreateWindowEx failed");
+    // A REAPER-owned floating window stays above its owner when focus returns to REAPER.
+    SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(options_.parent));
     ShowWindow(hwnd_, SW_SHOW);
   }
   ~WinWindow() override {
@@ -156,6 +162,22 @@ public:
     if (webview_) webview_->OpenDevToolsWindow();
   }
   bool closed() const override { return closed_; }
+  void* native_handle() const override { return hwnd_; }
+  void prepare_dock() override {
+    maximized_ = IsZoomed(hwnd_) != FALSE;
+    if (maximized_) ShowWindow(hwnd_, SW_RESTORE);
+    GetWindowRect(hwnd_, &floating_rect_);
+  }
+  void restore_floating() override {
+    SetParent(hwnd_, nullptr);
+    SetWindowLongPtrW(hwnd_, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN);
+    SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(options_.parent));
+    SetWindowPos(hwnd_, nullptr, floating_rect_.left, floating_rect_.top,
+      floating_rect_.right - floating_rect_.left, floating_rect_.bottom - floating_rect_.top,
+      SWP_NOZORDER | SWP_FRAMECHANGED);
+    ShowWindow(hwnd_, maximized_ ? SW_SHOWMAXIMIZED : SW_SHOW);
+    if (controller_) controller_->NotifyParentWindowPositionChanged();
+  }
 };
 
 struct EnvironmentState {

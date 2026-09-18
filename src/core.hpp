@@ -42,6 +42,8 @@ public:
     std::function<int(const std::string&)> open;
     std::function<void()> close;
     std::function<void()> devtools;
+    std::function<bool(bool)> set_docked;
+    std::function<bool()> is_docked;
   };
   Bridge(Host& host, Controls controls, std::string session);
   Json dispatch(const std::string& message);

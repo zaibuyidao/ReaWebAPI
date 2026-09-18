@@ -6,12 +6,14 @@
 namespace reaweb {
 class Runtime {
 public:
-  Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log);
+  Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock = {});
   ~Runtime();
   int open(const std::string& path, const fs::path& base = {});
   bool is_open(int id) const;
   bool close(int id);
   bool devtools(int id);
+  bool set_docked(int id, bool docked);
+  bool is_docked(int id) const;
   void tick();
 private:
   struct Session {
@@ -22,6 +24,7 @@ private:
     bool closing = false;
   };
   Host host_;
+  DockApi dock_;
   fs::path resource_;
   std::function<void(const std::string&)> log_;
   std::unique_ptr<Platform> platform_;
@@ -30,5 +33,6 @@ private:
   bool ticking_ = false;
   std::thread::id main_thread_;
   void check_thread() const;
+  void detach(const Session& session);
 };
 }

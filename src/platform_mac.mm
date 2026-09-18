@@ -1,9 +1,10 @@
 #include "platform.hpp"
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#include "swell_window.hpp"
 #include <fstream>
 
-@interface ReaWebDelegate : NSObject <WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate> {
+@interface ReaWebDelegate : NSObject <WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate> {
 @public
   reaweb::WindowOptions options;
   std::string entryURI;
@@ -42,14 +43,13 @@
     options.on_error(error.localizedDescription.UTF8String ?: "WKWebView navigation failed");
   }
 }
-- (void)windowWillClose:(NSNotification*)notification { (void)notification; isClosed = true; }
 @end
 
 namespace reaweb {
 namespace {
 NSString* ns(const std::string& text) { return [[NSString alloc] initWithBytes:text.data() length:text.size() encoding:NSUTF8StringEncoding]; }
 class MacWindow final : public Window {
-  NSWindow* window_;
+  std::unique_ptr<SwellWindow> window_;
   WKWebView* webview_;
   ReaWebDelegate* delegate_;
 public:
@@ -70,15 +70,10 @@ public:
     webview_.UIDelegate = delegate_;
     webview_.inspectable = YES;
     webview_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    window_ = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 860, 640)
-      styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
-      backing:NSBackingStoreBuffered defer:NO];
-    window_.releasedWhenClosed = NO;
-    window_.delegate = delegate_;
-    window_.title = ns(delegate_->options.title);
-    window_.contentView = webview_;
-    [window_ center];
-    [window_ makeKeyAndOrderFront:nil];
+    window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent);
+    auto content = (__bridge NSView*)GetDlgItem(static_cast<HWND>(window_->handle()), 0);
+    webview_.frame = content.bounds;
+    [content addSubview:webview_];
     auto url = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
     [webview_ loadFileURL:url allowingReadAccessToURL:[url URLByDeletingLastPathComponent]];
   }
@@ -88,8 +83,8 @@ public:
     webview_.navigationDelegate = nil;
     webview_.UIDelegate = nil;
     [webview_.configuration.userContentController removeScriptMessageHandlerForName:@"reaweb"];
-    window_.delegate = nil;
-    [window_ close];
+    [webview_ removeFromSuperview];
+    window_.reset();
   }
   void evaluate(const std::string& script) override {
     if (!closed()) [webview_ evaluateJavaScript:ns(script) completionHandler:nil];
@@ -97,7 +92,10 @@ public:
   void devtools() override {
     throw Error("INSPECTOR_MENU", "macOS: enable Safari Settings > Advanced > Show features for web developers, then choose Develop > this Mac > REAPER > the tool page.");
   }
-  bool closed() const override { return delegate_->isClosed; }
+  bool closed() const override { return delegate_->isClosed || window_->closed(); }
+  void* native_handle() const override { return window_->handle(); }
+  void prepare_dock() override { window_->prepare_dock(); }
+  void restore_floating() override { window_->restore_floating(); }
 };
 class MacPlatform final : public Platform {
   WKWebsiteDataStore* data_;

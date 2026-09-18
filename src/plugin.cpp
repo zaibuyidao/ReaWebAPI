@@ -29,6 +29,8 @@ int ReaWebOpen(const char* path) {
 bool ReaWeb_Close(int id) { return guarded([&] { return runtime->close(id); }, false); }
 bool ReaWeb_IsOpen(int id) { return guarded([&] { return runtime->is_open(id); }, false); }
 bool ReaWeb_DevTools(int id) { return guarded([&] { return runtime->devtools(id); }, false); }
+bool ReaWeb_SetDocked(int id, bool docked) { return guarded([&] { return runtime->set_docked(id, docked); }, false); }
+bool ReaWeb_IsDocked(int id) { return guarded([&] { return runtime->is_docked(id); }, false); }
 const char* ReaWeb_GetLastError() { return last_error.c_str(); }
 void* open_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWebOpen(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
@@ -38,6 +40,11 @@ template<bool (*Fn)(int)> void* id_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(Fn(id)));
 }
 void* error_vararg(void**, int) { return const_cast<char*>(ReaWeb_GetLastError()); }
+void* dock_vararg(void** args, int count) {
+  if (count < 2) return nullptr;
+  return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_SetDocked(
+    static_cast<int>(reinterpret_cast<intptr_t>(args[0])), args[1] != nullptr)));
+}
 void timer() {
   try { runtime->tick(); }
   catch (const std::exception& e) { log_error(e.what()); }
@@ -115,7 +122,16 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       return ok;
     };
     host.version = [version] { return std::string(version()); };
-    runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error);
+    auto add_dock = load<void (*)(HWND, const char*, const char*, bool)>(rec, "DockWindowAddEx");
+    auto remove_dock = load<void (*)(HWND)>(rec, "DockWindowRemove");
+    auto dock_index = load<int (*)(HWND, bool*)>(rec, "DockIsChildOfDock");
+    auto activate_dock = load<void (*)(HWND)>(rec, "DockWindowActivate");
+    DockApi dock{rec->hwnd_main,
+      [add_dock](void* h, const std::string& title, const std::string& ident) { add_dock(static_cast<HWND>(h), title.c_str(), ident.c_str(), true); },
+      [remove_dock](void* h) { remove_dock(static_cast<HWND>(h)); },
+      [dock_index](void* h) { bool floating = false; return dock_index(static_cast<HWND>(h), &floating); },
+      [activate_dock](void* h) { activate_dock(static_cast<HWND>(h)); }};
+    runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
     add_api("ReaWebOpen", reinterpret_cast<void*>(ReaWebOpen), reinterpret_cast<void*>(open_vararg),
       "int\0const char*\0path\0Open local HTML. Relative paths resolve under resource/Scripts. Returns a window id, or 0 on failure.\0");
     add_api("ReaWeb_Close", reinterpret_cast<void*>(ReaWeb_Close), reinterpret_cast<void*>(id_vararg<ReaWeb_Close>),
@@ -123,9 +139,13 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     add_api("ReaWeb_IsOpen", reinterpret_cast<void*>(ReaWeb_IsOpen), reinterpret_cast<void*>(id_vararg<ReaWeb_IsOpen>),
       "bool\0int\0windowId\0Return whether the window is open or initializing.\0");
     add_api("ReaWeb_DevTools", reinterpret_cast<void*>(ReaWeb_DevTools), reinterpret_cast<void*>(id_vararg<ReaWeb_DevTools>),
-      "bool\0int\0windowId\0Open Developer Tools (macOS: use the Inspect Element context menu).\0");
+      "bool\0int\0windowId\0Open Developer Tools (macOS: use Safari's Develop menu).\0");
     add_api("ReaWeb_GetLastError", reinterpret_cast<void*>(ReaWeb_GetLastError), reinterpret_cast<void*>(error_vararg),
       "const char*\0\0\0Return the last runtime error. Async initialization errors are also printed to the REAPER console.\0");
+    add_api("ReaWeb_SetDocked", reinterpret_cast<void*>(ReaWeb_SetDocked), reinterpret_cast<void*>(dock_vararg),
+      "bool\0int,bool\0windowId,docked\0Dock or float the window. Returns the resulting docked state.\0");
+    add_api("ReaWeb_IsDocked", reinterpret_cast<void*>(ReaWeb_IsDocked), reinterpret_cast<void*>(id_vararg<ReaWeb_IsDocked>),
+      "bool\0int\0windowId\0Return whether the window belongs to a REAPER Docker.\0");
     add_registration("timer", reinterpret_cast<void*>(timer));
     return 1;
   } catch (const std::exception& e) { log_error(e.what()); unload(); return 0; }

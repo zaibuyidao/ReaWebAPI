@@ -1,5 +1,5 @@
 'use strict';
-const ui = Object.fromEntries(['status', 'track-count', 'track-name', 'read-track', 'devtools', 'activity', 'error', 'version'].map(id => [id, document.getElementById(id)]));
+const ui = Object.fromEntries(['status', 'track-count', 'track-name', 'read-track', 'devtools', 'dock', 'activity', 'error', 'version'].map(id => [id, document.getElementById(id)]));
 const events = [];
 function log(message) {
   const time = new Date().toLocaleTimeString([], { hour12: false });
@@ -36,6 +36,32 @@ ui.devtools.addEventListener('click', () => run(async () => {
   await reaper.ReaWeb_DevTools();
   log('Developer Tools opened. Check the Console tab.');
 }));
+function showDockState(docked) {
+  ui.dock.textContent = docked ? 'Undock' : 'Dock';
+  ui.dock.setAttribute('aria-pressed', String(docked));
+}
+let dockBusy = false;
+ui.dock.addEventListener('click', async () => {
+  if (dockBusy) return;
+  dockBusy = true;
+  ui.dock.disabled = true;
+  ui.error.hidden = true;
+  try {
+    const docked = await reaper.ReaWeb_SetDocked(!(await reaper.ReaWeb_IsDocked()));
+    showDockState(docked);
+    log(docked ? 'Window docked in REAPER.' : 'Window undocked.');
+  } catch (error) { report(error); }
+  finally { dockBusy = false; ui.dock.disabled = false; }
+});
+// REAPER can also move a Docker tab through its own menus.
+const dockTimer = setInterval(async () => {
+  if (!window.reaper || document.hidden || dockBusy || ui.dock.disabled) return;
+  dockBusy = true;
+  try { showDockState(await reaper.ReaWeb_IsDocked()); }
+  catch (error) { report(error); clearInterval(dockTimer); }
+  finally { dockBusy = false; }
+}, 1000);
+window.addEventListener('pagehide', () => clearInterval(dockTimer));
 run(async () => {
   if (!window.reaper) {
     ui.status.textContent = 'Outside REAPER';
@@ -49,6 +75,8 @@ run(async () => {
   ui.status.classList.add('connected');
   ui['track-count'].textContent = `${count} ${count === 1 ? 'track' : 'tracks'} in project`;
   ui.version.textContent = `REAPER ${version} / ReaWebAPI ${capabilities.version}`;
+  showDockState(await reaper.ReaWeb_IsDocked());
+  ui.dock.disabled = false;
   log(`Connected · ${capabilities.methods.length} APIs available`);
   log('Select a track, then press the button.');
 });

@@ -1,103 +1,197 @@
-#include "platform.hpp"
-#include <gtk/gtk.h>
-#include <webkit2/webkit2.h>
+#include "swell_window.hpp"
+#include "linux_channel.hpp"
+#include <chrono>
+#include <cstring>
+#include <dlfcn.h>
+#include <signal.h>
+#include <spawn.h>
+#include <set>
+#include <sys/wait.h>
+#include <thread>
+#include <vector>
 
+extern char** environ;
 namespace reaweb {
 namespace {
-class WebKitWindow final : public Window {
-  WindowOptions options_;
-  std::string uri_;
-  GtkWidget* window_ = nullptr;
-  WebKitWebView* webview_ = nullptr;
-  WebKitUserContentManager* manager_ = nullptr;
-  bool closed_ = false;
+fs::path helper_path() {
+  Dl_info module{};
+  if (!dladdr(reinterpret_cast<void*>(&helper_path), &module) || !module.dli_fname)
+    throw std::runtime_error("Cannot locate the ReaWebAPI extension directory");
+  auto path = fs::path(module.dli_fname).parent_path() / REAWEB_HELPER_NAME;
+  if (!fs::is_regular_file(path)) throw std::runtime_error("Missing WebKit helper beside the extension: " + path.string());
+  // ReaPack and HTTP downloads may not retain the executable bit.
+  if (access(path.c_str(), X_OK) != 0)
+    fs::permissions(path, fs::perms::owner_exec, fs::perm_options::add);
+  return path;
+}
+class LinuxProcess {
+  pid_t pid_ = -1;
+  std::unique_ptr<LinuxChannel> channel_;
+  std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
+  bool ready_ = false;
+  std::set<int> parked_;
 public:
-  WebKitWindow(WindowOptions options, WebKitWebContext* context) : options_(std::move(options)), uri_(file_uri(options_.entry)) {
-    manager_ = webkit_user_content_manager_new();
-    g_signal_connect(manager_, "script-message-received::reaweb", G_CALLBACK(+[](WebKitUserContentManager*, WebKitJavascriptResult* result, gpointer data) {
-      auto self = static_cast<WebKitWindow*>(data);
-      if (self->closed_) return;
-      const char* uri = webkit_web_view_get_uri(self->webview_);
-      if (!uri || !same_document(uri, self->uri_)) return;
-      auto value = webkit_javascript_result_get_js_value(result);
-      if (!jsc_value_is_string(value)) return;
-      auto message = jsc_value_to_string(value);
-      self->options_.on_message(message);
-      g_free(message);
-    }), this);
-    if (!webkit_user_content_manager_register_script_message_handler(manager_, "reaweb")) {
-      g_object_unref(manager_); throw std::runtime_error("Could not register WebKitGTK bridge");
-    }
-    auto script = webkit_user_script_new(options_.script.c_str(), WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
-      WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, nullptr, nullptr);
-    webkit_user_content_manager_add_script(manager_, script);
-    webkit_user_script_unref(script);
-    webview_ = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", context, "user-content-manager", manager_, nullptr));
-    g_object_ref_sink(webview_);
-    auto settings = webkit_web_view_get_settings(webview_);
-    webkit_settings_set_enable_developer_extras(settings, TRUE);
-    webkit_settings_set_allow_file_access_from_file_urls(settings, TRUE);
-    webkit_settings_set_allow_universal_access_from_file_urls(settings, FALSE);
-    g_signal_connect(webview_, "decide-policy", G_CALLBACK(+[](WebKitWebView*, WebKitPolicyDecision* decision, WebKitPolicyDecisionType type, gpointer data) -> gboolean {
-      auto self = static_cast<WebKitWindow*>(data);
-      if (type == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) { webkit_policy_decision_ignore(decision); return TRUE; }
-      if (type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
-        auto action = webkit_navigation_policy_decision_get_navigation_action(WEBKIT_NAVIGATION_POLICY_DECISION(decision));
-        auto uri = webkit_uri_request_get_uri(webkit_navigation_action_get_request(action));
-        if (!uri || !same_document(uri, self->uri_)) { webkit_policy_decision_ignore(decision); return TRUE; }
+  std::string error;
+  std::map<int, WindowOptions> listeners;
+  explicit LinuxProcess(const fs::path& data) {
+    if (!getenv("DISPLAY")) throw std::runtime_error("ReaWebAPI requires an X11 or XWayland display on Linux");
+    auto executable = helper_path().string();
+    auto profile = data.string();
+    int sockets[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) != 0) throw std::runtime_error("Cannot create WebKit socketpair");
+    try { channel_ = std::make_unique<LinuxChannel>(sockets[0]); }
+    catch (...) { ::close(sockets[1]); throw; }
+    // Keep the source above fd 3 so dup2 clears its close-on-exec flag.
+    int source = fcntl(sockets[1], F_DUPFD_CLOEXEC, 10);
+    ::close(sockets[1]);
+    if (source < 0) throw std::runtime_error("Cannot duplicate WebKit socket");
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_adddup2(&actions, source, 3);
+    posix_spawn_file_actions_addclose(&actions, source);
+    std::vector<std::string> environment;
+    for (char** item = environ; *item; ++item) if (strncmp(*item, "GDK_BACKEND=", 12)) environment.emplace_back(*item);
+    environment.emplace_back("GDK_BACKEND=x11");
+    std::vector<char*> env;
+    for (auto& item : environment) env.push_back(item.data());
+    env.push_back(nullptr);
+    char* argv[] = {executable.data(), profile.data(), nullptr};
+    const int result = posix_spawn(&pid_, executable.c_str(), &actions, nullptr, argv, env.data());
+    posix_spawn_file_actions_destroy(&actions);
+    ::close(source);
+    if (result) throw std::runtime_error("Cannot start WebKit process: " + std::string(strerror(result)));
+  }
+  ~LinuxProcess() {
+    channel_.reset();
+    if (pid_ > 0) {
+      for (int n = 0; n < 25; ++n) {
+        const auto result = waitpid(pid_, nullptr, WNOHANG);
+        if (result == pid_ || (result < 0 && errno == ECHILD)) { pid_ = -1; break; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
-      return FALSE;
-    }), this);
-    g_signal_connect(webview_, "permission-request", G_CALLBACK(+[](WebKitWebView*, WebKitPermissionRequest* request, gpointer) -> gboolean {
-      webkit_permission_request_deny(request); return TRUE;
-    }), this);
-    g_signal_connect(webview_, "web-process-terminated", G_CALLBACK(+[](WebKitWebView*, WebKitWebProcessTerminationReason, gpointer data) {
-      auto self = static_cast<WebKitWindow*>(data); self->closed_ = true;
-      self->options_.on_error("WebKitGTK content process terminated; reopen the tool");
-    }), this);
-    window_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    g_object_ref_sink(window_);
-    gtk_window_set_title(GTK_WINDOW(window_), options_.title.c_str());
-    gtk_window_set_default_size(GTK_WINDOW(window_), 860, 640);
-    gtk_container_add(GTK_CONTAINER(window_), GTK_WIDGET(webview_));
-    g_signal_connect(window_, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { static_cast<WebKitWindow*>(data)->closed_ = true; }), this);
-    gtk_widget_show_all(window_);
-    webkit_web_view_load_uri(webview_, uri_.c_str());
+      if (pid_ > 0) { kill(pid_, SIGKILL); while (waitpid(pid_, nullptr, 0) < 0 && errno == EINTR) {} }
+    }
   }
-  ~WebKitWindow() override {
-    closed_ = true;
-    webkit_user_content_manager_unregister_script_message_handler(manager_, "reaweb");
-    g_signal_handlers_disconnect_by_data(manager_, this);
-    g_signal_handlers_disconnect_by_data(webview_, this);
-    g_signal_handlers_disconnect_by_data(window_, this);
-    webkit_web_view_stop_loading(webview_);
-    webkit_web_inspector_close(webkit_web_view_get_inspector(webview_));
-    gtk_widget_destroy(window_);
-    g_object_unref(webview_); g_object_unref(manager_); g_object_unref(window_);
+  void send(const Json& message) {
+    if (!error.empty()) throw std::runtime_error(error);
+    channel_->send(message);
   }
-  void evaluate(const std::string& script) override {
-    if (!closed_) webkit_web_view_evaluate_javascript(webview_, script.c_str(), static_cast<gssize>(script.size()), nullptr, nullptr, nullptr, nullptr, nullptr);
+  void pump() {
+    if (!error.empty()) return;
+    try {
+      channel_->pump([this](const Json& message) {
+        const auto op = message.at("op").get<std::string>();
+        if (op == "ready") { ready_ = true; return; }
+        if (op == "parked") { parked_.insert(message.at("id").get<int>()); return; }
+        auto it = listeners.find(message.at("id").get<int>());
+        if (it == listeners.end()) return;
+        if (op == "message") it->second.on_message(message.at("message").get<std::string>());
+        else if (op == "error") it->second.on_error(message.at("error").get<std::string>());
+      });
+      if (!ready_ && std::chrono::steady_clock::now() - started_ > std::chrono::seconds(15))
+        throw std::runtime_error("WebKit process did not start within 15 seconds");
+    } catch (const std::exception& failure) {
+      error = std::string(failure.what()) + ". Check WebKitGTK 4.1 and the X11 display, then reopen the tool.";
+      for (const auto& item : listeners) item.second.on_error(error);
+    }
   }
-  void devtools() override { webkit_web_inspector_show(webkit_web_view_get_inspector(webview_)); }
-  bool closed() const override { return closed_; }
+  void park(int id) {
+    parked_.erase(id);
+    send({{"id", id}, {"op", "park"}});
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+    while (error.empty() && !parked_.count(id) && std::chrono::steady_clock::now() < deadline) {
+      pump();
+      if (!parked_.count(id)) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    if (!parked_.erase(id)) throw Error("DOCK_BUSY", "WebKit is busy. Retry docking when the page is ready.");
+  }
 };
-class GtkPlatform final : public Platform {
-  WebKitWebContext* context_ = nullptr;
+class LinuxWindow final : public Window {
+  std::shared_ptr<LinuxProcess> process_;
+  int id_;
+  std::unique_ptr<SwellWindow> window_;
+  Json geometry_;
+  std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
 public:
-  explicit GtkPlatform(const fs::path& data) {
-    if (!gtk_init_check(nullptr, nullptr)) throw std::runtime_error("GTK initialization failed; a graphical desktop is required");
-    const auto cache = (data / "Cache").string();
-    auto manager = webkit_website_data_manager_new("base-data-directory", data.c_str(), "base-cache-directory", cache.c_str(), nullptr);
-    context_ = webkit_web_context_new_with_website_data_manager(manager);
-    g_object_unref(manager);
+  LinuxWindow(std::shared_ptr<LinuxProcess> process, int id, WindowOptions options) : process_(std::move(process)), id_(id) {
+    window_ = std::make_unique<SwellWindow>(options.title, options.parent, [this] {
+      try { process_->send({{"id", id_}, {"op", "focus"}}); } catch (...) {}
+    });
+    process_->send({{"id", id_}, {"op", "open"}, {"uri", file_uri(options.entry)}, {"script", options.script}});
+    process_->listeners.emplace(id_, std::move(options));
   }
-  ~GtkPlatform() override { g_object_unref(context_); }
-  std::shared_ptr<Window> open(WindowOptions options) override { return std::make_shared<WebKitWindow>(std::move(options), context_); }
+  ~LinuxWindow() override {
+    process_->listeners.erase(id_);
+    try { process_->send({{"id", id_}, {"op", "close"}}); } catch (...) {}
+  }
+  void sync() {
+    if (closed()) return;
+    using GetXid = unsigned long (*)(void*);
+    static auto get_xid = reinterpret_cast<GetXid>(dlsym(RTLD_DEFAULT, "gdk_x11_window_get_xid"));
+    if (!get_xid) get_xid = reinterpret_cast<GetXid>(dlsym(RTLD_DEFAULT, "gdk_x11_drawable_get_xid"));
+    auto handle = static_cast<HWND>(window_->handle());
+    HWND ancestor = handle;
+    void* native = nullptr;
+    while (ancestor) {
+      native = SWELL_GetOSWindow(ancestor, "GdkWindow");
+      if (native) break;
+      ancestor = GetParent(ancestor);
+    }
+    if (!get_xid || !native) {
+      if (std::chrono::steady_clock::now() - started_ > std::chrono::seconds(5))
+        process_->listeners.at(id_).on_error("REAPER did not expose an X11 window for WebKit embedding");
+      return;
+    }
+    RECT rect{};
+    GetClientRect(handle, &rect);
+    POINT origin{0, 0};
+    ClientToScreen(handle, &origin);
+    ScreenToClient(ancestor, &origin);
+    Json next = {{"id", id_}, {"op", "geometry"}, {"parent", get_xid(native)}, {"x", origin.x}, {"y", origin.y},
+      {"width", rect.right - rect.left}, {"height", rect.bottom - rect.top}, {"visible", IsWindowVisible(handle) != 0}};
+    if (geometry_ != next) { process_->send(next); geometry_ = std::move(next); }
+  }
+  void evaluate(const std::string& script) override { process_->send({{"id", id_}, {"op", "eval"}, {"script", script}}); }
+  void devtools() override { process_->send({{"id", id_}, {"op", "devtools"}}); }
+  bool closed() const override { return window_->closed() || !process_->error.empty(); }
+  void* native_handle() const override { return window_->handle(); }
+  void prepare_dock() override { window_->prepare_dock(); prepare_undock(); }
+  void prepare_undock() override {
+    if (!geometry_.is_null()) {
+      // Invalidate even on timeout so the next pump can reattach a late acknowledgement.
+      geometry_ = Json();
+      process_->park(id_);
+    }
+  }
+  void restore_floating() override { window_->restore_floating(); }
+};
+class LinuxPlatform final : public Platform {
+  fs::path data_;
+  std::shared_ptr<LinuxProcess> process_;
+  std::vector<std::weak_ptr<LinuxWindow>> windows_;
+  int next_id_ = 0;
+public:
+  explicit LinuxPlatform(fs::path data) : data_(std::move(data)) {}
+  std::shared_ptr<Window> open(WindowOptions options) override {
+    if (!process_ || (!process_->error.empty() && process_->listeners.empty())) process_ = std::make_shared<LinuxProcess>(data_);
+    auto window = std::make_shared<LinuxWindow>(process_, ++next_id_, std::move(options));
+    windows_.push_back(window);
+    return window;
+  }
   void pump() override {
-    // REAPER owns the event loop. Never run gtk_main() inside the host.
-    for (int n = 0; n < 32 && g_main_context_pending(nullptr); ++n) g_main_context_iteration(nullptr, FALSE);
+    if (!process_) return;
+    process_->pump();
+    for (auto it = windows_.begin(); it != windows_.end();) {
+      if (auto window = it->lock()) {
+        try { window->sync(); } catch (const std::exception& error) {
+          process_->error = error.what();
+          for (const auto& item : process_->listeners) item.second.on_error(process_->error);
+        }
+        ++it;
+      } else it = windows_.erase(it);
+    }
   }
 };
 }
-std::unique_ptr<Platform> make_platform(const fs::path& data) { return std::make_unique<GtkPlatform>(data); }
+std::unique_ptr<Platform> make_platform(const fs::path& data) { return std::make_unique<LinuxPlatform>(data); }
 }

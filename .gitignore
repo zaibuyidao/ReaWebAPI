@@ -4,6 +4,7 @@
 !/.gitignore
 !/CMakeLists.txt
 !/README.md
+!/README.zh-CN.md
 !/THIRD_PARTY.md
 !/src/
 !/runtime/
@@ -18,6 +19,7 @@
 !/tools/
 /tools/*
 !/tools/package.py
+!/tools/release.py
 
 # Generated files inside the allowed source directories.
 CMakeFiles/

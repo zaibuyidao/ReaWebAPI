@@ -19,6 +19,9 @@ interface ReaWebAPI {
   ReaWebOpen(path: string): Promise<number>;
   ReaWeb_Close(): Promise<boolean>;
   ReaWeb_DevTools(): Promise<boolean>;
+  /** Move this window into or out of REAPER's Docker. Returns the resulting docked state. */
+  ReaWeb_SetDocked(docked: boolean): Promise<boolean>;
+  ReaWeb_IsDocked(): Promise<boolean>;
   ReaWeb_GetCapabilities(): Promise<ReaWebCapabilities>;
 }
 declare const reaper: Readonly<ReaWebAPI>;

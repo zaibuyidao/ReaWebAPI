@@ -1,5 +1,5 @@
 -- @description ReaWebAPI: Example
--- @version 0.1.0
+-- @version 0.1.1
 -- @about Opens the bundled JavaScript REAPER API demo.
 
 if not reaper.APIExists("ReaWebOpen") then

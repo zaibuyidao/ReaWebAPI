@@ -42,7 +42,7 @@
   const methods = [
     'CountTracks', 'CountSelectedTracks', 'GetTrack', 'GetSelectedTrack', 'GetTrackName',
     'GetMediaTrackInfo_Value', 'SetMediaTrackInfo_Value', 'GetAppVersion', 'ReaWebOpen',
-    'ReaWeb_Close', 'ReaWeb_DevTools', 'ReaWeb_GetCapabilities'
+    'ReaWeb_Close', 'ReaWeb_DevTools', 'ReaWeb_SetDocked', 'ReaWeb_IsDocked', 'ReaWeb_GetCapabilities'
   ];
   const api = Object.create(null);
   for (const name of methods) api[name] = (...args) => call(name, args);

@@ -87,10 +87,15 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
   add("ReaWebOpen", 1, 1, [this](const Json& a) { return controls_.open(string_arg(a[0])); });
   add("ReaWeb_Close", 0, 0, [this](const Json&) { controls_.close(); return true; });
   add("ReaWeb_DevTools", 0, 0, [this](const Json&) { controls_.devtools(); return true; });
+  add("ReaWeb_SetDocked", 1, 1, [this](const Json& a) {
+    if (!a[0].is_boolean()) throw Error("INVALID_ARGUMENT", "docked must be a boolean");
+    return controls_.set_docked(a[0].get<bool>());
+  });
+  add("ReaWeb_IsDocked", 0, 0, [this](const Json&) { return controls_.is_docked(); });
   add("ReaWeb_GetCapabilities", 0, 0, [this](const Json&) {
     Json names = Json::array();
     for (const auto& entry : methods_) names.push_back(entry.first);
-    return Json{{"version", "0.1.0"}, {"methods", names}, {"projectScope", "current"}};
+    return Json{{"version", REAWEB_VERSION}, {"methods", names}, {"projectScope", "current"}};
   });
 }
 

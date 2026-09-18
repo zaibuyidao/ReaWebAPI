@@ -11,8 +11,8 @@
 <body>
   <main>
     <header>
-      <div class="brand"><span class="mark" aria-hidden="true">R<span>↗</span></span><div>ReaWebAPI<small>RUNTIME EXAMPLE / 001</small></div></div>
-      <span class="status" id="status">Connecting</span>
+      <div class="brand"><span class="mark" aria-hidden="true">R</span><div>ReaWebAPI<small>RUNTIME EXAMPLE / 001</small></div></div>
+      <div class="toolbar"><span class="status" id="status">Connecting</span><button id="dock" class="dock-button" type="button" aria-pressed="false" disabled>Dock</button></div>
     </header>
     <section class="intro">
       <span class="eyebrow">REAPER MEETS JAVASCRIPT</span>
@@ -22,17 +22,17 @@
     <section class="track-panel" aria-labelledby="track-label">
       <div class="panel-top"><span class="eyebrow" id="track-label">SELECTED TRACK</span><span id="track-count">— tracks in project</span></div>
       <div class="track-name" id="track-name" aria-live="polite">Ready when you are.</div>
-      <div class="panel-bottom"><button id="read-track" type="button">Get selected track name <span aria-hidden="true">↗</span></button><span class="hint">Read directly from REAPER</span></div>
+      <div class="panel-bottom"><button id="read-track" type="button">Get selected track name</button><span class="hint">Read directly from REAPER</span></div>
     </section>
     <div class="lower-grid">
       <section class="code-panel" aria-label="JavaScript example"><span class="eyebrow">TWO CALLS. ONE NATIVE BRIDGE.</span><pre><code><span class="keyword">const</span> track = <span class="keyword">await</span>
   reaper.<span class="function">GetSelectedTrack</span>(0, 0);
 <span class="keyword">const</span> name = <span class="keyword">await</span>
   reaper.<span class="function">GetTrackName</span>(track);</code></pre></section>
-      <section class="event-panel" aria-labelledby="event-label"><div class="event-head"><span class="eyebrow" id="event-label">ACTIVITY</span><button class="text-button" id="devtools" type="button">Developer Tools ↗</button></div><div id="activity" role="log" aria-live="polite">Waiting for runtime…</div></section>
+      <section class="event-panel" aria-labelledby="event-label"><div class="event-head"><span class="eyebrow" id="event-label">ACTIVITY</span><button class="text-button" id="devtools" type="button">Developer Tools</button></div><div id="activity" role="log" aria-live="polite">Waiting for runtime…</div></section>
     </div>
     <p class="error" id="error" role="alert" hidden></p>
-    <footer><span>HTML + CSS + JavaScript</span><span id="version">ReaWebAPI 0.1.0</span></footer>
+    <footer><span>HTML + CSS + JavaScript</span><span id="version">ReaWebAPI 0.1.1</span></footer>
   </main>
 </body>
 </html>
