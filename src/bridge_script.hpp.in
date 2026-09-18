@@ -1,0 +1,4 @@
+#pragma once
+namespace reaweb {
+inline constexpr const char* bridge_script = R"REAWEBJS(@REAWEB_BRIDGE_JS@)REAWEBJS";
+}

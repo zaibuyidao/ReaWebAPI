@@ -1,0 +1,45 @@
+# Only release sources and configuration belong in the repository.
+# This also excludes local tests, validation notes, build outputs and caches.
+/*
+!/.gitignore
+!/CMakeLists.txt
+!/README.md
+!/THIRD_PARTY.md
+!/src/
+!/runtime/
+!/demo/
+
+!/.github/
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/build.yml
+
+!/tools/
+/tools/*
+!/tools/package.py
+
+# Generated files inside the allowed source directories.
+CMakeFiles/
+CMakeCache.txt
+__pycache__/
+*.py[cod]
+*.obj
+*.o
+*.lib
+*.a
+*.exp
+*.pdb
+*.ilk
+*.dll
+*.dylib
+*.so
+*.exe
+*.zip
+*.log
+*.tmp
+*.user
+.vs/
+.vscode/
+.DS_Store
+Thumbs.db

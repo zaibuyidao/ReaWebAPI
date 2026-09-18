@@ -1,0 +1,65 @@
+name: Build ReaWebAPI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: windows, arch: x64, runner: windows-2022 }
+          - { platform: macos, arch: arm64, runner: macos-15 }
+          - { platform: macos, arch: x86_64, runner: macos-15-intel }
+          - { platform: linux, arch: x86_64, runner: ubuntu-24.04 }
+          - { platform: linux, arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev
+      - name: Configure Windows
+        if: matrix.platform == 'windows'
+        run: cmake -S . -B build -A x64 -DBUILD_TESTING=OFF
+      - name: Configure macOS
+        if: matrix.platform == 'macos'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DBUILD_TESTING=OFF
+      - name: Configure Linux
+        if: matrix.platform == 'linux'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+      - name: Build
+        run: cmake --build build --config Release --parallel 3
+      - name: Stage installation
+        run: cmake --install build --config Release --prefix stage
+      - name: Ad-hoc sign macOS extension
+        if: matrix.platform == 'macos'
+        run: codesign --force --sign - stage/UserPlugins/reaper_reawebapi-${{ matrix.arch }}.dylib
+      - name: Package and checksums
+        run: python tools/package.py --stage stage --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --revision ${{ github.sha }}
+      - name: Upload installation bundle
+        uses: actions/upload-artifact@v6
+        with:
+          name: ReaWebAPI-${{ matrix.platform }}-${{ matrix.arch }}
+          path: stage/
+          if-no-files-found: error
+          retention-days: 30
