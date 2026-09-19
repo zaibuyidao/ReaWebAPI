@@ -84,6 +84,8 @@ profile 注册信息保存在 `<REAPER 资源目录>/ReaWebAPI/Apps/<appId>/`，
 
 页面 CSP 需允许实际脚本/样式、本地 fetch 的 `connect-src 'self'` 和对应 `worker-src`；现代模板的 Blob Worker 需要 `worker-src blob:`，开发还需 Vite HTTP/WebSocket 地址。统一剪贴板与外链操作使用宿主 API。
 
+Chromium 开发者工具读取 `/.well-known/appspecific/com.chrome.devtools.json` 同样需要 `connect-src 'self'`。文件不存在时，应用资源服务返回空配置。需要配置自动工作区时，开发者可在 App 中提供该文件，服务会优先读取它。
+
 ## 平台后端
 
 | 平台 | 后端 | 存储隔离 |

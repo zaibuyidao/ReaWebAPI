@@ -85,6 +85,29 @@ class ResourceTests(unittest.TestCase):
             self.assertNotEqual(self.request(path)[0], 200, path)
         self.assertNotIn('Access-Control-Allow-Origin', self.request('/data.json')[1])
 
+    def test_devtools_settings_fallback_and_app_override(self):
+        path = '/.well-known/appspecific/com.chrome.devtools.json'
+        for suffix in ('', '?check=1'):
+            status, headers, body = self.request(path + suffix)
+            self.assertEqual((status, json.loads(body)), (200, {}))
+            self.assertTrue(headers['Content-Type'].startswith('application/json'))
+            self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
+            self.assertNotIn('Access-Control-Allow-Origin', headers)
+        status, headers, body = self.request(path, 'HEAD')
+        self.assertEqual((status, body, int(headers['Content-Length'])), (200, b'', 2))
+        self.assertEqual(self.request(path, 'POST')[0], 405)
+        self.assertEqual(self.request(path, headers={'Origin': 'https://example.com'})[0], 403)
+        self.assertEqual(self.request(path, headers={'Host': 'attacker.example'})[0], 403)
+        self.assertEqual(self.request(path, headers={'Sec-Fetch-Site': 'cross-site'})[0], 403)
+        self.assertEqual(self.request(path + '.missing')[0], 404)
+        self.assertEqual(self.request('/missing.json')[0], 404)
+        custom = self.root / path.lstrip('/')
+        custom.parent.mkdir(parents=True)
+        config = {'workspace': {'root': str(self.root), 'uuid': 'c0dd23bf-0354-481b-9b52-4afe463fc534'}}
+        custom.write_text(json.dumps(config), encoding='utf-8')
+        status, _, body = self.request(path)
+        self.assertEqual((status, json.loads(body)), (200, config))
+
     def symlink(self, link, target, directory=False):
         try:
             link.symlink_to(target, target_is_directory=directory)

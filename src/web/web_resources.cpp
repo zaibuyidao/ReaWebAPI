@@ -121,6 +121,13 @@ WebResources::WebResources(const fs::path& root, const fs::path& profile) : impl
   // Keep its static MIME/range/conditional handling and disabled directory listing.
   if (!p.server.set_mount_point("/", p.root.u8string()))
     throw Error("APP_RESOURCE_ERROR", "Cannot mount the App directory");
+  // DevTools probes this optional settings file on local origins. Empty settings
+  // avoid a failed request without advertising a filesystem workspace. Static
+  // files take precedence, so an App can supply its own configuration.
+  p.server.Get(R"(/\.well-known/appspecific/com\.chrome\.devtools\.json)",
+    [](const httplib::Request&, httplib::Response& response) {
+      response.set_content("{}", "application/json; charset=utf-8");
+    });
   for (const auto* extension : {"js", "mjs"})
     p.server.set_file_extension_and_mimetype_mapping(extension, "text/javascript; charset=utf-8");
   p.server.set_file_extension_and_mimetype_mapping("json", "application/json; charset=utf-8");

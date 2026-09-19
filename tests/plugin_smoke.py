@@ -551,6 +551,17 @@ try:
   const el = id => document.getElementById(id);
   const click = id => { if (el(id).disabled) throw new Error('Disabled: ' + id); el(id).click(); };
   await until(() => el('project-name').textContent === 'API 工程.rpp' && (EMPTY_PROJECT || !el('apply-color').disabled));
+  const cspViolations = [];
+  const recordCsp = event => cspViolations.push(event.blockedURI);
+  document.addEventListener('securitypolicyviolation', recordCsp);
+  click('devtools');
+  await until(() => el('activity').textContent.includes('Developer Tools opened.'));
+  const settings = await fetch('/.well-known/appspecific/com.chrome.devtools.json');
+  if (settings.status !== 200 || JSON.stringify(await settings.json()) !== '{}') throw new Error('DevTools settings request failed');
+  // Give the native inspector time to issue its own automatic workspace probe.
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  document.removeEventListener('securitypolicyviolation', recordCsp);
+  if (cspViolations.length) throw new Error('DevTools CSP violation: ' + cspViolations.join(', '));
   const logo = document.querySelector('.mark');
   await until(() => logo.complete && logo.naturalWidth > 0);
   if (!el('diagnostic-panel').hidden || el('diagnostics').getAttribute('aria-expanded') !== 'false') throw new Error('Diagnostics should start collapsed');
@@ -753,6 +764,7 @@ try:
         assert (name_calls == 0 if args.empty or args.modern else name_calls > 0 if args.demo or args.starter or args.studio else name_calls == 4) and not any(is_open(window) for window in ids), (name_calls, messages, [diagnostics(id) for id in ids])
         if args.demo:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'DEMO PASS'
+            print('Shipped demo: DevTools opened, project settings returned 200 and no CSP violations')
             print('Shipped demo: empty project, 7 checks passed and 3 track checks skipped, cursor and docking passed' if args.empty else 'Shipped demo: 10 checks passed (including binary resize, GUID/RECT and audio array), project/marker/FX display, color write/read/reset, cursor write and dock buttons passed')
         if args.studio:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'STUDIO PASS'

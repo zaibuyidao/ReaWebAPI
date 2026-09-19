@@ -84,6 +84,8 @@ Run `npm run build` and `Open.lua` for production; ship `Open.lua` and `dist/`. 
 
 A page CSP must allow its scripts/styles, `connect-src 'self'` for local fetch and the appropriate `worker-src`. The modern template's Blob Worker needs `worker-src blob:`. Development additionally needs its Vite HTTP/WebSocket URLs. Host clipboard and external-link helpers provide the cross-platform native operations.
 
+Chromium DevTools also uses `connect-src 'self'` to read `/.well-known/appspecific/com.chrome.devtools.json`. The App resource server returns empty settings when the file is absent. An App's own file takes precedence when configuring an automatic workspace.
+
 ## Platform backends
 
 | Platform | Backend | Storage isolation |
