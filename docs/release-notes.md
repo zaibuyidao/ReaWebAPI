@@ -1,59 +1,29 @@
 # ReaWebAPI v0.1.8
 
-## Source organization / 源码整理
+## Changes
 
-- Group native sources into `src/core/`, `src/runtime/`, `src/platform/`, `src/web/` and `src/plugin/`. Separate Windows, macOS and Linux backends, with shared SWELL support under `platform/shared/`.
-- Split batch execution from bridge dispatch; split Runtime window, event, lifecycle, diagnostic, transaction, App, audio, theme, file, system and drag responsibilities into focused implementation files.
-- Build session orchestration once as `reaweb_runtime`, shared by the extension and native Runtime tests. Update CMake, qualified includes, API generation, ABI generation, SDK/source checks and source documentation for the new paths.
-- Preserve all 730 standard REAPER Mirror bindings, eleven Lua host APIs, thirteen browser Runtime namespaces (67 methods and one Promise property), existing behavior and SDK minimum extension requirement of 0.1.7.
-- Retain the macOS file-time fix: timestamps are converted without narrowing 128-bit values or losing tick precision.
+- Organize native sources into core, runtime, platform, web and plugin modules.
+- Split Runtime implementations by responsibility and share the session library between the extension and tests.
+- Update build configuration, code generators and documentation for the new structure.
 
-v0.1.8 以原生源码分层为主：五个职责目录、三平台后端目录及共享 SWELL 支持；拆分已有实现，并同步构建、生成器、测试和 SDK 文档。公开 API、协议、730 项镜像绑定和行为保持兼容。没有为命名空间添加空文件或新 API。完整目录及职责见[源码结构](source-layout.md)。
+## 更新
 
-## Validation / 验证
-
-See the repository validation record for the checks actually run on this revision. Native macOS/ARM builds and REAPER acceptance remain platform-specific; local Windows/Linux verification is not a macOS build result.
-
----
+- 将原生源码整理为 core、runtime、platform、web 和 plugin 五个模块。
+- 按职责拆分 Runtime 实现，扩展与测试共用会话运行库。
+- 同步更新构建配置、代码生成工具和文档。
 
 # ReaWebAPI v0.1.7
 
 ## Changes
 
-- Fix thirteen JavaScript Runtime namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`. Move existing batching/Undo to transaction, clipboard text to clipboard, and capability discovery/external links to system. All thirteen namespaces now provide implemented members (67 methods and one ready property). Add App metadata/data paths, native file/text drag/drop, system platform/architecture/file-manager integration and events.off; remove debug.info in favor of log. No compatibility aliases. Lua bootstrap remains ReaWeb_Open.
+- Introduce 13 Runtime namespaces with TypeScript declarations.
+- Add lifecycle notifications, project and editing events, window controls, native dialogs, theme integration and logging.
+- Add audio metadata, waveforms, track meters, native file/text drag and drop, App metadata and system integration.
+- Include Runtime Studio, an App manifest validator and updated SDK documentation.
 
-- Keep all 730 REAPER 7.80 standard API bindings, original names, typed handles, Promise semantics and Lua-order return values. Preserve Web Runtime v1, batches, managed Undo, files, storage and the Windows CRLF no-op fix.
-- Add complete ambient TypeScript definitions for thirteen Runtime namespaces alongside the generated mirror declarations.
-- Add `reaper.lifecycle.on`: `before-close`, `before-reload`, `cleanup` and the `destroy` alias. Await asynchronous state saving with a 2-second ceiling, then finish native cleanup; existing Apps without listeners retain their close behavior.
-- Add 12 event names covering track additions/deletions/selection, Item/Take invalidation, playback state, tempo, markers, FX, project load/save and theme. Native callbacks record atomic revisions; state reads and dispatch stay on REAPER's main thread, with subscriptions and incremental scans limiting work.
-- Add `window` size/position queries and setters, show/hide, title, focus, docking and reload. Floating geometry is distinct from REAPER-controlled Docker layout on all three backends.
-- Add `reaper.dialog.openFile/saveFile/selectFolder` through REAPER's native dialogs, with filters and consistent `null` cancellation.
-- Add basic theme colors, `--reaper-*` CSS variables, theme change subscriptions and reversible `reaper.theme.apply()`.
-- Add explicit runtime logging, circular-object inspection, automatic uncaught JavaScript/rejection reporting and bounded native-error diagnostics.
-- Implement `reaper.audio.getFileInfo`, `getWaveform` and `getTrackMeter`, including metadata, per-channel min/max arrays, linear/dB meter values, typed-handle validation and owned PCM-source cleanup. Waveform construction advances across ticks and rejects unavailable data explicitly.
-- Add a minimal App manifest schema and read-only entry validator. Include Runtime Studio, a runnable no-build example, bilingual Runtime documentation and all new declarations/tools in SDK and platform packages.
+## 更新
 
-## 中文说明
-
-JavaScript Runtime 固定为 13 个命名空间（均已有具体能力，共 67 个方法和 1 个 Promise 属性），没有扁平兼容别名。批处理及 Undo 归 `reaper.transaction`，文件归 `reaper.fs`，剪贴板归 `reaper.clipboard`，能力查询与外部链接归 `reaper.system`，连续混音控制归 `reaper.audio`，诊断和缓冲区设置归 `reaper.debug`。Lua 原生启动器继续使用 `reaper.ReaWeb_Open`。见 [完整 API 清单](runtime-api-inventory.md)。
-
-v0.1.7 补齐开发者 Runtime 层：完整 TypeScript 定义、带超时的生命周期通知、12 个新增事件、统一窗口和原生对话框、基础主题、调试日志，以及可工作的音频文件信息、分声道波形和轨道电平接口。原有 730 项 REAPER 镜像及 Web Runtime v1 保持兼容。
-
-新增 Runtime Studio 示例和最小 Manifest 校验器。没有引入第三方 API、自定义 Lua RPC、应用管理/安装/更新系统、权限执行机制或高级音频分析。项目许可证仍未添加，依赖声明保留。
-
-接口、数据结构与使用示例见 [Runtime API 中文](runtime-api.zh-CN.md) / [English](runtime-api.md)。
-
-## Behavior and limits
-
-- Content/FX/marker events invalidate caches; they are not an exact edit journal. Project-save notification observes serialization plus a changed project-file timestamp/path and a clean project, rather than promising exactly-once filesystem completion.
-- Lifecycle waits are bounded. Process termination, crashes and forced destruction cannot guarantee asynchronous saving. PCM sources and managed Undo retain native fallback cleanup.
-- Audio files support 1–32 channels and up to 8192 requested waveform frames per channel. At most eight audio jobs are pending per runtime; waveform timeout is 120 seconds. Individual REAPER decoder/peak calls run on the main thread and cannot be preempted. REAPER may create its own `.reapeaks` files; there is no additional ReaWebAPI waveform cache.
-- Meter values are snapshots, not a real-time stream or RMS/LUFS analysis. DSP, spectrum, loudness and batch analysis remain outside this version.
-- Native window dimensions use desktop/backend units, not CSS pixels. Docked size/position setters reject with `WINDOW_DOCKED`.
-- Apps remain trusted native-capability clients. The manifest is a development check, not an installation or permissions system; future considerations are recorded in the [permission design](permission-design.md).
-
-## Release acceptance
-
-Automated coverage checks all 730 typed mirror mappings, new native and JavaScript behavior, cleanup timeouts, audio data/resource ownership, TypeScript, manifest validation, SDK packaging and source-checkout reproducibility. Browser conformance checks preserve the existing Web Runtime contract.
-
-Actual REAPER acceptance is still required on each distributed platform and architecture, particularly native file dialogs, decoder formats, theme changes, track/Item/FX edits and save/load notifications. Windows/Linux builds and mock-host/browser tests do not substitute for macOS/ARM64 CI or real-project Undo/redo acceptance.
+- 统一 13 个 Runtime 命名空间，提供 TypeScript 类型声明。
+- 新增生命周期通知、工程与编辑事件、窗口控制、原生对话框、主题适配和日志。
+- 新增音频元数据、波形、轨道电平、原生文件与文本拖放、应用元数据和系统集成。
+- 提供 Runtime Studio、应用描述校验工具和更新后的 SDK 文档。

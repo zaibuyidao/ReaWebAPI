@@ -34,18 +34,42 @@ def native_files():
             yield reapack, f'reawebapi-webview-{arch}'
 
 
+def version_notes(version):
+    text = (Path(__file__).resolve().parents[1] / 'docs/release-notes.md').read_text(encoding='utf-8')
+    match = re.search(r'^# ReaWebAPI v' + re.escape(version) + r'\s*\n(.*?)(?=^# ReaWebAPI v|\Z)',
+                      text, re.MULTILINE | re.DOTALL)
+    if not match:
+        raise ValueError(f'Missing release notes for v{version}')
+    return match.group(1).strip()
+
+
+def release_body(repo, version):
+    base = f'https://github.com/{repo}/releases/download/v{version}'
+    platforms = [('Windows x64', 'windows-x64'), ('macOS ARM64', 'macos-arm64'),
+                 ('macOS Intel', 'macos-x86_64'), ('Linux x64', 'linux-x86_64'),
+                 ('Linux ARM64', 'linux-aarch64')]
+    downloads = '\n'.join(f'- [{label}]({base}/ReaWebAPI-{target}-v{version}.zip)' for label, target in platforms)
+    return (version_notes(version) + '\n\n## Downloads / 下载\n\n' + downloads + '\n\n' +
+            f'[SDK]({base}/ReaWebAPI-SDK-v{version}.zip) · '
+            f'[ReaPack]({base}/ReaWebAPI-ReaPack-v{version}.zip) · '
+            f'[SHA-256]({base}/SHA256SUMS.txt)\n\n'
+            'Platform packages include the extension, SDK and examples. Extract into the REAPER resource directory and restart REAPER. '
+            'On Linux, keep the matching WebKit helper beside the extension with execute permission.\n\n'
+            '平台安装包包含扩展、SDK 和示例。解压到 REAPER 资源目录后重启。'
+            'Linux 的同架构 WebKit 辅助程序与扩展放在同一目录，并赋予执行权限。\n\n'
+            'The SDK provides type declarations and templates. The ReaPack package provides binaries and repository metadata.\n\n'
+            'SDK 提供类型声明和开发模板，ReaPack 包提供二进制文件和仓库索引元数据。\n\n'
+            f'[Documentation / 文档](https://github.com/{repo}#readme)\n')
+
+
 def descriptor(version):
     lines = ['@description ReaWebAPI', f'@version {version}', '@author zaibuyidao',
              '@link https://github.com/zaibuyidao/ReaScripts/tree/master/ReaWebAPI', '@provides']
     for platform, name in native_files():
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/extension/{name}'
         lines.append(f'  [{platform} extension] {name} {url}')
-    lines += ['@changelog', '  Bind all 730 standard REAPER APIs with typed native dispatch.',
-              '  Support handles, multiple results, binary MIDI and audio sample buffers.',
-              '  Provide a separate SDK, starter and bilingual developer documentation.',
-              '  Fix Linux large messages and cross-project batch Undo ownership.',
-              '  Add 173-method batches, managed Undo, file/desktop APIs and more events.',
-              '  Add a Vite/TypeScript template and loopback development entry.']
+    changes = version_notes(version).split('## 更新', 1)[0]
+    lines += ['@changelog'] + ['  ' + line for line in re.findall(r'^- (.+)$', changes, re.MULTILINE)]
     return '\n'.join(lines) + '\n'
 
 
@@ -112,14 +136,7 @@ def publish(repo, version, revision, assets):
     if tagged != revision or (release and release['target_commitish'] != revision):
         raise ValueError(f'{tag} points to a different commit. Use a new version.')
     notes = assets[0].parent / 'release-notes.md'
-    changes = (Path(__file__).resolve().parents[1] / 'docs/release-notes.md').read_text(encoding='utf-8')
-    notes.write_text(changes + '\n\n' +
-        'Native files can be downloaded individually. Linux needs both the .so and its matching WebKit helper.\n\n'
-        'Platform ZIPs include the demo, SDK and developer documentation. The standalone SDK ZIP adds a runnable starter and the complete API reference. '
-        'The ReaPack ZIP contains only extension/ (seven files) and ReaWebAPI.ext. '
-        'Copy it into ReaScripts/ReaWebAPI before indexing that repository.\n\n'
-        '各平台扩展均提供单独下载。Linux 还需同架构的 WebKit 辅助程序。\n\n'
-        '平台 ZIP 包含 Demo、SDK 和开发文档。独立 SDK ZIP 提供最小模板及完整 API 参考。ReaPack ZIP 仅含 extension/ 内的 7 个文件与 ReaWebAPI.ext。\n', encoding='utf-8')
+    notes.write_text(release_body(repo, version), encoding='utf-8', newline='\n')
     if not release:
         gh('release', 'create', tag, '--repo', repo, '--target', revision, '--draft',
            '--title', f'ReaWebAPI {tag}', '--notes-file', str(notes))

@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 spec = importlib.util.spec_from_file_location('release', Path(__file__).parents[1] / 'tools/release.py')
@@ -36,6 +37,15 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(len(bundle.namelist()), 8)
             self.assertNotIn('web/', bundle.read('ReaWebAPI.ext').decode())
             self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 7)
+        body = release.release_body('test/repo', self.version)
+        links = release.re.findall(r'https://github.com/test/repo/releases/download/v[^/]+/([^\s)]+)', body)
+        expected = {asset.name for asset in assets if asset.suffix == '.zip' or asset.name == 'SHA256SUMS.txt'}
+        self.assertEqual(set(links), expected)
+    def test_release_notes_select_exact_version(self):
+        text = '# ReaWebAPI v1.2.3\n\n## Changes\n\n- Current release.\n\n# ReaWebAPI v1.2.2\n\n- Previous release.\n'
+        with patch.object(release.Path, 'read_text', return_value=text):
+            self.assertEqual(release.version_notes('1.2.3'), '## Changes\n\n- Current release.')
+            with self.assertRaises(ValueError): release.version_notes('1.2')
     def test_missing_helper_blocks_release(self):
         (self.directory / 'reawebapi-webview-aarch64').unlink()
         with self.assertRaises(ValueError): release.assemble(self.directory, self.version, 'test-sha')
