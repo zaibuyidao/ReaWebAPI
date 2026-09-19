@@ -182,10 +182,13 @@ def get_name(pointer, buffer, size):
     C.memmove(buffer, name, min(size, len(name)))
     return True
 
+pan_value, project_changes = 0.0, 0
+
 @api('GetMediaTrackInfo_Value', C.c_double, C.c_void_p, C.c_char_p)
 def get_value(pointer, key):
     if key == b'I_CUSTOMCOLOR': return color_value
     if key == b'I_NCHAN': return 2.0
+    if key == b'D_PAN': return pan_value
     return 1.0
 
 @api('Track_GetPeakInfo', C.c_double, C.c_void_p, C.c_int)
@@ -195,13 +198,16 @@ def track_peak(pointer, channel):
 
 @api('SetMediaTrackInfo_Value', C.c_bool, C.c_void_p, C.c_char_p, C.c_double)
 def set_value(pointer, key, value):
-    global color_value
+    global color_value, pan_value, project_changes
     if key == b'I_CUSTOMCOLOR': color_value = int(value)
+    if key == b'D_PAN' and value != pan_value:
+        pan_value = value
+        project_changes += 1
     return True
 
 @api('GetProjectStateChangeCount', C.c_int, C.c_void_p)
 def change_count(proj):
-    return 0
+    return project_changes
 
 @api('Undo_BeginBlock2', None, C.c_void_p)
 def begin_undo(proj):
@@ -562,6 +568,27 @@ try:
   await new Promise(resolve => setTimeout(resolve, 1500));
   document.removeEventListener('securitypolicyviolation', recordCsp);
   if (cspViolations.length) throw new Error('DevTools CSP violation: ' + cspViolations.join(', '));
+  click('clear-log');
+  if (el('activity').textContent || !el('copy-log').disabled) throw new Error('Clear log failed');
+  el('log-reaper').checked = true; el('log-reaper').dispatchEvent(new Event('change'));
+  click('read-track');
+  await until(() => !el('read-track').disabled);
+  const readLog = el('activity').textContent;
+  if (EMPTY_PROJECT ? !readLog.includes('[READ] No track selected.') :
+      !readLog.includes('[READ] Track ' + JSON.stringify('Guitar 吉他 "A"') + ' · Pan 0.000 (center)')) throw new Error('Track snapshot log: ' + readLog);
+  if (!el('read-track-result').textContent.startsWith('Logged:')) throw new Error('Missing button feedback');
+  if (!(await reaper.debug.getLogs()).some(entry => entry.message.includes('[READ]'))) throw new Error('REAPER debug log mirror');
+  el('log-reaper').checked = false; el('log-reaper').dispatchEvent(new Event('change'));
+  if (!EMPTY_PROJECT) {
+    el('pan').value = '0.5'; el('pan').dispatchEvent(new Event('input')); el('pan').dispatchEvent(new Event('change'));
+    await until(() => el('activity').textContent.includes('→ +0.500 (50.0% R) · REAPER readback'));
+    // A host-side change arrives through project events, without touching the slider.
+    await reaper.SetMediaTrackInfo_Value(await reaper.GetSelectedTrack(0, 0), 'D_PAN', -0.25);
+    await until(() => el('activity').textContent.includes('→ -0.250 (25.0% L) · REAPER readback'));
+    click('center-pan');
+    await until(() => el('activity').textContent.includes('→ 0.000 (center) · REAPER readback'));
+  }
+  if (el('activity').getBoundingClientRect().height > 210) throw new Error('Unbounded debug log');
   const logo = document.querySelector('.mark');
   await until(() => logo.complete && logo.naturalWidth > 0);
   if (!el('diagnostic-panel').hidden || el('diagnostics').getAttribute('aria-expanded') !== 'false') throw new Error('Diagnostics should start collapsed');
@@ -764,6 +791,8 @@ try:
         assert (name_calls == 0 if args.empty or args.modern else name_calls > 0 if args.demo or args.starter or args.studio else name_calls == 4) and not any(is_open(window) for window in ids), (name_calls, messages, [diagnostics(id) for id in ids])
         if args.demo:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'DEMO PASS'
+            assert any('[READ]' in message and '[ReaWebAPI]' in message for message in messages), 'Native console mirror missing'
+            print('Demo debug log: explicit track snapshot, REAPER console mirror and clear passed' + ('' if args.empty else ', including confirmed Pan changes'))
             print('Shipped demo: DevTools opened, project settings returned 200 and no CSP violations')
             print('Shipped demo: empty project, 7 checks passed and 3 track checks skipped, cursor and docking passed' if args.empty else 'Shipped demo: 10 checks passed (including binary resize, GUID/RECT and audio array), project/marker/FX display, color write/read/reset, cursor write and dock buttons passed')
         if args.studio:
@@ -786,6 +815,10 @@ try:
         if not (args.demo or args.starter or args.modern or args.studio):
             assert sorted(messages) == [f'[ReaWebAPI] [App {id}] [info] Runtime log smoke\n' for id in ids], messages
             assert get_error() == saved_error, 'Runtime logs overwrote the last host error'
+        elif args.demo:
+            assert len(messages) == 2 and all(f'[ReaWebAPI] [App {ids[0]}] [info]' in text for text in messages), messages
+            assert '[LOG]' in messages[0] and '[READ]' in messages[1], messages
+            assert get_error() == saved_error, 'Demo logs overwrote the last host error'
         else:
             assert not messages, messages
         deadline = time.monotonic() + 2

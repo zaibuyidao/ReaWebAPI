@@ -9,6 +9,7 @@ Run against a disposable REAPER project on each target architecture. CI core tes
 - From Inspector, retain a track handle, delete that track, then call `GetTrackName` with the old handle. Expect `STALE_HANDLE`. Repeat after switching project tabs.
 - Reload the page with requests pending. Old responses must not settle new-page requests.
 - Open Inspector and verify `console.log`. On macOS use Safari Develop; Windows/Linux support the demo button.
+- In the Demo, click **Log selected track** and check the printed name and Pan, including no selection. Change selection, rename a track, and adjust Pan from both REAPER and the Demo. Confirm readback logs, final drag values, Copy/Clear, and optional REAPER console output. Scroll through the log while new entries arrive and verify that it remains bounded to 200 entries.
 - Open another HTML tool with `reaper.window.open`. Verify that windows in one App directory share persistent storage and different directories have isolated localStorage, cookies and IndexedDB profiles.
 - Close a window immediately during browser initialization, reopen it, then exit REAPER with several windows open. Check for crashes and surviving application windows.
 - On Windows test a machine without WebView2 Runtime. Lua receives an error/console diagnostic without crashing REAPER; retry after installing the runtime.

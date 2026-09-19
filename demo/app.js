@@ -1,11 +1,14 @@
 'use strict';
 const ui = Object.fromEntries(['status', 'track-count', 'track-name', 'read-track', 'devtools', 'dock', 'activity', 'error', 'version', 'pan', 'pan-value', 'center-pan', 'diagnostics', 'diagnostic-output', 'track-color', 'apply-color', 'reset-color', 'color-state', 'read-project', 'project-name', 'cursor-position', 'play-state', 'tempo', 'beat-position', 'cursor-target', 'move-cursor', 'marker-count', 'marker-list', 'read-fx', 'fx-list', 'run-checks', 'api-coverage', 'check-results'].map(id => [id, document.getElementById(id)]));
 const events = [], dispose = [];
+for (const id of ['read-track-result', 'copy-log', 'clear-log', 'log-reaper', 'log-count', 'log-status']) ui[id] = document.getElementById(id);
 for (const id of ['diagnostic-panel', 'refresh-diagnostics', 'diagnostic-backend', 'diagnostic-stage', 'diagnostic-api', 'diagnostic-queue', 'diagnostic-snapshot', 'diagnostic-details']) ui[id] = document.getElementById(id);
 let selectedTrack = null, refreshWanted = false, refreshing = false, dockBusy = false;
 let selectionRevision = 0, colorRevision = 0;
 let pendingPan = Promise.resolve();
 let projectEpoch = 0, colorBusy = false;
+let observedTrack = null, readRequested = false, flushPanOnRead = false, panWriteRevision = 0;
+let pendingPanLog = null, panLogTimer = null, pageClosed = false;
 const busy = new Set();
 function list(id, lines) {
   ui[id].replaceChildren(...lines.map(text => {
@@ -21,17 +24,87 @@ async function action(id, fn) {
   busy.add(id); ui[id].disabled = true;
   try { await run(fn); } finally { busy.delete(id); ui[id].disabled = false; selectedControls(); }
 }
-function log(message) {
-  const time = new Date().toLocaleTimeString([], { hour12: false });
-  events.unshift(`${time}  ${message}`);
-  ui.activity.textContent = events.slice(0, 5).join('\n');
-  console.log('[ReaWebAPI demo]', message);
+function log(message, level = 'info', category = 'INFO', detail) {
+  if (pageClosed) return;
+  const now = new Date();
+  const time = now.toLocaleTimeString([], { hour12: false }) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  const line = `${time} [${category}] ${message}`;
+  const follow = ui.activity.scrollHeight - ui.activity.scrollTop - ui.activity.clientHeight < 32;
+  if (!events.length) ui['log-status'].textContent = 'Track changes and confirmed Pan values. Latest 200 entries.';
+  events.push(line);
+  if (events.length > 200) events.shift();
+  const row = document.createElement('div');
+  row.className = `log-row log-${level}`; row.textContent = line;
+  ui.activity.append(row);
+  if (ui.activity.children.length > 200) ui.activity.firstElementChild.remove();
+  if (follow) ui.activity.scrollTop = ui.activity.scrollHeight;
+  ui['log-count'].textContent = `${events.length} / 200`;
+  ui['copy-log'].disabled = busy.has('copy-log');
+  console[level === 'info' ? 'log' : level]('[ReaWebAPI demo]', `[${category}] ${message}`, ...(detail ? [detail] : []));
+  if (ui['log-reaper'].checked && window.reaper) {
+    // Console mirroring is optional and never blocks state reads or UI updates.
+    void reaper.debug[level === 'info' ? 'log' : level](line).catch(error => {
+      ui['log-reaper'].checked = false;
+      log(`REAPER console output stopped: ${error.message}`, 'warn', 'LOG');
+    });
+  }
 }
+function formatPan(value) {
+  const n = Number(value);
+  return `${n > 0 ? '+' : ''}${n.toFixed(3)} (${n === 0 ? 'center' : `${(Math.abs(n) * 100).toFixed(1)}% ${n < 0 ? 'L' : 'R'}`})`;
+}
+function trackSummary(snapshot) {
+  return snapshot.id ? `Track ${JSON.stringify(snapshot.name)} · Pan ${formatPan(snapshot.pan)}` : 'No track selected.';
+}
+function flushPanLog() {
+  clearTimeout(panLogTimer); panLogTimer = null;
+  const change = pendingPanLog; pendingPanLog = null;
+  if (change && change.before.pan !== change.after.pan)
+    log(`${JSON.stringify(change.after.name)}: ${formatPan(change.before.pan)} → ${formatPan(change.after.pan)} · REAPER readback`, 'info', 'PAN');
+}
+function observeTrack(snapshot) {
+  const previous = observedTrack;
+  observedTrack = snapshot;
+  if (!previous || previous.id !== snapshot.id || previous.epoch !== snapshot.epoch) {
+    flushPanLog();
+    log(trackSummary(snapshot), 'info', 'SELECT');
+    return;
+  }
+  if (!snapshot.id) return;
+  if (previous.name !== snapshot.name) {
+    flushPanLog();
+    log(`${JSON.stringify(previous.name)} → ${JSON.stringify(snapshot.name)}`, 'info', 'NAME');
+  }
+  if (Math.abs(previous.pan - snapshot.pan) > 0.000001) {
+    if (!pendingPanLog) pendingPanLog = { before: previous, after: snapshot };
+    else pendingPanLog.after = snapshot;
+    // Coalesce continuous changes into at most five readback entries per second.
+    if (panLogTimer === null) panLogTimer = setTimeout(flushPanLog, 200);
+  }
+}
+function finishTrackRead(message) {
+  readRequested = false;
+  ui['read-track'].disabled = false;
+  ui['read-track'].textContent = 'Log selected track';
+  ui['read-track-result'].textContent = message;
+}
+ui['clear-log'].addEventListener('click', () => {
+  clearTimeout(panLogTimer); panLogTimer = null; pendingPanLog = null;
+  events.length = 0; ui.activity.replaceChildren();
+  ui['log-count'].textContent = '0 / 200'; ui['copy-log'].disabled = true;
+  ui['log-status'].textContent = 'Log cleared.';
+});
+ui['copy-log'].addEventListener('click', () => action('copy-log', async () => {
+  await reaper.clipboard.writeText(events.join('\n'));
+  ui['log-status'].textContent = 'Log copied to clipboard.';
+}).finally(() => { ui['copy-log'].disabled = !events.length; }));
+ui['log-reaper'].addEventListener('change', () => {
+  log(ui['log-reaper'].checked ? 'REAPER console output enabled.' : 'REAPER console output disabled.', 'info', 'LOG');
+});
 function report(error) {
   ui.error.hidden = false;
   ui.error.textContent = `${error.code || 'ERROR'}: ${error.message}`;
-  log(error.message);
-  console.error('[ReaWebAPI demo]', error);
+  log(ui.error.textContent, 'error', 'ERROR', error);
 }
 async function run(action) {
   ui.error.hidden = true;
@@ -42,6 +115,7 @@ function showPan(value) {
   ui['pan-value'].textContent = Number(value).toFixed(2);
 }
 async function refresh(invalidate = false) {
+  if (pageClosed) return;
   if (invalidate) {
     ++selectionRevision; ++colorRevision;
     selectedTrack = null;
@@ -54,7 +128,7 @@ async function refresh(invalidate = false) {
   try {
     do {
       refreshWanted = false;
-      const revision = selectionRevision;
+      const revision = selectionRevision, requestedLog = readRequested, flushPan = flushPanOnRead;
       const track = await reaper.GetSelectedTrack(0, 0);
       if (revision !== selectionRevision) continue;
       const calls = [{ method: 'CountTracks', args: [0] }];
@@ -70,6 +144,15 @@ async function refresh(invalidate = false) {
       selectedControls();
       ui['color-state'].textContent = !track ? 'No track selected' : color ? 'Custom track color' : 'Default track color';
       if (trackChanged || document.activeElement !== ui.pan) showPan(pan ?? 0);
+      const snapshot = { id: track?.id ?? null, epoch: projectEpoch, name: name?.[1] ?? '(name unavailable)', pan: pan ?? 0 };
+      observeTrack(snapshot);
+      if (requestedLog) {
+        flushPanLog();
+        log(trackSummary(snapshot), 'info', 'READ');
+        finishTrackRead(`Logged: ${trackSummary(snapshot)}`);
+        ui.activity.scrollTop = ui.activity.scrollHeight;
+      }
+      if (flushPan) { flushPanOnRead = false; flushPanLog(); }
       // Render the name and controls first. Native color conversion must not
       // delay selection feedback or the next refresh, and late results expire.
       const colorRequest = ++colorRevision;
@@ -85,12 +168,21 @@ async function refresh(invalidate = false) {
     selectedControls();
     // Project/selection events schedule the next read. Writes are never retried.
     if (!['PROJECT_CHANGED', 'STALE_HANDLE', 'WINDOW_CLOSED'].includes(error.code)) report(error);
+    if (readRequested) {
+      log(`Track read interrupted: ${error.code || error.message}. Try again.`, 'warn', 'READ');
+      finishTrackRead('Read interrupted. Try again.');
+    }
   } finally {
     refreshing = false;
     if (refreshWanted) void refresh();
   }
 }
-ui['read-track'].addEventListener('click', () => run(async () => { await refresh(); log('Track data refreshed.'); }));
+ui['read-track'].addEventListener('click', () => {
+  readRequested = true; ui['read-track'].disabled = true;
+  ui['read-track'].textContent = 'Reading…'; ui['read-track-result'].textContent = 'Reading from REAPER…';
+  ui.error.hidden = true;
+  void refresh();
+});
 ui.devtools.addEventListener('click', () => run(async () => { await reaper.debug.openDevTools(); log('Developer Tools opened.'); }));
 function showDockState(docked) {
   ui.dock.textContent = docked ? 'Undock' : 'Dock';
@@ -118,7 +210,8 @@ async function applyColor(reset) {
     await reaper.transaction.batch([call], { undoLabel: 'ReaWebAPI: track color' });
     const actual = await reaper.GetTrackColor(track);
     if (actual !== (reset ? 0 : color | 0x1000000)) throw new Error('Track color readback differs from the requested value.');
-    log('Track color written and read back. Undo is available in REAPER.');
+    const trackName = observedTrack?.id === track.id ? observedTrack.name : track.id;
+    log(`${JSON.stringify(trackName)} · ${reset ? 'Default color' : ui['track-color'].value} · native ${actual} · Undo available`, 'info', 'COLOR');
     await refresh();
   } finally { colorBusy = false; selectedControls(); }
 }
@@ -145,6 +238,7 @@ async function readProject() {
     `${region ? 'Region' : 'Marker'} ${number}: ${label || '(unnamed)'} · ${start.toFixed(3)} s${region ? ` to ${end.toFixed(3)} s` : ''}`);
   if (counts[0] > 12) labels.push(`Showing the first 12 of ${counts[0]} markers and regions.`);
   list('marker-list', labels.length ? labels : ['No markers or regions in this project.']);
+  log(`${JSON.stringify(name || 'Untitled project')} · Cursor ${cursor.toFixed(3)} s · ${status} · ${tempo.toFixed(2)} BPM · ${counts[1]} markers / ${counts[2]} regions`, 'info', 'PROJECT');
 }
 ui['read-project'].addEventListener('click', () => action('read-project', readProject));
 ui['move-cursor'].addEventListener('click', () => action('move-cursor', async () => {
@@ -152,7 +246,7 @@ ui['move-cursor'].addEventListener('click', () => action('move-cursor', async ()
   if (!text || !Number.isFinite(time)) throw new Error('Enter a finite time in seconds.');
   const result = await reaper.SetEditCurPos(time, true, false);
   if (result !== undefined) throw new Error('Expected a void JavaScript return value.');
-  await readProject(); log('Edit cursor moved. SetEditCurPos completed with a void result.');
+  await readProject(); log(`Edit cursor → ${time.toFixed(3)} s`, 'info', 'CURSOR');
 }));
 ui['read-fx'].addEventListener('click', () => action('read-fx', async () => {
   const track = selectedTrack, epoch = projectEpoch;
@@ -171,6 +265,7 @@ ui['read-fx'].addEventListener('click', () => action('read-fx', async () => {
   if (epoch !== projectEpoch || selectedTrack?.id !== track.id) return;
   if (count > 16) lines.push(`Showing the first 16 of ${count} FX.`);
   list('fx-list', lines.length ? lines : ['No FX on the selected track.']);
+  log(`${JSON.stringify(observedTrack?.name ?? track.id)} · ${count} FX`, 'info', 'FX');
 }));
 ui['run-checks'].addEventListener('click', () => action('run-checks', async () => {
   const epoch = projectEpoch, rows = [], finite = value => typeof value === 'number' && Number.isFinite(value);
@@ -263,18 +358,32 @@ ui['run-checks'].addEventListener('click', () => action('run-checks', async () =
   log(`API checks: ${rows.filter(r => r[0] === 'PASS').length} passed, ${rows.filter(r => r[0] === 'FAIL').length} failed, ${rows.filter(r => r[0] === 'SKIP').length} skipped.`);
 }));
 ui.pan.addEventListener('input', () => {
-  const track = selectedTrack, value = Number(ui.pan.value);
+  const track = selectedTrack, value = Number(ui.pan.value), revision = ++panWriteRevision, epoch = projectEpoch;
   ui['pan-value'].textContent = value.toFixed(2);
-  if (track) pendingPan = reaper.audio.setTrackValueLatest(track, 'D_PAN', value).catch(report);
+  if (track) pendingPan = reaper.audio.setTrackValueLatest(track, 'D_PAN', value).then(result => {
+    if (!result.superseded && !result.applied) throw new Error('REAPER rejected the Pan update.');
+    if (result.applied && revision === panWriteRevision && epoch === projectEpoch && selectedTrack?.id === track.id)
+      void refresh();
+  }).catch(report);
 });
+ui.pan.addEventListener('change', () => run(async () => {
+  await pendingPan;
+  flushPanOnRead = true;
+  void refresh();
+}));
 ui['center-pan'].addEventListener('click', () => run(async () => {
   if (!selectedTrack) return;
-  const track = selectedTrack;
+  const track = selectedTrack, epoch = projectEpoch, revision = selectionRevision;
+  const name = observedTrack?.id === track.id ? observedTrack.name : track.id;
   ui.pan.disabled = true;
   try {
     await pendingPan;
-    await reaper.transaction.batch([{ method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] }], { undoLabel: 'ReaWebAPI: center track pan' });
-    showPan(0); log('Pan centered. Undo is available in REAPER.');
+    const [applied] = await reaper.transaction.batch([{ method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] }], { undoLabel: 'ReaWebAPI: center track pan' });
+    if (!applied) throw new Error('REAPER rejected the Center Pan command.');
+    log(`${JSON.stringify(name)} · Center Pan applied · Undo available`, 'info', 'WRITE');
+    if (epoch === projectEpoch && revision === selectionRevision && selectedTrack?.id === track.id) {
+      showPan(0); flushPanOnRead = true; void refresh();
+    }
   } finally { ui.pan.disabled = !selectedTrack; }
 }));
 let diagnosticRequest = 0;
@@ -323,7 +432,11 @@ ui.diagnostics.addEventListener('click', () => {
 ui['refresh-diagnostics'].addEventListener('click', () => {
   if (!ui['diagnostic-panel'].hidden && !ui['refresh-diagnostics'].disabled) void readDiagnostics();
 });
-window.addEventListener('pagehide', () => { ++selectionRevision; ++colorRevision; for (const off of dispose) void off(); });
+window.addEventListener('pagehide', () => {
+  pageClosed = true; ++selectionRevision; ++colorRevision; ++panWriteRevision;
+  clearTimeout(panLogTimer); pendingPanLog = null;
+  for (const off of dispose) void off();
+});
 run(async () => {
   if (!window.reaper) {
     ui.status.textContent = 'Outside REAPER';
@@ -341,7 +454,7 @@ run(async () => {
   ui.version.textContent = `REAPER ${version} / ReaWebAPI ${capabilities.version}`;
   ui['api-coverage'].textContent = `${capabilities.api.implemented} bound APIs / ${capabilities.api.official} definitions · ${capabilities.api.available} available in this REAPER · ${capabilities.api.reaperVersion} catalogue`;
   if (capabilities.api.unavailable.length)
-    log(`${capabilities.api.unavailable.length} APIs require a newer REAPER version. See Runtime diagnostics for their names.`);
+    log(`${capabilities.api.unavailable.length} APIs require a newer REAPER version. See Runtime diagnostics for their names.`, 'warn', 'API');
   await reaper.window.setTitle('ReaWebAPI · API Workbench');
   dispose.push(await reaper.events.on('windowstatechange', state => showDockState(state.docked)));
   dispose.push(await reaper.events.on('selectionchange', () => { list('fx-list', ['Selection changed. Inspect FX to refresh.']); void refresh(true); }));
@@ -355,7 +468,7 @@ run(async () => {
     void refresh(switched);
   }));
   ui.dock.disabled = false;
-  for (const id of ['read-project', 'move-cursor', 'cursor-target', 'run-checks']) ui[id].disabled = false;
+  for (const id of ['read-track', 'log-reaper', 'read-project', 'move-cursor', 'cursor-target', 'run-checks']) ui[id].disabled = false;
   await refresh();
   await readProject();
   log('Connected. Selection and project changes update this page automatically.');

@@ -2,6 +2,7 @@
 
 ## Changes
 
+- Add a visible Demo debug log with track snapshots, confirmed Pan changes, Copy/Clear and optional REAPER console output.
 - Handle DevTools workspace discovery without CSP or missing-resource errors in the Demo.
 - Preserve the complete CMake version, including the fourth component, across installation bundles, SDK, ReaPack and GitHub Releases.
 - Prioritize native track-selection notifications and project state updates.
@@ -15,6 +16,7 @@
 
 ## 更新
 
+- Demo 增加调试日志，显示轨道快照和 Pan 实际变化，支持复制、清空及同步输出到 REAPER 控制台。
 - 完善开发者工具的工作区探测处理，消除 Demo 中对应的 CSP 和资源缺失报错。
 - 安装包、SDK、ReaPack 和 GitHub Release 统一使用 CMake 完整版本号，支持第四段修订号。
 - 优先处理原生轨道选择通知与工程状态更新。

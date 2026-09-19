@@ -25,7 +25,12 @@
       <div class="track-name" id="track-name" aria-live="polite">Ready when you are.</div>
       <div class="pan-control"><label for="pan">Pan <output id="pan-value">0.00</output></label><input id="pan" type="range" min="-1" max="1" step="0.01" value="0" disabled><button id="center-pan" class="text-button" type="button" disabled>Center pan (Undo)</button></div>
       <div class="color-control"><label for="track-color">Track color</label><input id="track-color" type="color" value="#b7f58a" disabled><button id="apply-color" type="button" disabled>Apply color (Undo)</button><button id="reset-color" class="text-button" type="button" disabled>Default color (Undo)</button><span id="color-state" class="hint">No track selected</span></div>
-      <div class="panel-bottom"><button id="read-track" type="button">Get selected track name</button><span class="hint">Read directly from REAPER</span></div>
+      <div class="panel-bottom"><button id="read-track" type="button" disabled>Log selected track</button><span class="read-result" id="read-track-result" role="status">Print the current name and Pan to the log.</span></div>
+    </section>
+    <section class="debug-panel" aria-labelledby="log-label">
+      <div class="debug-heading"><h2 id="log-label">Debug log <span id="log-count">0 / 200</span></h2><div class="log-tools"><button id="copy-log" type="button" disabled>Copy</button><button id="clear-log" type="button">Clear</button><button id="devtools" type="button">Developer Tools</button></div></div>
+      <div class="log-options"><label><input id="log-reaper" type="checkbox" disabled> Also send to REAPER console</label><span id="log-status" role="status">Track changes and confirmed Pan values. Latest 200 entries.</span></div>
+      <div id="activity" role="log" aria-label="Debug log output" aria-live="off" tabindex="0"></div>
     </section>
     <section class="api-panel" aria-labelledby="project-label">
       <div class="panel-top"><h2 id="project-label">Project snapshot</h2><button id="read-project" type="button" disabled>Read project</button></div>
@@ -45,13 +50,10 @@
       <p id="api-coverage">Waiting for API definitions.</p>
       <ol id="check-results" class="data-list" aria-live="polite"><li>Checks cover handles, tuples, GUIDs, rectangles, MIDI bytes and audio buffers. Select a track with a MIDI item to exercise every path. No project edits.</li></ol>
     </section>
-    <div class="lower-grid">
       <section class="code-panel" aria-label="JavaScript example"><span class="eyebrow">REAPER API MIRROR, JAVASCRIPT RETURNS</span><pre><code><span class="keyword">const</span> [total, markers, regions] =
   <span class="keyword">await</span> reaper.<span class="function">CountProjectMarkers</span>(0);
 <span class="keyword">const</span> [beat, bar, beatsPerBar] =
   <span class="keyword">await</span> reaper.<span class="function">TimeMap2_timeToBeats</span>(0, 5);</code></pre></section>
-      <section class="event-panel" aria-labelledby="event-label"><div class="event-head"><span class="eyebrow" id="event-label">ACTIVITY</span><button class="text-button" id="devtools" type="button">Developer Tools</button></div><div id="activity" role="log" aria-live="polite">Waiting for runtime…</div></section>
-    </div>
     <div class="host-tools"><input id="keyboard-test" type="text" aria-label="Keyboard focus test" placeholder="Type here to test keyboard focus"><button id="diagnostics" class="text-button disclosure-button" type="button" aria-expanded="false" aria-controls="diagnostic-panel"><span>Runtime diagnostics</span><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m4 6 4 4 4-4"/></svg></button></div>
     <section id="diagnostic-panel" class="diagnostic-panel" aria-labelledby="diagnostics" hidden>
       <div class="diagnostic-heading"><p>Connection, API availability and request activity.</p><button id="refresh-diagnostics" class="text-button" type="button">Refresh snapshot</button></div>
