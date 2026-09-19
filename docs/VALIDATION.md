@@ -43,3 +43,17 @@ The supplied Windows CI log exposed two independent failures:
 The Windows junction regression reproduced 200/206 responses before the fix and now verifies 403 for GET, HEAD and Range, including a sibling directory with an App-prefixed name. Internal junction resources remain readable. Four separate symlink cases run when the platform permits symlink creation; Windows privilege failures are explicit skips, not silent success. Linux passes all four symlink cases and skips only the Windows-specific junction case.
 
 Revalidation: Windows 8/8 CTest suites; Linux 7/7 suites (JS VM coverage on Windows); real WebView2 module/fetch/Unicode/storage/Worker checks passed. An independent source-only checkout with no .cache passed all applicable Python contracts: 18 passed, one optional cached-official-HTML test skipped; no .cache was created. This keeps CI offline and leaves the 730 REAPER API bindings and version 0.1.6 unchanged.
+
+## Windows CRLF checkout follow-up
+
+The next Windows CI run passed the HTTP resource suite but failed the offline no-op assertion: Git had checked generated files out with CRLF, while `update --offline` compared their bytes against LF output and rewrote them. `verify` already accepted both line endings. The previous source-only copy retained local LF bytes and did not reproduce this Git checkout conversion.
+
+The sync writer now treats LF/CRLF differences alone as unchanged, preserving the original bytes and modification times. Actual content drift still triggers regeneration and atomic replacement. The no-op and SDK drift tests explicitly cover both line endings on every platform; snapshot failures identify the changed file instead of constructing a multi-megabyte assertion diff.
+
+Revalidation after this fix:
+
+- Windows: all 8 CTest suites passed, including all 19 Python contracts.
+- Linux: all 7 configured CTest suites passed, including the LF/CRLF regressions; JS VM coverage remains on Windows.
+- A separate checkout created with `git -c core.autocrlf=true checkout-index`, overlaid with the current fixes, verified CRLF generated files and no .cache. Offline verification and update preserved every source file's bytes and modification time, with `written: []`. All 18 applicable Python contracts passed; only the optional cached-official-HTML test was skipped.
+
+This follow-up changes the sync tool, regression coverage and documentation only. The extension remains version 0.1.6 with 730 REAPER bindings. These are local results; the corrected commit still needs a GitHub Actions run.

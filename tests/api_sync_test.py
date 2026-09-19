@@ -40,17 +40,36 @@ class SyncTests(unittest.TestCase):
         return {str(p.relative_to(self.root)): (p.read_bytes(), p.stat().st_mtime_ns)
                 for p in self.root.rglob('*') if p.is_file()}
 
+    def assert_unchanged(self, before):
+        after = self.snapshot()
+        self.assertEqual(before.keys(), after.keys())
+        for name, (content, mtime) in before.items():
+            # Report the file, not a multi-megabyte diff of the whole catalogue.
+            self.assertTrue(content == after[name][0], f'File content changed: {name}')
+            self.assertEqual(mtime, after[name][1], f'File modification time changed: {name}')
+
     def source(self, functions=None, version='7.80'):
         path = self.root / 'input.json'
         path.write_text(encode({'reaperVersion': version, 'functions': functions or SCHEMA['functions']}), encoding='utf-8')
         return str(path)
 
     def test_offline_noop_and_read_only(self):
-        before = self.snapshot()
-        for args in [('verify',), ('check', '--offline'), ('report', '--json'), ('update', '--offline')]:
-            result = self.command(*args)
-            self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(before, self.snapshot())
+        for newline in (b'\n', b'\r\n'):
+            with self.subTest(newline=newline):
+                # Exercise both Git checkout styles on every CI platform.
+                for path in self.root.rglob('*'):
+                    if path.is_file():
+                        content = path.read_bytes().replace(b'\r\n', b'\n')
+                        path.write_bytes(content.replace(b'\n', newline))
+                before = self.snapshot()
+                for args in [('verify',), ('check', '--offline'), ('report', '--json'),
+                             ('update', '--offline', '--json')]:
+                    with self.subTest(command=args):
+                        result = self.command(*args)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assert_unchanged(before)
+                        if args[0] == 'update':
+                            self.assertEqual(json.loads(result.stdout)['written'], [])
         report = json.loads(self.command('report', '--json').stdout)
         self.assertEqual(report['coverage']['official'], 730)
         self.assertEqual(report['coverage']['implemented'], 730)
@@ -104,7 +123,7 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.command('verify').returncode, 2)
         before = self.snapshot()
         self.assertEqual(self.command('update', '--source', location).returncode, 0)
-        self.assertEqual(before, self.snapshot())
+        self.assert_unchanged(before)
         self.assertTrue((self.root / 'api/changelog/7.81.md').exists())
 
     def test_removal_and_downgrade_guards(self):
@@ -113,9 +132,9 @@ class SyncTests(unittest.TestCase):
         location = self.source(functions, '7.79')
         before = self.snapshot()
         self.assertEqual(self.command('update', '--source', location).returncode, 2)
-        self.assertEqual(before, self.snapshot())
+        self.assert_unchanged(before)
         self.assertEqual(self.command('update', '--source', location, '--allow-removals').returncode, 2)
-        self.assertEqual(before, self.snapshot())
+        self.assert_unchanged(before)
         self.assertEqual(self.command('update', '--source', location, '--allow-removals', '--allow-downgrade').returncode, 0)
 
     def test_bad_input_hash_and_version_write_nothing(self):
@@ -123,19 +142,25 @@ class SyncTests(unittest.TestCase):
         before = self.snapshot()
         for extra in [('--sha256', '0'*64), ('--source-version', '7.81')]:
             self.assertEqual(self.command('update', '--source', location, *extra).returncode, 2)
-            self.assertEqual(before, self.snapshot())
+            self.assert_unchanged(before)
         Path(location).write_text('{bad json')
         before = self.snapshot()
         self.assertEqual(self.command('update', '--source', location).returncode, 2)
-        self.assertEqual(before, self.snapshot())
+        self.assert_unchanged(before)
 
     def test_generated_sdk_and_registry_drift_fail_verify(self):
         path = self.root / 'runtime/reaper-api.generated.d.ts'
-        original = path.read_text()
-        path.write_text(original.replace('Promise<string>', 'Promise<number>'))
-        self.assertEqual(self.command('verify').returncode, 2)
-        self.assertEqual(self.command('update', '--offline').returncode, 0)
-        self.assertEqual(self.command('verify').returncode, 0)
+        original = path.read_text(encoding='utf-8')
+        for newline in ('\n', '\r\n'):
+            with self.subTest(newline=newline):
+                path.write_bytes(original.replace('Promise<string>', 'Promise<number>')
+                                 .replace('\n', newline).encode('utf-8'))
+                self.assertEqual(self.command('verify').returncode, 2)
+                result = self.command('update', '--offline', '--json')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['written'], ['runtime/reaper-api.generated.d.ts'])
+                self.assertEqual(path.read_bytes(), original.encode('utf-8'))
+                self.assertEqual(self.command('verify').returncode, 0)
         native = self.root / 'src/core.cpp'
         native.write_text(native.read_text().replace('native_->invoke', 'unwired_native'))
         self.assertEqual(self.command('verify').returncode, 2)

@@ -33,6 +33,8 @@ python -m tools.api_sync verify
 
 `--offline` 使用已提交定义。`--source FILE_OR_HTTPS_URL` 支持官方 HTML、JSON 或 Markdown 交换格式，`--sha256 HEX` 固定输入内容。`--root PATH` 放在子命令前，可维护另一份仓库。删除 API 需要显式 `--allow-removals`，降级还需要 `--allow-downgrade`。
 
+`update --offline` 只写入需要更新的生成文件。比较时将 Git 检出的 LF、CRLF 换行视为等价：内容未变的文件保留原始字节和修改时间，JSON 报告的 `written` 列表为空。实际内容差异仍会修复，新生成的内容采用 UTF-8 编码和 LF 换行。
+
 ## 升级官方 API
 
 1. 执行 `check --full`，审阅新增、移除和签名变化。

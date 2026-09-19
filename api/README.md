@@ -33,6 +33,8 @@ python -m tools.api_sync verify
 
 `--offline` uses committed definitions. `--source FILE_OR_HTTPS_URL` supports official HTML, JSON or Markdown exchange formats. `--sha256 HEX` pins input bytes. Put `--root PATH` before the subcommand to maintain another checkout. API removal requires explicit `--allow-removals`, and a downgrade also needs `--allow-downgrade`.
 
+`update --offline` writes only outdated generated files. LF and CRLF checkout line endings are equivalent for this comparison: unchanged files retain their original bytes and modification times, and the JSON report lists no files in `written`. Actual content changes are still repaired; newly generated output uses UTF-8 with LF line endings.
+
 ## Updating upstream APIs
 
 1. Run `check --full` and review additions, removals and signature changes.

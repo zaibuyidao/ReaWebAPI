@@ -143,8 +143,14 @@ def runtime_header(schema, manifest):
 
 def write_files(files):
     """Stage all output first. Atomic per-file replacement, rollback on a write failure."""
-    changed = {Path(p): text.encode('utf-8') for p, text in files.items()
-               if not Path(p).is_file() or Path(p).read_bytes() != text.encode('utf-8')}
+    changed = {}
+    for name, text in files.items():
+        path, data = Path(name), text.encode('utf-8')
+        # Git may check generated text out with CRLF on Windows. As in verify(),
+        # line endings alone are not drift: preserve the original bytes and mtime.
+        if path.is_file() and path.read_bytes().replace(b'\r\n', b'\n') == data.replace(b'\r\n', b'\n'):
+            continue
+        changed[path] = data
     staged, originals, replaced = {}, {}, []
     try:
         for path, data in changed.items():
