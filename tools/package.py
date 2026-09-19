@@ -28,7 +28,7 @@ binary = args.stage / 'UserPlugins' / filename
 if not binary.is_file() or binary.stat().st_size == 0:
     raise SystemExit(f'Missing extension: {binary}')
 required = ['Scripts/ReaWebAPI/Example/Example.lua', 'Scripts/ReaWebAPI/Example/index.html',
-            'Scripts/ReaWebAPI/Example/app.js', 'Scripts/ReaWebAPI/Example/style.css',
+            'Scripts/ReaWebAPI/Example/app.js', 'Scripts/ReaWebAPI/Example/style.css', 'Scripts/ReaWebAPI/Example/logo.svg',
             'ReaWebAPI/SDK/reaper.d.ts', 'ReaWebAPI/SDK/reaper-api.generated.d.ts',
             'ReaWebAPI/SDK/reaper-api.generated.js', 'ReaWebAPI/README.md', 'ReaWebAPI/README.zh-CN.md', 'ReaWebAPI/THIRD_PARTY.md']
 native_files = [binary]

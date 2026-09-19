@@ -1,6 +1,7 @@
 'use strict';
 const ui = Object.fromEntries(['status', 'track-count', 'track-name', 'read-track', 'devtools', 'dock', 'activity', 'error', 'version', 'pan', 'pan-value', 'center-pan', 'diagnostics', 'diagnostic-output', 'track-color', 'apply-color', 'reset-color', 'color-state', 'read-project', 'project-name', 'cursor-position', 'play-state', 'tempo', 'beat-position', 'cursor-target', 'move-cursor', 'marker-count', 'marker-list', 'read-fx', 'fx-list', 'run-checks', 'api-coverage', 'check-results'].map(id => [id, document.getElementById(id)]));
 const events = [], dispose = [];
+for (const id of ['diagnostic-panel', 'refresh-diagnostics', 'diagnostic-backend', 'diagnostic-stage', 'diagnostic-api', 'diagnostic-queue', 'diagnostic-snapshot', 'diagnostic-details']) ui[id] = document.getElementById(id);
 let selectedTrack = null, refreshWanted = false, refreshing = false, dockBusy = false;
 let pendingPan = Promise.resolve();
 let projectEpoch = 0, colorBusy = false;
@@ -261,11 +262,52 @@ ui['center-pan'].addEventListener('click', () => run(async () => {
     showPan(0); log('Pan centered. Undo is available in REAPER.');
   } finally { ui.pan.disabled = !selectedTrack; }
 }));
-ui.diagnostics.addEventListener('click', () => run(async () => {
-  const [runtime, capabilities] = await Promise.all([reaper.ReaWeb_GetDiagnostics(), reaper.ReaWeb_GetCapabilities()]);
-  ui['diagnostic-output'].textContent = JSON.stringify({ runtime, api: capabilities.api }, null, 2);
-  ui['diagnostic-output'].hidden = false;
-}));
+let diagnosticRequest = 0;
+async function readDiagnostics() {
+  const request = ++diagnosticRequest;
+  ui['refresh-diagnostics'].disabled = true;
+  ui['diagnostic-panel'].setAttribute('aria-busy', 'true');
+  ui['diagnostic-snapshot'].classList.remove('failed');
+  ui['diagnostic-snapshot'].textContent = 'Reading runtime details…';
+  try {
+    const [runtime, capabilities] = await Promise.all([reaper.ReaWeb_GetDiagnostics(), reaper.ReaWeb_GetCapabilities()]);
+    if (request !== diagnosticRequest || ui['diagnostic-panel'].hidden) return;
+    const { schemaVersion, reaperVersion, catalogueHash, official, implemented, compatible, partial, missing, available, unavailable } = capabilities.api;
+    ui['diagnostic-backend'].textContent = runtime.backend;
+    ui['diagnostic-stage'].textContent = runtime.stage;
+    ui['diagnostic-api'].textContent = `${available} / ${implemented}`;
+    ui['diagnostic-queue'].textContent = `${runtime.queuedCalls} queued · ${runtime.pendingCalls} pending`;
+    // Keep useful diagnostics, without dumping all 730 binding signatures and method names.
+    ui['diagnostic-output'].textContent = JSON.stringify({ runtime, api: { schemaVersion, reaperVersion, catalogueHash, official, implemented, compatible, partial, missing, available, unavailable } }, null, 2);
+    ui['diagnostic-details'].hidden = false;
+    ui['diagnostic-snapshot'].textContent = `Snapshot updated at ${new Date().toLocaleTimeString()}. Refresh to read again.`;
+  } catch (error) {
+    if (request !== diagnosticRequest || ui['diagnostic-panel'].hidden) return;
+    ui['diagnostic-snapshot'].classList.add('failed');
+    ui['diagnostic-snapshot'].textContent = `${error.code || 'ERROR'}: ${error.message}. Try refreshing the snapshot.`;
+  } finally {
+    if (request === diagnosticRequest) {
+      ui['refresh-diagnostics'].disabled = false;
+      ui['diagnostic-panel'].removeAttribute('aria-busy');
+    }
+  }
+}
+ui.diagnostics.addEventListener('click', () => {
+  const open = ui['diagnostic-panel'].hidden;
+  ui['diagnostic-panel'].hidden = !open;
+  ui.diagnostics.setAttribute('aria-expanded', String(open));
+  if (open) void readDiagnostics();
+  else {
+    // A late response must never reopen a panel the user has already closed.
+    ++diagnosticRequest;
+    ui['diagnostic-panel'].removeAttribute('aria-busy');
+    ui['refresh-diagnostics'].disabled = false;
+    ui['diagnostic-details'].open = false;
+  }
+});
+ui['refresh-diagnostics'].addEventListener('click', () => {
+  if (!ui['diagnostic-panel'].hidden && !ui['refresh-diagnostics'].disabled) void readDiagnostics();
+});
 window.addEventListener('pagehide', () => { for (const off of dispose) void off(); });
 run(async () => {
   if (!window.reaper) {
