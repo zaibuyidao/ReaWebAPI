@@ -17,7 +17,7 @@
 
 `api/bindings.json` 是提交的审阅结果。`runtime/reaper-api.generated.js`、`.d.ts` 和 `docs/api-reference.md` 从定义及该清单生成，逐项参考包含签名、参数类型、返回名称及官方链接。验证会拒绝过期声明或参考文档。C++ 实现仅生成到构建目录，不重复提交生成源码。
 
-工具作者应从 [开发文档](../docs/README.zh-CN.md) 开始。`tools/package_sdk.py` 生成独立 SDK，并将同一份 SDK 和文档加入平台包。发布流程会附带 SDK ZIP，ReaPack 的扩展专用结构保持不变。
+工具作者应从 [开发文档](../docs/README.zh-CN.md) 开始。`tools/package_sdk.py` 生成独立 SDK，并将同一份 SDK 和文档加入平台包。
 
 ## 日常命令
 
@@ -78,7 +78,7 @@ python -m tools.api_sync verify
 
 Demo 的 **Run read-only checks** 覆盖 10 条调用路径，不修改工程，资源检查会在 `finally` 释放 accessor。空工程显示跳过项。只有用户点击颜色、声像和光标按钮才执行对应写入。
 
-CMake 将定义摘要、调用入口和 JS 方法列表嵌入扩展。ReaPack 包包含 `extension/` 内 7 个原生文件、`ReaWebAPI.ext` 和许可声明。
+CMake 将定义摘要、调用入口和 JS 方法列表嵌入扩展。ReaPack 包包含 `ReaWebAPI.ext`、`extension/` 内 7 个原生文件和完整的 `demo/` 文件夹。
 
 ## 其他输入
 

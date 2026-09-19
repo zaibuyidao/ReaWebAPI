@@ -159,7 +159,7 @@ Ship the Lua launcher, HTML, built JavaScript, CSS and required assets, preservi
 
 State your minimum REAPER and ReaWebAPI versions. Feature-detect required methods and explain missing dependencies in the UI. Test empty projects, missing selection, Unicode paths, deleted objects, project switches, docking, repeated open/close and each supported OS. Use the larger bundled Demo for bridge diagnostics. A passing simulated ABI test is not proof of all native side effects on real projects.
 
-`ReaWebAPI-ReaPack-v<version>.zip` contains seven native files in `extension/`, `ReaWebAPI.ext` and license notices. Publish your tool's pages and Lua entry separately. The SDK ZIP contains development materials.
+`ReaWebAPI-ReaPack-v<version>.zip` contains `ReaWebAPI.ext` alongside `extension/` with seven native files and the complete `demo/` folder. The SDK ZIP contains development materials.
 
 ## Modern frontend and host I/O
 

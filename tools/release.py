@@ -1,4 +1,4 @@
-"""Assemble the seven-file ReaPack payload, then optionally publish a complete release."""
+"""Assemble ReaPack binaries and the Demo, then optionally publish a complete release."""
 import argparse
 import hashlib
 import json
@@ -55,8 +55,8 @@ def release_body(repo, version):
             'On Linux, keep the matching WebKit helper beside the extension with execute permission.\n\n'
             '平台安装包包含扩展、SDK 和示例。解压到 REAPER 资源目录后重启。'
             'Linux 的同架构 WebKit 辅助程序与扩展放在同一目录，并赋予执行权限。\n\n'
-            'The SDK provides type declarations and templates. The ReaPack package provides binaries and repository metadata.\n\n'
-            'SDK 提供类型声明和开发模板，ReaPack 包提供二进制文件和仓库索引元数据。\n\n'
+            'The SDK provides type declarations and templates. The ReaPack package provides binaries, the complete Demo and repository metadata.\n\n'
+            'SDK 提供类型声明和开发模板，ReaPack 包提供二进制文件、完整 Demo 和仓库索引元数据。\n\n'
             f'[Documentation / 文档](https://github.com/{repo}#readme)\n')
 
 
@@ -69,6 +69,14 @@ def descriptor(version):
     changes = version_notes(version).split('## 更新', 1)[0]
     lines += ['@changelog'] + ['  ' + line for line in re.findall(r'^- (.+)$', changes, re.MULTILINE)]
     return '\n'.join(lines) + '\n'
+
+
+def add_demo(archive, directory):
+    if not directory.is_dir():
+        raise ValueError(f'Missing Demo directory: {directory}')
+    archive.write(directory, 'demo/')
+    for path in sorted(directory.rglob('*')):
+        archive.write(path, 'demo/' + path.relative_to(directory).as_posix())
 
 
 def assemble(directory, version, revision):
@@ -92,8 +100,7 @@ def assemble(directory, version, revision):
     reapack = directory / f'ReaWebAPI-ReaPack-v{version}.zip'
     with zipfile.ZipFile(reapack, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.write(ext, ext.name)
-        for name in ('LICENSE.md', 'COPYING', 'COPYING.LESSER', 'THIRD_PARTY.md'):
-            archive.write(Path(__file__).resolve().parents[1] / name, name)
+        add_demo(archive, Path(__file__).resolve().parents[1] / 'demo')
         for _, name in native_files():
             # Preserve executable permission even when Actions normalized downloaded files to 0644.
             info = zipfile.ZipInfo(f'extension/{name}')

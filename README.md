@@ -25,13 +25,13 @@ REAPER 6.68+ is supported. REAPER 7.80+ provides the complete API catalogue.
 | --- | --- |
 | Platform ZIP | Extension, SDK, examples and documentation |
 | SDK ZIP | TypeScript declarations, templates and API reference |
-| ReaPack ZIP | Multi-platform binaries and metadata for ReaPack repository integration |
+| ReaPack ZIP | Multi-platform binaries, the complete Demo and ReaPack repository metadata |
 
 Quit REAPER and extract the platform ZIP into its resource directory, available from **Options → Show REAPER resource path in explorer/finder**. Restart REAPER to load the extension.
 
 For manual installation, place the native binary in `UserPlugins/`. On Linux, place the matching `reawebapi-webview-<arch>` helper in the same directory and grant it execute permission.
 
-Run `Scripts/ReaWebAPI/Example/Example.lua` from the Action List to open the example.
+Run `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` from the Action List to open the example.
 
 ## Development
 

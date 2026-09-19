@@ -25,13 +25,13 @@ ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩�
 | --- | --- |
 | 平台 ZIP | 扩展、SDK、示例和文档 |
 | SDK ZIP | TypeScript 类型声明、开发模板和 API 参考 |
-| ReaPack ZIP | 用于 ReaPack 仓库集成的多平台二进制文件和索引元数据 |
+| ReaPack ZIP | 多平台二进制文件、完整 Demo 和 ReaPack 仓库索引元数据 |
 
 在 REAPER 中通过 **Options → Show REAPER resource path in explorer/finder** 打开资源目录。退出 REAPER，将平台 ZIP 解压到该目录，再启动 REAPER。
 
 手动安装时，将原生扩展放入 `UserPlugins/`。Linux 的同架构 `reawebapi-webview-<arch>` 辅助程序也放在该目录，并赋予执行权限。
 
-在 Action List 运行 `Scripts/ReaWebAPI/Example/Example.lua` 即可打开示例。
+在 Action List 运行 `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` 即可打开示例。
 
 ## 开发
 

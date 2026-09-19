@@ -33,10 +33,18 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(assets), 16)
         self.assertIn(self.directory / f'ReaWebAPI-SDK-v{self.version}.zip', assets)
         with zipfile.ZipFile(self.directory / f'ReaWebAPI-ReaPack-v{self.version}.zip') as bundle:
-            notices = {'LICENSE.md', 'COPYING', 'COPYING.LESSER', 'THIRD_PARTY.md'}
-            self.assertEqual(set(bundle.namelist()), {'ReaWebAPI.ext'} | notices | {f'extension/{name}' for _, name in release.native_files()})
-            for name in notices:
-                self.assertEqual(bundle.read(name), (Path(__file__).parents[1] / name).read_bytes())
+            demo = Path(__file__).parents[1] / 'demo'
+            demo_files = {f'demo/{path.relative_to(demo).as_posix()}': path.read_bytes()
+                          for path in demo.rglob('*') if path.is_file()}
+            files = {entry.filename for entry in bundle.infolist() if not entry.is_dir()}
+            self.assertEqual(files, {'ReaWebAPI.ext'} | demo_files.keys() |
+                             {f'extension/{name}' for _, name in release.native_files()})
+            self.assertEqual({name for name in files if '/' not in name}, {'ReaWebAPI.ext'})
+            for name, data in demo_files.items():
+                self.assertEqual(bundle.read(name), data)
+            for _, name in release.native_files():
+                self.assertEqual(bundle.read(f'extension/{name}'), (self.directory / name).read_bytes())
+                self.assertEqual(bundle.getinfo(f'extension/{name}').external_attr >> 16, 0o100755)
             self.assertNotIn('web/', bundle.read('ReaWebAPI.ext').decode())
             self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 7)
             self.assertIn(f'@version {self.version}\n', bundle.read('ReaWebAPI.ext').decode())
@@ -44,6 +52,25 @@ class ReleaseTests(unittest.TestCase):
         links = release.re.findall(r'https://github.com/test/repo/releases/download/v[^/]+/([^\s)]+)', body)
         expected = {asset.name for asset in assets if asset.suffix == '.zip' or asset.name == 'SHA256SUMS.txt'}
         self.assertEqual(set(links), expected)
+    def test_demo_includes_nested_hidden_and_binary_resources(self):
+        demo = self.directory / 'source-demo'
+        (demo / 'assets/empty').mkdir(parents=True)
+        resources = {'index.html': b'<html>Demo</html>', '.config': b'hidden',
+                     'assets/音频.wav': bytes(range(256))}
+        for name, data in resources.items():
+            (demo / name).write_bytes(data)
+        output = self.directory / 'demo-test.zip'
+        with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as bundle:
+            release.add_demo(bundle, demo)
+        with zipfile.ZipFile(output) as bundle:
+            self.assertEqual(set(bundle.namelist()), {'demo/', 'demo/assets/', 'demo/assets/empty/'} |
+                             {f'demo/{name}' for name in resources})
+            for name, data in resources.items():
+                self.assertEqual(bundle.read(f'demo/{name}'), data)
+    def test_missing_demo_is_rejected(self):
+        with zipfile.ZipFile(self.directory / 'demo-test.zip', 'w') as bundle:
+            with self.assertRaisesRegex(ValueError, 'Missing Demo directory'):
+                release.add_demo(bundle, self.directory / 'missing-demo')
     def test_release_notes_select_exact_version(self):
         text = '# ReaWebAPI v1.2.3\n\n## Changes\n\n- Current release.\n\n# ReaWebAPI v1.2.2\n\n- Previous release.\n'
         with patch.object(release.Path, 'read_text', return_value=text):

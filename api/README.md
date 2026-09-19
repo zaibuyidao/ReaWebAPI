@@ -17,7 +17,7 @@ Scope: **all 730 standard C/Lua APIs in REAPER 7.80**. Every entry has a generat
 
 `api/bindings.json` records accepted reviews. `runtime/reaper-api.generated.js`, `.d.ts` and `docs/api-reference.md` derive from the schema and this manifest. The reference includes all signatures, argument types, return labels and official links. Verification rejects stale declarations or reference pages. Generated C++ stays in the build directory, avoiding redundant committed implementation files.
 
-Tool authors should start with the [developer documentation](../docs/README.md). `tools/package_sdk.py` creates the standalone SDK and stages the same SDK/docs into platform bundles. Release assembly includes that ZIP while keeping the ReaPack payload unchanged.
+Tool authors should start with the [developer documentation](../docs/README.md). `tools/package_sdk.py` creates the standalone SDK and stages the same SDK/docs into platform bundles.
 
 ## Routine commands
 
@@ -78,7 +78,7 @@ Compilation verifies ABI types and complete registration. Development checks inc
 
 The demo's **Run read-only checks** covers ten paths without project edits. Accessors are released in `finally`. Empty projects show skips. Color, pan and cursor writes require their respective button clicks.
 
-The extension embeds the schema projection, native calls and JavaScript methods. The ReaPack package contains seven native files under `extension/`, `ReaWebAPI.ext` and license notices.
+The extension embeds the schema projection, native calls and JavaScript methods. The ReaPack package contains `ReaWebAPI.ext`, seven native files under `extension/` and the complete `demo/` folder.
 
 ## Exchange inputs
 

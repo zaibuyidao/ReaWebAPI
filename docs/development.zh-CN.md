@@ -159,7 +159,7 @@ try {
 
 注明最低 REAPER 和 ReaWebAPI 版本，通过能力查询检查依赖的方法，并在界面解释缺失依赖。发布前检查空工程、没有选择、Unicode 路径、对象删除、工程切换、停靠、反复开关窗口及各目标系统。完整 Demo 可辅助桥接诊断，模拟 ABI 测试通过不代表已验证所有原生 API 对真实工程的影响。
 
-`ReaWebAPI-ReaPack-v<版本>.zip` 包含 `extension/` 下七个原生文件、`ReaWebAPI.ext` 和许可声明。工具页面及 Lua 入口应独立发布。SDK ZIP 提供开发资料。
+`ReaWebAPI-ReaPack-v<版本>.zip` 包含 `ReaWebAPI.ext`、存放七个原生文件的 `extension/` 和完整的 `demo/` 文件夹，三者同级。SDK ZIP 提供开发资料。
 
 ## 现代前端与宿主 I/O
 
