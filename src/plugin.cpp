@@ -35,6 +35,7 @@ template<class F> auto guarded(F&& fn, decltype(fn()) fallback) noexcept -> decl
 int ReaWebOpen(const char* path) {
   return guarded([&] { return runtime->open(path ? path : ""); }, 0);
 }
+int ReaWeb_OpenDev(const char* url) { return guarded([&] { return runtime->open_dev(url ? url : ""); }, 0); }
 bool ReaWeb_Close(int id) { return guarded([&] { return runtime->close(id); }, false); }
 bool ReaWeb_IsOpen(int id) { return guarded([&] { return runtime->is_open(id); }, false); }
 bool ReaWeb_DevTools(int id) { return guarded([&] { return runtime->devtools(id); }, false); }
@@ -49,6 +50,9 @@ const char* ReaWeb_GetDiagnostics(int id) {
 const char* ReaWeb_GetLastError() { return last_error.c_str(); }
 void* open_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWebOpen(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
+}
+void* dev_vararg(void** args, int count) {
+  return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_OpenDev(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
 }
 template<bool (*Fn)(int)> void* id_vararg(void** args, int count) {
   const auto id = count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0;
@@ -137,6 +141,59 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     host.end_undo = [end_undo](void* project, const std::string& label) { end_undo(static_cast<ReaProject*>(project), label.c_str(), -1); };
     host.prevent_refresh = prevent_refresh;
     host.update_arrange = update;
+    const auto get_function = rec->GetFunc;
+    auto count_items = reinterpret_cast<int (*)(ReaProject*)>(get_function("CountSelectedMediaItems"));
+    auto selected_item = reinterpret_cast<MediaItem* (*)(ReaProject*, int)>(get_function("GetSelectedMediaItem"));
+    auto active_take = reinterpret_cast<MediaItem_Take* (*)(MediaItem*)>(get_function("GetActiveTake"));
+    auto item_string = reinterpret_cast<bool (*)(MediaItem*, const char*, char*, bool)>(get_function("GetSetMediaItemInfo_String"));
+    auto take_string = reinterpret_cast<bool (*)(MediaItem_Take*, const char*, char*, bool)>(get_function("GetSetMediaItemTakeInfo_String"));
+    if (count_items && selected_item && active_take && item_string && take_string) {
+      host.count_selected_items = [count_items](void* p) { return count_items(static_cast<ReaProject*>(p)); };
+      host.item_identity = [=](void* p, int index) -> std::pair<std::string, std::string> {
+        auto item = selected_item(static_cast<ReaProject*>(p), index);
+        if (!item || !valid(static_cast<ReaProject*>(p), item, "MediaItem*")) return {};
+        char item_guid[128]{}, take_guid[128]{};
+        if (!item_string(item, "GUID", item_guid, false)) return {};
+        if (auto take = active_take(item)) take_string(take, "GUID", take_guid, false);
+        return {item_guid, take_guid};
+      };
+    }
+    host.event_snapshot = [get_function](const std::string& name) -> Json {
+      if (name == "transportchange") {
+        auto state = reinterpret_cast<int (*)()>(get_function("GetPlayState"));
+        auto position = reinterpret_cast<double (*)()>(get_function("GetPlayPosition"));
+        auto cursor = reinterpret_cast<double (*)()>(get_function("GetCursorPosition"));
+        auto tempo = reinterpret_cast<double (*)()>(get_function("Master_GetTempo"));
+        if (!state || !position || !cursor || !tempo) return {{"available", false}};
+        return {{"available", true}, {"state", state()}, {"position", position()}, {"cursor", cursor()}, {"tempo", tempo()}};
+      }
+      auto focused = reinterpret_cast<bool (*)(int,int*,int*,int*,int*,int*)>(get_function("GetTouchedOrFocusedFX"));
+      if (!focused) return {{"available", false}, {"focused", nullptr}, {"touched", nullptr}};
+      auto snapshot = [&](int mode) -> Json {
+        int track = -1, item = -1, take = -1, fx = -1, parameter = -1;
+        if (!focused(mode, &track, &item, &take, &fx, &parameter)) return nullptr;
+        Json value = nullptr;
+        if (mode == 0 && parameter >= 0) {
+          auto get_track = reinterpret_cast<MediaTrack* (*)(ReaProject*, int)>(get_function("GetTrack"));
+          auto master = reinterpret_cast<MediaTrack* (*)(ReaProject*)>(get_function("GetMasterTrack"));
+          auto t = track < 0 ? (master ? master(nullptr) : nullptr) : (get_track ? get_track(nullptr, track) : nullptr);
+          if (t && item < 0) {
+            auto get = reinterpret_cast<double (*)(MediaTrack*,int,int)>(get_function("TrackFX_GetParamNormalized"));
+            if (get) value = get(t, fx, parameter);
+          } else if (t) {
+            auto get_item = reinterpret_cast<MediaItem* (*)(MediaTrack*,int)>(get_function("GetTrackMediaItem"));
+            auto get_take = reinterpret_cast<MediaItem_Take* (*)(MediaItem*,int)>(get_function("GetTake"));
+            auto get = reinterpret_cast<double (*)(MediaItem_Take*,int,int)>(get_function("TakeFX_GetParamNormalized"));
+            auto media = get_item ? get_item(t, item) : nullptr;
+            auto source = media && get_take ? get_take(media, take) : nullptr;
+            if (source && get) value = get(source, fx, parameter);
+          }
+        }
+        return {{"trackIndex", track}, {"itemIndex", item}, {"takeIndex", take}, {"fxIndex", fx},
+          {"parameter", mode == 0 ? Json(parameter) : Json(nullptr)}, {"focused", mode == 1 ? Json(!(parameter & 1)) : Json(nullptr)}, {"value", value}};
+      };
+      return {{"available", true}, {"focused", snapshot(1)}, {"touched", snapshot(0)}};
+    };
     auto add_dock = load<void (*)(HWND, const char*, const char*, bool)>(rec, "DockWindowAddEx");
     auto remove_dock = load<void (*)(HWND)>(rec, "DockWindowRemove");
     auto dock_index = load<int (*)(HWND, bool*)>(rec, "DockIsChildOfDock");
@@ -171,6 +228,8 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       "bool\0int\0windowId\0Activate the Docker tab or floating window and focus its WebView.\0");
     add_api("ReaWeb_GetDiagnostics", reinterpret_cast<void*>(ReaWeb_GetDiagnostics), reinterpret_cast<void*>(diagnostics_vararg),
       "const char*\0int\0windowId\0Return JSON diagnostics for the window, or an empty object on error.\0");
+    add_api("ReaWeb_OpenDev", reinterpret_cast<void*>(ReaWeb_OpenDev), reinterpret_cast<void*>(dev_vararg),
+      "int\0const char*\0url\0Open an explicitly trusted loopback HTTP development server.\0");
     add_registration("hwnd_info", reinterpret_cast<void*>(window_info));
     add_registration("projectconfig", &project_events);
     add_registration("timer", reinterpret_cast<void*>(timer));

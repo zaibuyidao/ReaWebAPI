@@ -18,3 +18,7 @@ In an installation or SDK ZIP, the sibling SDK directory is named `SDK/` instead
 The large bundled Demo is an API workbench. The SDK starter is the smaller starting point for a new tool. The extension injects its own bridge, so pages must not load the SDK's `reaper.js` or generated method list themselves.
 
 For extension maintainers, see the repository's [API Sync guide](https://github.com/zaibuyidao/ReaWebAPI/tree/main/api). API reference and editor declarations are generated together. `python -m tools.api_sync verify` rejects stale generated files before a build.
+
+- [Frontend / 前端资源约定](frontend.md)
+- [前端资源约定（中文）](frontend.zh-CN.md)
+- [v0.1.6 release notes / 发布说明](release-notes.md)

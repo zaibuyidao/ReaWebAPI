@@ -42,7 +42,10 @@ def descriptor(version):
         lines.append(f'  [{platform} extension] {name} {url}')
     lines += ['@changelog', '  Bind all 730 standard REAPER APIs with typed native dispatch.',
               '  Support handles, multiple results, binary MIDI and audio sample buffers.',
-              '  Provide a separate SDK, starter and bilingual developer documentation.']
+              '  Provide a separate SDK, starter and bilingual developer documentation.',
+              '  Fix Linux large messages and cross-project batch Undo ownership.',
+              '  Add 173-method batches, managed Undo, file/desktop APIs and more events.',
+              '  Add a Vite/TypeScript template and loopback development entry.']
     return '\n'.join(lines) + '\n'
 
 
@@ -109,7 +112,8 @@ def publish(repo, version, revision, assets):
     if tagged != revision or (release and release['target_commitish'] != revision):
         raise ValueError(f'{tag} points to a different commit. Use a new version.')
     notes = assets[0].parent / 'release-notes.md'
-    notes.write_text(
+    changes = (Path(__file__).resolve().parents[1] / 'docs/release-notes.md').read_text(encoding='utf-8')
+    notes.write_text(changes + '\n\n' +
         'Native files can be downloaded individually. Linux needs both the .so and its matching WebKit helper.\n\n'
         'Platform ZIPs include the demo, SDK and developer documentation. The standalone SDK ZIP adds a runnable starter and the complete API reference. '
         'The ReaPack ZIP contains only extension/ (seven files) and ReaWebAPI.ext. '

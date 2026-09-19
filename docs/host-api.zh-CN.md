@@ -16,10 +16,13 @@
 
 `projectScope` 为 `all`，`limits` 报告请求字节数、批处理及等待调用上限。诊断计数针对当前窗口，`lastError` 是诊断字符串，不是所有调用错误的历史记录。2 ms 调度预算是软预算，不约束单个原生函数的执行时间。
 
+能力与诊断都包含 `webRuntime`：`contract`（1）、`mode`（`app-http` / `dev-http`）、`appId`、`origin`、`storageIsolation`（`app-profile`）、`localResources`。详见 [Web Runtime 约定](frontend.zh-CN.md)。
+
 ## 窗口
 
 | 方法 | 完成后的值 | 行为 |
 | --- | --- | --- |
+| `ReaWeb_OpenDev(url)` | 数字窗口 ID | 受信任的 loopback HTTP 开发服务器，参见[前端资源约定](frontend.zh-CN.md) |
 | `ReaWebOpen(path)` | 数字窗口 ID | 打开本地 HTML，相对路径从调用页面所在目录解析 |
 | `ReaWeb_Close()` | `boolean` | 请求关闭，文档销毁可能使尚未完成的 Promise 被拒绝，包括关闭请求本身 |
 | `ReaWeb_Focus()` | `boolean` | 聚焦当前窗口 |
@@ -30,7 +33,7 @@
 | `ReaWeb_SetKeyboardCapture(capture)` | `boolean` | 默认 `true`，设为 `false` 后遵循 REAPER 的全局快捷键规则 |
 | `ReaWeb_GetWindowState()` | `ReaWebWindowState` | `id`、`title`、`docked`、`visible`、`focused`、`keyboardCapture` |
 
-窗口位置和停靠状态按入口文件及实例序号保存，最多同时打开 32 个窗口。即使浏览器存储共享，句柄、订阅及等待请求也只属于本页。
+窗口位置和停靠状态按入口文件及实例序号保存，最多同时打开 32 个窗口。同一 App 目录的窗口共享浏览器存储，不同目录隔离；句柄、订阅及等待请求始终只属于本页。
 
 ## 事件
 
@@ -40,27 +43,57 @@
 | --- | --- |
 | `projectchange` | `{ projectEpoch, changeCount }` |
 | `selectionchange` | `{ projectEpoch, revision, count }`，count 是选中轨道数 |
+| `itemselectionchange` | `{ projectEpoch, revision, count }`，选中 Item |
+| `takeselectionchange` | 同结构，选中 Item 的活动 Take |
+| `transportchange` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }` |
+| `fxchange` | `{ projectEpoch, available, focused, touched, changeCount }` |
 | `windowstatechange` | `ReaWebWindowState` |
 
 工程及选择状态约每 100 ms 检查一次。工程切换或加载会更新 `projectEpoch`，应据此刷新依赖工程对象的界面。关闭文档会清理订阅。`ReaWeb_Subscribe`、`ReaWeb_Unsubscribe`、`__reawebHello` 和 `__reawebReceive` 是桥接内部实现，不作为应用接口使用。
 
+FX 事件追踪焦点、最后触碰参数及工程 changeCount，用于使 FX 界面缓存失效，不是所有插件参数变化的逐条通知。state 是 REAPER 播放状态位掩码；available 为 false 时其他播放字段可能缺省。选择扫描按帧分段，大型选择通知可能晚于 100 ms。
+
 ## 批处理与连续参数
 
-`ReaWeb_Batch(calls, { undoLabel? })` 接受 1–32 个 `{ method, args }`，按顺序返回结果。原生执行前会校验全部参数。非空 Undo 标签最多 256 UTF-8 字节，写操作同步执行并配对 UI 刷新保护，提供标签时形成一个 Undo 分组。
+`ReaWeb_Batch(calls, { undoLabel? })` 接受 1–128 个调用，按顺序返回结果。`capabilities.batchMethods` 与 `ReaWebBatchMethod` 列出 173 个已审核接口，覆盖轨道、Item、Take、MIDI、FX、包络、发送、标记和速度。工程切换、Action 调用、模态对话框、文件读写、手动 Undo/刷新作用区间及音频样本数组不进入批处理。全部 730 项标准 API 仍可单独调用。
 
-| 支持的方法 | `args` |
+批处理仅作用于**当前工程**。任何外部工程句柄或对象都会在写入前被拒绝，包括后面条目中的外部句柄。方法、可用性和不含引用的条目参数会预先校验；依赖前面结果的参数在该条执行前校验。引用序号从零开始，可通过最多八段 `path` 选取数组元素或对象属性。引用必须作为完整的顶层参数，不能向后引用。
+
+```javascript
+const results = await reaper.ReaWeb_Batch([
+  { method: 'GetSelectedTrack', args: [0, 0] },
+  { method: 'GetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL'] },
+  { method: 'SetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL', 0.5] }
+], { undoLabel: '设置选中轨道音量' });
+// 没有选择时，在 setter 执行前失败。多返回值可用 {$ref: 0, path: [1]} 选取。
+```
+
+每组同步执行并配对刷新保护；可选非空标签最多 256 UTF-8 字节，对应一个 Undo 分组。无返回值占一个 `null` 位置。false/0 保持原生含义，旧有轨道值 setter 的 false 则报错。执行失败报告 `BATCH_FAILED`，包含 `completed`、`results`、`rolledBack: false`，以及可选的 `cause`、`cleanupError`。已经完成的写入保留，**批处理不是事务**。
+
+`ReaWeb_BeginUndo(label)` 返回本页专属 token，`ReaWeb_EndUndo(token)` 关闭分组。`ReaWeb_WithUndo(label, async () => { ... })` 自动通过 finally 清理。托管手势采用同一组已审核 API 和当前工程限制。所有窗口合计只能有一个手势；其他窗口的工程调用、嵌套分组、批处理、手动 Undo/刷新调用返回 `UNDO_BUSY`。浏览器事件之间不会保持刷新锁。
+
+宿主会在页面重载/关闭、工程切换/加载或 30 秒后关闭分组；结束过期 token 报 `STALE_UNDO`。await 期间其他脚本和用户仍可能编辑工程，因此应保持手势简短。这不是排他锁，也不自动回滚。直接调用原生 Undo 开启的作用区间仍由调用者负责，不受托管清理保护。
+
+`ReaWeb_SetTrackValueLatest(track, key, value)` 对 `D_VOL`、`D_PAN`、`B_MUTE`、`I_SOLO` 合并等待值，每组轨道/参数保留一个正在执行及一个最新等待值，最多 128 组。被替代的值返回 `{ applied: false, superseded: true }`。结束手势前应等待所有写入完成。
+
+## 文件与桌面服务
+
+文件操作在工作线程执行，REAPER API 仍在主线程执行。文件操作使用当前用户的权限，**不会将受信任页面限制在页面目录内**。相对路径基于 HTML 所在目录；允许绝对路径和 `..`。Lua 打开的开发服务器窗口以 `<资源目录>/Scripts/` 为基准，JavaScript 打开的开发窗口继承调用页目录。
+
+| 方法 | 返回值 / 选项 |
 | --- | --- |
-| `CountTracks`、`CountSelectedTracks` | `[0]` 或 `[null]` |
-| `GetTrack`、`GetSelectedTrack` | `[0, index]` 或 `[null, index]` |
-| `GetTrackName` | `[track]` |
-| `GetMediaTrackInfo_Value` | `[track, key]` |
-| `SetMediaTrackInfo_Value` | `[track, key, value]` |
-| `SetTrackColor` | `[track, color]` |
-| `GetAppVersion` | `[]` |
+| `ReaWeb_ReadFile(path)` | UTF-8 字符串；无效 UTF-8 报 `FILE_ENCODING` |
+| `ReaWeb_ReadFile(path, { encoding: 'binary' })` | `Uint8Array` |
+| `ReaWeb_WriteFile(path, text, { overwrite?: boolean })` | `{ path, bytes }`；默认拒绝覆盖已有文件 |
+| `ReaWeb_WriteFile(path, bytes, { encoding: 'binary', overwrite?: boolean })` | 写二进制，输入为 `Uint8Array` |
+| `ReaWeb_Stat(path)` | `{ path, exists, type, size }`；文件大小为字节，其他为 null |
+| `ReaWeb_ReadDirectory(path)` | 排序后的属性数组，额外包含 `name`，最多 4096 项 |
+| `ReaWeb_MakeDirectory(path, { recursive?: boolean })` | 布尔值，表示是否创建目录 |
+| `ReaWeb_ClipboardReadText()` | UTF-8 文本，无文本时为空字符串 |
+| `ReaWeb_ClipboardWriteText(text)` | 布尔值 |
+| `ReaWeb_OpenExternal(url)` | 布尔值，将 http/https/mailto 交给系统默认程序 |
 
-批处理的轨道键限于 `D_VOL`、`D_PAN`、`B_MUTE`、`I_SOLO`、`I_CUSTOMCOLOR`，工程参数仅支持当前工程。构造批处理前先获取句柄，一项不能引用同批前一项的结果。无返回值的原生调用在批处理结果数组中占一个 `null` 位置。执行失败返回 `BATCH_FAILED`，details 包含 `completed`、`results`、`rolledBack: false`，有时还包含 `cleanupError`。已经执行的写入不会自动回滚。
-
-`ReaWeb_SetTrackValueLatest(track, key, value)` 支持 `D_VOL`、`D_PAN`、`B_MUTE`、`I_SOLO`，每个轨道/参数保留一个正在执行的写入及最新等待值。被替代的等待值返回 `{ applied: false, superseded: true }`，已执行值返回 `{ applied, superseded: false }`。最多保留 128 组轨道/参数，不创建 Undo 手势，也不改变普通 setter 的行为。
+文件内容和剪贴板文本限制为 16 MiB，剪贴板写入拒绝 NUL。文件先写到同目录临时文件，再通过重命名/链接提交；父目录必须存在。`overwrite: true` 明确允许覆盖。已经开始的 I/O 可能在页面关闭后完成，未收到回复不代表写入失败，不提供删除、递归清理或自动重试。错误包括 `FILE_IO`、`FILE_NOT_FOUND`、`FILE_NOT_DIRECTORY`、`FILE_EXISTS`、`FILE_ENCODING`、`DIRECTORY_LIMIT`、`CLIPBOARD_BUSY`, `CLIPBOARD_ERROR`, `EXTERNAL_OPEN_FAILED`、`HOST_UNAVAILABLE`、`HOST_TIMEOUT`、`INVALID_URL`。外链成功仅表示操作系统接受请求。
 
 ## 错误与限制
 
@@ -72,7 +105,7 @@
 | 单个字符串或二进制值 | 16 MiB |
 | 音频数组 | 1,048,576 个 double 元素 |
 | JavaScript 等待调用 | 256 |
-| 单次批处理 | 32 个调用 |
+| 单次批处理 | 128 个调用 |
 | 每页有效句柄 | 65,536 |
 | 执行前排队过期 / 客户端等待保护 | 25 秒 / 30 秒 |
 
@@ -103,6 +136,7 @@
 
 | Lua 调用 | 返回 |
 | --- | --- |
+| `reaper.ReaWeb_OpenDev(url)` | 正数窗口 ID，失败返回 0 |
 | `reaper.ReaWebOpen(html_path)` | 正数窗口 ID，失败为 `0` |
 | `reaper.ReaWeb_Close(id)` | 布尔值 |
 | `reaper.ReaWeb_IsOpen(id)` | 布尔值 |

@@ -18,7 +18,7 @@ REAPER 6.68+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/Jav
 
 退出 REAPER，把扩展放入资源目录的 `UserPlugins/`，再重启。Linux 还需将同架构的 `reawebapi-webview-<arch>` 辅助程序放在 `.so` 旁边。
 
-每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.3.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
+每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.6.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
 
 将平台 ZIP 合并到 REAPER 资源目录，在 Action List 加载 `Scripts/ReaWebAPI/Example/Example.lua`。Demo 提供工程、轨道和 FX 查询，颜色及声像 Undo 操作，以及停靠切换。**Run read-only checks** 执行 10 条检查，覆盖对象句柄、多返回值、GUID、RECT、MIDI 字节和音频数组。选中带 MIDI Item 的轨道可覆盖全部路径，空工程会明确显示跳过项。
 
@@ -66,21 +66,21 @@ JavaScript 窗口控制方法作用于当前页面，无需窗口 ID。`ReaWebOp
 | 窗口控制 | `ReaWeb_Focus()`、`ReaWeb_SetTitle(title)`、`ReaWeb_GetWindowState()` |
 | 键盘策略 | `ReaWeb_SetKeyboardCapture(boolean)`，默认捕获，关闭后遵循 REAPER 的快捷键规则 |
 | 事件 | `ReaWeb_On(name, callback)`，返回可重复调用的异步取消订阅函数 |
-| 批处理、Undo | `ReaWeb_Batch(calls, { undoLabel })`，每组最多 32 个调用 |
+| 批处理、Undo | `ReaWeb_Batch(calls, { undoLabel })`，每组最多 128 个调用 |
 | 固定输出缓冲区 | `ReaWeb_SetBufferSize(bytes)`，默认 64 KiB，最大 16 MiB |
 | 连续参数 | `ReaWeb_SetTrackValueLatest(track, key, value)`，被合并的等待值返回 `superseded: true` |
 
-事件包含 `projectchange`、`selectionchange`、`windowstatechange`，提供初始状态并合并后续变化。工程和选择事件约每 100 ms 检查一次，适合刷新界面，不用于逐条记录编辑历史。批处理只接受 SDK 中 `ReaWebBatchCall` 列出的 9 个接口，预先校验参数，并同步结束 Undo 和刷新保护。全部 730 个接口均可普通调用。中途失败返回 `BATCH_FAILED` 及已完成的结果，不回滚已经发生的修改。连续参数合并需要显式使用对应接口，不改变普通 API 的逐次调用行为，也不自动创建拖动手势的 Undo 分组。
+事件包含轨道、Item、Take 选择，以及播放、FX、工程和窗口状态。批处理扩展至 173 个已审核标准 API，支持结果引用、当前工程校验及 Undo/刷新清理。托管 Undo 可跨 await，并由宿主在重载、关闭或超时后结束。新增统一文件、剪贴板和外链接口，以及 TypeScript/Vite loopback 开发入口。详见[宿主参考](docs/host-api.zh-CN.md)、[前端约定](docs/frontend.zh-CN.md)和 [v0.1.6 变更](docs/release-notes.md)。
 
 ## 运行环境
 
-Windows 使用 WebView2，macOS 使用 WKWebView，Linux 通过独立共享进程运行 WebKitGTK。所有窗口共用浏览器 profile。Windows/Linux 数据位于 `<资源目录>/ReaWebAPI/WebViewData/`。macOS 在该目录保存 profile ID，实际存储位置由 WebKit 管理。
+Windows 使用 WebView2，macOS 使用 WKWebView，Linux 为每个 App 使用独立 WebKitGTK 进程。本地 App 使用稳定的回环 HTTP 来源，直接支持 ES module 和本地 fetch。同一 App 目录的窗口共用 profile，不同目录隔离。profile 元数据位于 `<资源目录>/ReaWebAPI/Apps/<appId>/`。持久化、旧数据迁移及平台要求见 [Web Runtime v1 约定](docs/frontend.zh-CN.md)。
 
 浮动窗口归属 REAPER，切换停靠会保留页面和 JavaScript 状态。窗口位置、尺寸、最大化和停靠状态保存于 `<资源目录>/ReaWebAPI/WindowState/`，按页面路径和同时打开的实例序号区分。恢复时会校正超出屏幕的位置。Windows/Linux 可用 Demo 的 **Developer Tools** 按钮调试。macOS 需启用 Safari 开发者功能，再从 **Develop** 菜单检查 REAPER 页面。macOS 构建使用 ad-hoc 签名，未做公证。
 
 REAPER API 始终在主线程执行，窗口轮流处理请求，桥接调度采用每轮 2 ms 的软预算。单个原生调用和停靠操作无法抢占。桥接 JSON 解析、序列化及状态文件写入交给工作线程，队列和消息大小均有限制。
 
-页面拥有所绑定 API 的完整能力，包括工程写入和文件操作，请仅加载可信页面。浏览器 profile 共用，存储 key 建议加上工具名称前缀。
+页面拥有所绑定 API 的完整能力，包括工程写入和文件操作，请仅加载可信页面。浏览器存储按 App 目录隔离，原生文件系统访问仍保留已开放权限。
 
 ## API 定义维护
 
@@ -107,4 +107,4 @@ Windows 使用 MSVC x64，配置时加 `-A x64`。macOS 加 `-DCMAKE_OSX_ARCHITE
 
 推送到默认分支后，Actions 会构建五个平台目标，并按 `CMakeLists.txt` 中的版本发布到 **Releases**。匹配的 `v*` 标签和默认分支上的手动运行也可发布。PR 只构建。已有正式版本不会被覆盖，发布新版时递增版本号。
 
-提交白名单会排除本地测试、依赖缓存和编译产物，CI 仅依赖已提交的源码。第三方说明见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+回归测试已纳入仓库，各平台 CI 必须通过测试才会打包/发布。依赖缓存和构建产物仍不入库。使用 `-DBUILD_TESTING=ON` 配置后，运行 `ctest --test-dir build -C Release --output-on-failure`。第三方依赖见 [THIRD_PARTY.md](THIRD_PARTY.md)。

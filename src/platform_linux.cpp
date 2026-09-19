@@ -30,6 +30,9 @@ class LinuxProcess {
   std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
   bool ready_ = false;
   std::set<int> parked_;
+  uint64_t next_desktop_ = 0;
+  struct Desktop { Platform::DesktopReply reply; std::chrono::steady_clock::time_point deadline; };
+  std::map<std::string, Desktop> desktop_;
 public:
   std::string error;
   std::string version;
@@ -82,6 +85,11 @@ public:
     try {
       channel_->pump([this](const Json& message) {
         const auto op = message.at("op").get<std::string>();
+        if (op == "desktop-result") {
+          auto it = desktop_.find(message.at("request").get<std::string>());
+          if (it != desktop_.end()) { auto reply = std::move(it->second.reply); desktop_.erase(it); reply(message.at("response")); }
+          return;
+        }
         if (op == "ready") {
           if (message.value("protocol", 0) != 1 || message.value("version", "") != REAWEB_VERSION)
             throw std::runtime_error("WebKit helper version does not match the extension. Install both files from the same release");
@@ -94,12 +102,24 @@ public:
         else if (op == "error") it->second.on_error(message.at("error").get<std::string>());
         else if (op == "navigating" && it->second.on_navigation) it->second.on_navigation();
       });
+      for (auto it = desktop_.begin(); it != desktop_.end();) {
+        if (std::chrono::steady_clock::now() < it->second.deadline) { ++it; continue; }
+        auto reply = std::move(it->second.reply); it = desktop_.erase(it);
+        reply({{"error", {{"code", "HOST_TIMEOUT"}, {"message", "Desktop operation timed out"}}}});
+      }
       if (!ready_ && std::chrono::steady_clock::now() - started_ > std::chrono::seconds(15))
         throw std::runtime_error("WebKit process did not start within 15 seconds");
     } catch (const std::exception& failure) {
       error = std::string(failure.what()) + ". Check WebKitGTK 4.1 and the X11 display, then reopen the tool.";
       for (const auto& item : listeners) item.second.on_error(error);
     }
+  }
+  void desktop(const std::string& method, const Json& args, Platform::DesktopReply reply) {
+    if (desktop_.size() >= 64) throw Error("QUEUE_LIMIT", "Too many desktop operations");
+    const auto id = std::to_string(++next_desktop_);
+    desktop_.emplace(id, Desktop{std::move(reply), std::chrono::steady_clock::now() + std::chrono::seconds(10)});
+    try { send({{"id", 0}, {"op", "desktop"}, {"request", id}, {"method", method}, {"args", args}}); }
+    catch (...) { desktop_.erase(id); throw; }
   }
   void park(int id) {
     parked_.erase(id);
@@ -131,7 +151,7 @@ public:
     window_ = std::make_unique<SwellWindow>(options.title, options.parent, [this] {
       try { process_->send({{"id", id_}, {"op", "focus"}}); } catch (...) {}
     });
-    process_->send({{"id", id_}, {"op", "open"}, {"uri", file_uri(options.entry)}, {"script", options.script}});
+    process_->send({{"id", id_}, {"op", "open"}, {"uri", options.url.empty() ? file_uri(options.entry) : options.url}, {"script", options.script}});
     process_->listeners.emplace(id_, std::move(options));
   }
   ~LinuxWindow() override {
@@ -219,6 +239,10 @@ public:
     auto window = std::make_shared<LinuxWindow>(process_, ++next_id_, std::move(options));
     windows_.push_back(window);
     return window;
+  }
+  void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
+    if (!process_) throw Error("HOST_UNAVAILABLE", "WebKit is not running");
+    process_->desktop(method, args, std::move(reply));
   }
   void pump() override {
     if (!process_) return;

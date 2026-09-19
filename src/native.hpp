@@ -28,6 +28,7 @@ public:
   ~NativeContext();
   Json invoke(const NativeEntry& entry, const Json& args);
   void validate(const NativeEntry& entry, const Json& args);
+  void validate_project(const NativeEntry& entry, const Json& args, void* project);
   void reset();
   void* resolve(const char* name) const;
   Json capabilities() const;

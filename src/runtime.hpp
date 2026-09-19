@@ -1,6 +1,7 @@
 #pragma once
 #include "platform.hpp"
 #include "worker.hpp"
+#include "web_resources.hpp"
 #include <deque>
 #include <set>
 #include <thread>
@@ -11,6 +12,7 @@ public:
   Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock = {});
   ~Runtime();
   int open(const std::string& path, const fs::path& base = {});
+  int open_dev(const std::string& url, const fs::path& base = {});
   bool is_open(int id) const;
   bool close(int id);
   bool devtools(int id);
@@ -22,11 +24,17 @@ public:
   bool captures_keyboard(void* handle, const std::function<bool(void*, void*)>& is_child) const;
   void tick();
 private:
+  struct App {
+    std::string id, origin, mode;
+    std::unique_ptr<WebResources> resources;
+    std::unique_ptr<Platform> platform;
+  };
   struct Session {
     int id = 0, slot = 0;
     fs::path entry;
     fs::path state_path;
     std::string ident, document, title, last_error;
+    std::shared_ptr<App> app;
     std::shared_ptr<Window> window;
     std::unique_ptr<Bridge> bridge;
     std::deque<Work> queue;
@@ -45,13 +53,18 @@ private:
   DockApi dock_;
   fs::path resource_;
   std::function<void(const std::string&)> log_;
-  std::unique_ptr<Platform> platform_;
+  std::map<std::string, std::weak_ptr<App>> apps_;
   std::map<int, std::shared_ptr<Session>> sessions_;
   std::map<std::string, Json> state_cache_;
   std::map<int, Json> closed_diagnostics_;
   int next_id_ = 0;
   int cursor_ = 0;
   Worker worker_;
+  int undo_owner_ = 0;
+  uint64_t undo_sequence_ = 0;
+  std::string undo_token_, undo_label_;
+  void* undo_project_ = nullptr;
+  Clock::time_point undo_deadline_;
   void* project_ = nullptr;
   uint64_t project_epoch_ = 0, selection_revision_ = 0;
   uint64_t host_generation_ = 0;
@@ -60,11 +73,19 @@ private:
   uint64_t selection_hash_ = 0, last_selection_hash_ = 0;
   Clock::time_point next_observation_ = Clock::now();
   Json project_event_, selection_event_;
+  Json item_event_, take_event_, transport_event_, fx_event_;
+  int item_index_ = 0, item_count_ = -1, take_count_ = 0;
+  uint64_t item_hash_ = 0, take_hash_ = 0, last_item_hash_ = 0, last_take_hash_ = 0;
+  uint64_t item_revision_ = 0, take_revision_ = 0;
   bool ticking_ = false;
   std::thread::id main_thread_;
   void check_thread() const;
+  int open_impl(const std::string& path, const fs::path& base, const std::string& dev_url);
+  bool start_async(Session& session, const Work& request);
+  void finish_undo();
   void detach(const Session& session);
   Json window_state(const Session& session) const;
+  Json web_runtime(const Session& session) const;
   Json host_call(int id, const std::string& method, const Json& args);
   void navigate(Session& session);
   void reply(Session& session, Work work, Json response);

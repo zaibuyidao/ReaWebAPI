@@ -1,0 +1,49 @@
+add_executable(core_tests core_tests.cpp)
+target_link_libraries(core_tests PRIVATE reaweb_core)
+add_test(NAME core COMMAND core_tests)
+add_executable(runtime_tests runtime_tests.cpp "${PROJECT_SOURCE_DIR}/src/runtime.cpp")
+target_link_libraries(runtime_tests PRIVATE reaweb_core)
+target_include_directories(runtime_tests PRIVATE "${PROJECT_BINARY_DIR}/generated")
+add_test(NAME runtime COMMAND runtime_tests)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/native_abi_generated.cpp"
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_native_abi.py" "${CMAKE_CURRENT_BINARY_DIR}/native_abi_generated.cpp"
+  DEPENDS generate_native_abi.py "${PROJECT_SOURCE_DIR}/api/reaper_api.json" "${PROJECT_SOURCE_DIR}/api/bindings.json"
+          "${PROJECT_SOURCE_DIR}/tools/native_bindings.py"
+  VERBATIM)
+add_executable(native_abi "${CMAKE_CURRENT_BINARY_DIR}/native_abi_generated.cpp")
+target_link_libraries(native_abi PRIVATE reaweb_core)
+target_include_directories(native_abi SYSTEM PRIVATE "${PROJECT_BINARY_DIR}/sdk-layout/sdk")
+target_compile_definitions(native_abi PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+if(NOT WIN32)
+  target_compile_definitions(native_abi PRIVATE SWELL_PROVIDED_BY_APP)
+  # The generated test driver is intentionally huge. Test the optimized library,
+  # without spending minutes optimizing the linear list of test assertions.
+  target_compile_options(native_abi PRIVATE -O0)
+endif()
+add_test(NAME native_abi COMMAND native_abi)
+if(MSVC)
+  target_compile_options(core_tests PRIVATE /utf-8)
+  target_compile_options(runtime_tests PRIVATE /utf-8)
+endif()
+find_program(NODE_EXECUTABLE node REQUIRED)
+add_test(NAME bridge COMMAND "${NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/bridge.test.cjs")
+if(REAWEB_BUILD_EXTENSION)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME plugin_abi COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/plugin_smoke.py"
+    --dll "$<TARGET_FILE:reawebapi>")
+endif()
+
+add_executable(host_features host_features.cpp)
+target_link_libraries(host_features PRIVATE reaweb_core)
+if(MSVC)
+  target_compile_options(host_features PRIVATE /utf-8)
+endif()
+add_test(NAME host_features COMMAND host_features)
+add_test(NAME python_contracts COMMAND "${Python3_EXECUTABLE}" -X utf8 -m unittest discover -s "${CMAKE_CURRENT_SOURCE_DIR}" -p "*_test.py")
+set_tests_properties(python_contracts PROPERTIES WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}" ENVIRONMENT "PYTHONUTF8=1")
+
+add_executable(web_resources_driver web_resources_driver.cpp)
+target_link_libraries(web_resources_driver PRIVATE reaweb_core)
+add_test(NAME web_resources COMMAND "${Python3_EXECUTABLE}" -X utf8
+  "${CMAKE_CURRENT_SOURCE_DIR}/web_resources_contract.py" "$<TARGET_FILE:web_resources_driver>")

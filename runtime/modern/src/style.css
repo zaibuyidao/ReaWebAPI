@@ -1,0 +1,7 @@
+:root { color-scheme: dark; font: 16px/1.6 system-ui, sans-serif; color: #eaf1f5; background: #111a22; }
+* { box-sizing: border-box; } body { margin: 0; } main { max-width: 860px; margin: auto; padding: 40px 28px; }
+.eyebrow { color: #68d7bc; letter-spacing: .12em; font-size: .8rem; } h1 { font-size: 2.2rem; margin: .2em 0; }
+h2 { font-size: 1.1rem; } section { padding: 18px 24px; background: #1c2934; border: 1px solid #314653; border-radius: 12px; margin: 20px 0; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; } button { background: #b0eddb; color: #122a25; border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; cursor: pointer; }
+button:hover { background: #d3fff1; } button:disabled { opacity: .4; cursor: wait; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; } footer, #transport { color: #a6bbc8; font-size: .85rem; }

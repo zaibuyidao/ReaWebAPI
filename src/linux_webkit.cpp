@@ -37,7 +37,7 @@ public:
       if (!jsc_value_is_string(value)) return;
       auto message = jsc_value_to_string(value);
       try {
-        if (strlen(message) > 65536) self->fail("JavaScript message limit exceeded");
+        if (strlen(message) > message_limit) self->fail("JavaScript message limit exceeded");
         else self->channel_.send({{"id", self->id_}, {"op", "message"}, {"message", message}});
       } catch (const std::exception& error) { self->fail(error.what()); }
       g_free(message);
@@ -55,7 +55,9 @@ public:
     g_object_ref_sink(view_);
     auto settings = webkit_web_view_get_settings(view_);
     webkit_settings_set_enable_developer_extras(settings, TRUE);
-    webkit_settings_set_allow_file_access_from_file_urls(settings, TRUE);
+    webkit_settings_set_enable_javascript(settings, TRUE);
+    webkit_settings_set_enable_html5_local_storage(settings, TRUE);
+    webkit_settings_set_allow_file_access_from_file_urls(settings, FALSE);
     webkit_settings_set_allow_universal_access_from_file_urls(settings, FALSE);
     g_signal_connect(view_, "decide-policy", G_CALLBACK(+[](WebKitWebView*, WebKitPolicyDecision* decision, WebKitPolicyDecisionType type, gpointer data) -> gboolean {
       auto self = static_cast<Page*>(data);
@@ -127,6 +129,10 @@ public:
       gdk_x11_display_error_trap_push(gtk_widget_get_display(plug_));
       if (parent != parent_) { XReparentWindow(display, xid, parent, x, y); parent_ = parent; }
       gtk_window_resize(GTK_WINDOW(plug_), width, height);
+      // A foreign REAPER/X11 parent is not a GtkSocket, so allocate the client
+      // viewport explicitly instead of relying on GTK socket size negotiation.
+      GtkAllocation allocation{0, 0, width, height};
+      gtk_widget_size_allocate(plug_, &allocation);
       XMoveResizeWindow(display, xid, x, y, width, height);
       if (request.at("visible").get<bool>()) gtk_widget_show_all(plug_);
       else gtk_widget_hide(plug_);
@@ -148,16 +154,59 @@ struct Process {
   explicit Process(const char* data) {
     auto cache = (fs::path(data) / "Cache").string();
     auto manager = webkit_website_data_manager_new("base-data-directory", data, "base-cache-directory", cache.c_str(), nullptr);
+    const auto cookies = (fs::path(data) / "cookies.sqlite").string();
+    webkit_cookie_manager_set_persistent_storage(webkit_website_data_manager_get_cookie_manager(manager),
+      cookies.c_str(), WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE);
     context = webkit_web_context_new_with_website_data_manager(manager);
     g_object_unref(manager);
     channel.send({{"op", "ready"}, {"protocol", 1}, {"version", REAWEB_VERSION}, {"browserVersion",
       std::to_string(webkit_get_major_version()) + "." + std::to_string(webkit_get_minor_version()) + "." + std::to_string(webkit_get_micro_version())}});
   }
   ~Process() { pages.clear(); g_object_unref(context); }
+  void desktop(const Json& request) {
+    const auto token = request.at("request").get<std::string>();
+    auto respond = [&](Json response) { channel.send({{"op", "desktop-result"}, {"request", token}, {"response", response}}); };
+    try {
+      const auto method = request.at("method").get<std::string>();
+      const auto& args = request.at("args");
+      if (method == "ReaWeb_OpenExternal") {
+        const auto url = args.at(0).get<std::string>(); validate_external_url(url);
+        GError* error = nullptr;
+        if (!gtk_show_uri_on_window(nullptr, url.c_str(), GDK_CURRENT_TIME, &error)) {
+          std::string message = error ? error->message : "Cannot open external link";
+          if (error) g_error_free(error);
+          throw Error("EXTERNAL_OPEN_FAILED", message);
+        }
+        respond({{"result", true}}); return;
+      }
+      auto clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+      if (method == "ReaWeb_ClipboardWriteText") {
+        const auto value = args.at(0).get<std::string>();
+        if (value.size() > value_limit) throw Error("BUFFER_LIMIT", "Clipboard exceeds 16 MiB");
+        gtk_clipboard_set_text(clipboard, value.c_str(), static_cast<int>(value.size()));
+        gtk_clipboard_set_can_store(clipboard, nullptr, 0);
+        respond({{"result", true}}); return;
+      }
+      if (method != "ReaWeb_ClipboardReadText") throw Error("UNKNOWN_API", "Unknown desktop operation");
+      struct Pending { LinuxChannel* channel; std::string token; };
+      auto pending = new Pending{&channel, token};
+      gtk_clipboard_request_text(clipboard, +[](GtkClipboard*, const gchar* text, gpointer data) {
+        std::unique_ptr<Pending> p(static_cast<Pending*>(data));
+        try {
+          const std::string value = text ? text : "";
+          const Json response = value.size() <= value_limit ? Json{{"result", value}} :
+            Json{{"error", {{"code", "BUFFER_LIMIT"}, {"message", "Clipboard exceeds 16 MiB"}}}};
+          p->channel->send({{"op", "desktop-result"}, {"request", p->token}, {"response", response}});
+        } catch (...) { gtk_main_quit(); }
+      }, pending);
+    } catch (const Error& error) { respond({{"error", {{"code", error.code}, {"message", error.what()}}}}); }
+    catch (const std::exception& error) { respond({{"error", {{"code", "HOST_ERROR"}, {"message", error.what()}}}}); }
+  }
   void pump() {
     channel.pump([this](const Json& request) {
       const int id = request.at("id");
       const auto op = request.at("op").get<std::string>();
+      if (op == "desktop") { desktop(request); return; }
       try {
         if (op == "open") {
           if (pages.size() >= 32 || pages.count(id)) throw std::runtime_error("WebKit window limit exceeded");

@@ -83,9 +83,9 @@ if (track) {
 }
 ```
 
-The [batch contract](host-api.md#batches-and-continuous-controls) is limited to nine APIs. All 730 methods remain available through ordinary calls. A batch is not a transaction: completed writes remain if a later call fails, and its error reports completed results.
+The [batch contract](host-api.md#batches-and-continuous-controls) covers 173 reviewed standard APIs, result references and up to 128 calls. All 730 methods remain available through ordinary calls. A batch is not a transaction: completed writes remain if a later call fails, and its error reports completed results.
 
-When implementing a sequence outside the batch set, follow the relevant REAPER API's Undo rules. Explicit `Undo_BeginBlock2`/`Undo_EndBlock2` or `PreventUIRefresh` calls must be paired with `try/finally`. Separate awaited calls are separate native dispatches, not an atomic operation, and page closure can prevent later cleanup calls from reaching REAPER. Keep such scopes short, do not leave them open for a browser event or user dialog, and prefer the synchronous batch whenever its operations fit.
+For continuous controls across awaits, use managed Undo as described in the [host reference](host-api.md#batches-and-continuous-controls). It uses the reviewed batch API set and closes on reload, close, project change or after 30 seconds. Raw REAPER Undo scopes remain available outside this set, but callers must pair them and cannot rely on cleanup requests after a page closes.
 
 For slider input, `ReaWeb_SetTrackValueLatest` coalesces waiting values for a track/key. It does not create an Undo gesture. Await dependent calls in order. Use bounded concurrency for independent reads rather than enqueueing thousands of calls.
 
@@ -133,7 +133,7 @@ await stop();
 
 Subscriptions deliver an initial snapshot and coalesced changes. Project and selection checks run about every 100 ms. These are UI refresh signals, not an edit history or sample clock. Catch failures inside asynchronous callbacks. Dispose subscriptions when a component unmounts. Page closure clears the document's subscriptions.
 
-Docking preserves page state. Browser profiles are shared between tools, so namespace storage keys, for example `com.example.mytool.settings.v1`. Persist GUIDs or tool settings rather than object handles, and resolve persisted references against the appropriate project on the next run. Browser storage and network behavior follow the platform WebView. ReaWebAPI does not add Node.js filesystem or shell APIs.
+Docking preserves page state. Browser profiles are isolated by App directory; windows in the same directory share storage. Use the [Web Runtime contract](frontend.md) for origin persistence and migration rules. Persist GUIDs or tool settings rather than object handles, and resolve persisted references against the appropriate project on the next run. Browser storage and network behavior follow the platform WebView. ReaWebAPI does not add Node.js filesystem or shell APIs.
 
 ## Errors and debugging
 
@@ -159,3 +159,7 @@ Ship the Lua launcher, HTML, built JavaScript, CSS and required assets, preservi
 State your minimum REAPER and ReaWebAPI versions. Feature-detect required methods and explain missing dependencies in the UI. Test empty projects, missing selection, Unicode paths, deleted objects, project switches, docking, repeated open/close and each supported OS. Use the larger bundled Demo for bridge diagnostics. A passing simulated ABI test is not proof of all native side effects on real projects.
 
 The dedicated `ReaWebAPI-ReaPack-v<version>.zip` remains the extension payload only: seven native files in `extension/` plus `ReaWebAPI.ext`. Publish your own tool's pages and Lua entry separately. The SDK ZIP contains development materials and does not replace the platform runtime download.
+
+## Modern frontend and host I/O
+
+See the [frontend contract](frontend.md) for Vite/TypeScript, loopback development, native local-resource fetch and Workers. The [host reference](host-api.md#files-and-desktop-services) covers common file, clipboard and external-link APIs. v0.1.6 focuses on standard REAPER APIs; custom Lua RPC and third-party registration are outside its scope.

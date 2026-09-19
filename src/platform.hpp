@@ -20,6 +20,7 @@ struct WindowOptions {
   std::function<void(std::string)> on_error;
   void* parent = nullptr;
   std::function<void()> on_navigation;
+  std::string url;
 };
 class Window {
 public:
@@ -42,9 +43,11 @@ public:
 };
 class Platform {
 public:
+  using DesktopReply = std::function<void(Json)>;
   virtual ~Platform() = default;
   virtual std::shared_ptr<Window> open(WindowOptions options) = 0;
   virtual void pump() {}
+  virtual void desktop(const std::string&, const Json&, DesktopReply) { throw Error("HOST_UNAVAILABLE", "Desktop integration unavailable"); }
 };
 std::unique_ptr<Platform> make_platform(const fs::path& shared_data);
 }

@@ -83,9 +83,9 @@ if (track) {
 }
 ```
 
-[批处理契约](host-api.zh-CN.md#批处理与连续参数) 限定九个 API，全部 730 项仍可普通调用。批处理不是事务，中途失败不会撤销已经完成的写入，错误中会报告已完成结果。
+[批处理契约](host-api.zh-CN.md#批处理与连续参数) 覆盖 173 个已审核标准 API，支持结果引用和 128 项上限，全部 730 项仍可普通调用。批处理不是事务，中途失败不会撤销已经完成的写入，错误中会报告已完成结果。
 
-批处理范围之外，需遵循相应 REAPER API 的 Undo 规则。显式调用 `Undo_BeginBlock2` / `Undo_EndBlock2` 或 `PreventUIRefresh` 时，使用 `try/finally` 配对。多个 `await` 对应多个原生调度，不构成原子操作，页面关闭也可能让后续清理请求无法到达 REAPER。应缩短这种作用区间，不要跨浏览器事件或等待用户对话框，能用同步批处理时优先使用。
+跨 await 的连续操作可使用 `ReaWeb_WithUndo` 或 `ReaWeb_BeginUndo` / `ReaWeb_EndUndo`；宿主负责重载、关闭、工程变化和 30 秒超时清理，方法范围与批处理相同。原生 Undo 方法仍可单独调用，但调用者须负责配对，不能依赖页面关闭后的 finally 请求。
 
 滑块可使用 `ReaWeb_SetTrackValueLatest`，合并同一轨道和参数的等待值。它不会自动生成 Undo 手势。有依赖的调用按顺序 `await`，独立读取采用有限并发，不要一次排队数千次。
 
@@ -133,7 +133,7 @@ await stop();
 
 订阅会提供初始快照及合并后的变化，工程和选择状态约每 100 ms 检查一次。它们用于刷新界面，不是编辑历史或采样时钟。异步回调需自行处理异常，组件卸载时取消订阅，整个页面关闭时会自动清理本页订阅。
 
-停靠切换会保留页面状态。各工具共用浏览器 profile，存储 key 应加命名空间，例如 `com.example.mytool.settings.v1`。保存 GUID 或工具设置，不要保存对象句柄，下次打开时针对正确的工程重新解析引用。浏览器存储和网络行为由各平台 WebView 决定。ReaWebAPI 不提供 Node.js 文件系统或 shell 接口。
+停靠切换会保留页面状态。浏览器 profile 按 App 目录隔离，同一目录的窗口共享存储。来源持久化与迁移规则见 [Web Runtime 约定](frontend.zh-CN.md)。保存 GUID 或工具设置，不要保存对象句柄，下次打开时针对正确的工程重新解析引用。浏览器存储和网络行为由各平台 WebView 决定。ReaWebAPI 不提供 Node.js 文件系统或 shell 接口。
 
 ## 错误与调试
 
@@ -159,3 +159,7 @@ try {
 注明最低 REAPER 和 ReaWebAPI 版本，通过能力查询检查依赖的方法，并在界面解释缺失依赖。发布前检查空工程、没有选择、Unicode 路径、对象删除、工程切换、停靠、反复开关窗口及各目标系统。完整 Demo 可辅助桥接诊断，模拟 ABI 测试通过不代表已验证所有原生 API 对真实工程的影响。
 
 `ReaWebAPI-ReaPack-v<版本>.zip` 保持扩展专用结构：`extension/` 下七个原生文件，加 `ReaWebAPI.ext`。你的工具页面及 Lua 入口应独立发布。SDK ZIP 提供开发资料，不替代平台运行时下载。
+
+## 现代前端与宿主 I/O
+
+Vite/TypeScript、loopback 开发入口、原生本地资源 fetch与 Worker 示例见[前端资源约定](frontend.zh-CN.md)。统一文件读写、剪贴板和外链见[宿主参考](host-api.zh-CN.md#文件与桌面服务)。v0.1.6 专注标准 REAPER API，不提供自定义 Lua RPC 或第三方 API 注册机制。

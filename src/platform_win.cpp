@@ -1,9 +1,11 @@
 #include "platform.hpp"
 #include <windows.h>
+#include <shellapi.h>
 #include <wrl.h>
 #include <WebView2.h>
 #include <vector>
 #include <algorithm>
+#include <cstring>
 
 namespace reaweb {
 using Microsoft::WRL::ComPtr;
@@ -64,7 +66,7 @@ public:
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
   }
-  WinWindow(WindowOptions options, HINSTANCE instance) : options_(std::move(options)), uri_(file_uri(options_.entry)) {
+  WinWindow(WindowOptions options, HINSTANCE instance) : options_(std::move(options)), uri_(options_.url.empty() ? file_uri(options_.entry) : options_.url) {
     hwnd_ = CreateWindowExW(0, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
       CW_USEDEFAULT, CW_USEDEFAULT, 860, 640, static_cast<HWND>(options_.parent), nullptr, instance, this);
     if (!hwnd_) throw std::runtime_error("CreateWindowEx failed");
@@ -263,6 +265,7 @@ class WinPlatform final : public Platform {
   std::shared_ptr<EnvironmentState> state_ = std::make_shared<EnvironmentState>();
   HINSTANCE instance_ = nullptr;
   bool com_ = false;
+  HWND clipboard_owner_ = nullptr;
 public:
   explicit WinPlatform(const fs::path& data) {
     check(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED), "CoInitializeEx (WebView2 requires STA)");
@@ -299,8 +302,44 @@ public:
     }
   }
   ~WinPlatform() override {
+    if (clipboard_owner_) DestroyWindow(clipboard_owner_);
     state_.reset(); UnregisterClassW(window_class, instance_);
     if (com_) CoUninitialize();
+  }
+  void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
+    if (method == "ReaWeb_OpenExternal") {
+      const auto url = args[0].get<std::string>(); validate_external_url(url);
+      if (reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
+        throw Error("EXTERNAL_OPEN_FAILED", "The system could not open this link");
+      reply({{"result", true}}); return;
+    }
+    if (!clipboard_owner_) clipboard_owner_ = CreateWindowExW(0, L"STATIC", L"ReaWebAPI Clipboard", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, instance_, nullptr);
+    if (!clipboard_owner_ || !OpenClipboard(clipboard_owner_)) throw Error("CLIPBOARD_BUSY", "The clipboard is busy; try again");
+    struct Close { ~Close() { CloseClipboard(); } } close;
+    if (method == "ReaWeb_ClipboardReadText") {
+      auto handle = GetClipboardData(CF_UNICODETEXT);
+      if (!handle) { reply({{"result", ""}}); return; }
+      const auto count = GlobalSize(handle) / sizeof(wchar_t);
+      if (count > value_limit) throw Error("BUFFER_LIMIT", "Clipboard exceeds the text limit");
+      auto data = static_cast<const wchar_t*>(GlobalLock(handle));
+      if (!data) throw Error("CLIPBOARD_ERROR", "Cannot read clipboard");
+      std::string result;
+      try { result = utf8(std::wstring(data, std::find(data, data + count, L'\0')).c_str()); }
+      catch (...) { GlobalUnlock(handle); throw; }
+      GlobalUnlock(handle);
+      if (result.size() > value_limit) throw Error("BUFFER_LIMIT", "Clipboard exceeds 16 MiB");
+      reply({{"result", result}}); return;
+    }
+    const auto text = wide(args[0].get<std::string>());
+    auto handle = GlobalAlloc(GMEM_MOVEABLE, (text.size() + 1) * sizeof(wchar_t));
+    if (!handle) throw Error("CLIPBOARD_ERROR", "Cannot allocate clipboard text");
+    auto data = GlobalLock(handle);
+    if (!data) { GlobalFree(handle); throw Error("CLIPBOARD_ERROR", "Cannot lock clipboard memory"); }
+    std::memcpy(data, text.c_str(), (text.size() + 1) * sizeof(wchar_t)); GlobalUnlock(handle);
+    if (!EmptyClipboard() || !SetClipboardData(CF_UNICODETEXT, handle)) {
+      GlobalFree(handle); throw Error("CLIPBOARD_ERROR", "Cannot write clipboard");
+    }
+    reply({{"result", true}});
   }
   std::shared_ptr<Window> open(WindowOptions options) override {
     if (!state_->error.empty()) throw std::runtime_error(state_->error);

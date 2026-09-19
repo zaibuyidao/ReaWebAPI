@@ -18,3 +18,7 @@
 完整 Demo 用于验证 API，SDK 中的 starter 用于开始新工具。扩展会自行注入桥接，页面不要重复加载 `reaper.js` 或生成的方法列表。
 
 维护扩展本身时，请阅读仓库中的 [API Sync 维护说明](https://github.com/zaibuyidao/ReaWebAPI/tree/main/api)。逐项 API 参考和编辑器声明一起生成，构建前的 `python -m tools.api_sync verify` 会检查是否过期。
+
+- [Frontend / 前端资源约定](frontend.md)
+- [前端资源约定（中文）](frontend.zh-CN.md)
+- [v0.1.6 release notes / 发布说明](release-notes.md)

@@ -1,4 +1,5 @@
 #include "worker.hpp"
+#include "host_io.hpp"
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -78,6 +79,15 @@ void Worker::run() {
     }
     try {
       if (work.kind == Work::Save) { save(work.path, work.data); continue; }
+      if (work.kind == Work::File) {
+        const auto request = work.data;
+        try { work.data = {{"id", request.at("id")}, {"document", request.at("document")},
+          {"result", file_call(work.path, request.at("method"), request.at("args"))}}; }
+        catch (const Error& e) { work.data = error_response(request, e.code, e.what(), e.details); }
+        catch (const std::exception& e) { work.data = error_response(request, "FILE_IO", e.what()); }
+        work.kind = Work::Encode;
+        work.path.clear();
+      }
       if (work.kind == Work::Parse) {
         try { work.data = parse_request(work.text); work.kind = Work::Request; work.text.clear(); }
         catch (const Error& e) { work.data = error_response(Json(), e.code, e.what()); work.kind = Work::Encode; }

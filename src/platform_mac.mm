@@ -62,7 +62,7 @@ public:
   MacWindow(WindowOptions options, WKWebsiteDataStore* data, WKProcessPool* pool) {
     delegate_ = [ReaWebDelegate new];
     delegate_->options = std::move(options);
-    delegate_->entryURI = file_uri(delegate_->options.entry);
+    delegate_->entryURI = delegate_->options.url.empty() ? file_uri(delegate_->options.entry) : delegate_->options.url;
     delegate_->isClosed = false;
     auto config = [WKWebViewConfiguration new];
     config.websiteDataStore = data;
@@ -80,8 +80,10 @@ public:
     auto content = (__bridge NSView*)GetDlgItem(static_cast<HWND>(window_->handle()), 0);
     webview_.frame = content.bounds;
     [content addSubview:webview_];
-    auto url = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
-    [webview_ loadFileURL:url allowingReadAccessToURL:[url URLByDeletingLastPathComponent]];
+    if (delegate_->options.url.empty()) {
+      auto url = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
+      [webview_ loadFileURL:url allowingReadAccessToURL:[url URLByDeletingLastPathComponent]];
+    } else [webview_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:ns(delegate_->options.url)]]];
   }
   ~MacWindow() override {
     delegate_->isClosed = true;
@@ -143,14 +145,35 @@ public:
     std::ifstream input(profile);
     std::getline(input, identifier);
     NSUUID* uuid = identifier.empty() ? nil : [[NSUUID alloc] initWithUUIDString:ns(identifier)];
+    if (!uuid && fs::exists(profile)) throw std::runtime_error("Invalid WKWebView App profile id; browser data was left unchanged");
     if (!uuid) {
       uuid = [NSUUID UUID];
       std::ofstream output(profile, std::ios::trunc);
       output << uuid.UUIDString.UTF8String;
-      if (!output) throw std::runtime_error("Cannot persist the shared WKWebView profile id");
+      output.close();
+      if (!output) throw std::runtime_error("Cannot persist the WKWebView App profile id");
     }
     data_ = [WKWebsiteDataStore dataStoreForIdentifier:uuid];
     pool_ = [WKProcessPool new];
+  }
+  void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
+    @autoreleasepool {
+      if (method == "ReaWeb_OpenExternal") {
+        const auto url = args[0].get<std::string>(); validate_external_url(url);
+        if (![[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:ns(url)]]) throw Error("EXTERNAL_OPEN_FAILED", "The system could not open this link");
+        reply({{"result", true}}); return;
+      }
+      auto pasteboard = [NSPasteboard generalPasteboard];
+      if (method == "ReaWeb_ClipboardReadText") {
+        std::string value = [pasteboard stringForType:NSPasteboardTypeString].UTF8String ?: "";
+        if (value.size() > value_limit) throw Error("BUFFER_LIMIT", "Clipboard exceeds 16 MiB");
+        reply({{"result", value}});
+      } else {
+        [pasteboard clearContents];
+        if (![pasteboard setString:ns(args[0].get<std::string>()) forType:NSPasteboardTypeString]) throw Error("CLIPBOARD_ERROR", "Cannot write clipboard");
+        reply({{"result", true}});
+      }
+    }
   }
   std::shared_ptr<Window> open(WindowOptions options) override {
     @autoreleasepool { return std::make_shared<MacWindow>(std::move(options), data_, pool_); }

@@ -9,9 +9,11 @@ Download `ReaWebAPI-SDK-v<version>.zip` from [Releases](https://github.com/zaibu
 | `reaper.d.ts` | Editor entry point for the global `reaper`, host methods, handles, events and diagnostics |
 | `reaper-api.generated.d.ts` | All 730 REAPER methods, Promise result types, return labels and official links |
 | `starter/` | Runnable Lua + HTML/CSS/JavaScript template, including `checkJs` configuration |
+| `modern/` | Vite/TypeScript template with dev server, IIFE build, resource and Worker examples |
+| `web-runtime/` | Unbundled Web Runtime v1 conformance App: modules, local fetch, storage, Canvas, files and Workers |
 | `reaper.js`, `reaper-api.generated.js` | Bridge sources used by the extension build. Do not add script tags for these files |
 
-This SDK requires ReaWebAPI 0.1.3 or newer. Keep the two declaration files together. `reaper.d.ts` references the generated declaration automatically. They are ambient declarations, not an npm module and not JavaScript to execute.
+This SDK requires ReaWebAPI 0.1.6 or newer. Keep the two declaration files together. `reaper.d.ts` references the generated declaration automatically. They are ambient declarations, not an npm module and not JavaScript to execute.
 
 1. Copy the entire SDK directory to your development workspace.
 2. Load `starter/Open.lua` in REAPER's Action List and run it.

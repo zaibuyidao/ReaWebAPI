@@ -1,0 +1,7 @@
+:root { color-scheme: light dark; font: 15px/1.5 system-ui, sans-serif; --runtime-css: loaded; }
+body { max-width: 900px; margin: 24px auto; padding: 0 20px; }
+table { width: 100%; border-collapse: collapse; }
+td, th { text-align: left; padding: 6px; border-bottom: 1px solid #8885; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+#drop { padding: 20px; border: 2px dashed #888; border-radius: 8px; }
+.pass { color: #278b52; } .fail { color: #d54545; }

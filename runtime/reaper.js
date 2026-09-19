@@ -29,11 +29,13 @@
     return value;
   };
   const decodeValue = value => {
+    if (value instanceof Uint8Array) return value;
     if (value && typeof value === 'object' && typeof value.__reawebBytes === 'string') {
       const binary = atob(value.__reawebBytes);
       return Uint8Array.from(binary, c => c.charCodeAt(0));
     }
     if (Array.isArray(value)) return value.map(decodeValue);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, decodeValue(child)]));
     return value;
   };
   const notify = (callback, data) => {
@@ -105,11 +107,14 @@
     ...reawebApiMethods, 'ReaWebOpen',
     'ReaWeb_Close', 'ReaWeb_DevTools', 'ReaWeb_SetDocked', 'ReaWeb_IsDocked', 'ReaWeb_GetCapabilities',
     'ReaWeb_Batch', 'ReaWeb_GetWindowState', 'ReaWeb_GetDiagnostics', 'ReaWeb_Focus',
-    'ReaWeb_SetTitle', 'ReaWeb_SetKeyboardCapture', 'ReaWeb_SetBufferSize'
+    'ReaWeb_SetTitle', 'ReaWeb_SetKeyboardCapture', 'ReaWeb_SetBufferSize',
+    'ReaWeb_OpenDev', 'ReaWeb_BeginUndo', 'ReaWeb_EndUndo',
+    'ReaWeb_ReadFile', 'ReaWeb_WriteFile', 'ReaWeb_Stat', 'ReaWeb_ReadDirectory', 'ReaWeb_MakeDirectory',
+    'ReaWeb_ClipboardReadText', 'ReaWeb_ClipboardWriteText', 'ReaWeb_OpenExternal'
   ];
   api.ready = ready;
   for (const name of methods) api[name] = (...args) => call(name, args).then(result => {
-    if (result?.__reawebCall === true) {
+    if (reawebApiMethods.includes(name) && result?.__reawebCall === true) {
       for (const update of result.arrays) {
         const target = args[update.index];
         const data = decodeValue(update.values);
@@ -125,7 +130,7 @@
     return reawebApiVoidMethods.includes(name) ? undefined : result;
   });
   api.ReaWeb_On = async (name, callback) => {
-    if (!['projectchange', 'selectionchange', 'windowstatechange'].includes(name))
+    if (!['projectchange', 'selectionchange', 'itemselectionchange', 'takeselectionchange', 'transportchange', 'fxchange', 'windowstatechange'].includes(name))
       throw failure('UNKNOWN_EVENT', 'Unknown host event');
     if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an event callback');
     let entry = subscriptions.get(name);
@@ -155,6 +160,17 @@
         if (!closed) await call('ReaWeb_Unsubscribe', [name]);
       }
     };
+  };
+  api.ReaWeb_WithUndo = async (label, callback) => {
+    if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an Undo callback');
+    const token = await call('ReaWeb_BeginUndo', [label]);
+    let failed = false;
+    try { return await callback(); }
+    catch (error) { failed = true; throw error; }
+    finally {
+      try { await call('ReaWeb_EndUndo', [token]); }
+      catch (error) { if (!failed) throw error; }
+    }
   };
   api.ReaWeb_SetTrackValueLatest = (track, key, value) => new Promise((resolve, reject) => {
     if (closed) return reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));

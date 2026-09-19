@@ -22,8 +22,15 @@ def payload(root, version, revision):
         'reaper.d.ts', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'README.md', 'README.zh-CN.md')}
     for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'jsconfig.json'):
         paths[f'ReaWebAPI/SDK/starter/{name}'] = root / 'runtime/starter' / name
+    for name in ('Open.lua', 'index.html', 'app.js', 'ui.js', 'style.css', 'README.md', 'README.zh-CN.md',
+                 'data/config.json', 'modules/空 格#%.js', 'workers/classic.js', 'workers/module.js'):
+        paths[f'ReaWebAPI/SDK/web-runtime/{name}'] = root / 'runtime/web-runtime' / name
+    for name in ('README.md', 'README.zh-CN.md', 'Open.lua', 'OpenDev.lua', 'index.html',
+                 'package.json', 'package-lock.json', 'tsconfig.json', 'build.mjs',
+                 'src/main.ts', 'src/worker.ts', 'src/style.css', 'public/data.json'):
+        paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'runtime/modern' / name
     for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md',
-                 'host-api.md', 'host-api.zh-CN.md', 'api-reference.md'):
+                 'host-api.md', 'host-api.zh-CN.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reaper_api.json', 'bindings.json'):
         paths[f'ReaWebAPI/SDK/api/{name}'] = root / 'api' / name
@@ -55,7 +62,7 @@ def stage_sdk(stage, version, revision='local', root=ROOT):
 def build_sdk(directory, version, revision='local', root=ROOT):
     files = payload(root, version, revision)
     files['SHA256SUMS.txt'] = ''.join(f'{hashlib.sha256(data).hexdigest()}  {name}\n'
-                                    for name, data in sorted(files.items())).encode('ascii')
+                                    for name, data in sorted(files.items())).encode('utf-8')
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f'ReaWebAPI-SDK-v{version}.zip'
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:

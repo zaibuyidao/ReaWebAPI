@@ -1,5 +1,5 @@
 # Only release sources and configuration belong in the repository.
-# This also excludes local tests, validation notes, build outputs and caches.
+# Build outputs, local validation artifacts and dependency caches remain excluded.
 /*
 !/.gitignore
 !/CMakeLists.txt
@@ -62,3 +62,16 @@ __pycache__/
 .vscode/
 .DS_Store
 Thumbs.db
+
+!/tests/
+/tests/*
+!/tests/*.cpp
+!/tests/*.hpp
+!/tests/*.py
+!/tests/*.cjs
+!/tests/*.ts
+!/tests/*.lua
+!/tests/CMakeLists.txt
+/tests/native_abi_generated.cpp
+node_modules/
+/runtime/modern/dist/

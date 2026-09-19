@@ -2,19 +2,31 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.1.5 LANGUAGES CXX)
+project(ReaWebAPI VERSION 0.1.6 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(REAWEB_BUILD_EXTENSION "Build the REAPER extension" ON)
-option(BUILD_TESTING "Build optional local tests (not distributed)" OFF)
+option(BUILD_TESTING "Build regression tests (included in source)" OFF)
 include(FetchContent)
 
 FetchContent_Declare(json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
   GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03)
 FetchContent_MakeAvailable(json)
+
+# Read-only local App resources. Browser networking remains native to the WebView.
+FetchContent_Declare(httplib
+  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+  GIT_TAG 278c2979e8c68468960c3073e28e1c51b098d6a4)
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(httplib)
 
 FetchContent_Declare(reaper_sdk
   GIT_REPOSITORY https://github.com/justinfrankel/reaper-sdk.git
@@ -52,7 +64,7 @@ if(NOT REAWEB_NATIVE_RESULT EQUAL 0)
 endif()
 
 find_package(Threads REQUIRED)
-add_library(reaweb_core STATIC src/core.cpp src/worker.cpp src/native.cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
+add_library(reaweb_core STATIC src/core.cpp src/worker.cpp src/native.cpp src/host_io.cpp src/web_resources.cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
 target_include_directories(reaweb_core PUBLIC src)
 target_include_directories(reaweb_core SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
 target_compile_definitions(reaweb_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -60,7 +72,7 @@ if(NOT WIN32)
   target_compile_definitions(reaweb_core PRIVATE SWELL_PROVIDED_BY_APP)
 endif()
 target_include_directories(reaweb_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(reaweb_core PUBLIC nlohmann_json::nlohmann_json Threads::Threads)
+target_link_libraries(reaweb_core PUBLIC nlohmann_json::nlohmann_json Threads::Threads PRIVATE httplib::httplib)
 target_compile_definitions(reaweb_core PUBLIC REAWEB_VERSION="${PROJECT_VERSION}")
 
 if(REAWEB_BUILD_EXTENSION)
@@ -86,7 +98,7 @@ if(REAWEB_BUILD_EXTENSION)
     target_include_directories(reawebapi PRIVATE "${webview2_SOURCE_DIR}/build/native/include")
     target_link_libraries(reawebapi PRIVATE
       "${webview2_SOURCE_DIR}/build/native/x64/WebView2LoaderStatic.lib"
-      ole32 oleaut32 user32 shlwapi version advapi32)
+      ole32 oleaut32 user32 shlwapi shell32 version advapi32)
     target_compile_definitions(reawebapi PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
     set_target_properties(reawebapi PROPERTIES OUTPUT_NAME reaper_reawebapi-x64)
   elseif(APPLE)
@@ -137,6 +149,7 @@ if(REAWEB_BUILD_EXTENSION)
       message(FATAL_ERROR \"SDK/documentation staging failed\")
     endif()
   ")
+  install(FILES "${httplib_SOURCE_DIR}/LICENSE" DESTINATION ReaWebAPI/licenses RENAME cpp-httplib.txt)
   install(FILES "${json_SOURCE_DIR}/LICENSE.MIT" DESTINATION ReaWebAPI/licenses RENAME nlohmann-json.txt)
   install(FILES "${reaper_sdk_SOURCE_DIR}/sdk/reaper_plugin.h" DESTINATION ReaWebAPI/licenses)
   install(FILES "${wdl_SOURCE_DIR}/WDL/swell/swell.h" DESTINATION ReaWebAPI/licenses)
@@ -160,7 +173,7 @@ endif()
 
 if(BUILD_TESTING)
   if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
-    message(FATAL_ERROR "Local tests are not distributed. Configure with -DBUILD_TESTING=OFF.")
+    message(FATAL_ERROR "Missing regression test sources. Restore tests/ or configure with -DBUILD_TESTING=OFF.")
   endif()
   include(CTest)
   add_subdirectory(tests)

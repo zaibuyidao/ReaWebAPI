@@ -85,6 +85,9 @@ std::string unbytes(const Json& v) {
 }
 }
 
+Json encode_binary(const char* data, size_t size) { return bytes(data, size); }
+std::string decode_binary(const Json& value) { return unbytes(value); }
+
 struct NativeContext::Impl {
   Impl(Host& host, std::string session) : host(host), session(std::move(session)) {}
   struct Handle {
@@ -262,6 +265,18 @@ void NativeContext::reset() {
 void NativeContext::validate(const NativeEntry& entry, const Json& args) {
   if (!resolve(entry.name)) throw Error("API_UNAVAILABLE", std::string(entry.name) + " is not available in this REAPER version");
   NativeFrame frame(*this, entry, args);
+}
+void NativeContext::validate_project(const NativeEntry& entry, const Json& args, void* project) {
+  for (const auto& param : entry.parameters) {
+    if (param.kind != Kind::Handle || param.input < 0 || static_cast<size_t>(param.input) >= args.size()) continue;
+    const auto& value = args[param.input];
+    if (value.is_object() && value.contains("$ref")) continue;
+    auto p = pointer(value, param.handle);
+    if (!p) continue;
+    const auto it = impl_->reverse.find(p);
+    if (it != impl_->reverse.end() && impl_->handles.at(it->second).project != project)
+      throw Error("UNSUPPORTED_PROJECT", "Batches only accept objects from the current project");
+  }
 }
 Json NativeContext::invoke(const NativeEntry& entry, const Json& args) {
   auto address = resolve(entry.name);

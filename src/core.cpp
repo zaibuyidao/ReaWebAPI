@@ -1,5 +1,7 @@
 #include "core.hpp"
 #include "native.hpp"
+#include "batch.hpp"
+#include <regex>
 #include "api_schema.hpp"
 #include <algorithm>
 #include <cctype>
@@ -14,29 +16,11 @@ const Json& api_schema() {
   return schema;
 }
 
-int integer(const Json& value, const char* label) {
-  if (!value.is_number_integer() || value.get<double>() < 0 ||
-      value.get<double>() > std::numeric_limits<int>::max())
-    throw Error("INVALID_ARGUMENT", std::string(label) + " must be a non-negative integer");
-  return value.get<int>();
-}
-int signed_integer(const Json& value, const char* label) {
-  if (!value.is_number_integer() || value.get<double>() < std::numeric_limits<int>::min() ||
-      value.get<double>() > std::numeric_limits<int>::max())
-    throw Error("INVALID_ARGUMENT", std::string(label) + " must be a 32-bit integer");
-  return value.get<int>();
-}
 std::string string_arg(const Json& value) {
   if (!value.is_string()) throw Error("INVALID_ARGUMENT", "Expected a string");
   auto str = value.get<std::string>();
   if (str.find('\0') != std::string::npos) throw Error("INVALID_ARGUMENT", "Embedded NUL is not allowed");
   return str;
-}
-std::string track_key(const Json& value) {
-  auto key = string_arg(value);
-  if (key != "D_VOL" && key != "D_PAN" && key != "B_MUTE" && key != "I_SOLO" && key != "I_CUSTOMCOLOR")
-    throw Error("UNSUPPORTED_PARAMETER", "Supported track values: D_VOL, D_PAN, B_MUTE, I_SOLO, I_CUSTOMCOLOR");
-  return key;
 }
 double track_value(const std::string& key, const Json& input) {
   if (!input.is_number()) throw Error("INVALID_ARGUMENT", "value must be a finite number");
@@ -82,6 +66,26 @@ bool same_document(const std::string& uri, const std::string& entry) {
   return uri.substr(0, uri.find('#')) == entry.substr(0, entry.find('#'));
 }
 
+std::string validate_dev_url(const std::string& url) {
+  static const std::regex pattern(R"(^http://(127\.0\.0\.1|localhost|\[::1\]):([0-9]{1,5})(/[^\s\\]*)?$)");
+  std::smatch match;
+  if (url.size() > 8192 || std::any_of(url.begin(), url.end(), [](unsigned char c) { return c < 32 || c == 127; }) ||
+      !std::regex_match(url, match, pattern))
+    throw Error("INVALID_URL", "Development URLs must use http://127.0.0.1:port/ (or localhost/[::1])");
+  const auto port = std::stoi(match[2]);
+  if (port < 1 || port > 65535) throw Error("INVALID_URL", "Invalid development server port");
+  return match[3].matched ? url : url + "/";
+}
+void validate_external_url(const std::string& url) {
+  if (url.empty() || url.size() > 8192 || url.find('\\') != std::string::npos ||
+      std::any_of(url.begin(), url.end(), [](unsigned char c) { return c < 32 || c == 127; }) ||
+      !(url.rfind("https://", 0) == 0 || url.rfind("http://", 0) == 0 || url.rfind("mailto:", 0) == 0))
+    throw Error("INVALID_URL", "Only http, https and mailto external links are supported");
+  const auto begin = url.rfind("mailto:", 0) == 0 ? 7u : url.find("://") + 3;
+  if (begin == url.size() || url[begin] == '/' || url[begin] == '?' || url[begin] == '#')
+    throw Error("INVALID_URL", "External links must include a destination");
+}
+
 Bridge::Bridge(Host& host, Controls controls, std::string session)
   : host_(host), controls_(std::move(controls)), session_(std::move(session)) {
   native_ = std::make_unique<NativeContext>(host_, session_);
@@ -106,15 +110,28 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
     api.erase("knownMethods");
     api.update(native_->capabilities());
     return Json{{"version", REAWEB_VERSION}, {"protocol", 1}, {"methods", names}, {"api", std::move(api)}, {"projectScope", "all"},
-      {"events", {"projectchange", "selectionchange", "windowstatechange"}},
-      {"limits", {{"requestBytes", 64 * 1024 * 1024}, {"batchCalls", 32}, {"pendingCalls", 256}}}};
+      {"events", {"projectchange", "selectionchange", "itemselectionchange", "takeselectionchange", "transportchange", "fxchange", "windowstatechange"}},
+      {"batchMethods", batch_methods()},
+      {"limits", {{"requestBytes", message_limit}, {"batchCalls", batch_limit}, {"pendingCalls", 256}}}};
   });
   add("ReaWeb_Batch", 1, 2, [this](const Json& a) { return batch(a); });
-  add("ReaWeb_SetBufferSize", 1, 1, [this](const Json& a) { return native_->set_buffer_size(integer(a[0], "bytes")); });
+  add("ReaWeb_SetBufferSize", 1, 1, [this](const Json& a) { return native_->set_buffer_size([&]() -> size_t {
+    if (!a[0].is_number_unsigned() && (!a[0].is_number_integer() || a[0].get<int64_t>() < 0))
+      throw Error("INVALID_ARGUMENT", "bytes must be a positive integer");
+    return a[0].get<size_t>();
+  }()); });
   for (const auto& name : {"ReaWeb_GetWindowState", "ReaWeb_GetDiagnostics", "ReaWeb_Focus"})
     add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
   for (const auto& name : {"ReaWeb_SetTitle", "ReaWeb_SetKeyboardCapture", "ReaWeb_Subscribe", "ReaWeb_Unsubscribe"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
+  for (const auto& name : {"ReaWeb_OpenDev", "ReaWeb_BeginUndo", "ReaWeb_EndUndo", "ReaWeb_ClipboardWriteText", "ReaWeb_OpenExternal"})
+    add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
+  for (const auto& name : {"ReaWeb_ClipboardReadText"})
+    add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
+  for (const auto& name : {"ReaWeb_ReadFile", "ReaWeb_ReadDirectory", "ReaWeb_Stat", "ReaWeb_MakeDirectory"})
+    add(name, 1, 2, [this, name](const Json& a) { return controls_.host_call(name, a); });
+  add("ReaWeb_WriteFile", 2, 3, [this](const Json& a) { return controls_.host_call("ReaWeb_WriteFile", a); });
+
 }
 
 Bridge::~Bridge() = default;
@@ -136,10 +153,46 @@ void Bridge::observe_project() {
 }
 void Bridge::reset_handles() { native_->reset(); project_ = nullptr; }
 
+namespace {
+bool check_reference(const Json& value, size_t index) {
+  if (!value.is_object() || !value.contains("$ref")) return false;
+  if (value.size() > 2 || (value.size() == 2 && !value.contains("path")) ||
+      !value["$ref"].is_number_integer() || value["$ref"].get<double>() < 0 || value["$ref"].get<double>() >= index)
+    throw Error("INVALID_ARGUMENT", "Batch references must target an earlier result");
+  if (value.contains("path")) {
+    if (!value["path"].is_array() || value["path"].size() > 8) throw Error("INVALID_ARGUMENT", "Invalid reference path");
+    for (const auto& part : value["path"])
+      if ((!part.is_number_integer() || part.get<double>() < 0 || part.get<double>() > 1048576) && !part.is_string())
+        throw Error("INVALID_ARGUMENT", "Reference paths contain property names or non-negative array indices");
+  }
+  return true;
+}
+Json resolve_references(const Json& args, const Json& results) {
+  auto resolved = args;
+  for (auto& arg : resolved) if (check_reference(arg, results.size())) {
+    Json value = results.at(arg["$ref"].get<size_t>());
+    try {
+      for (const auto& part : arg.value("path", Json::array())) {
+        Json next = part.is_string() ? value.at(part.get<std::string>()) : value.at(part.get<size_t>());
+        value = std::move(next);
+      }
+    } catch (const Json::exception&) { throw Error("INVALID_ARGUMENT", "Batch reference path does not exist"); }
+    arg = std::move(value);
+  }
+  return resolved;
+}
+}
+void Bridge::validate_managed_call(const std::string& method, const Json& args) {
+  if (!batch_methods().count(method)) throw Error("UNDO_BUSY", "This API is not supported inside a managed Undo gesture");
+  const auto entry = std::find_if(native_entries().begin(), native_entries().end(), [&](const NativeEntry& e) { return method == e.name; });
+  if (entry == native_entries().end()) throw Error("SCHEMA_MISMATCH", "Unknown managed Undo binding");
+  observe_project();
+  native_->validate_project(*entry, args, project_);
+}
 Json Bridge::batch(const Json& args) {
   const auto& calls = args[0];
-  if (!calls.is_array() || calls.empty() || calls.size() > 32)
-    throw Error("INVALID_ARGUMENT", "A batch must contain 1 to 32 calls");
+  if (!calls.is_array() || calls.empty() || calls.size() > batch_limit)
+    throw Error("INVALID_ARGUMENT", "A batch must contain 1 to 128 calls");
   std::string label;
   if (args.size() > 1) {
     if (!args[1].is_object()) throw Error("INVALID_ARGUMENT", "Expected batch options");
@@ -150,85 +203,70 @@ Json Bridge::batch(const Json& args) {
       if (label.empty() || label.size() > 256) throw Error("INVALID_ARGUMENT", "undoLabel must contain 1 to 256 UTF-8 bytes");
     }
   }
-  bool writes = false;
-  // Validate every call before starting Undo or changing the project. No nested or window calls.
-  for (const auto& call : calls) {
-    if (!call.is_object() || !call.contains("method") || !call["method"].is_string() ||
+  std::vector<const NativeEntry*> entries;
+  for (size_t i = 0; i < calls.size(); ++i) {
+    const auto& call = calls[i];
+    if (!call.is_object() || call.size() != 2 || !call.contains("method") || !call["method"].is_string() ||
         !call.contains("args") || !call["args"].is_array()) throw Error("INVALID_ARGUMENT", "Invalid batch call");
     const auto name = call["method"].get<std::string>();
+    if (!batch_methods().count(name)) throw Error("INVALID_ARGUMENT", "This API is not batchable: " + name);
+    const auto entry = std::find_if(native_entries().begin(), native_entries().end(), [&](const NativeEntry& e) { return name == e.name; });
+    if (entry == native_entries().end()) throw Error("SCHEMA_MISMATCH", "Unknown batch binding: " + name);
     const auto& a = call["args"];
-    const auto method = methods_.find(name);
-    if (method == methods_.end() || name.rfind("ReaWeb", 0) == 0)
-      throw Error("INVALID_ARGUMENT", "This API cannot be batched: " + name);
-    if (a.size() < method->second.min_args || a.size() > method->second.max_args)
-      throw Error("INVALID_ARGUMENT", "Wrong batch argument count");
-    if (name == "GetTrackName" || name == "GetMediaTrackInfo_Value" || name == "SetMediaTrackInfo_Value") {
-      track(a[0]);
-      if (a.size() >= 2) track_key(a[1]);
-      if (name == "SetMediaTrackInfo_Value") { track_value(track_key(a[1]), a[2]); writes = true; }
-    } else if (name == "SetTrackColor") {
-      track(a[0]); signed_integer(a[1], "color"); writes = true;
-    } else if (name == "CountTracks" || name == "CountSelectedTracks" || name == "GetTrack" || name == "GetSelectedTrack") {
-      project(a);
-      if (a.size() > 1) integer(a[1], "index");
-    } else if (name != "GetAppVersion") {
-      throw Error("INVALID_ARGUMENT", "This API has no batch prevalidator: " + name);
+    if (a.size() < static_cast<size_t>(entry->min_args) || a.size() > static_cast<size_t>(entry->max_args))
+      throw Error("INVALID_ARGUMENT", "Wrong batch argument count: " + name);
+    if (!native_->resolve(entry->name)) throw Error("API_UNAVAILABLE", "Batch API unavailable: " + name);
+    bool references = false;
+    for (const auto& arg : a) references = check_reference(arg, i) || references;
+    // Literal arguments are checked before any writes. Dependent arguments are
+    // checked immediately before their call, after earlier results exist.
+    native_->validate_project(*entry, a, project_);
+    if (!references) native_->validate(*entry, a);
+    if (name == "SetMediaTrackInfo_Value" && a[1].is_string() && a[2].is_number()) {
+      const auto key = a[1].get<std::string>();
+      if (key == "D_VOL" || key == "D_PAN" || key == "B_MUTE" || key == "I_SOLO" || key == "I_CUSTOMCOLOR") track_value(key, a[2]);
     }
+    entries.push_back(&*entry);
   }
-  if (writes && !label.empty() && (!host_.begin_undo || !host_.end_undo))
-    throw Error("UNDO_UNAVAILABLE", "The host does not support Undo groups");
+  if (!label.empty() && (!host_.begin_undo || !host_.end_undo)) throw Error("UNDO_UNAVAILABLE", "Undo groups are unavailable");
   Json results = Json::array();
   bool undo = false, refresh = false;
-  // All operations complete synchronously on the main thread, including failure cleanup.
   auto finish = [&] {
     batching_ = false;
     std::exception_ptr error;
-    if (refresh) {
-      refresh = false;
-      try { host_.prevent_refresh(-1); } catch (...) { error = std::current_exception(); }
-    }
-    if (undo) {
-      undo = false;
-      try { host_.end_undo(project_, label); } catch (...) { if (!error) error = std::current_exception(); }
-    }
-    if (writes && host_.update_arrange) {
-      try { host_.update_arrange(); } catch (...) { if (!error) error = std::current_exception(); }
-    }
+    if (refresh) { refresh = false; try { host_.prevent_refresh(-1); } catch (...) { error = std::current_exception(); } }
+    if (undo) { undo = false; try { host_.end_undo(project_, label); } catch (...) { if (!error) error = std::current_exception(); } }
+    if (host_.update_arrange) try { host_.update_arrange(); } catch (...) { if (!error) error = std::current_exception(); }
     if (error) std::rethrow_exception(error);
   };
   try {
-    if (writes && !label.empty()) { host_.begin_undo(project_); undo = true; }
-    if (writes && host_.prevent_refresh) { host_.prevent_refresh(1); refresh = true; }
+    if (!label.empty()) { host_.begin_undo(project_); undo = true; }
+    if (host_.prevent_refresh) { host_.prevent_refresh(1); refresh = true; }
     batching_ = true;
-    for (const auto& call : calls) {
-      auto result = methods_.at(call["method"].get<std::string>()).invoke(call["args"]);
-      if (call["method"] == "SetMediaTrackInfo_Value" && result == false)
+    for (size_t i = 0; i < calls.size(); ++i) {
+      if (host_.current_project() != project_) throw Error("PROJECT_CHANGED", "The batch project changed");
+      auto resolved = resolve_references(calls[i]["args"], results);
+      native_->validate_project(*entries[i], resolved, project_);
+      auto result = native_->invoke(*entries[i], resolved);
+      // A false native return can be a legitimate query result. Preserve it,
+      // except for the legacy track setter's explicit rejection contract.
+      if (std::string(entries[i]->name) == "SetMediaTrackInfo_Value" && result == false)
         throw Error("NATIVE_ERROR", "REAPER rejected the track value");
       results.push_back(std::move(result));
     }
   } catch (const std::exception& e) {
-    const auto message = std::string(e.what());
     Json details{{"completed", results.size()}, {"results", results}, {"rolledBack", false}};
+    if (const auto* error = dynamic_cast<const Error*>(&e)) details["cause"] = error->code;
     try { finish(); } catch (const std::exception& cleanup) { details["cleanupError"] = cleanup.what(); }
-    throw Error("BATCH_FAILED", message, std::move(details));
+    throw Error("BATCH_FAILED", e.what(), std::move(details));
   }
   try { finish(); }
-  catch (const std::exception& e) {
-    throw Error("BATCH_FAILED", e.what(), {{"completed", results.size()}, {"results", results}, {"rolledBack", false}});
-  }
+  catch (const std::exception& e) { throw Error("BATCH_FAILED", e.what(), {{"completed", results.size()}, {"results", results}, {"rolledBack", false}}); }
   return results;
 }
 
-void* Bridge::project(const Json& args) {
-  if (!args.empty() && !args[0].is_null() && !(args[0].is_number_integer() && args[0] == 0))
-    throw Error("UNSUPPORTED_PROJECT", "This release supports only the current project (0 or null)");
-  return project_;
-}
-
-void* Bridge::track(const Json& value) { return native_->pointer(value, "MediaTrack"); }
-
 Json parse_request(const std::string& message) {
-    if (message.size() > 64 * 1024 * 1024) throw Error("MESSAGE_LIMIT", "Bridge message exceeds 64 MiB");
+    if (message.size() > message_limit) throw Error("MESSAGE_LIMIT", "Bridge message exceeds 64 MiB");
     const auto request = Json::parse(message, [](int depth, Json::parse_event_t, Json&) {
       if (depth > 64) throw Error("INVALID_REQUEST", "JSON nesting exceeds 64 levels");
       return true;

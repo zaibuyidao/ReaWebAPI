@@ -10,7 +10,7 @@ namespace reaweb {
 using Clock = std::chrono::steady_clock;
 // Only value objects cross this boundary. REAPER and WebView objects stay on the main thread.
 struct Work {
-  enum Kind { Parse, Encode, Save, Request, Script, Fault } kind = Parse;
+  enum Kind { Parse, Encode, Save, File, Request, Script, Fault } kind = Parse;
   int session = 0;
   uint64_t generation = 0, project = 0;
   Clock::time_point received = Clock::now();

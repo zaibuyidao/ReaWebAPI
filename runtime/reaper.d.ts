@@ -24,7 +24,16 @@ interface ReaWebError extends Error {
   readonly code: string;
   readonly details?: unknown;
 }
+interface ReaWebRuntimeInfo {
+  contract: 1;
+  mode: 'app-http' | 'dev-http';
+  appId: string;
+  origin: string;
+  storageIsolation: 'app-profile';
+  localResources: boolean;
+}
 interface ReaWebCapabilities {
+  webRuntime: ReaWebRuntimeInfo;
   version: string;
   protocol: 1;
   methods: string[];
@@ -44,6 +53,7 @@ interface ReaWebCapabilities {
   };
   projectScope: 'all';
   events: (keyof ReaWebEvents)[];
+  batchMethods: ReaWebBatchMethod[];
   limits: { requestBytes: number; batchCalls: number; pendingCalls: number };
 }
 interface ReaWebWindowState {
@@ -57,9 +67,15 @@ interface ReaWebWindowState {
 interface ReaWebEvents {
   projectchange: { projectEpoch: number; changeCount: number };
   selectionchange: { projectEpoch: number; revision: number; count: number };
+  itemselectionchange: { projectEpoch: number; revision: number; count: number };
+  /** Active takes of selected items, not selected MIDI notes. */
+  takeselectionchange: { projectEpoch: number; revision: number; count: number };
+  transportchange: { projectEpoch: number; available: boolean; state?: number; position?: number; cursor?: number; tempo?: number };
+  fxchange: { projectEpoch: number; changeCount: number; available: boolean; focused: ReaWebFXState | null; touched: ReaWebFXState | null };
   windowstatechange: ReaWebWindowState;
 }
 interface ReaWebDiagnostics {
+  webRuntime: ReaWebRuntimeInfo;
   version: string;
   protocol: number;
   backend: 'WebView2' | 'WKWebView' | 'WebKitGTK';
@@ -75,14 +91,190 @@ interface ReaWebDiagnostics {
   /** Soft budget. A native call cannot be preempted. */
   schedulerBudgetMs: number;
 }
-type ReaWebBatchCall =
-  | { method: 'CountTracks' | 'CountSelectedTracks'; args: [0 | null] }
-  | { method: 'GetTrack' | 'GetSelectedTrack'; args: [0 | null, number] }
-  | { method: 'GetTrackName'; args: [MediaTrackHandle] }
-  | { method: 'GetMediaTrackInfo_Value'; args: [MediaTrackHandle, ReaWebTrackKey] }
-  | { method: 'SetMediaTrackInfo_Value'; args: [MediaTrackHandle, ReaWebTrackKey, number] }
-  | { method: 'SetTrackColor'; args: [MediaTrackHandle, number] }
-  | { method: 'GetAppVersion'; args: [] };
+interface ReaWebFXState {
+  trackIndex: number; itemIndex: number; takeIndex: number; fxIndex: number;
+  parameter: number | null; focused: boolean | null; value: number | null;
+}
+/** A top-level argument may refer to a previous batch result, optionally traversing its tuple or object. */
+interface ReaWebBatchReference { $ref: number; path?: (string | number)[]; }
+type ReaWebBatchMethod =
+  | 'AddMediaItemToTrack'
+  | 'AddProjectMarker2'
+  | 'AddTakeToMediaItem'
+  | 'CountAutomationItems'
+  | 'CountEnvelopePoints'
+  | 'CountEnvelopePointsEx'
+  | 'CountMediaItems'
+  | 'CountProjectMarkers'
+  | 'CountSelectedMediaItems'
+  | 'CountSelectedTracks'
+  | 'CountTakeEnvelopes'
+  | 'CountTakes'
+  | 'CountTempoTimeSigMarkers'
+  | 'CountTrackEnvelopes'
+  | 'CountTrackMediaItems'
+  | 'CountTracks'
+  | 'CreateNewMIDIItemInProj'
+  | 'CreateTrackSend'
+  | 'DeleteEnvelopePointRange'
+  | 'DeleteEnvelopePointRangeEx'
+  | 'DeleteProjectMarker'
+  | 'DeleteTempoTimeSigMarker'
+  | 'DeleteTrack'
+  | 'DeleteTrackMediaItem'
+  | 'EnumProjectMarkers3'
+  | 'Envelope_SortPoints'
+  | 'Envelope_SortPointsEx'
+  | 'GetActiveTake'
+  | 'GetAppVersion'
+  | 'GetCursorPositionEx'
+  | 'GetDisplayedMediaItemColor'
+  | 'GetDisplayedMediaItemColor2'
+  | 'GetEnvelopeInfo_Value'
+  | 'GetEnvelopeName'
+  | 'GetEnvelopePoint'
+  | 'GetEnvelopePointEx'
+  | 'GetEnvelopeStateChunk'
+  | 'GetFXEnvelope'
+  | 'GetItemStateChunk'
+  | 'GetMasterTrack'
+  | 'GetMediaItem'
+  | 'GetMediaItemInfo_Value'
+  | 'GetMediaItemTakeInfo_Value'
+  | 'GetMediaItemTake_Item'
+  | 'GetMediaItemTrack'
+  | 'GetMediaTrackInfo_Value'
+  | 'GetProjectStateChangeCount'
+  | 'GetSelectedMediaItem'
+  | 'GetSelectedTrack'
+  | 'GetSetAutomationItemInfo'
+  | 'GetSetAutomationItemInfo_String'
+  | 'GetSetEnvelopeInfo_String'
+  | 'GetSetMediaItemInfo_String'
+  | 'GetSetMediaItemTakeInfo_String'
+  | 'GetSetMediaTrackInfo_String'
+  | 'GetSetProjectGrid'
+  | 'GetSetProjectInfo'
+  | 'GetSetProjectInfo_String'
+  | 'GetSetRepeatEx'
+  | 'GetSet_LoopTimeRange2'
+  | 'GetTake'
+  | 'GetTakeEnvelope'
+  | 'GetTakeEnvelopeByName'
+  | 'GetTakeName'
+  | 'GetTempoTimeSigMarker'
+  | 'GetTrack'
+  | 'GetTrackColor'
+  | 'GetTrackEnvelope'
+  | 'GetTrackEnvelopeByName'
+  | 'GetTrackGUID'
+  | 'GetTrackMediaItem'
+  | 'GetTrackName'
+  | 'GetTrackNumSends'
+  | 'GetTrackSendInfo_Value'
+  | 'GetTrackStateChunk'
+  | 'InsertAutomationItem'
+  | 'InsertEnvelopePoint'
+  | 'InsertEnvelopePointEx'
+  | 'InsertTrackAtIndex'
+  | 'MIDI_CountEvts'
+  | 'MIDI_DeleteCC'
+  | 'MIDI_DeleteEvt'
+  | 'MIDI_DeleteNote'
+  | 'MIDI_DeleteTextSysexEvt'
+  | 'MIDI_EnumSelCC'
+  | 'MIDI_EnumSelEvts'
+  | 'MIDI_EnumSelNotes'
+  | 'MIDI_EnumSelTextSysexEvts'
+  | 'MIDI_GetAllEvts'
+  | 'MIDI_GetCC'
+  | 'MIDI_GetCCShape'
+  | 'MIDI_GetEvt'
+  | 'MIDI_GetNote'
+  | 'MIDI_GetPPQPosFromProjQN'
+  | 'MIDI_GetPPQPosFromProjTime'
+  | 'MIDI_GetProjQNFromPPQPos'
+  | 'MIDI_GetProjTimeFromPPQPos'
+  | 'MIDI_GetTextSysexEvt'
+  | 'MIDI_InsertCC'
+  | 'MIDI_InsertEvt'
+  | 'MIDI_InsertNote'
+  | 'MIDI_InsertTextSysexEvt'
+  | 'MIDI_SelectAll'
+  | 'MIDI_SetAllEvts'
+  | 'MIDI_SetCC'
+  | 'MIDI_SetCCShape'
+  | 'MIDI_SetEvt'
+  | 'MIDI_SetNote'
+  | 'MIDI_SetTextSysexEvt'
+  | 'MIDI_Sort'
+  | 'MoveMediaItemToTrack'
+  | 'RemoveTrackSend'
+  | 'SelectAllMediaItems'
+  | 'SetActiveTake'
+  | 'SetEditCurPos2'
+  | 'SetEnvelopePoint'
+  | 'SetEnvelopePointEx'
+  | 'SetEnvelopeStateChunk'
+  | 'SetItemStateChunk'
+  | 'SetMediaItemInfo_Value'
+  | 'SetMediaItemLength'
+  | 'SetMediaItemPosition'
+  | 'SetMediaItemSelected'
+  | 'SetMediaItemTakeInfo_Value'
+  | 'SetMediaTrackInfo_Value'
+  | 'SetOnlyTrackSelected'
+  | 'SetProjectMarker3'
+  | 'SetTempoTimeSigMarker'
+  | 'SetTrackColor'
+  | 'SetTrackSelected'
+  | 'SetTrackSendInfo_Value'
+  | 'SetTrackStateChunk'
+  | 'SplitMediaItem'
+  | 'TakeFX_AddByName'
+  | 'TakeFX_CopyToTake'
+  | 'TakeFX_Delete'
+  | 'TakeFX_EndParamEdit'
+  | 'TakeFX_GetCount'
+  | 'TakeFX_GetEnabled'
+  | 'TakeFX_GetFXGUID'
+  | 'TakeFX_GetFXName'
+  | 'TakeFX_GetNamedConfigParm'
+  | 'TakeFX_GetNumParams'
+  | 'TakeFX_GetOffline'
+  | 'TakeFX_GetParam'
+  | 'TakeFX_GetParamNormalized'
+  | 'TakeFX_SetEnabled'
+  | 'TakeFX_SetNamedConfigParm'
+  | 'TakeFX_SetOffline'
+  | 'TakeFX_SetParam'
+  | 'TakeFX_SetParamNormalized'
+  | 'TakeIsMIDI'
+  | 'TrackFX_AddByName'
+  | 'TrackFX_CopyToTrack'
+  | 'TrackFX_Delete'
+  | 'TrackFX_EndParamEdit'
+  | 'TrackFX_GetCount'
+  | 'TrackFX_GetEnabled'
+  | 'TrackFX_GetFXGUID'
+  | 'TrackFX_GetFXName'
+  | 'TrackFX_GetNamedConfigParm'
+  | 'TrackFX_GetNumParams'
+  | 'TrackFX_GetOffline'
+  | 'TrackFX_GetParam'
+  | 'TrackFX_GetParamNormalized'
+  | 'TrackFX_SetEnabled'
+  | 'TrackFX_SetNamedConfigParm'
+  | 'TrackFX_SetOffline'
+  | 'TrackFX_SetParam'
+  | 'TrackFX_SetParamNormalized'
+  | 'TrackList_AdjustWindows'
+  | 'UpdateArrange'
+  | 'UpdateItemInProject';
+type ReaWebBatchArgs<T extends unknown[]> = { [I in keyof T]: T[I] | ReaWebBatchReference };
+type ReaWebBatchCall = { [M in ReaWebBatchMethod]: { method: M; args: ReaWebBatchArgs<Parameters<ReaWebAPI[M]>> } }[ReaWebBatchMethod];
+interface ReaWebFileInfo { path: string; exists: boolean; type: 'file' | 'directory' | 'other'; size: number | null; }
+interface ReaWebDirectoryEntry extends ReaWebFileInfo { name: string; }
 interface ReaWebAPI {
   /** Capacity for fixed native output buffers in this document (4096..16777216 bytes). Default 65536.
    * NeedBig buffers grow through REAPER's allocator automatically. */
@@ -103,11 +295,31 @@ interface ReaWebAPI {
   ReaWeb_GetCapabilities(): Promise<ReaWebCapabilities>;
   /** Receives the initial snapshot and coalesced changes. Dispose is idempotent. */
   ReaWeb_On<K extends keyof ReaWebEvents>(name: K, callback: (state: ReaWebEvents[K]) => void): Promise<() => Promise<void>>;
-  /** 1–32 prevalidated calls. One synchronous Undo block when undoLabel is supplied.
-   * BATCH_FAILED includes details.completed/results. Completed writes are not rolled back.
-   * Calls cannot refer to earlier results in the same batch.
+  /** 1–128 synchronous calls on the current project. Literal arguments are validated up front;
+   * references are resolved and validated before their call. See capabilities.batchMethods.
+   * BATCH_FAILED includes completed/results/cause; completed writes are not rolled back.
    */
   ReaWeb_Batch(calls: ReaWebBatchCall[], options?: { undoLabel?: string }): Promise<unknown[]>;
+  /** Explicitly trust a loopback HTTP server; regular ReaWebOpen stays local-file only. */
+  ReaWeb_OpenDev(url: string): Promise<number>;
+  /** One managed gesture at a time. Ends on close, reload, project change or after 30 seconds.
+   * Does not hold PreventUIRefresh across browser events. Uses the reviewed batch API set. End before batching. */
+  ReaWeb_BeginUndo(label: string): Promise<string>;
+  ReaWeb_EndUndo(token: string): Promise<boolean>;
+  ReaWeb_WithUndo<T>(label: string, callback: () => T | Promise<T>): Promise<T>;
+  /** Files run on the worker, relative to the entry directory. Absolute local paths are allowed. */
+  ReaWeb_ReadFile(path: string, options?: { encoding?: 'utf8' }): Promise<string>;
+  ReaWeb_ReadFile(path: string, options: { encoding: 'binary' }): Promise<Uint8Array>;
+  /** Atomic replacement; overwrite defaults to false. Parent directory must exist. Limit 16 MiB. */
+  ReaWeb_WriteFile(path: string, data: string, options?: { encoding?: 'utf8'; overwrite?: boolean }): Promise<{ path: string; bytes: number }>;
+  ReaWeb_WriteFile(path: string, data: Uint8Array, options: { encoding: 'binary'; overwrite?: boolean }): Promise<{ path: string; bytes: number }>;
+  ReaWeb_Stat(path: string): Promise<ReaWebFileInfo>;
+  ReaWeb_ReadDirectory(path: string): Promise<ReaWebDirectoryEntry[]>;
+  ReaWeb_MakeDirectory(path: string, options?: { recursive?: boolean }): Promise<boolean>;
+  ReaWeb_ClipboardReadText(): Promise<string>;
+  ReaWeb_ClipboardWriteText(text: string): Promise<boolean>;
+  /** Opens http/https/mailto using the operating system; never navigates the privileged page. */
+  ReaWeb_OpenExternal(url: string): Promise<boolean>;
   /** Explicit coalescing: one in-flight write and the latest waiting value per track/key.
    * Superseded values settle without being sent. Does not create an Undo gesture.
    */

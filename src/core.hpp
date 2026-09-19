@@ -14,6 +14,9 @@ namespace reaweb {
 using Json = nlohmann::json;
 using Guid = std::array<unsigned char, 16>;
 namespace fs = std::filesystem;
+inline constexpr size_t message_limit = 64 * 1024 * 1024;
+inline constexpr size_t value_limit = 16 * 1024 * 1024;
+inline constexpr size_t batch_limit = 128;
 
 struct Error : std::runtime_error {
   std::string code;
@@ -36,11 +39,18 @@ struct Host {
   std::function<void(void*, const std::string&)> end_undo;
   std::function<void(int)> prevent_refresh;
   std::function<void()> update_arrange;
+  std::function<int(void*)> count_selected_items;
+  std::function<std::pair<std::string, std::string>(void*, int)> item_identity;
+  std::function<Json(const std::string&)> event_snapshot;
 };
 
 fs::path resolve_html(const fs::path& base, const std::string& input);
 std::string file_uri(const fs::path& path);
 bool same_document(const std::string& uri, const std::string& entry);
+std::string validate_dev_url(const std::string& url);
+void validate_external_url(const std::string& url);
+Json encode_binary(const char* data, size_t size);
+std::string decode_binary(const Json& value);
 Json parse_request(const std::string& message);
 Json error_response(const Json& request, const std::string& code, const std::string& message, Json details = nullptr);
 
@@ -60,6 +70,7 @@ public:
   Json dispatch_request(const Json& request);
   void observe_project();
   void reset_handles();
+  void validate_managed_call(const std::string& method, const Json& args);
 private:
   struct Method { size_t min_args, max_args; std::function<Json(const Json&)> invoke; };
   Host& host_;
@@ -71,8 +82,6 @@ private:
   bool batching_ = false;
   void add(const std::string& name, size_t min, size_t max, std::function<Json(const Json&)> fn);
   void add_reaper(const std::string& name, std::function<Json(const Json&)> fn);
-  void* project(const Json& args);
-  void* track(const Json& value);
   Json batch(const Json& args);
 };
 }

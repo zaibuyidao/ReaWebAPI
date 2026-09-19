@@ -18,7 +18,7 @@ Download from [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases). Choo
 
 Quit REAPER, place the extension in its resource directory's `UserPlugins/`, then restart. Linux also needs the matching `reawebapi-webview-<arch>` helper beside the `.so`.
 
-Each native file is available separately. Platform ZIPs include the demo and SDK. `ReaWebAPI-ReaPack-v0.1.3.zip` contains only seven native files in `extension/` and `ReaWebAPI.ext`, ready to copy into the ReaScripts repository. The `.ext` is also a separate release asset.
+Each native file is available separately. Platform ZIPs include the demo and SDK. `ReaWebAPI-ReaPack-v0.1.6.zip` contains only seven native files in `extension/` and `ReaWebAPI.ext`, ready to copy into the ReaScripts repository. The `.ext` is also a separate release asset.
 
 Merge a platform ZIP into the REAPER resource directory and load `Scripts/ReaWebAPI/Example/Example.lua` in the Action List. The demo includes project, track and FX queries, color/pan Undo operations and docking. **Run read-only checks** exercises ten paths covering handles, tuples, GUIDs, rectangles, MIDI bytes and audio buffers. Select a track containing a MIDI item to cover every path. Empty projects show explicit skips.
 
@@ -66,21 +66,21 @@ Host APIs:
 | Window control | `ReaWeb_Focus()`, `ReaWeb_SetTitle(title)`, `ReaWeb_GetWindowState()` |
 | Keyboard policy | `ReaWeb_SetKeyboardCapture(boolean)`, enabled by default. Disable to follow REAPER's shortcut rules |
 | Events | `ReaWeb_On(name, callback)`, returns an idempotent async disposer |
-| Batches, Undo | `ReaWeb_Batch(calls, { undoLabel })`, up to 32 calls |
+| Batches, Undo | `ReaWeb_Batch(calls, { undoLabel })`, up to 128 calls |
 | Fixed output buffers | `ReaWeb_SetBufferSize(bytes)`, 64 KiB default, 16 MiB maximum |
 | Continuous controls | `ReaWeb_SetTrackValueLatest(track, key, value)`, superseded waiting values resolve with `superseded: true` |
 
-Events include `projectchange`, `selectionchange` and `windowstatechange`, with an initial snapshot and coalesced updates. Project and selection checks run about every 100 ms. Use them to refresh UI, not to record every edit. Batches accept the nine APIs listed by `ReaWebBatchCall` in the SDK, validate before execution and close Undo/UI refresh scopes synchronously. All 730 APIs support ordinary calls. A partial failure returns `BATCH_FAILED` with completed results, without rolling back earlier writes. Coalescing is opt-in and leaves ordinary API calls unchanged. It does not create an Undo group for a drag gesture.
+Events now include track/item/take selection, transport, FX, project and window state. Batches expose 173 reviewed standard APIs with result references, current-project validation and paired Undo/refresh cleanup. Managed Undo gestures survive browser awaits and are closed by the host on reload/close or timeout. Files, clipboard and external links have common host APIs; TypeScript/Vite development uses an explicit loopback entry. See the [host reference](docs/host-api.md), [frontend contract](docs/frontend.md) and [v0.1.6 changes](docs/release-notes.md).
 
 ## Runtime
 
-Windows uses WebView2, macOS uses WKWebView, and Linux runs WebKitGTK in a separate shared process. All windows share one browser profile. Windows/Linux data lives under `<resource>/ReaWebAPI/WebViewData/`. On macOS that directory stores the profile ID, while WebKit manages the actual storage location.
+Windows uses WebView2, macOS uses WKWebView, and Linux runs WebKitGTK in a separate process per App. Local Apps use stable loopback HTTP origins for native ES modules and local fetch. Windows in the same App directory share a profile; different directories are isolated. Profile metadata lives under `<resource>/ReaWebAPI/Apps/<appId>/`. See the [Web Runtime v1 contract](docs/frontend.md) for persistence, migration and platform requirements.
 
 Floating windows are owned by REAPER. Docking preserves the page and its JavaScript state. Position, size, maximization and docking are saved under `<resource>/ReaWebAPI/WindowState/`, keyed by page path and concurrent instance slot. Restoration clamps the window to an available screen. Windows/Linux support the demo's **Developer Tools** button. On macOS, enable Safari's developer features and inspect the REAPER page through its **Develop** menu. macOS builds are ad-hoc signed, without notarization.
 
 REAPER APIs run on the main thread. Bridge dispatch rotates between windows with a 2 ms soft budget per tick. A single native call or docking operation cannot be preempted. Bridge JSON parsing, serialization and state file writes run on a worker. Messages and queues have fixed limits.
 
-Pages have the full capabilities of the exposed APIs, including project writes and file operations. Load trusted local pages. Browser profiles are shared, so prefix storage keys with your tool's name.
+Pages have the full capabilities of the exposed APIs, including project writes and file operations. Load trusted local pages. Browser storage is isolated by App directory; native filesystem access remains privileged.
 
 ## API definition maintenance
 
@@ -107,4 +107,4 @@ On Windows, configure with MSVC x64 (`-A x64`). On macOS, pass `-DCMAKE_OSX_ARCH
 
 Pushing to the default branch builds all five targets and publishes the version in `CMakeLists.txt` to **Releases**. Matching `v*` tags and manual runs on the default branch also publish. Pull requests only build. Published versions are left intact. Bump the version for a new release.
 
-The submission whitelist keeps local tests, dependency caches and build output out of Git. CI builds from committed source alone. See [third-party notices](THIRD_PARTY.md).
+Regression tests are committed and run on every CI platform before packaging/release. Dependency caches and build output stay out of Git. Run `ctest --test-dir build -C Release --output-on-failure` after configuring with `-DBUILD_TESTING=ON`. See [third-party notices](THIRD_PARTY.md).

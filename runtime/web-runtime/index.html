@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Runtime checks</title>
+<link rel="stylesheet" href="./style.css">
+<body>
+<h1>Web Runtime v1 checks</h1>
+<p>A plain ES module App. No build step. Reopen to check persistent storage.</p>
+<p id="status" role="status">Running…</p>
+<div id="drop" tabindex="0">Drop text or a file here</div>
+<pre id="drop-result"></pre>
+<table><thead><tr><th>Capability</th><th>Contract</th><th>Result</th></tr></thead><tbody id="results"></tbody></table>
+<pre id="details"></pre>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
