@@ -22,16 +22,14 @@ BINDINGS = read_json((ROOT / 'api/bindings.json').read_text())
 
 class SyncTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir=ROOT / '.cache')
+        self.temp = tempfile.TemporaryDirectory(prefix='reaweb-api-sync-')
+        self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         for directory in ('api', 'src', 'runtime', 'docs'):
             (self.root / directory).mkdir()
         for name in ('api/reaper_api.json', 'api/bindings.json', 'src/core.cpp',
                      'runtime/reaper-api.generated.js', 'runtime/reaper-api.generated.d.ts', 'runtime/reaper.d.ts', 'docs/api-reference.md'):
             shutil.copyfile(ROOT / name, self.root / name)
-
-    def tearDown(self):
-        self.temp.cleanup()
 
     def command(self, *args):
         return subprocess.run([sys.executable, '-m', 'tools.api_sync', '--root', str(self.root), *args],

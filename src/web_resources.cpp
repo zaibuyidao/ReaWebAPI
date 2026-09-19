@@ -26,6 +26,19 @@ std::string encode_path(const std::string& path) {
   }
   return result;
 }
+bool resource_within_root(const fs::path& root, const std::string& url_path) {
+  if (url_path.empty() || url_path.front() != '/') return false;
+  auto relative = fs::u8path(url_path.substr(1));
+  if (relative.has_root_path()) return false;
+  // Match the static mount's implicit index so /pages/ cannot bypass the check
+  // through an index.html link, even when the directory itself is inside root.
+  if (url_path.back() == '/') relative /= "index.html";
+  std::error_code error;
+  const auto resolved = fs::weakly_canonical(root / relative, error);
+  if (error) return false;
+  const auto contained = resolved.lexically_relative(root);
+  return !contained.empty() && !contained.is_absolute() && *contained.begin() != "..";
+}
 }
 std::string app_identity(const fs::path& root) { return state_key(root_identity(root), 0); }
 struct WebResources::Impl {
@@ -97,12 +110,15 @@ WebResources::WebResources(const fs::path& root, const fs::path& profile) : impl
     } else if (request.path.find_first_of("\\:") != std::string::npos ||
                std::any_of(request.path.begin(), request.path.end(), [](unsigned char c) { return c < 32 || c == 127; })) {
       response.status = 400;
+    } else if (!resource_within_root(p.root, request.path)) {
+      response.status = 403;
     } else return httplib::Server::HandlerResponse::Unhandled;
     response.set_content("App resource request rejected", "text/plain; charset=utf-8");
     return httplib::Server::HandlerResponse::Handled;
   });
-  // The pinned library canonicalizes files and rejects symlink/junction escapes
-  // from this root before serving them. It never lists directories.
+  // Our guard resolves real filesystem targets on every platform. The pinned
+  // library's Windows _fullpath check is lexical and does not resolve links.
+  // Keep its static MIME/range/conditional handling and disabled directory listing.
   if (!p.server.set_mount_point("/", p.root.u8string()))
     throw Error("APP_RESOURCE_ERROR", "Cannot mount the App directory");
   for (const auto* extension : {"js", "mjs"})

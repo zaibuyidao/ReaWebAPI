@@ -2,6 +2,7 @@
 import concurrent.futures
 import http.client
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -43,6 +44,9 @@ class ResourceTests(unittest.TestCase):
     def tearDown(self):
         if self.process.poll() is None:
             self.stop()
+        # Remove only junction entries, never recurse through their targets.
+        for junction in getattr(self, 'junctions', []):
+            junction.rmdir()
         self.temp.cleanup()
 
     def request(self, path, method='GET', headers=None):
@@ -80,11 +84,61 @@ class ResourceTests(unittest.TestCase):
         for path in ['/../secret.txt', '/%2e%2e/secret.txt', '/..%5csecret.txt', '/C:/secret.txt', '/a%00.js']:
             self.assertNotEqual(self.request(path)[0], 200, path)
         self.assertNotIn('Access-Control-Allow-Origin', self.request('/data.json')[1])
+
+    def symlink(self, link, target, directory=False):
         try:
-            (self.root / 'escape.txt').symlink_to(self.base / 'secret.txt')
-        except OSError:
-            return
-        self.assertEqual(self.request('/escape.txt')[0], 403)
+            link.symlink_to(target, target_is_directory=directory)
+        except OSError as error:
+            if sys.platform == 'win32' and error.winerror == 1314:
+                self.skipTest('Windows symlink privilege unavailable; junction coverage still runs')
+            raise
+
+    def assert_forbidden(self, path):
+        for method, headers in [('GET', {}), ('HEAD', {}), ('GET', {'Range': 'bytes=0-3'})]:
+            with self.subTest(path=path, method=method, headers=headers):
+                status, _, body = self.request(path, method, headers)
+                self.assertEqual(status, 403)
+                self.assertNotIn(b'outside', body)
+
+    def test_file_symlink_escape(self):
+        self.symlink(self.root / 'escape.txt', self.base / 'secret.txt')
+        self.assert_forbidden('/escape.txt')
+
+    def test_directory_symlink_escape(self):
+        self.symlink(self.root / 'escape', self.base, directory=True)
+        self.assert_forbidden('/escape/secret.txt')
+
+    def test_index_symlink_escape(self):
+        directory = self.root / 'pages'
+        directory.mkdir()
+        self.symlink(directory / 'index.html', self.base / 'secret.txt')
+        self.assert_forbidden('/pages/')
+
+    def test_internal_symlink_resources(self):
+        self.symlink(self.root / 'alias.json', self.root / 'data.json')
+        self.assertEqual(self.request('/alias.json')[2], (self.root / 'data.json').read_bytes())
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows junctions only')
+    def test_windows_junction_boundary(self):
+        outside = self.base / 'App-other'
+        outside.mkdir()
+        (outside / 'secret.txt').write_text('outside')
+        (outside / 'index.html').write_text('outside')
+        internal = self.root / 'assets'
+        internal.mkdir()
+        (internal / 'data.json').write_text('{"value":42}')
+        self.junctions = []
+        for name, target in [('escape-dir', outside), ('inside-dir', internal)]:
+            link = self.root / name
+            subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+                            "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction "
+                            '-Path $env:REAWEB_TEST_LINK -Target $env:REAWEB_TEST_TARGET | Out-Null'],
+                           env={**os.environ, 'REAWEB_TEST_LINK': str(link), 'REAWEB_TEST_TARGET': str(target)},
+                           check=True, capture_output=True, timeout=15)
+            self.junctions.append(link)
+        self.assert_forbidden('/escape-dir/secret.txt')
+        self.assert_forbidden('/escape-dir/')
+        self.assertEqual(self.request('/inside-dir/data.json')[2], b'{"value":42}')
 
     def test_persisted_origin_and_port_conflict(self):
         initial = self.origin

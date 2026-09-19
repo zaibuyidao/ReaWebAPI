@@ -12,10 +12,14 @@
 - Add an explicit loopback development entry, Vite/TypeScript starter and documented module/fetch/Worker conventions.
 - Add Web Runtime v1: stable per-App loopback origins, native modules/local fetch, isolated persistent profiles and an unbundled browser conformance App. Keep old file-origin data untouched. Enable Linux persistent cookies and exclusive origin ports.
 - Commit regression tests and make CI test each native build before publication.
+- Fix clean-checkout CI: API-sync tests use independent temporary directories instead of requiring an untracked .cache directory.
+- Fix Windows App-resource symlink/junction escape: resolve filesystem targets before static serving, including implicit index.html, HEAD and Range requests; keep internal links working.
 
 ## 中文说明
 
 保持 REAPER 7.80 的 730 项标准 API 镜像绑定完整；本版不包含第三方 API 或自定义 Lua RPC。修复 Linux 大消息与跨工程批处理 Undo 两个缺陷，补充通用批处理/托管 Undo、文件和桌面服务、更多状态事件、现代前端模板。Web Runtime v1 补齐稳定本地来源、原生模块/fetch、按 App 隔离持久化存储与无需构建的能力检查示例。未添加项目许可证。
+
+CI 修复：移除 API 同步测试对未提交 .cache 目录的依赖；修复 Windows 符号链接/junction 可越出 App 资源根目录的问题，覆盖目录默认页、HEAD 和 Range 请求，版本保持 v0.1.6。
 
 ## Release acceptance
 
