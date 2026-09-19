@@ -58,11 +58,14 @@ class SdkTests(unittest.TestCase):
 
     def test_standalone_sdk_content_links_and_checksums(self):
         with tempfile.TemporaryDirectory() as directory:
-            archive = build_sdk(Path(directory), '0.1.8', 'test-sdk')
+            archive = build_sdk(Path(directory), '0.1.8.3', 'test-sdk')
+            self.assertEqual(archive.name, 'ReaWebAPI-SDK-v0.1.8.3.zip')
             with zipfile.ZipFile(archive) as z:
                 files = {name: z.read(name) for name in z.namelist()}
                 self.assertFalse(any(name.startswith('UserPlugins/') or name.endswith(('.dll', '.so', '.dylib')) for name in files))
                 metadata = json.loads(files['ReaWebAPI/SDK/BUILD.json'])
+                self.assertEqual(metadata['version'], '0.1.8.3')
+                self.assertTrue(files['ReaWebAPI/docs/release-notes.md'].startswith(b'# ReaWebAPI v0.1.8.3\n'))
                 self.assertEqual(metadata['bindings'], 730)
                 self.assertEqual(metadata['revision'], 'test-sdk')
                 self.assertIn('ReaWebAPI/SDK/web-runtime/modules/空 格#%.js', files)

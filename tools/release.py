@@ -12,6 +12,7 @@ import zipfile
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.package_sdk import build_sdk
+from tools.version import source_version
 
 TARGETS = [
     ('windows', 'x64', 'win64', 'reaper_reawebapi-x64.dll'),
@@ -20,11 +21,6 @@ TARGETS = [
     ('linux', 'x86_64', 'linux64', 'reaper_reawebapi-x86_64.so'),
     ('linux', 'aarch64', 'linux-aarch64', 'reaper_reawebapi-aarch64.so'),
 ]
-
-
-def source_version():
-    cmake = (Path(__file__).resolve().parent.parent / 'CMakeLists.txt').read_text(encoding='utf-8-sig')
-    return re.search(r'project\(ReaWebAPI VERSION (\d+\.\d+\.\d+)', cmake).group(1)
 
 
 def native_files():
@@ -36,7 +32,9 @@ def native_files():
 
 def version_notes(version):
     text = (Path(__file__).resolve().parents[1] / 'docs/release-notes.md').read_text(encoding='utf-8')
-    match = re.search(r'^# ReaWebAPI v' + re.escape(version) + r'\s*\n(.*?)(?=^# ReaWebAPI v|\Z)',
+    # The unversioned heading describes this checkout. Published titles and
+    # packaged notes receive their version from CMake, without a second edit.
+    match = re.search(r'^# ReaWebAPI(?: v' + re.escape(version) + r')?[ \t]*\r?\n(.*?)(?=^# |\Z)',
                       text, re.MULTILINE | re.DOTALL)
     if not match:
         raise ValueError(f'Missing release notes for v{version}')

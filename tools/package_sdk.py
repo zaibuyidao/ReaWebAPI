@@ -10,6 +10,7 @@ import zipfile
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.api_sync.generate import verify
+from tools.version import source_version
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,6 +48,8 @@ def payload(root, version, revision):
         if path.suffix == '.md':
             text = content.decode('utf-8-sig')
             text = text.replace('](../runtime/', '](../SDK/').replace('](runtime/', '](SDK/')
+            if name == 'ReaWebAPI/docs/release-notes.md':
+                text = re.sub(r'\A# ReaWebAPI[ \t]*\r?\n', f'# ReaWebAPI v{version}\n', text, count=1)
             content = text.encode('utf-8')
         files[name] = content
     metadata = dict(version=version, revision=revision, reaperVersion=schema['source']['reaperVersion'],
@@ -85,7 +88,7 @@ def main():
     target.add_argument('--output', type=Path, help='Write the standalone SDK ZIP to this directory')
     parser.add_argument('--revision', default='local')
     args = parser.parse_args()
-    version = re.search(r'project\(ReaWebAPI VERSION (\d+\.\d+\.\d+)', (ROOT / 'CMakeLists.txt').read_text(encoding='utf-8-sig')).group(1)
+    version = source_version()
     if args.stage:
         stage_sdk(args.stage, version, args.revision)
         print(f'Staged SDK and documentation for v{version}')

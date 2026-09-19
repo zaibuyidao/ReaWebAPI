@@ -36,6 +36,7 @@
 !/tools/package.py
 !/tools/package_sdk.py
 !/tools/release.py
+!/tools/version.py
 !/tools/native_bindings.py
 !/tools/validate_app.py
 !/tools/api_sync/

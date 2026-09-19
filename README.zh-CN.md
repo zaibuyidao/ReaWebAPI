@@ -54,6 +54,8 @@ cmake --install build --config Release --prefix stage
 
 Windows 使用 MSVC x64，并添加 `-A x64`。macOS 使用 `-DCMAKE_OSX_ARCHITECTURES=arm64` 或 `x86_64` 指定架构。
 
+扩展版本统一由 `CMakeLists.txt` 中的 `project(ReaWebAPI VERSION …)` 定义，支持第四段修订号。推送到默认分支后，工作流会构建全部平台，通过检查后发布 `v<版本号>`。当前更新内容维护在 `docs/release-notes.md`，已发布版本不会被覆盖。
+
 [源码结构](docs/source-layout.md) · [API 维护](api/README.zh-CN.md) · [版本更新](docs/release-notes.md) · [第三方声明](THIRD_PARTY.md)
 
 采用 [LGPL-3.0-or-later](LICENSE.md) 许可。

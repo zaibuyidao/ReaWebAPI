@@ -39,6 +39,7 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(bundle.read(name), (Path(__file__).parents[1] / name).read_bytes())
             self.assertNotIn('web/', bundle.read('ReaWebAPI.ext').decode())
             self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 7)
+            self.assertIn(f'@version {self.version}\n', bundle.read('ReaWebAPI.ext').decode())
         body = release.release_body('test/repo', self.version)
         links = release.re.findall(r'https://github.com/test/repo/releases/download/v[^/]+/([^\s)]+)', body)
         expected = {asset.name for asset in assets if asset.suffix == '.zip' or asset.name == 'SHA256SUMS.txt'}
@@ -48,6 +49,18 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(release.Path, 'read_text', return_value=text):
             self.assertEqual(release.version_notes('1.2.3'), '## Changes\n\n- Current release.')
             with self.assertRaises(ValueError): release.version_notes('1.2')
+    def test_four_part_release_notes_do_not_match_three_parts(self):
+        text = '# ReaWebAPI v0.1.8.3\n\n- Four-part release.\n'
+        with patch.object(release.Path, 'read_text', return_value=text):
+            self.assertEqual(release.version_notes('0.1.8.3'), '- Four-part release.')
+            with self.assertRaises(ValueError): release.version_notes('0.1.8')
+    def test_current_release_notes_follow_cmake_version(self):
+        text = '# ReaWebAPI\n\n## Changes\n\n- Current release.\n'
+        with patch.object(release.Path, 'read_text', return_value=text):
+            for version in ('0.1.8', '0.1.8.3', '0.2.0'):
+                body = release.release_body('test/repo', version)
+                self.assertTrue(body.startswith('## Changes\n\n- Current release.'))
+                self.assertIn(f'/releases/download/v{version}/', body)
     def test_missing_helper_blocks_release(self):
         (self.directory / 'reawebapi-webview-aarch64').unlink()
         with self.assertRaises(ValueError): release.assemble(self.directory, self.version, 'test-sha')
@@ -72,5 +85,6 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual([c[:2] for c in calls[2:]], [('release', 'create'), ('release', 'upload'), ('release', 'edit')])
         self.assertIn('--draft', calls[2])
         self.assertIn('--draft=false', calls[-1])
+        self.assertEqual(calls[2][2], f'v{self.version}')
 
 if __name__ == '__main__': unittest.main()

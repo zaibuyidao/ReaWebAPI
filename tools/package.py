@@ -2,7 +2,6 @@
 import argparse
 import hashlib
 import json
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -11,6 +10,7 @@ import zipfile
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.package_sdk import stage_sdk
+from tools.version import source_version
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--stage', type=Path, required=True)
@@ -20,8 +20,7 @@ parser.add_argument('--revision', default='local')
 parser.add_argument('--archive', type=Path)
 parser.add_argument('--release-dir', type=Path)
 args = parser.parse_args()
-cmake = (Path(__file__).resolve().parent.parent / 'CMakeLists.txt').read_text(encoding='utf-8-sig')
-version = re.search(r'project\(ReaWebAPI VERSION (\d+\.\d+\.\d+)', cmake).group(1)
+version = source_version()
 extension = {'windows': 'dll', 'macos': 'dylib', 'linux': 'so'}[args.platform]
 filename = f'reaper_reawebapi-{args.arch}.{extension}'
 binary = args.stage / 'UserPlugins' / filename

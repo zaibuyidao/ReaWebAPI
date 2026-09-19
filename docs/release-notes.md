@@ -1,7 +1,8 @@
-# ReaWebAPI v0.1.8
+# ReaWebAPI
 
 ## Changes
 
+- Preserve the complete CMake version, including the fourth component, across installation bundles, SDK, ReaPack and GitHub Releases.
 - Prioritize native track-selection notifications and project state updates.
 - Refresh Demo track names and pan without waiting for color conversion.
 - Streamline documentation and examples around the current release.
@@ -13,6 +14,7 @@
 
 ## 更新
 
+- 安装包、SDK、ReaPack 和 GitHub Release 统一使用 CMake 完整版本号，支持第四段修订号。
 - 优先处理原生轨道选择通知与工程状态更新。
 - Demo 轨道名称和 Pan 随查询结果更新，颜色转换独立完成。
 - 精简文档和示例说明，统一描述当前版本。

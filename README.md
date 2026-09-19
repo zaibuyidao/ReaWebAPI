@@ -54,6 +54,8 @@ cmake --install build --config Release --prefix stage
 
 On Windows, use MSVC x64 with `-A x64`. On macOS, select `-DCMAKE_OSX_ARCHITECTURES=arm64` or `x86_64`.
 
+The extension version is defined by `project(ReaWebAPI VERSION …)` in `CMakeLists.txt`, including an optional fourth component. Pushing to the default branch builds all platforms and publishes `v<version>` after the checks pass. Maintain the current changes in `docs/release-notes.md`. Published versions are not overwritten.
+
 [Source layout](docs/source-layout.md) · [API maintenance](api/README.md) · [Release notes](docs/release-notes.md) · [Third-party notices](THIRD_PARTY.md)
 
 Licensed under [LGPL-3.0-or-later](LICENSE.md).
