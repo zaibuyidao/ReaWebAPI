@@ -1,10 +1,12 @@
 #include "core.hpp"
 #include "host_io.hpp"
+#include "file_time.hpp"
 #include "worker.hpp"
 #include "batch.hpp"
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <limits>
 using namespace reaweb;
 #define CHECK(x) do { if (!(x)) throw std::runtime_error("Check failed: " #x); } while(false)
 template<class F> void rejects(const char* code, F run) {
@@ -25,6 +27,26 @@ static void* resolve(const char* name) {
   return nullptr;
 }
 int main() { try {
+  CHECK(file_time_ticks(0) == "0");
+  CHECK(file_time_ticks(123456789) == "123456789");
+  CHECK(file_time_ticks(-123456789) == "-123456789");
+  CHECK(file_time_ticks(std::numeric_limits<int64_t>::max()) == "9223372036854775807");
+  CHECK(file_time_ticks(std::numeric_limits<int64_t>::min()) == "-9223372036854775808");
+#if defined(__SIZEOF_INT128__)
+  // Exercise the macOS libc++ representation even on Linux/libstdc++ CI.
+  using WideTicks = __int128_t;
+  const auto beyond64 = static_cast<WideTicks>(std::numeric_limits<int64_t>::max()) + 1;
+  CHECK(file_time_ticks(beyond64) == "9223372036854775808");
+  CHECK(file_time_ticks(beyond64 + 1) == "9223372036854775809");
+  CHECK(file_time_ticks(-beyond64 - 1) == "-9223372036854775809");
+  CHECK(file_time_ticks(std::numeric_limits<WideTicks>::max()) == "170141183460469231731687303715884105727");
+  CHECK(file_time_ticks(std::numeric_limits<WideTicks>::min()) == "-170141183460469231731687303715884105728");
+#endif
+  using FileTime = fs::file_time_type;
+  const FileTime epoch{};
+  CHECK(file_time_ticks(epoch.time_since_epoch().count()) == "0");
+  CHECK(file_time_ticks((epoch + FileTime::duration(1)).time_since_epoch().count()) == "1");
+  CHECK(file_time_ticks((epoch - FileTime::duration(1)).time_since_epoch().count()) == "-1");
   Host host; host.current_project = []() -> void* { return &project_a; }; host.native_function = resolve;
   host.begin_undo = [](void* project) { CHECK(project == &project_a); ++begins; };
   host.end_undo = [](void* project, const std::string&) { CHECK(project == &project_a); ++ends; };

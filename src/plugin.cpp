@@ -1,5 +1,6 @@
 #include <reaper_plugin.h>
 #include "runtime.hpp"
+#include "file_time.hpp"
 #include <cstring>
 #include <atomic>
 #include <memory>
@@ -182,7 +183,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       std::error_code error;
       auto stamp = fs::last_write_time(fs::u8path(name), error);
       return Json{{"available", !error && name[0] != 0}, {"path", name}, {"dirty", dirty(project) != 0},
-        {"stamp", error ? "" : std::to_string(stamp.time_since_epoch().count())}, {"serialization", save_revision.load()}};
+        {"stamp", error ? "" : file_time_ticks(stamp.time_since_epoch().count())}, {"serialization", save_revision.load()}};
     };
     auto count_items = reinterpret_cast<int (*)(ReaProject*)>(get_function("CountSelectedMediaItems"));
     auto selected_item = reinterpret_cast<MediaItem* (*)(ReaProject*, int)>(get_function("GetSelectedMediaItem"));
