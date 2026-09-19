@@ -88,7 +88,7 @@ def main(argv=None):
             if numeric(new['source']['reaperVersion']) < numeric(old['source']['reaperVersion']) and not args.allow_downgrade:
                 raise ValueError('Source version is older. Use --allow-downgrade if intentional.')
         output = {schema_path: encode(new)}
-        output.update({root / name: content for name, content in sdk_files(manifest).items()})
+        output.update({root / name: content for name, content in sdk_files(manifest, new).items()})
         if old != new:
             version = new['source']['reaperVersion']
             changelog = root / 'api/changelog' / (version + '.md')

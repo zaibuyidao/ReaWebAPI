@@ -19,6 +19,11 @@ type ReaWebHandle = MediaTrackHandle | MediaItemHandle | MediaItem_TakeHandle | 
 
 type ReaWebTrackKey = 'D_VOL' | 'D_PAN' | 'B_MUTE' | 'I_SOLO' | 'I_CUSTOMCOLOR';
 type ReaWebContinuousTrackKey = Exclude<ReaWebTrackKey, 'I_CUSTOMCOLOR'>;
+/** Bridge failures reject with this shape. Native false/0/null results remain results. */
+interface ReaWebError extends Error {
+  readonly code: string;
+  readonly details?: unknown;
+}
 interface ReaWebCapabilities {
   version: string;
   protocol: 1;
@@ -71,7 +76,7 @@ interface ReaWebDiagnostics {
   schedulerBudgetMs: number;
 }
 type ReaWebBatchCall =
-  | { method: 'CountTracks' | 'CountSelectedTracks'; args: [] | [0 | null] }
+  | { method: 'CountTracks' | 'CountSelectedTracks'; args: [0 | null] }
   | { method: 'GetTrack' | 'GetSelectedTrack'; args: [0 | null, number] }
   | { method: 'GetTrackName'; args: [MediaTrackHandle] }
   | { method: 'GetMediaTrackInfo_Value'; args: [MediaTrackHandle, ReaWebTrackKey] }

@@ -6,7 +6,12 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import zipfile
+
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.package_sdk import build_sdk
 
 TARGETS = [
     ('windows', 'x64', 'win64', 'reaper_reawebapi-x64.dll'),
@@ -35,9 +40,9 @@ def descriptor(version):
     for platform, name in native_files():
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/extension/{name}'
         lines.append(f'  [{platform} extension] {name} {url}')
-    lines += ['@changelog', '  Restore window placement and docking, and capture WebView keyboard input.',
-              '  Add host events, Undo batches, continuous controls and runtime diagnostics.',
-              '  Isolate document reloads and project changes with bounded main-thread scheduling.']
+    lines += ['@changelog', '  Bind all 730 standard REAPER APIs with typed native dispatch.',
+              '  Support handles, multiple results, binary MIDI and audio sample buffers.',
+              '  Provide a separate SDK, starter and bilingual developer documentation.']
     return '\n'.join(lines) + '\n'
 
 
@@ -69,7 +74,7 @@ def assemble(directory, version, revision):
             info.external_attr = 0o100755 << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, (directory / name).read_bytes())
-    assets += [ext, reapack]
+    assets += [ext, reapack, build_sdk(directory, version, revision)]
     checksums = directory / 'SHA256SUMS.txt'
     checksums.write_text(''.join(f'{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.name}\n'
                                 for file in sorted(assets)), encoding='ascii')
@@ -106,10 +111,11 @@ def publish(repo, version, revision, assets):
     notes = assets[0].parent / 'release-notes.md'
     notes.write_text(
         'Native files can be downloaded individually. Linux needs both the .so and its matching WebKit helper.\n\n'
-        'Platform ZIPs include the demo and SDK. The ReaPack ZIP contains only extension/ (seven files) and ReaWebAPI.ext. '
+        'Platform ZIPs include the demo, SDK and developer documentation. The standalone SDK ZIP adds a runnable starter and the complete API reference. '
+        'The ReaPack ZIP contains only extension/ (seven files) and ReaWebAPI.ext. '
         'Copy it into ReaScripts/ReaWebAPI before indexing that repository.\n\n'
         '各平台扩展均提供单独下载。Linux 还需同架构的 WebKit 辅助程序。\n\n'
-        '平台 ZIP 包含 Demo 和 SDK。ReaPack ZIP 仅含 extension/ 内的 7 个文件与 ReaWebAPI.ext。\n', encoding='utf-8')
+        '平台 ZIP 包含 Demo、SDK 和开发文档。独立 SDK ZIP 提供最小模板及完整 API 参考。ReaPack ZIP 仅含 extension/ 内的 7 个文件与 ReaWebAPI.ext。\n', encoding='utf-8')
     if not release:
         gh('release', 'create', tag, '--repo', repo, '--target', revision, '--draft',
            '--title', f'ReaWebAPI {tag}', '--notes-file', str(notes))

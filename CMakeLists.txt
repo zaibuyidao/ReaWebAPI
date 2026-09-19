@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.1.3 LANGUAGES CXX)
+project(ReaWebAPI VERSION 0.1.4 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,7 +36,8 @@ find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
 file(GLOB REAWEB_SYNC_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/api_sync/*.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   ${REAWEB_SYNC_SOURCES} tools/native_bindings.py api/reaper_api.json api/bindings.json src/core.cpp
-  runtime/reaper.js runtime/reaper.d.ts runtime/reaper-api.generated.js runtime/reaper-api.generated.d.ts)
+  runtime/reaper.js runtime/reaper.d.ts runtime/reaper-api.generated.js runtime/reaper-api.generated.d.ts
+  docs/api-reference.md)
 execute_process(COMMAND "${Python3_EXECUTABLE}" -m tools.api_sync export-runtime
   --output "${CMAKE_CURRENT_BINARY_DIR}/generated/api_schema.hpp"
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESULT_VARIABLE REAWEB_SCHEMA_RESULT)
@@ -128,8 +129,14 @@ if(REAWEB_BUILD_EXTENSION)
   endif()
   install(TARGETS reawebapi LIBRARY DESTINATION UserPlugins RUNTIME DESTINATION UserPlugins)
   install(DIRECTORY demo/ DESTINATION Scripts/ReaWebAPI/Example)
-  install(DIRECTORY runtime/ DESTINATION ReaWebAPI/SDK)
-  install(FILES README.md README.zh-CN.md THIRD_PARTY.md DESTINATION ReaWebAPI)
+  # A single packager keeps installed docs, the standalone SDK and release bundles identical.
+  install(CODE "
+    execute_process(COMMAND \"${Python3_EXECUTABLE}\" \"${CMAKE_CURRENT_SOURCE_DIR}/tools/package_sdk.py\"
+      --stage \"\${CMAKE_INSTALL_PREFIX}\" RESULT_VARIABLE sdk_result)
+    if(NOT sdk_result EQUAL 0)
+      message(FATAL_ERROR \"SDK/documentation staging failed\")
+    endif()
+  ")
   install(FILES "${json_SOURCE_DIR}/LICENSE.MIT" DESTINATION ReaWebAPI/licenses RENAME nlohmann-json.txt)
   install(FILES "${reaper_sdk_SOURCE_DIR}/sdk/reaper_plugin.h" DESTINATION ReaWebAPI/licenses)
   install(FILES "${wdl_SOURCE_DIR}/WDL/swell/swell.h" DESTINATION ReaWebAPI/licenses)

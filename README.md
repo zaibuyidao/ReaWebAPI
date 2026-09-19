@@ -22,6 +22,12 @@ Each native file is available separately. Platform ZIPs include the demo and SDK
 
 Merge a platform ZIP into the REAPER resource directory and load `Scripts/ReaWebAPI/Example/Example.lua` in the Action List. The demo includes project, track and FX queries, color/pan Undo operations and docking. **Run read-only checks** exercises ten paths covering handles, tuples, GUIDs, rectangles, MIDI bytes and audio buffers. Select a track containing a MIDI item to cover every path. Empty projects show explicit skips.
 
+## Developer resources
+
+[SDK and starter](runtime/README.md) · [Developer guide](docs/development.md) · [730 API reference](docs/api-reference.md) · [Host API](docs/host-api.md)
+
+The standalone `ReaWebAPI-SDK-v<version>.zip` contains editor declarations, a runnable starter, API definitions and documentation. Platform ZIPs include these files too. The extension-only ReaPack ZIP remains unchanged.
+
 ## API
 
 ```lua

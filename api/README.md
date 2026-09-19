@@ -15,7 +15,9 @@ Scope: **all 730 standard C/Lua APIs in REAPER 7.80**. Every entry has a generat
 
 `api/reaper_api.json` retains signatures, normalized arguments/results, categories and source SHA-256. Each `signatureHash` covers C and Lua contracts. `catalogueHash` covers the complete schema. Documentation is linked and hashed rather than copied. `schemaVersion` versions the data structure, `generatorVersion` the normalization algorithm.
 
-`api/bindings.json` records accepted reviews. `runtime/reaper-api.generated.js` and `.d.ts` derive from this manifest. Generated C++ stays in the build directory, avoiding redundant committed implementation files.
+`api/bindings.json` records accepted reviews. `runtime/reaper-api.generated.js`, `.d.ts` and `docs/api-reference.md` derive from the schema and this manifest. The reference includes all signatures, argument types, return labels and official links. Verification rejects stale declarations or reference pages. Generated C++ stays in the build directory, avoiding redundant committed implementation files.
+
+Tool authors should start with the [developer documentation](../docs/README.md). `tools/package_sdk.py` creates the standalone SDK and stages the same SDK/docs into platform bundles. Release assembly includes that ZIP while keeping the ReaPack payload unchanged.
 
 ## Routine commands
 

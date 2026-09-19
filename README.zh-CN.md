@@ -22,6 +22,12 @@ REAPER 6.68+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/Jav
 
 将平台 ZIP 合并到 REAPER 资源目录，在 Action List 加载 `Scripts/ReaWebAPI/Example/Example.lua`。Demo 提供工程、轨道和 FX 查询，颜色及声像 Undo 操作，以及停靠切换。**Run read-only checks** 执行 10 条检查，覆盖对象句柄、多返回值、GUID、RECT、MIDI 字节和音频数组。选中带 MIDI Item 的轨道可覆盖全部路径，空工程会明确显示跳过项。
 
+## 开发资料
+
+[SDK 与最小模板](runtime/README.zh-CN.md) · [开发指南](docs/development.zh-CN.md) · [730 项 API 参考](docs/api-reference.md) · [宿主接口](docs/host-api.zh-CN.md)
+
+独立下载 `ReaWebAPI-SDK-v<版本>.zip` 可获得编辑器声明、可运行模板、API 定义和文档。平台 ZIP 也包含这些内容，扩展专用 ReaPack ZIP 保持原有结构。
+
 ## API
 
 ```lua

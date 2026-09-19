@@ -4,8 +4,13 @@ import hashlib
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 import zipfile
+
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.package_sdk import stage_sdk
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--stage', type=Path, required=True)
@@ -15,6 +20,8 @@ parser.add_argument('--revision', default='local')
 parser.add_argument('--archive', type=Path)
 parser.add_argument('--release-dir', type=Path)
 args = parser.parse_args()
+cmake = (Path(__file__).resolve().parent.parent / 'CMakeLists.txt').read_text(encoding='utf-8-sig')
+version = re.search(r'project\(ReaWebAPI VERSION (\d+\.\d+\.\d+)', cmake).group(1)
 extension = {'windows': 'dll', 'macos': 'dylib', 'linux': 'so'}[args.platform]
 filename = f'reaper_reawebapi-{args.arch}.{extension}'
 binary = args.stage / 'UserPlugins' / filename
@@ -33,8 +40,7 @@ if args.platform == 'linux':
 for relative in required:
     if not (args.stage / relative).is_file():
         raise SystemExit(f'Missing bundle file: {relative}')
-cmake = (Path(__file__).resolve().parent.parent / 'CMakeLists.txt').read_text(encoding='utf-8-sig')
-version = re.search(r'project\(ReaWebAPI VERSION (\d+\.\d+\.\d+)', cmake).group(1)
+stage_sdk(args.stage, version, args.revision)
 metadata = {'version': version, 'platform': args.platform, 'architecture': args.arch,
             'revision': args.revision, 'extension': filename}
 (args.stage / 'ReaWebAPI' / 'BUILD.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')

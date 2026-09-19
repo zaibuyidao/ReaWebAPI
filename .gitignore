@@ -8,6 +8,9 @@
 !/THIRD_PARTY.md
 !/src/
 !/runtime/
+!/docs/
+/docs/*
+!/docs/*.md
 !/demo/
 !/api/
 /api/*
@@ -28,6 +31,7 @@
 !/tools/
 /tools/*
 !/tools/package.py
+!/tools/package_sdk.py
 !/tools/release.py
 !/tools/native_bindings.py
 !/tools/api_sync/

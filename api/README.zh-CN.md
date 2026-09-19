@@ -15,7 +15,9 @@
 
 `api/reaper_api.json` 保留原始签名、规范化参数、返回值、分类和来源 SHA-256。每项 `signatureHash` 包含 C 与 Lua 契约，`catalogueHash` 覆盖全表。文档只存链接和哈希，不整篇复制。`schemaVersion` 管理数据结构版本，`generatorVersion` 管理规范化算法版本。
 
-`api/bindings.json` 是提交的审阅结果。`runtime/reaper-api.generated.js` 和 `.d.ts` 从该清单生成。C++ 实现仅生成到构建目录，不重复提交生成源码。
+`api/bindings.json` 是提交的审阅结果。`runtime/reaper-api.generated.js`、`.d.ts` 和 `docs/api-reference.md` 从定义及该清单生成，逐项参考包含签名、参数类型、返回名称及官方链接。验证会拒绝过期声明或参考文档。C++ 实现仅生成到构建目录，不重复提交生成源码。
+
+工具作者应从 [开发文档](../docs/README.zh-CN.md) 开始。`tools/package_sdk.py` 生成独立 SDK，并将同一份 SDK 和文档加入平台包。发布流程会附带 SDK ZIP，ReaPack 的扩展专用结构保持不变。
 
 ## 日常命令
 

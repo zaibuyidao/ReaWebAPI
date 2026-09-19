@@ -1,0 +1,16 @@
+:root { color-scheme: dark; font: 15px/1.6 system-ui, sans-serif; background: #151b1b; color: #e8eeec; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 640px; padding: 40px 28px; margin: auto; }
+.eyebrow { color: #85c8ad; font-size: 12px; letter-spacing: .12em; }
+h1 { font-size: clamp(24px, 5vw, 32px); line-height: 1.2; margin: 12px 0; }
+.intro, #status { color: #a8b9b3; }
+section { margin: 28px 0 20px; padding: 20px; background: #202b29; border: 1px solid #35443f; border-radius: 12px; }
+h2 { font-size: 12px; font-weight: 500; color: #a8b9b3; margin: 0 0 8px; }
+#track-name { font-size: 21px; margin: 0; overflow-wrap: anywhere; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+button { font: inherit; color: #e8eeec; background: #2a3c35; border: 1px solid #577263; border-radius: 7px; padding: 8px 18px; cursor: pointer; }
+button:hover { background: #365144; }
+button:focus-visible { outline: 2px solid #a2e5bd; outline-offset: 3px; }
+button:disabled { cursor: default; opacity: .5; }
+#status { font-size: 12px; min-height: 2em; overflow-wrap: anywhere; }
