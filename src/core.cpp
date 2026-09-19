@@ -1,5 +1,6 @@
 #include "core.hpp"
 #include "native.hpp"
+#include "runtime_services.hpp"
 #include "batch.hpp"
 #include <regex>
 #include "api_schema.hpp"
@@ -95,7 +96,7 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
   }
   if (methods_.size() != api_schema().at("bindings").size())
     throw Error("SCHEMA_MISMATCH", "Native API registry does not match the embedded schema");
-  add("ReaWebOpen", 1, 1, [this](const Json& a) { return controls_.open(string_arg(a[0])); });
+  add("ReaWeb_Open", 1, 1, [this](const Json& a) { return controls_.open(string_arg(a[0])); });
   add("ReaWeb_Close", 0, 0, [this](const Json&) { controls_.close(); return true; });
   add("ReaWeb_DevTools", 0, 0, [this](const Json&) { controls_.devtools(); return true; });
   add("ReaWeb_SetDocked", 1, 1, [this](const Json& a) {
@@ -110,7 +111,12 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
     api.erase("knownMethods");
     api.update(native_->capabilities());
     return Json{{"version", REAWEB_VERSION}, {"protocol", 1}, {"methods", names}, {"api", std::move(api)}, {"projectScope", "all"},
-      {"events", {"projectchange", "selectionchange", "itemselectionchange", "takeselectionchange", "transportchange", "fxchange", "windowstatechange"}},
+      {"events", runtime_events()},
+      {"runtime", {{"contract", 2}, {"namespaces", {"window", "theme", "dialog", "events", "lifecycle", "debug", "fs", "audio",
+                                                  "clipboard", "dragDrop", "app", "system", "transaction"}},
+        {"reservedNamespaces", Json::array()},
+        {"dragDrop", {{"maxFiles", 256}, {"maxTextBytes", value_limit}, {"effect", "copy"}}},
+        {"cleanupTimeoutMs", 2000}, {"audio", {{"maxChannels", 32}, {"maxWaveformPoints", 8192}, {"maxPendingJobs", 8}}}}},
       {"batchMethods", batch_methods()},
       {"limits", {{"requestBytes", message_limit}, {"batchCalls", batch_limit}, {"pendingCalls", 256}}}};
   });
@@ -131,6 +137,28 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
   for (const auto& name : {"ReaWeb_ReadFile", "ReaWeb_ReadDirectory", "ReaWeb_Stat", "ReaWeb_MakeDirectory"})
     add(name, 1, 2, [this, name](const Json& a) { return controls_.host_call(name, a); });
   add("ReaWeb_WriteFile", 2, 3, [this](const Json& a) { return controls_.host_call("ReaWeb_WriteFile", a); });
+  for (const auto& name : {"ReaWeb_GetBounds", "ReaWeb_GetTheme", "ReaWeb_GetLogs", "ReaWeb_Reload", "ReaWeb_GetAppInfo", "ReaWeb_GetPlatform", "ReaWeb_GetArchitecture"})
+    add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
+  for (const auto& name : {"ReaWeb_SetBounds", "ReaWeb_SetVisible", "ReaWeb_Log", "ReaWeb_LifecycleSubscribe", "ReaWeb_LifecycleComplete", "ReaWeb_AudioFileInfo", "ReaWeb_DragFiles", "ReaWeb_DragText", "ReaWeb_RevealPath"})
+    add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
+  add("ReaWeb_AudioWaveform", 1, 2, [this](const Json& a) { return controls_.host_call("ReaWeb_AudioWaveform", a); });
+  add("ReaWeb_GetTrackMeter", 1, 1, [this](const Json& a) {
+    auto track = native_->pointer(a[0], "MediaTrack");
+    if (!track) throw Error("INVALID_HANDLE", "A track meter requires a live track handle");
+    auto peak = reinterpret_cast<double (*)(void*, int)>(native_->resolve("Track_GetPeakInfo"));
+    auto info = reinterpret_cast<double (*)(void*, const char*)>(native_->resolve("GetMediaTrackInfo_Value"));
+    if (!peak || !info) throw Error("API_UNAVAILABLE", "Track meter APIs are unavailable");
+    const double count = info(track, "I_NCHAN");
+    if (!std::isfinite(count) || count < 1 || count > 128 || std::floor(count) != count)
+      throw Error("AUDIO_UNSUPPORTED", "Invalid track channel count");
+    Json values = Json::array(), db = Json::array();
+    for (int channel = 0; channel < static_cast<int>(count); ++channel) {
+      double value = peak(track, channel);
+      if (!std::isfinite(value) || value < 0) throw Error("AUDIO_INVALID_DATA", "Invalid meter value");
+      values.push_back(value); db.push_back(value > 0 ? Json(20 * std::log10(value)) : Json());
+    }
+    return Json{{"channels", static_cast<int>(count)}, {"peak", values}, {"peakDb", db}, {"unit", "linear-amplitude"}};
+  });
 
 }
 

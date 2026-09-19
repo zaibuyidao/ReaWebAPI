@@ -6,6 +6,7 @@
 #include <X11/Xlib.h>
 #include <cstring>
 #include <memory>
+#include "gtk_drag.hpp"
 
 namespace reaweb {
 namespace {
@@ -18,6 +19,9 @@ class Page {
   WebKitUserContentManager* manager_ = nullptr;
   ::Window parent_ = 0;
   bool failed_ = false;
+  bool loaded_ = false, allow_reload_ = false, intercept_reload_ = false;
+  std::string navigation_uri_;
+  std::unique_ptr<GtkNativeDrag> drag_;
   void fail(const std::string& error) {
     if (!failed_) {
       failed_ = true;
@@ -28,6 +32,8 @@ class Page {
 public:
   Page(LinuxChannel& channel, WebKitWebContext* context, const Json& request)
     : channel_(channel), id_(request.at("id").get<int>()), uri_(request.at("uri").get<std::string>()) {
+    intercept_reload_ = request.value("lifecycleReload", false);
+    navigation_uri_ = uri_;
     manager_ = webkit_user_content_manager_new();
     g_signal_connect(manager_, "script-message-received::reaweb", G_CALLBACK(+[](WebKitUserContentManager*, WebKitJavascriptResult* result, gpointer data) {
       auto self = static_cast<Page*>(data);
@@ -66,6 +72,21 @@ public:
         auto action = webkit_navigation_policy_decision_get_navigation_action(WEBKIT_NAVIGATION_POLICY_DECISION(decision));
         auto uri = webkit_uri_request_get_uri(webkit_navigation_action_get_request(action));
         if (!uri || !same_document(uri, self->uri_)) { webkit_policy_decision_ignore(decision); return TRUE; }
+        // WebKit sends navigation policy callbacks for in-document hash links.
+        // Those must preserve the document and must not trigger cleanup.
+        if (self->loaded_ && webkit_navigation_action_get_navigation_type(action) != WEBKIT_NAVIGATION_TYPE_RELOAD &&
+            uri != self->navigation_uri_ && same_document(uri, self->navigation_uri_)) {
+          self->navigation_uri_ = uri;
+          return FALSE;
+        }
+        if (self->intercept_reload_ && self->loaded_ && !self->allow_reload_) {
+          webkit_policy_decision_ignore(decision);
+          try { self->channel_.send({{"id", self->id_}, {"op", "reload-request"}}); }
+          catch (const std::exception& error) { self->fail(error.what()); }
+          return TRUE;
+        }
+        self->allow_reload_ = false;
+        self->navigation_uri_ = uri;
       }
       return FALSE;
     }), this);
@@ -83,10 +104,14 @@ public:
     g_signal_connect(view_, "load-changed", G_CALLBACK(+[](WebKitWebView*, WebKitLoadEvent event, gpointer data) {
       if (event == WEBKIT_LOAD_STARTED) {
         auto self = static_cast<Page*>(data);
+        self->loaded_ = true;
         try { self->channel_.send({{"id", self->id_}, {"op", "navigating"}}); }
         catch (const std::exception& error) { self->fail(error.what()); }
       }
     }), this);
+    drag_ = std::make_unique<GtkNativeDrag>(GTK_WIDGET(view_), [this](Json payload) {
+      channel_.send({{"id", id_}, {"op", "drop"}, {"payload", payload}});
+    });
     plug_ = gtk_plug_new(0);
     g_object_ref_sink(plug_);
     // GtkPlug emits delete-event when parked on the X11 root. The native host owns closing.
@@ -97,6 +122,7 @@ public:
   }
   ~Page() {
     failed_ = true;
+    drag_.reset();
     webkit_user_content_manager_unregister_script_message_handler(manager_, "reaweb");
     g_signal_handlers_disconnect_by_data(manager_, this);
     g_signal_handlers_disconnect_by_data(view_, this);
@@ -110,6 +136,10 @@ public:
     if (op == "eval") {
       const auto script = request.at("script").get<std::string>();
       webkit_web_view_evaluate_javascript(view_, script.c_str(), static_cast<gssize>(script.size()), nullptr, nullptr, nullptr, nullptr, nullptr);
+    } else if (op == "drop-enabled") {
+      drag_->enabled(request.at("enabled").get<bool>());
+    } else if (op == "reload") {
+      allow_reload_ = true; webkit_web_view_reload(view_);
     } else if (op == "devtools") {
       webkit_web_inspector_show(webkit_web_view_get_inspector(view_));
     } else if (op == "park") {
@@ -146,6 +176,7 @@ public:
       gdk_x11_display_error_trap_pop_ignored(display);
     }
   }
+  void start_drag(const Json& payload, std::function<void(Json)> reply) { drag_->start(payload, std::move(reply)); }
 };
 struct Process {
   LinuxChannel channel{3};
@@ -169,6 +200,47 @@ struct Process {
     try {
       const auto method = request.at("method").get<std::string>();
       const auto& args = request.at("args");
+      if (method == "ReaWeb_Drag") {
+        auto it = pages.find(request.at("id").get<int>());
+        if (it == pages.end()) throw Error("WINDOW_CLOSED", "Drag source window is closed");
+        it->second->start_drag(args, [this, token](Json response) {
+          channel.send({{"op", "desktop-result"}, {"request", token}, {"response", response}});
+        }); return;
+      }
+      if (method == "ReaWeb_RevealPath") {
+        auto path = args.at(0).get<std::string>();
+        auto uri = g_filename_to_uri(path.c_str(), nullptr, nullptr);
+        if (!uri) throw Error("INVALID_PATH", "Cannot convert path to a local file URI");
+        struct Reveal { LinuxChannel* channel; std::string token, uri, parent; };
+        auto parent = fs::path(path).parent_path().string();
+        auto pending = new Reveal{&channel, token, uri, parent}; g_free(uri);
+        g_bus_get(G_BUS_TYPE_SESSION, nullptr, +[](GObject*, GAsyncResult* result, gpointer data) {
+          auto pending = static_cast<Reveal*>(data); GError* error = nullptr;
+          auto bus = g_bus_get_finish(result, &error);
+          auto fallback = +[](Reveal* p) {
+            std::unique_ptr<Reveal> owner(p); GError* failure = nullptr;
+            auto uri = g_filename_to_uri(p->parent.c_str(), nullptr, nullptr);
+            const bool ok = uri && g_app_info_launch_default_for_uri(uri, nullptr, &failure); g_free(uri);
+            Json response = ok ? Json{{"result", true}} : Json{{"error", {{"code", "REVEAL_FAILED"}, {"message", failure ? failure->message : "File manager unavailable"}}}};
+            if (failure) g_error_free(failure);
+            try { p->channel->send({{"op", "desktop-result"}, {"request", p->token}, {"response", response}}); } catch (...) {}
+          };
+          if (!bus) { if (error) g_error_free(error); fallback(pending); return; }
+          const char* uris[] = {pending->uri.c_str(), nullptr};
+          struct Call { Reveal* value; void (*fallback)(Reveal*); };
+          auto call = new Call{pending, fallback};
+          g_dbus_connection_call(bus, "org.freedesktop.FileManager1", "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1", "ShowItems",
+            g_variant_new("(^ass)", uris, ""), nullptr, G_DBUS_CALL_FLAGS_NONE, 5000, nullptr,
+            +[](GObject* source, GAsyncResult* result, gpointer data) {
+              std::unique_ptr<Call> call(static_cast<Call*>(data)); GError* error = nullptr;
+              auto value = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error);
+              if (!value) { if (error) g_error_free(error); call->fallback(call->value); return; }
+              g_variant_unref(value); std::unique_ptr<Reveal> p(call->value);
+              try { p->channel->send({{"op", "desktop-result"}, {"request", p->token}, {"response", {{"result", true}}}}); } catch (...) {}
+            }, call);
+          g_object_unref(bus);
+        }, pending); return;
+      }
       if (method == "ReaWeb_OpenExternal") {
         const auto url = args.at(0).get<std::string>(); validate_external_url(url);
         GError* error = nullptr;

@@ -99,8 +99,12 @@ public:
         auto it = listeners.find(message.at("id").get<int>());
         if (it == listeners.end()) return;
         if (op == "message") it->second.on_message(message.at("message").get<std::string>());
+        else if (op == "drop" && it->second.on_drop) it->second.on_drop(message.at("payload"));
         else if (op == "error") it->second.on_error(message.at("error").get<std::string>());
         else if (op == "navigating" && it->second.on_navigation) it->second.on_navigation();
+        else if (op == "reload-request") {
+          if (!it->second.on_reload || !it->second.on_reload()) send({{"id", message.at("id")}, {"op", "reload"}});
+        }
       });
       for (auto it = desktop_.begin(); it != desktop_.end();) {
         if (std::chrono::steady_clock::now() < it->second.deadline) { ++it; continue; }
@@ -114,11 +118,11 @@ public:
       for (const auto& item : listeners) item.second.on_error(error);
     }
   }
-  void desktop(const std::string& method, const Json& args, Platform::DesktopReply reply) {
+  void desktop(const std::string& method, const Json& args, Platform::DesktopReply reply, int window = 0) {
     if (desktop_.size() >= 64) throw Error("QUEUE_LIMIT", "Too many desktop operations");
     const auto id = std::to_string(++next_desktop_);
-    desktop_.emplace(id, Desktop{std::move(reply), std::chrono::steady_clock::now() + std::chrono::seconds(10)});
-    try { send({{"id", 0}, {"op", "desktop"}, {"request", id}, {"method", method}, {"args", args}}); }
+    desktop_.emplace(id, Desktop{std::move(reply), method == "ReaWeb_Drag" ? std::chrono::steady_clock::time_point::max() : std::chrono::steady_clock::now() + std::chrono::seconds(10)});
+    try { send({{"id", window}, {"op", "desktop"}, {"request", id}, {"method", method}, {"args", args}}); }
     catch (...) { desktop_.erase(id); throw; }
   }
   void park(int id) {
@@ -150,8 +154,9 @@ public:
   LinuxWindow(std::shared_ptr<LinuxProcess> process, int id, WindowOptions options) : process_(std::move(process)), id_(id) {
     window_ = std::make_unique<SwellWindow>(options.title, options.parent, [this] {
       try { process_->send({{"id", id_}, {"op", "focus"}}); } catch (...) {}
-    });
-    process_->send({{"id", id_}, {"op", "open"}, {"uri", options.url.empty() ? file_uri(options.entry) : options.url}, {"script", options.script}});
+    }, options.on_close);
+    process_->send({{"id", id_}, {"op", "open"}, {"uri", options.url.empty() ? file_uri(options.entry) : options.url},
+      {"script", options.script}, {"lifecycleReload", static_cast<bool>(options.on_reload)}});
     process_->listeners.emplace(id_, std::move(options));
   }
   ~LinuxWindow() override {
@@ -208,6 +213,11 @@ public:
   }
   void focus() override { window_->focus(); }
   void set_title(const std::string& title) override { window_->set_title(title); }
+  void set_visible(bool visible) override { window_->set_visible(visible); }
+  Json bounds() const override { return window_->placement(); }
+  void reload() override { process_->send({{"id", id_}, {"op", "reload"}}); }
+  void set_drop_enabled(bool enabled) override { process_->send({{"id", id_}, {"op", "drop-enabled"}, {"enabled", enabled}}); }
+  void start_drag(const Json& payload, Reply reply) override { process_->desktop("ReaWeb_Drag", payload, std::move(reply), id_); }
   bool visible() const override { return window_->visible() && !(native_state() & 2); }
   bool focused() const override { return window_->focused(); }
   Json placement() const override {

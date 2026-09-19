@@ -1,5 +1,7 @@
 # 宿主 API 参考
 
+[Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) · [TypeScript](../runtime/runtime-api.d.ts)
+
 [English](host-api.md) | **简体中文** · [开发指南](development.zh-CN.md)
 
 这些接口由 ReaWebAPI 提供，与 [730 项 REAPER API](api-reference.md) 分开。JavaScript 窗口方法作用于当前 WebView 文档，不传窗口 ID，所有方法返回 Promise。准确类型见 `reaper.d.ts`。
@@ -8,9 +10,9 @@
 
 | 成员 | 完成后的值 | 说明 |
 | --- | --- | --- |
-| `ready` | 能力信息及 `windowId`、`projectEpoch` | Promise 属性，不是函数。普通方法也会自动等待它 |
-| `ReaWeb_GetCapabilities()` | `ReaWebCapabilities` | 版本、协议、注册方法、可用原生函数、事件及限制 |
-| `ReaWeb_GetDiagnostics()` | `ReaWebDiagnostics` | 浏览器后端及版本、窗口状态、生命周期、文档/工程代次、队列计数、最近错误和调度预算 |
+| `reaper.lifecycle.ready` | 能力信息及 `windowId`、`projectEpoch` | Promise 属性，不是函数。普通方法也会自动等待它 |
+| `reaper.system.getCapabilities()` | `ReaWebCapabilities` | 版本、协议、注册方法、可用原生函数、事件及限制 |
+| `reaper.debug.getDiagnostics()` | `ReaWebDiagnostics` | 浏览器后端及版本、窗口状态、生命周期、文档/工程代次、队列计数、最近错误和调度预算 |
 
 `capabilities.api` 包含 `schemaVersion`、`reaperVersion`、`catalogueHash`、`official`、`implemented`、`compatible`、`partial`、`missing`、`available`、`availableMethods`、`unavailable` 和逐项 `bindings`。`methods` 同时包含宿主及标准 API，已注册不代表旧版 REAPER 一定提供相应原生函数，实际可用性应查 `api.availableMethods`。
 
@@ -22,22 +24,22 @@
 
 | 方法 | 完成后的值 | 行为 |
 | --- | --- | --- |
-| `ReaWeb_OpenDev(url)` | 数字窗口 ID | 受信任的 loopback HTTP 开发服务器，参见[前端资源约定](frontend.zh-CN.md) |
-| `ReaWebOpen(path)` | 数字窗口 ID | 打开本地 HTML，相对路径从调用页面所在目录解析 |
-| `ReaWeb_Close()` | `boolean` | 请求关闭，文档销毁可能使尚未完成的 Promise 被拒绝，包括关闭请求本身 |
-| `ReaWeb_Focus()` | `boolean` | 聚焦当前窗口 |
-| `ReaWeb_DevTools()` | `boolean` | 请求检查器，macOS 通过 Safari Develop 连接 |
-| `ReaWeb_SetTitle(title)` | `boolean` | 标题为 1–256 UTF-8 字节，不含 NUL |
-| `ReaWeb_SetDocked(docked)` | `boolean` | 返回实际停靠状态，保留页面 |
-| `ReaWeb_IsDocked()` | `boolean` | 获取停靠状态 |
-| `ReaWeb_SetKeyboardCapture(capture)` | `boolean` | 默认 `true`，设为 `false` 后遵循 REAPER 的全局快捷键规则 |
-| `ReaWeb_GetWindowState()` | `ReaWebWindowState` | `id`、`title`、`docked`、`visible`、`focused`、`keyboardCapture` |
+| `reaper.window.openDev(url)` | 数字窗口 ID | 受信任的 loopback HTTP 开发服务器，参见[前端资源约定](frontend.zh-CN.md) |
+| `reaper.window.open(path)` | 数字窗口 ID | 打开本地 HTML，相对路径从调用页面所在目录解析 |
+| `reaper.window.close()` | `boolean` | 请求关闭，文档销毁可能使尚未完成的 Promise 被拒绝，包括关闭请求本身 |
+| `reaper.window.focus()` | `boolean` | 聚焦当前窗口 |
+| `reaper.debug.openDevTools()` | `boolean` | 请求检查器，macOS 通过 Safari Develop 连接 |
+| `reaper.window.setTitle(title)` | `boolean` | 标题为 1–256 UTF-8 字节，不含 NUL |
+| `reaper.window.setDocked(docked)` | `boolean` | 返回实际停靠状态，保留页面 |
+| `reaper.window.isDocked()` | `boolean` | 获取停靠状态 |
+| `reaper.window.setKeyboardCapture(capture)` | `boolean` | 默认 `true`，设为 `false` 后遵循 REAPER 的全局快捷键规则 |
+| `reaper.window.getState()` | `ReaWebWindowState` | `id`、`title`、`docked`、`visible`、`focused`、`keyboardCapture` |
 
 窗口位置和停靠状态按入口文件及实例序号保存，最多同时打开 32 个窗口。同一 App 目录的窗口共享浏览器存储，不同目录隔离；句柄、订阅及等待请求始终只属于本页。
 
 ## 事件
 
-`ReaWeb_On(name, callback)` 完成后返回异步取消订阅函数，可重复调用。回调会收到初始快照及合并后的更新，异步回调中的异常需自行捕获。
+`reaper.events.on(name, callback)` 完成后返回异步取消订阅函数，可重复调用。回调会收到初始快照及合并后的更新，异步回调中的异常需自行捕获。
 
 | 事件 | 回调数据 |
 | --- | --- |
@@ -55,12 +57,12 @@ FX 事件追踪焦点、最后触碰参数及工程 changeCount，用于使 FX �
 
 ## 批处理与连续参数
 
-`ReaWeb_Batch(calls, { undoLabel? })` 接受 1–128 个调用，按顺序返回结果。`capabilities.batchMethods` 与 `ReaWebBatchMethod` 列出 173 个已审核接口，覆盖轨道、Item、Take、MIDI、FX、包络、发送、标记和速度。工程切换、Action 调用、模态对话框、文件读写、手动 Undo/刷新作用区间及音频样本数组不进入批处理。全部 730 项标准 API 仍可单独调用。
+`reaper.transaction.batch(calls, { undoLabel? })` 接受 1–128 个调用，按顺序返回结果。`capabilities.batchMethods` 与 `ReaWebBatchMethod` 列出 173 个已审核接口，覆盖轨道、Item、Take、MIDI、FX、包络、发送、标记和速度。工程切换、Action 调用、模态对话框、文件读写、手动 Undo/刷新作用区间及音频样本数组不进入批处理。全部 730 项标准 API 仍可单独调用。
 
 批处理仅作用于**当前工程**。任何外部工程句柄或对象都会在写入前被拒绝，包括后面条目中的外部句柄。方法、可用性和不含引用的条目参数会预先校验；依赖前面结果的参数在该条执行前校验。引用序号从零开始，可通过最多八段 `path` 选取数组元素或对象属性。引用必须作为完整的顶层参数，不能向后引用。
 
 ```javascript
-const results = await reaper.ReaWeb_Batch([
+const results = await reaper.transaction.batch([
   { method: 'GetSelectedTrack', args: [0, 0] },
   { method: 'GetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL'] },
   { method: 'SetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL', 0.5] }
@@ -70,11 +72,11 @@ const results = await reaper.ReaWeb_Batch([
 
 每组同步执行并配对刷新保护；可选非空标签最多 256 UTF-8 字节，对应一个 Undo 分组。无返回值占一个 `null` 位置。false/0 保持原生含义，旧有轨道值 setter 的 false 则报错。执行失败报告 `BATCH_FAILED`，包含 `completed`、`results`、`rolledBack: false`，以及可选的 `cause`、`cleanupError`。已经完成的写入保留，**批处理不是事务**。
 
-`ReaWeb_BeginUndo(label)` 返回本页专属 token，`ReaWeb_EndUndo(token)` 关闭分组。`ReaWeb_WithUndo(label, async () => { ... })` 自动通过 finally 清理。托管手势采用同一组已审核 API 和当前工程限制。所有窗口合计只能有一个手势；其他窗口的工程调用、嵌套分组、批处理、手动 Undo/刷新调用返回 `UNDO_BUSY`。浏览器事件之间不会保持刷新锁。
+`reaper.transaction.beginUndo(label)` 返回本页专属 token，`reaper.transaction.endUndo(token)` 关闭分组。`reaper.transaction.withUndo(label, async () => { ... })` 自动通过 finally 清理。托管手势采用同一组已审核 API 和当前工程限制。所有窗口合计只能有一个手势；其他窗口的工程调用、嵌套分组、批处理、手动 Undo/刷新调用返回 `UNDO_BUSY`。浏览器事件之间不会保持刷新锁。
 
 宿主会在页面重载/关闭、工程切换/加载或 30 秒后关闭分组；结束过期 token 报 `STALE_UNDO`。await 期间其他脚本和用户仍可能编辑工程，因此应保持手势简短。这不是排他锁，也不自动回滚。直接调用原生 Undo 开启的作用区间仍由调用者负责，不受托管清理保护。
 
-`ReaWeb_SetTrackValueLatest(track, key, value)` 对 `D_VOL`、`D_PAN`、`B_MUTE`、`I_SOLO` 合并等待值，每组轨道/参数保留一个正在执行及一个最新等待值，最多 128 组。被替代的值返回 `{ applied: false, superseded: true }`。结束手势前应等待所有写入完成。
+`reaper.audio.setTrackValueLatest(track, key, value)` 对 `D_VOL`、`D_PAN`、`B_MUTE`、`I_SOLO` 合并等待值，每组轨道/参数保留一个正在执行及一个最新等待值，最多 128 组。被替代的值返回 `{ applied: false, superseded: true }`。结束手势前应等待所有写入完成。
 
 ## 文件与桌面服务
 
@@ -82,22 +84,22 @@ const results = await reaper.ReaWeb_Batch([
 
 | 方法 | 返回值 / 选项 |
 | --- | --- |
-| `ReaWeb_ReadFile(path)` | UTF-8 字符串；无效 UTF-8 报 `FILE_ENCODING` |
-| `ReaWeb_ReadFile(path, { encoding: 'binary' })` | `Uint8Array` |
-| `ReaWeb_WriteFile(path, text, { overwrite?: boolean })` | `{ path, bytes }`；默认拒绝覆盖已有文件 |
-| `ReaWeb_WriteFile(path, bytes, { encoding: 'binary', overwrite?: boolean })` | 写二进制，输入为 `Uint8Array` |
-| `ReaWeb_Stat(path)` | `{ path, exists, type, size }`；文件大小为字节，其他为 null |
-| `ReaWeb_ReadDirectory(path)` | 排序后的属性数组，额外包含 `name`，最多 4096 项 |
-| `ReaWeb_MakeDirectory(path, { recursive?: boolean })` | 布尔值，表示是否创建目录 |
-| `ReaWeb_ClipboardReadText()` | UTF-8 文本，无文本时为空字符串 |
-| `ReaWeb_ClipboardWriteText(text)` | 布尔值 |
-| `ReaWeb_OpenExternal(url)` | 布尔值，将 http/https/mailto 交给系统默认程序 |
+| `reaper.fs.readFile(path)` | UTF-8 字符串；无效 UTF-8 报 `FILE_ENCODING` |
+| `reaper.fs.readFile(path, { encoding: 'binary' })` | `Uint8Array` |
+| `reaper.fs.writeFile(path, text, { overwrite?: boolean })` | `{ path, bytes }`；默认拒绝覆盖已有文件 |
+| `reaper.fs.writeFile(path, bytes, { encoding: 'binary', overwrite?: boolean })` | 写二进制，输入为 `Uint8Array` |
+| `reaper.fs.stat(path)` | `{ path, exists, type, size }`；文件大小为字节，其他为 null |
+| `reaper.fs.readDirectory(path)` | 排序后的属性数组，额外包含 `name`，最多 4096 项 |
+| `reaper.fs.makeDirectory(path, { recursive?: boolean })` | 布尔值，表示是否创建目录 |
+| `reaper.clipboard.readText()` | UTF-8 文本，无文本时为空字符串 |
+| `reaper.clipboard.writeText(text)` | 布尔值 |
+| `reaper.system.openExternal(url)` | 布尔值，将 http/https/mailto 交给系统默认程序 |
 
 文件内容和剪贴板文本限制为 16 MiB，剪贴板写入拒绝 NUL。文件先写到同目录临时文件，再通过重命名/链接提交；父目录必须存在。`overwrite: true` 明确允许覆盖。已经开始的 I/O 可能在页面关闭后完成，未收到回复不代表写入失败，不提供删除、递归清理或自动重试。错误包括 `FILE_IO`、`FILE_NOT_FOUND`、`FILE_NOT_DIRECTORY`、`FILE_EXISTS`、`FILE_ENCODING`、`DIRECTORY_LIMIT`、`CLIPBOARD_BUSY`, `CLIPBOARD_ERROR`, `EXTERNAL_OPEN_FAILED`、`HOST_UNAVAILABLE`、`HOST_TIMEOUT`、`INVALID_URL`。外链成功仅表示操作系统接受请求。
 
 ## 错误与限制
 
-`ReaWeb_SetBufferSize(bytes)` 设置当前文档固定输出缓冲区的默认容量，并返回新值。范围 4 KiB–16 MiB，默认 64 KiB。REAPER `NeedBig` 缓冲区会自动增长，最终结果仍受大小上限约束。
+`reaper.debug.setBufferSize(bytes)` 设置当前文档固定输出缓冲区的默认容量，并返回新值。范围 4 KiB–16 MiB，默认 64 KiB。REAPER `NeedBig` 缓冲区会自动增长，最终结果仍受大小上限约束。
 
 | 限制 | 数值 |
 | --- | --- |
@@ -132,12 +134,12 @@ const results = await reaper.ReaWeb_Batch([
 
 ## Lua 入口
 
-这些原生扩展函数在 Lua 中同步调用，先使用 `reaper.APIExists("ReaWebOpen")` 检查是否安装。
+这些原生扩展函数在 Lua 中同步调用，先使用 `reaper.APIExists("ReaWeb_Open")` 检查是否安装。
 
 | Lua 调用 | 返回 |
 | --- | --- |
 | `reaper.ReaWeb_OpenDev(url)` | 正数窗口 ID，失败返回 0 |
-| `reaper.ReaWebOpen(html_path)` | 正数窗口 ID，失败为 `0` |
+| `reaper.ReaWeb_Open(html_path)` | 正数窗口 ID，失败为 `0` |
 | `reaper.ReaWeb_Close(id)` | 布尔值 |
 | `reaper.ReaWeb_IsOpen(id)` | 布尔值 |
 | `reaper.ReaWeb_IsReady(id)` | 文档握手完成后为 true |
@@ -149,3 +151,9 @@ const results = await reaper.ReaWeb_Batch([
 | `reaper.ReaWeb_GetLastError()` | 最近一次同步入口错误字符串 |
 
 Lua 相对 HTML 路径从 REAPER 的 `Scripts/` 目录解析，模板使用启动器所在目录的绝对路径。正数窗口 ID 表示窗口已创建，不表示页面就绪。异步加载错误可能稍后出现在 REAPER 控制台和诊断信息中，启动器无需 defer 循环维持页面。
+
+[v0.1.7 Runtime namespaces](runtime-api.md) · [v0.1.7 命名空间接口](runtime-api.zh-CN.md)
+
+JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`，不保留 `reaper.ReaWeb_*`、`reaper.ReaWebOpen` 或 `reaper.ready` 兼容入口。Lua 在网页尚未启动时仍通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
+
+`reaper.events.off(name, callback)` 可按回调引用取消该事件的全部匹配订阅。新增 `native-drop` 事件由 `reaper.dragDrop.onDrop` 共享，返回 files/text/x/y，不合并、不提供初始快照。详见 [Runtime API](runtime-api.zh-CN.md)。

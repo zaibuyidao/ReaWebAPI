@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "name": "ReaWebAPI Runtime Studio",
+  "version": "0.1.7",
+  "entry": "index.html"
+}

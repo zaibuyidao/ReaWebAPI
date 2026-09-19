@@ -2,7 +2,7 @@
 
 **English** | [简体中文](frontend.zh-CN.md) · [Host API](host-api.md)
 
-ReaWebAPI **v0.1.6** implements the **Web Runtime v1** contract. The runtime version does not change the extension's version number. The 730 standard REAPER 7.80 mirror bindings and their Promise-based calling convention remain unchanged. No custom Lua RPC or third-party REAPER API registration is included.
+ReaWebAPI introduced the **Web Runtime v1** contract in v0.1.6 and preserves it in **v0.1.7**. The Web contract version is independent of the extension version. The 730 standard REAPER 7.80 mirror bindings and their Promise-based calling convention remain unchanged. No custom Lua RPC or third-party REAPER API registration is included.
 
 ## Plain Web Apps
 
@@ -28,7 +28,7 @@ MyApp/
 import { render } from './ui.js';
 const config = await (await fetch('./data/config.json')).json();
 localStorage.setItem('theme', 'dark');
-await reaper.ready;
+await reaper.lifecycle.ready;
 const track = await reaper.GetTrack(0, 0);
 render(config, track);
 ```
@@ -58,7 +58,7 @@ No special support is added for Service Worker, PWA, push, geolocation, camera, 
 
 ## Resource origin and storage
 
-`ReaWebOpen(path)` still accepts a local HTML path. Its canonical parent directory is the **App root**. A read-only native listener serves that directory on `http://127.0.0.1:<port>/`; the WebView performs normal HTTP requests. Relative assets, Unicode/space/#/% file names, query strings, MIME types, HEAD and byte ranges are supported. Encode `#` and `%` in resource URLs (for example `file%23%25.js`). The server has no directory listing, write or bridge endpoint. Paths escaping the root, including resolved symlinks/junctions, are rejected.
+`reaper.window.open(path)` still accepts a local HTML path. Its canonical parent directory is the **App root**. A read-only native listener serves that directory on `http://127.0.0.1:<port>/`; the WebView performs normal HTTP requests. Relative assets, Unicode/space/#/% file names, query strings, MIME types, HEAD and byte ranges are supported. Encode `#` and `%` in resource URLs (for example `file%23%25.js`). The server has no directory listing, write or bridge endpoint. Paths escaping the root, including resolved symlinks/junctions, are rejected.
 
 Each root gets one profile and one saved origin. Windows in the same directory share browser storage. Different directories use separate profiles, including separate cookie jars: distinct ports alone would not isolate cookies. Each bridge document still owns its own handles and subscriptions. Do not persist native handles; store settings or GUIDs.
 
@@ -70,13 +70,13 @@ Older `file://` storage in `ReaWebAPI/WebViewData/` is left untouched and is **n
 
 Only the loopback interface is bound. Requests with a foreign Host/Origin or cross-origin Fetch Metadata are rejected; there is no permissive CORS header. Serving stops when the last App window closes. The listener uses two bounded worker threads per active App; REAPER calls continue through the existing main-thread bridge. The root is a resource boundary, **not a sandbox for trusted native APIs**: pages retain the exposed filesystem and REAPER privileges. Do not put secrets in a directory you serve or open untrusted Apps.
 
-Both `ReaWeb_GetCapabilities()` and `ReaWeb_GetDiagnostics()` expose `webRuntime`:
+Both `reaper.system.getCapabilities()` and `reaper.debug.getDiagnostics()` expose `webRuntime`:
 `{ contract: 1, mode: 'app-http' | 'dev-http', appId, origin, storageIsolation: 'app-profile', localResources }`.
 `localResources` is true for the built-in local resource origin.
 
 ## TypeScript and development servers
 
-The [modern starter](../runtime/modern/README.md) supplies Vite/TypeScript as optional **build-time** tooling. Run `npm ci`, `npm run dev`, then `OpenDev.lua`. The default URL is `http://localhost:5173/`. `ReaWeb_OpenDev` accepts explicit-port HTTP URLs on 127.0.0.1, localhost or [::1]. Start the server yourself. ReaWebAPI does not embed Vite, Node or npm.
+The [modern starter](../runtime/modern/README.md) supplies Vite/TypeScript as optional **build-time** tooling. Run `npm ci`, `npm run dev`, then `OpenDev.lua`. The default URL is `http://localhost:5173/`. `reaper.window.openDev` accepts explicit-port HTTP URLs on 127.0.0.1, localhost or [::1]. Start the server yourself. ReaWebAPI does not embed Vite, Node or npm.
 
 Development URLs have separate profiles keyed by the exact URL. Use a stable entry URL and port. Hash navigation is allowed; navigation to a different document is blocked. Avoid entry redirects. HMR uses the browser's native WebSocket and has been exercised with Vite.
 

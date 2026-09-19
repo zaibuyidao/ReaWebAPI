@@ -58,7 +58,7 @@ class SdkTests(unittest.TestCase):
 
     def test_standalone_sdk_content_links_and_checksums(self):
         with tempfile.TemporaryDirectory() as directory:
-            archive = build_sdk(Path(directory), '0.1.6', 'test-sdk')
+            archive = build_sdk(Path(directory), '0.1.7', 'test-sdk')
             with zipfile.ZipFile(archive) as z:
                 files = {name: z.read(name) for name in z.namelist()}
                 self.assertFalse(any(name.startswith('UserPlugins/') or name.endswith(('.dll', '.so', '.dylib')) for name in files))
@@ -67,6 +67,10 @@ class SdkTests(unittest.TestCase):
                 self.assertEqual(metadata['revision'], 'test-sdk')
                 self.assertIn('ReaWebAPI/SDK/web-runtime/modules/空 格#%.js', files)
                 self.assertIn(b'type="module"', files['ReaWebAPI/SDK/web-runtime/index.html'])
+                self.assertIn('ReaWebAPI/SDK/runtime-api.d.ts', files)
+                self.assertIn('ReaWebAPI/docs/runtime-api-inventory.md', files)
+                self.assertIn('ReaWebAPI/SDK/runtime-demo/app.js', files)
+                self.assertIn('ReaWebAPI/SDK/tools/validate_app.py', files)
                 for line in files['SHA256SUMS.txt'].decode().splitlines():
                     digest, name = line.split('  ', 1)
                     self.assertEqual(hashlib.sha256(files[name]).hexdigest(), digest)

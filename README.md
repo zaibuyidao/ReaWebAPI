@@ -18,7 +18,7 @@ Download from [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases). Choo
 
 Quit REAPER, place the extension in its resource directory's `UserPlugins/`, then restart. Linux also needs the matching `reawebapi-webview-<arch>` helper beside the `.so`.
 
-Each native file is available separately. Platform ZIPs include the demo and SDK. `ReaWebAPI-ReaPack-v0.1.6.zip` contains only seven native files in `extension/` and `ReaWebAPI.ext`, ready to copy into the ReaScripts repository. The `.ext` is also a separate release asset.
+Each native file is available separately. Platform ZIPs include the demo and SDK. `ReaWebAPI-ReaPack-v0.1.7.zip` contains only seven native files in `extension/` and `ReaWebAPI.ext`, ready to copy into the ReaScripts repository. The `.ext` is also a separate release asset.
 
 Merge a platform ZIP into the REAPER resource directory and load `Scripts/ReaWebAPI/Example/Example.lua` in the Action List. The demo includes project, track and FX queries, color/pan Undo operations and docking. **Run read-only checks** exercises ten paths covering handles, tuples, GUIDs, rectangles, MIDI bytes and audio buffers. Select a track containing a MIDI item to cover every path. Empty projects show explicit skips.
 
@@ -33,14 +33,14 @@ The standalone `ReaWebAPI-SDK-v<version>.zip` contains editor declarations, a ru
 ```lua
 local file = debug.getinfo(1, "S").source:sub(2)
 local directory = file:match("^(.*[/\\])")
-local id = reaper.ReaWebOpen(directory .. "index.html")
+local id = reaper.ReaWeb_Open(directory .. "index.html")
 if id == 0 then reaper.ShowConsoleMsg(reaper.ReaWeb_GetLastError() .. "\n") end
 ```
 
 Lua exposes `ReaWeb_Close`, `ReaWeb_IsOpen`, `ReaWeb_IsReady`, `ReaWeb_Focus`, `ReaWeb_DevTools`, `ReaWeb_SetDocked`, `ReaWeb_IsDocked` and `ReaWeb_GetDiagnostics`. Each takes a window ID. `SetDocked` also takes a boolean and returns the resulting docked state. `GetDiagnostics` returns JSON. Relative paths resolve from `<resource>/Scripts/`. Asynchronous loading errors appear in the REAPER console.
 
 ```javascript
-await reaper.ready;
+await reaper.lifecycle.ready;
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) {
   const [ok, name] = await reaper.GetTrackName(track);
@@ -50,27 +50,29 @@ const [total, markers, regions] = await reaper.CountProjectMarkers(0);
 const [beat, bar] = await reaper.TimeMap2_timeToBeats(0, await reaper.GetCursorPosition());
 ```
 
-No bridge import is needed. **All 730 standard REAPER 7.80 APIs have native bindings.** Arguments and results follow Lua signature order. One result resolves to a scalar, multiple results to an array, and void to `undefined`. See the [SDK declarations](runtime/reaper-api.generated.d.ts). Older REAPER versions report `API_UNAVAILABLE` for missing functions. Check `ReaWeb_GetCapabilities().api.available` and `.unavailable`. Use REAPER 7.80 or newer for all 730 functions.
+No bridge import is needed. **All 730 standard REAPER 7.80 APIs have native bindings.** Arguments and results follow Lua signature order. One result resolves to a scalar, multiple results to an array, and void to `undefined`. See the [SDK declarations](runtime/reaper-api.generated.d.ts). Older REAPER versions report `API_UNAVAILABLE` for missing functions. Check `reaper.system.getCapabilities().api.available` and `.unavailable`. Use REAPER 7.80 or newer for all 730 functions.
 
 Use `0` or `null` for the current project, or a project handle returned by `EnumProjects` for another open project. Tracks, items, takes, envelopes and resources use typed handles, never raw addresses. Reacquire deleted objects and handles from reloaded documents. MIDI bytes use `Uint8Array`. Audio buffers accept `Float64Array` or `number[]` and are updated before the Promise resolves. GUIDs use strings. RECT arguments follow the four coordinates in the Lua signature.
 
 **Migration:** `GetTrackName` now returns `[ok, name]`. Supply project and index arguments explicitly, as documented by REAPER. Ordinary track value calls accept the full native parameter set.
 
-JavaScript window controls target the current page without an ID. `ReaWebOpen(path)` resolves relative to the current HTML directory. Errors reject with `code`, `message` and optional `details`. Project switches reject stale queued calls. Requests expire after 25 seconds if execution has not started. Execution acknowledgement stops the queue timer, so native dialogs and renders can finish normally. Started calls cannot be cancelled. Do not automatically retry timed-out writes.
+JavaScript window controls target the current page without an ID. `reaper.window.open(path)` resolves relative to the current HTML directory. Errors reject with `code`, `message` and optional `details`. Project switches reject stale queued calls. Requests expire after 25 seconds if execution has not started. Execution acknowledgement stops the queue timer, so native dialogs and renders can finish normally. Started calls cannot be cancelled. Do not automatically retry timed-out writes.
 
 Host APIs:
 
 | Capability | JavaScript |
 | --- | --- |
-| Readiness, diagnostics | `ready`, `ReaWeb_GetDiagnostics()` |
-| Window control | `ReaWeb_Focus()`, `ReaWeb_SetTitle(title)`, `ReaWeb_GetWindowState()` |
-| Keyboard policy | `ReaWeb_SetKeyboardCapture(boolean)`, enabled by default. Disable to follow REAPER's shortcut rules |
-| Events | `ReaWeb_On(name, callback)`, returns an idempotent async disposer |
-| Batches, Undo | `ReaWeb_Batch(calls, { undoLabel })`, up to 128 calls |
-| Fixed output buffers | `ReaWeb_SetBufferSize(bytes)`, 64 KiB default, 16 MiB maximum |
-| Continuous controls | `ReaWeb_SetTrackValueLatest(track, key, value)`, superseded waiting values resolve with `superseded: true` |
+| Readiness, diagnostics | `reaper.lifecycle.ready`, `reaper.debug.getDiagnostics()` |
+| Window control | `reaper.window.focus()`, `reaper.window.setTitle(title)`, `reaper.window.getState()` |
+| Keyboard policy | `reaper.window.setKeyboardCapture(boolean)`, enabled by default. Disable to follow REAPER's shortcut rules |
+| Events | `reaper.events.on(name, callback)`, returns an idempotent async disposer |
+| Batches, Undo | `reaper.transaction.batch(calls, { undoLabel })`, up to 128 calls |
+| Fixed output buffers | `reaper.debug.setBufferSize(bytes)`, 64 KiB default, 16 MiB maximum |
+| Continuous controls | `reaper.audio.setTrackValueLatest(track, key, value)`, superseded waiting values resolve with `superseded: true` |
 
-Events now include track/item/take selection, transport, FX, project and window state. Batches expose 173 reviewed standard APIs with result references, current-project validation and paired Undo/refresh cleanup. Managed Undo gestures survive browser awaits and are closed by the host on reload/close or timeout. Files, clipboard and external links have common host APIs; TypeScript/Vite development uses an explicit loopback entry. See the [host reference](docs/host-api.md), [frontend contract](docs/frontend.md) and [v0.1.6 changes](docs/release-notes.md).
+Events now include track/item/take selection, transport, FX, project and window state. Batches expose 173 reviewed standard APIs with result references, current-project validation and paired Undo/refresh cleanup. Managed Undo gestures survive browser awaits and are closed by the host on reload/close or timeout. Files, clipboard and external links have common host APIs; TypeScript/Vite development uses an explicit loopback entry. See the [host reference](docs/host-api.md), [frontend contract](docs/frontend.md) and [v0.1.7 changes](docs/release-notes.md).
+
+v0.1.7 fixes 13 typed Runtime namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`. All thirteen provide implemented APIs, including App identity/data paths, native file/text drag/drop, system information and events.off; debug.info is removed in favor of log. See the [Runtime API](docs/runtime-api.md) and run `SDK/runtime-demo/Open.lua` for Runtime Studio.
 
 ## Runtime
 
@@ -108,3 +110,7 @@ On Windows, configure with MSVC x64 (`-A x64`). On macOS, pass `-DCMAKE_OSX_ARCH
 Pushing to the default branch builds all five targets and publishes the version in `CMakeLists.txt` to **Releases**. Matching `v*` tags and manual runs on the default branch also publish. Pull requests only build. Published versions are left intact. Bump the version for a new release.
 
 Regression tests are committed and run on every CI platform before packaging/release. Dependency caches and build output stay out of Git. Run `ctest --test-dir build -C Release --output-on-failure` after configuring with `-DBUILD_TESTING=ON`. See [third-party notices](THIRD_PARTY.md).
+
+JavaScript uses `reaper.window.open(path)` and `reaper.lifecycle.ready`, with no flat Runtime aliases. Lua bootstrap remains `reaper.ReaWeb_Open(path)`; these native Lua functions are separate from the browser SDK. The 730 standard REAPER mirror names are unchanged.
+
+[Runtime API 完整清单 / Complete inventory](docs/runtime-api-inventory.md) — 13 implemented namespaces, 67 methods, 1 Promise property.

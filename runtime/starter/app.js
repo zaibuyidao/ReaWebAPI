@@ -38,24 +38,24 @@
       label.textContent = 'REAPER connection required';
       return;
     }
-    const { api } = await reaper.ready;
+    const { api } = await reaper.lifecycle.ready;
     if (!api || !Array.isArray(api.availableMethods)) {
       throw new Error('Install ReaWebAPI 0.1.3 or newer and reopen this page.');
     }
     if (!['GetSelectedTrack', 'GetTrackName'].every(name => api.availableMethods.includes(name))) {
       throw new Error('This REAPER installation is missing a required API.');
     }
-    await reaper.ReaWeb_SetTitle('ReaWebAPI Starter');
-    await reaper.ReaWeb_On('windowstatechange', state => {
+    await reaper.window.setTitle('ReaWebAPI Starter');
+    await reaper.events.on('windowstatechange', state => {
       dockButton.textContent = state.docked ? 'Undock' : 'Dock';
     });
     // Refresh catches its own asynchronous errors. Initial snapshots also refresh.
-    await reaper.ReaWeb_On('selectionchange', () => { void refresh(); });
-    await reaper.ReaWeb_On('projectchange', () => { void refresh(); });
+    await reaper.events.on('selectionchange', () => { void refresh(); });
+    await reaper.events.on('projectchange', () => { void refresh(); });
     refreshButton.addEventListener('click', () => { void refresh(); });
     dockButton.addEventListener('click', async () => {
       dockButton.disabled = true;
-      try { await reaper.ReaWeb_SetDocked(!await reaper.ReaWeb_IsDocked()); }
+      try { await reaper.window.setDocked(!await reaper.window.isDocked()); }
       catch (error) { showError(error); }
       finally { dockButton.disabled = false; }
     });

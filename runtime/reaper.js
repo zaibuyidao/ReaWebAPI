@@ -4,6 +4,12 @@
   const pending = new Map();
   const subscriptions = new Map();
   const latest = new Map();
+  const eventNames = ['projectchange', 'selectionchange', 'itemselectionchange', 'takeselectionchange',
+    'transportchange', 'fxchange', 'windowstatechange', 'track-added', 'track-deleted', 'track-selected',
+    'item-changed', 'take-changed', 'playback-state-changed', 'tempo-changed', 'marker-changed',
+    'fx-changed', 'project-loaded', 'project-saved', 'theme-changed', 'native-drop'];
+  const lifecycleListeners = new Map();
+  let cleanupToken = null;
   const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('-');
   let sequence = 0, eventSequence = 0, projectEpoch = 0, waiting = 0, closed = false;
   const post = window.chrome?.webview
@@ -39,17 +45,19 @@
     return value;
   };
   const notify = (callback, data) => {
-    try { callback(data); } catch (error) { console.error('[ReaWebAPI event]', error); }
+    try { Promise.resolve(callback(data)).catch(error => console.error('[ReaWebAPI event]', error)); }
+    catch (error) { console.error('[ReaWebAPI event]', error); }
   };
   const receive = message => {
     if (closed || message?.document !== documentId) return;
+    if (message.lifecycle) { runCleanup(message.lifecycle); return; }
     if (message.event) {
       if (!Number.isSafeInteger(message.sequence) || message.sequence <= eventSequence) return;
       eventSequence = message.sequence;
       if (message.event === 'projectchange') projectEpoch = message.data.projectEpoch;
       const entry = subscriptions.get(message.event);
       if (entry) {
-        entry.last = message.data;
+        if (message.event !== 'native-drop') entry.last = message.data;
         for (const callback of [...entry.listeners]) notify(callback, message.data);
       }
       return;
@@ -103,18 +111,11 @@
     return ready.then(() => send(method, args)).finally(() => --waiting);
   };
   const api = Object.create(null);
-  const methods = [
-    ...reawebApiMethods, 'ReaWebOpen',
-    'ReaWeb_Close', 'ReaWeb_DevTools', 'ReaWeb_SetDocked', 'ReaWeb_IsDocked', 'ReaWeb_GetCapabilities',
-    'ReaWeb_Batch', 'ReaWeb_GetWindowState', 'ReaWeb_GetDiagnostics', 'ReaWeb_Focus',
-    'ReaWeb_SetTitle', 'ReaWeb_SetKeyboardCapture', 'ReaWeb_SetBufferSize',
-    'ReaWeb_OpenDev', 'ReaWeb_BeginUndo', 'ReaWeb_EndUndo',
-    'ReaWeb_ReadFile', 'ReaWeb_WriteFile', 'ReaWeb_Stat', 'ReaWeb_ReadDirectory', 'ReaWeb_MakeDirectory',
-    'ReaWeb_ClipboardReadText', 'ReaWeb_ClipboardWriteText', 'ReaWeb_OpenExternal'
-  ];
-  api.ready = ready;
-  for (const name of methods) api[name] = (...args) => call(name, args).then(result => {
-    if (reawebApiMethods.includes(name) && result?.__reawebCall === true) {
+  // Only the official REAPER mirror is exposed at the root. ReaWeb_* strings
+  // below are private transport commands, never public JavaScript aliases.
+  const host = name => (...args) => call(name, args);
+  for (const name of reawebApiMethods) api[name] = (...args) => call(name, args).then(result => {
+    if (result?.__reawebCall === true) {
       for (const update of result.arrays) {
         const target = args[update.index];
         const data = decodeValue(update.values);
@@ -129,8 +130,8 @@
     }
     return reawebApiVoidMethods.includes(name) ? undefined : result;
   });
-  api.ReaWeb_On = async (name, callback) => {
-    if (!['projectchange', 'selectionchange', 'itemselectionchange', 'takeselectionchange', 'transportchange', 'fxchange', 'windowstatechange'].includes(name))
+  const onEvent = async (name, callback) => {
+    if (!eventNames.includes(name))
       throw failure('UNKNOWN_EVENT', 'Unknown host event');
     if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an event callback');
     let entry = subscriptions.get(name);
@@ -138,20 +139,11 @@
       entry = { listeners: new Set(), initial: call('ReaWeb_Subscribe', [name]), last: null };
       subscriptions.set(name, entry);
     }
-    // A wrapper allows the same function to have independent subscriptions.
-    const listener = data => callback(data);
-    entry.listeners.add(listener);
-    try {
-      const initial = await entry.initial;
-      if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
-      if (entry.last ?? initial) notify(listener, entry.last ?? initial);
-    } catch (error) {
-      entry.listeners.delete(listener);
-      if (!entry.listeners.size && subscriptions.get(name) === entry) subscriptions.delete(name);
-      throw error;
-    }
+    // Preserve callback identity while retaining independent disposer handles.
     let disposed = false;
-    return async () => {
+    const listener = data => { if (!disposed) return callback(data); };
+    listener.callback = callback;
+    const dispose = async () => {
       if (disposed) return;
       disposed = true;
       entry.listeners.delete(listener);
@@ -160,8 +152,27 @@
         if (!closed) await call('ReaWeb_Unsubscribe', [name]);
       }
     };
+    listener.dispose = dispose;
+    entry.listeners.add(listener);
+    try {
+      const initial = await entry.initial;
+      if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
+      if (!disposed && name !== 'native-drop' && (entry.last ?? initial)) notify(listener, entry.last ?? initial);
+    } catch (error) {
+      disposed = true;
+      entry.listeners.delete(listener);
+      if (!entry.listeners.size && subscriptions.get(name) === entry) subscriptions.delete(name);
+      throw error;
+    }
+    return dispose;
   };
-  api.ReaWeb_WithUndo = async (label, callback) => {
+  const offEvent = async (name, callback) => {
+    if (!eventNames.includes(name)) throw failure('UNKNOWN_EVENT', 'Unknown host event');
+    if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an event callback');
+    const listeners = subscriptions.get(name)?.listeners;
+    if (listeners) await Promise.all([...listeners].filter(listener => listener.callback === callback).map(listener => listener.dispose()));
+  };
+  const withUndo = async (label, callback) => {
     if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an Undo callback');
     const token = await call('ReaWeb_BeginUndo', [label]);
     let failed = false;
@@ -172,7 +183,7 @@
       catch (error) { if (!failed) throw error; }
     }
   };
-  api.ReaWeb_SetTrackValueLatest = (track, key, value) => new Promise((resolve, reject) => {
+  const setTrackValueLatest = (track, key, value) => new Promise((resolve, reject) => {
     if (closed) return reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));
     if (!track || track.type !== 'MediaTrack' || typeof track.id !== 'string' ||
         !['D_VOL', 'D_PAN', 'B_MUTE', 'I_SOLO'].includes(key) || !Number.isFinite(value))
@@ -202,8 +213,163 @@
     };
     drain(request);
   });
+  // Runtime namespaces share the existing bridge; the 730 REAPER methods retain
+  // their names, argument order, typed handles and asynchronous results.
+  api.events = Object.freeze({ on: onEvent, off: offEvent });
+  api.window = Object.freeze({
+    open: host('ReaWeb_Open'), openDev: host('ReaWeb_OpenDev'),
+    getSize: async () => { const b = await call('ReaWeb_GetBounds', []); return { width: b.width, height: b.height, mode: b.mode, units: b.units }; },
+    setSize: (width, height) => call('ReaWeb_SetBounds', [{ width, height }]),
+    getPosition: async () => { const b = await call('ReaWeb_GetBounds', []); return { x: b.x, y: b.y, mode: b.mode, units: b.units }; },
+    setPosition: (x, y) => call('ReaWeb_SetBounds', [{ x, y }]),
+    show: () => call('ReaWeb_SetVisible', [true]), hide: () => call('ReaWeb_SetVisible', [false]),
+    getState: host('ReaWeb_GetWindowState'), setTitle: host('ReaWeb_SetTitle'), focus: host('ReaWeb_Focus'),
+    setDocked: host('ReaWeb_SetDocked'), isDocked: host('ReaWeb_IsDocked'),
+    setKeyboardCapture: host('ReaWeb_SetKeyboardCapture'),
+    dock: () => call('ReaWeb_SetDocked', [true]), undock: () => call('ReaWeb_SetDocked', [false]),
+    close: host('ReaWeb_Close'), reload: host('ReaWeb_Reload')
+  });
+  api.fs = Object.freeze({
+    readFile: host('ReaWeb_ReadFile'), writeFile: host('ReaWeb_WriteFile'),
+    readText: path => call('ReaWeb_ReadFile', [path, { encoding: 'utf8' }]),
+    writeText: (path, text, options = {}) => call('ReaWeb_WriteFile', [path, text, { ...options, encoding: 'utf8' }]),
+    readBinary: path => call('ReaWeb_ReadFile', [path, { encoding: 'binary' }]),
+    writeBinary: (path, bytes, options = {}) => call('ReaWeb_WriteFile', [path, bytes, { ...options, encoding: 'binary' }]),
+    stat: host('ReaWeb_Stat'), readDirectory: host('ReaWeb_ReadDirectory'), makeDirectory: host('ReaWeb_MakeDirectory')
+  });
+  api.clipboard = Object.freeze({
+    readText: host('ReaWeb_ClipboardReadText'), writeText: host('ReaWeb_ClipboardWriteText')
+  });
+  api.system = Object.freeze({
+    getCapabilities: host('ReaWeb_GetCapabilities'), openExternal: host('ReaWeb_OpenExternal'),
+    getPlatform: host('ReaWeb_GetPlatform'), getArchitecture: host('ReaWeb_GetArchitecture'), revealInFileManager: host('ReaWeb_RevealPath')
+  });
+  api.transaction = Object.freeze({
+    batch: host('ReaWeb_Batch'), beginUndo: host('ReaWeb_BeginUndo'), endUndo: host('ReaWeb_EndUndo'), withUndo
+  });
+  api.dragDrop = Object.freeze({
+    startFiles: host('ReaWeb_DragFiles'), startText: host('ReaWeb_DragText'),
+    onDrop: callback => onEvent('native-drop', callback)
+  });
+  const appValue = key => async () => (await call('ReaWeb_GetAppInfo', []))[key];
+  api.app = Object.freeze({ getId: appValue('id'), getName: appValue('name'), getVersion: appValue('version'),
+    getRootPath: appValue('rootPath'), getDataPath: appValue('dataPath') });
+  // WebView2 converts real dropped File objects into native ICoreWebView2File
+  // objects. Never infer native filesystem paths from browser file names.
+  if (window.chrome?.webview) {
+    const dropActive = () => !!subscriptions.get('native-drop')?.listeners.size;
+    window.addEventListener('dragover', event => {
+      if (dropActive() && event.isTrusted) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; }
+    });
+    window.addEventListener('drop', event => {
+      if (!dropActive() || !event.isTrusted || !event.dataTransfer) return;
+      event.preventDefault();
+      try {
+        const files = [...event.dataTransfer.files];
+        const text = event.dataTransfer.getData('text/plain');
+        if (files.length > 256 || new TextEncoder().encode(text).length > 16 * 1024 * 1024) throw failure('BUFFER_LIMIT', 'Native drop exceeds the payload limit');
+        const message = JSON.stringify({__reawebNativeDrop: {
+          document: documentId, text, x: event.clientX, y: event.clientY
+        }});
+        if (new TextEncoder().encode(message).length > 64 * 1024 * 1024) throw failure('MESSAGE_LIMIT', 'Native drop exceeds the transport limit');
+        window.chrome.webview.postMessageWithAdditionalObjects(message, files);
+      } catch (error) { console.error('[ReaWebAPI drop]', error); }
+    });
+  }
+  const dialog = async (mode, options = {}) => {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) throw failure('INVALID_ARGUMENT', 'Expected dialog options');
+    const { title = '', initialPath = '', filters = [] } = options;
+    if (typeof title !== 'string' || typeof initialPath !== 'string' || !Array.isArray(filters))
+      throw failure('INVALID_ARGUMENT', 'Invalid dialog options');
+    const extension = filters.map(filter => {
+      if (!filter || typeof filter.name !== 'string' || /[|\0]/.test(filter.name) || !Array.isArray(filter.extensions) || !filter.extensions.length ||
+          filter.extensions.some(value => typeof value !== 'string' || !/^(\*|[a-zA-Z0-9][a-zA-Z0-9._-]*)$/.test(value)))
+        throw failure('INVALID_ARGUMENT', 'Filters need a name and extensions such as wav, aiff or *');
+      return filter.name + '|' + filter.extensions.map(value => value === '*' ? '*.*' : '*.' + value).join(';');
+    }).join('|');
+    const [ok, path] = await api.GetUserFileName(mode, title, initialPath, extension);
+    return ok ? path : null;
+  };
+  api.dialog = Object.freeze({ openFile: options => dialog(1, options), saveFile: options => dialog(0, options), selectFolder: options => dialog(3, options) });
+  const preview = values => {
+    const seen = new WeakSet();
+    try { return values.map(value => typeof value === 'string' ? value : JSON.stringify(value, (_, item) => {
+      if (typeof item === 'bigint') return String(item);
+      if (item instanceof Error) return { name: item.name, message: item.message, stack: item.stack };
+      if (item && typeof item === 'object') { if (seen.has(item)) return '[Circular]'; seen.add(item); }
+      return item;
+    })).join(' ').slice(0, 4000); } catch { return '[Unserializable log value]'; }
+  };
+  const log = (level, values) => call('ReaWeb_Log', [{ level, message: preview(values) }]);
+  api.debug = Object.freeze({
+    log: (...values) => log('info', values),
+    warn: (...values) => log('warn', values), error: (...values) => log('error', values),
+    inspect: value => log('debug', [value]), getLogs: () => call('ReaWeb_GetLogs', []),
+    getDiagnostics: host('ReaWeb_GetDiagnostics'), openDevTools: host('ReaWeb_DevTools'),
+    setBufferSize: host('ReaWeb_SetBufferSize')
+  });
+  window.addEventListener('error', event => { log('error', [event.error || event.message || 'JavaScript error']).catch(() => {}); });
+  window.addEventListener('unhandledrejection', event => { log('error', [event.reason || 'Unhandled promise rejection']).catch(() => {}); });
+  api.theme = Object.freeze({
+    getColors: () => call('ReaWeb_GetTheme', []),
+    onChange: callback => onEvent('theme-changed', callback),
+    apply: async (element = window.document?.documentElement) => {
+      if (!element?.style?.setProperty) throw failure('INVALID_ARGUMENT', 'Expected an element with a CSS style');
+      const previous = new Map();
+      const stop = await onEvent('theme-changed', theme => {
+        for (const [name, value] of Object.entries(theme.cssVariables)) {
+          if (!previous.has(name)) previous.set(name, [element.style.getPropertyValue(name), element.style.getPropertyPriority(name)]);
+          element.style.setProperty(name, value);
+        }
+      });
+      return async () => { await stop(); for (const [name, [value, priority]] of previous) {
+        if (value) element.style.setProperty(name, value, priority); else element.style.removeProperty(name);
+      } };
+    }
+  });
+  api.audio = Object.freeze({
+    getFileInfo: path => call('ReaWeb_AudioFileInfo', [path]),
+    getWaveform: (path, options = {}) => call('ReaWeb_AudioWaveform', [path, options]),
+    getTrackMeter: track => call('ReaWeb_GetTrackMeter', [track]),
+    setTrackValueLatest
+  });
+  const runCleanup = async event => {
+    if (!event || !['before-close', 'before-reload'].includes(event.event) || cleanupToken) return;
+    cleanupToken = event.token;
+    const tasks = [];
+    for (const name of [event.event, 'cleanup']) for (const callback of lifecycleListeners.get(name) || []) {
+      try { tasks.push(Promise.resolve(callback(Object.freeze({ reason: event.reason, timeoutMs: event.timeoutMs })))); }
+      catch (error) { tasks.push(Promise.reject(error)); }
+    }
+    let timer;
+    try {
+      await Promise.race([Promise.allSettled(tasks), new Promise(resolve => { timer = setTimeout(resolve, Math.min(event.timeoutMs, 2000)); })]);
+      await call('ReaWeb_LifecycleComplete', [event.token]);
+    } catch (error) { if (!closed) console.error('[ReaWebAPI cleanup]', error); }
+    finally { clearTimeout(timer); }
+  };
+  api.lifecycle = Object.freeze({
+    ready,
+    on: async (name, callback) => {
+      if (name === 'destroy') name = 'cleanup';
+      if (!['before-close', 'before-reload', 'cleanup'].includes(name) || typeof callback !== 'function')
+        throw failure('INVALID_ARGUMENT', 'Expected before-close, before-reload, cleanup or destroy and a callback');
+      const wrapper = event => callback(event);
+      if (!lifecycleListeners.has(name)) lifecycleListeners.set(name, new Set());
+      const listeners = lifecycleListeners.get(name); listeners.add(wrapper);
+      try { await call('ReaWeb_LifecycleSubscribe', [true]); }
+      catch (error) { listeners.delete(wrapper); throw error; }
+      let disposed = false;
+      return async () => {
+        if (disposed) return; disposed = true; listeners.delete(wrapper);
+        if (![...lifecycleListeners.values()].some(list => list.size) && !closed) await call('ReaWeb_LifecycleSubscribe', [false]);
+      };
+    }
+  });
   Object.defineProperty(window, 'reaper', { value: Object.freeze(api), enumerable: true });
   window.addEventListener('pagehide', () => {
+    if (!cleanupToken) for (const callback of lifecycleListeners.get('cleanup') || [])
+      notify(callback, Object.freeze({ reason: 'unload', timeoutMs: 0 }));
     closed = true;
     for (const item of pending.values()) {
       clearTimeout(item.timer);
@@ -211,6 +377,7 @@
     }
     pending.clear();
     subscriptions.clear();
+    lifecycleListeners.clear();
     for (const entry of latest.values()) {
       if (entry.next) entry.next.reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));
       entry.next = null;

@@ -19,7 +19,10 @@ def payload(root, version, revision):
     bindings = json.loads((root / 'api/bindings.json').read_text(encoding='utf-8-sig'))
     verify(root, schema, bindings)
     paths = {f'ReaWebAPI/SDK/{name}': root / 'runtime' / name for name in (
-        'reaper.d.ts', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'README.md', 'README.zh-CN.md')}
+        'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'README.md', 'README.zh-CN.md')}
+    paths['ReaWebAPI/SDK/tools/validate_app.py'] = root / 'tools/validate_app.py'
+    for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'app.json'):
+        paths[f'ReaWebAPI/SDK/runtime-demo/{name}'] = root / 'runtime/runtime-demo' / name
     for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'jsconfig.json'):
         paths[f'ReaWebAPI/SDK/starter/{name}'] = root / 'runtime/starter' / name
     for name in ('Open.lua', 'index.html', 'app.js', 'ui.js', 'style.css', 'README.md', 'README.zh-CN.md',
@@ -30,7 +33,7 @@ def payload(root, version, revision):
                  'src/main.ts', 'src/worker.ts', 'src/style.css', 'public/data.json'):
         paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'runtime/modern' / name
     for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md',
-                 'host-api.md', 'host-api.zh-CN.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md'):
+                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reaper_api.json', 'bindings.json'):
         paths[f'ReaWebAPI/SDK/api/{name}'] = root / 'api' / name

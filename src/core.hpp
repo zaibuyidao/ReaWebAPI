@@ -42,6 +42,10 @@ struct Host {
   std::function<int(void*)> count_selected_items;
   std::function<std::pair<std::string, std::string>(void*, int)> item_identity;
   std::function<Json(const std::string&)> event_snapshot;
+  std::function<int()> track_count;
+  std::function<std::string(int)> track_identity;
+  std::function<uint64_t(const std::string&)> event_revision;
+  std::function<Json()> project_save_state;
 };
 
 fs::path resolve_html(const fs::path& base, const std::string& input);

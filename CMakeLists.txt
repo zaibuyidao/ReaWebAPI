@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.1.6 LANGUAGES CXX)
+project(ReaWebAPI VERSION 0.1.7 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -64,7 +64,7 @@ if(NOT REAWEB_NATIVE_RESULT EQUAL 0)
 endif()
 
 find_package(Threads REQUIRED)
-add_library(reaweb_core STATIC src/core.cpp src/worker.cpp src/native.cpp src/host_io.cpp src/web_resources.cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
+add_library(reaweb_core STATIC src/core.cpp src/worker.cpp src/native.cpp src/host_io.cpp src/web_resources.cpp src/runtime_services.cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
 target_include_directories(reaweb_core PUBLIC src)
 target_include_directories(reaweb_core SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
 target_compile_definitions(reaweb_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -77,7 +77,7 @@ target_compile_definitions(reaweb_core PUBLIC REAWEB_VERSION="${PROJECT_VERSION}
 
 if(REAWEB_BUILD_EXTENSION)
 
-  add_library(reawebapi MODULE src/plugin.cpp src/runtime.cpp)
+  add_library(reawebapi MODULE src/plugin.cpp src/runtime.cpp src/runtime_events.cpp src/runtime_lifecycle.cpp)
   target_link_libraries(reawebapi PRIVATE reaweb_core)
   target_compile_definitions(reawebapi PRIVATE NOMINMAX)
   target_include_directories(reawebapi PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -98,7 +98,7 @@ if(REAWEB_BUILD_EXTENSION)
     target_include_directories(reawebapi PRIVATE "${webview2_SOURCE_DIR}/build/native/include")
     target_link_libraries(reawebapi PRIVATE
       "${webview2_SOURCE_DIR}/build/native/x64/WebView2LoaderStatic.lib"
-      ole32 oleaut32 user32 shlwapi shell32 version advapi32)
+      ole32 oleaut32 user32 shlwapi shell32 version advapi32 uuid)
     target_compile_definitions(reawebapi PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
     set_target_properties(reawebapi PROPERTIES OUTPUT_NAME reaper_reawebapi-x64)
   elseif(APPLE)

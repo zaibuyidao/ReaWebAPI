@@ -10,6 +10,7 @@ Install the extension for your REAPER architecture, then copy the SDK directory 
 SDK/
   reaper.d.ts
   reaper-api.generated.d.ts
+  runtime-api.d.ts
   starter/
     Open.lua
     index.html
@@ -18,16 +19,16 @@ SDK/
     jsconfig.json
 ```
 
-No web server, npm install or build step is needed for this JavaScript template. The Lua action can finish immediately after `ReaWebOpen`: the extension owns the window. The page runs in a browser environment, not Node.js. Ordinary browsers do not provide `window.reaper`.
+No web server, npm install or build step is needed for this JavaScript template. The Lua action can finish immediately after `reaper.ReaWeb_Open`: the extension owns the window. The page runs in a browser environment, not Node.js. Ordinary browsers do not provide `reaper.window.reaper`.
 
-Use relative paths for bundled assets and a deferred classic script (`<script src="app.js" defer></script>`). If using a bundler, emit files suitable for a local HTML entry point. Test asset loading, module loading and any network requests on each target WebView. A development server URL cannot be passed to `ReaWebOpen`, which accepts local `.html` or `.htm` files.
+Use relative paths for bundled assets and a deferred classic script (`<script src="app.js" defer></script>`). If using a bundler, emit files suitable for a local HTML entry point. Test asset loading, module loading and any network requests on each target WebView. A development server URL cannot be passed to `reaper.window.open`, which accepts local `.html` or `.htm` files.
 
-The starter's `jsconfig.json` enables JavaScript type checking without compilation. See the [TypeScript checkJs documentation](https://www.typescriptlang.org/tsconfig/checkJs.html). For TypeScript, include the two `.d.ts` files and compile your `.ts` files to browser JavaScript. The SDK declares a global object, so do not `import reaper`.
+The starter's `jsconfig.json` enables JavaScript type checking without compilation. See the [TypeScript checkJs documentation](https://www.typescriptlang.org/tsconfig/checkJs.html). For TypeScript, include all three `.d.ts` files and compile your `.ts` files to browser JavaScript. The SDK declares a global object, so do not `import reaper`.
 
 ## Calling conventions
 
 ```javascript
-await reaper.ready;
+await reaper.lifecycle.ready;
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) {
   const [ok, name] = await reaper.GetTrackName(track);
@@ -35,7 +36,7 @@ if (track) {
 }
 ```
 
-Every method returns a Promise, including setters and void APIs. API calls automatically wait for the initial handshake, but awaiting `ready` gives one place to show startup failures. Use the generated [reference](api-reference.md) for the exact JavaScript signature and return labels, and its official links for units, flags, parameter keys and REAPER behavior.
+Every method returns a Promise, including setters and void APIs. API calls automatically wait for the initial handshake, but awaiting `reaper.lifecycle.ready` gives one place to show startup failures. Use the generated [reference](api-reference.md) for the exact JavaScript signature and return labels, and its official links for units, flags, parameter keys and REAPER behavior.
 
 | Native/Lua concept | JavaScript contract |
 | --- | --- |
@@ -57,7 +58,7 @@ The catalogue covers standard C/Lua APIs, not Lua runtime helpers. Use DOM/canva
 ## Availability, projects and handles
 
 ```javascript
-const { api } = await reaper.ReaWeb_GetCapabilities();
+const { api } = await reaper.system.getCapabilities();
 if (!api.availableMethods.includes('GetTrackName')) {
   throw new Error('This REAPER installation does not provide GetTrackName');
 }
@@ -76,7 +77,7 @@ Use a batch for supported operations that should form one synchronous Undo step:
 ```javascript
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) {
-  await reaper.ReaWeb_Batch([
+  await reaper.transaction.batch([
     { method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] },
     { method: 'SetMediaTrackInfo_Value', args: [track, 'B_MUTE', 0] }
   ], { undoLabel: 'Center and unmute track' });
@@ -87,7 +88,7 @@ The [batch contract](host-api.md#batches-and-continuous-controls) covers 173 rev
 
 For continuous controls across awaits, use managed Undo as described in the [host reference](host-api.md#batches-and-continuous-controls). It uses the reviewed batch API set and closes on reload, close, project change or after 30 seconds. Raw REAPER Undo scopes remain available outside this set, but callers must pair them and cannot rely on cleanup requests after a page closes.
 
-For slider input, `ReaWeb_SetTrackValueLatest` coalesces waiting values for a track/key. It does not create an Undo gesture. Await dependent calls in order. Use bounded concurrency for independent reads rather than enqueueing thousands of calls.
+For slider input, `reaper.audio.setTrackValueLatest` coalesces waiting values for a track/key. It does not create an Undo gesture. Await dependent calls in order. Use bounded concurrency for independent reads rather than enqueueing thousands of calls.
 
 ## Binary data and owned resources
 
@@ -124,7 +125,7 @@ Explicitly destroy created audio accessors, joysticks and unattached PCM sources
 ## Events, UI and storage
 
 ```javascript
-const stop = await reaper.ReaWeb_On('selectionchange', state => {
+const stop = await reaper.events.on('selectionchange', state => {
   console.log('Selected tracks:', state.count);
 });
 // When this UI component is removed:
@@ -148,7 +149,7 @@ try {
 }
 ```
 
-Use `await reaper.ReaWeb_GetDiagnostics()` to inspect backend, stage, queue counts and the last host error. Use `ReaWeb_DevTools()` on Windows/Linux. On macOS, enable Safari's developer features and inspect the REAPER page through its Develop menu. Reopen the page after changing assets. Reloading creates a new document and invalidates its old handles.
+Use `await reaper.debug.getDiagnostics()` to inspect backend, stage, queue counts and the last host error. Use `reaper.debug.openDevTools()` on Windows/Linux. On macOS, enable Safari's developer features and inspect the REAPER page through its Develop menu. Reopen the page after changing assets. Reloading creates a new document and invalidates its old handles.
 
 An unstarted native request expires after 25 seconds, with a 30-second client watchdog. Once execution starts, the queue timer stops. A native dialog or render cannot be interrupted by JavaScript. Never retry a timed-out write automatically. Check state first. Limits and error codes are listed in the [host reference](host-api.md#errors-and-limits).
 
@@ -162,4 +163,4 @@ The dedicated `ReaWebAPI-ReaPack-v<version>.zip` remains the extension payload o
 
 ## Modern frontend and host I/O
 
-See the [frontend contract](frontend.md) for Vite/TypeScript, loopback development, native local-resource fetch and Workers. The [host reference](host-api.md#files-and-desktop-services) covers common file, clipboard and external-link APIs. v0.1.6 focuses on standard REAPER APIs; custom Lua RPC and third-party registration are outside its scope.
+See the [frontend contract](frontend.md) for Vite/TypeScript, loopback development, native local-resource fetch and Workers. The [host reference](host-api.md#files-and-desktop-services) covers common file, clipboard and external-link APIs. v0.1.7 focuses on standard REAPER APIs; custom Lua RPC and third-party registration are outside its scope.

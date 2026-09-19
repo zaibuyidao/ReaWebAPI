@@ -9,11 +9,12 @@ import signal
 import socket
 import subprocess
 import time
+import uuid
 import web_runtime_network
 
 root = Path(__file__).resolve().parents[1]
 build = root / os.environ.get('REAWEB_TEST_BUILD_DIR', 'build-linux')
-fixture = build / ('web-runtime-' + str(os.getpid()))
+fixture = build / ('web-runtime-' + uuid.uuid4().hex)
 fixture.mkdir()
 apps = [fixture / name for name in ('空 格#% AppA', 'AppB')]
 network, endpoints = web_runtime_network.start()

@@ -21,4 +21,8 @@ For extension maintainers, see the repository's [API Sync guide](https://github.
 
 - [Frontend / 前端资源约定](frontend.md)
 - [前端资源约定（中文）](frontend.zh-CN.md)
-- [v0.1.6 release notes / 发布说明](release-notes.md)
+- [v0.1.7 release notes / 发布说明](release-notes.md)
+
+[v0.1.7 Runtime namespaces](runtime-api.md) · [v0.1.7 命名空间接口](runtime-api.zh-CN.md)
+
+[Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) — 13 implemented namespaces, 67 methods, 1 Promise property.

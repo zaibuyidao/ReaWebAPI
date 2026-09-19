@@ -2,7 +2,7 @@
 
 [English](frontend.md) | **简体中文** · [宿主 API](host-api.zh-CN.md)
 
-ReaWebAPI **v0.1.6** 实现 **Web Runtime v1** 能力约定；v1 是 Web 能力约定版本，扩展版本仍是 0.1.6。保持 REAPER 7.80 的 730 项标准镜像绑定和现有 Promise 调用方式，不引入自定义 Lua RPC 或第三方 REAPER API 注册机制。
+ReaWebAPI 在 v0.1.6 引入 **Web Runtime v1** 能力约定，**v0.1.7** 继续保持兼容；v1 是 Web 能力约定版本，与扩展版本独立。保持 REAPER 7.80 的 730 项标准镜像绑定和现有 Promise 调用方式，不引入自定义 Lua RPC 或第三方 REAPER API 注册机制。
 
 ## 普通 Web App
 
@@ -28,7 +28,7 @@ MyApp/
 import { render } from './ui.js';
 const config = await (await fetch('./data/config.json')).json();
 localStorage.setItem('theme', 'dark');
-await reaper.ready;
+await reaper.lifecycle.ready;
 const track = await reaper.GetTrack(0, 0);
 render(config, track);
 ```
@@ -58,7 +58,7 @@ render(config, track);
 
 ## 资源来源与存储
 
-`ReaWebOpen(path)` 仍然接收本地 HTML 路径。入口经规范化后的父目录就是 **App 根目录**。扩展用只读本地监听器将它映射至 `http://127.0.0.1:<port>/`，由 WebView 发起正常 HTTP 请求。支持相对资源、中文/空格/#/% 文件名、查询参数、MIME、HEAD 和字节范围请求。资源 URL 中的 `#`、`%` 需要编码，例如 `file%23%25.js`。不列出目录，不提供 HTTP 写入或桥接端点；解析后的路径及符号链接/junction 不得越出根目录。
+`reaper.window.open(path)` 仍然接收本地 HTML 路径。入口经规范化后的父目录就是 **App 根目录**。扩展用只读本地监听器将它映射至 `http://127.0.0.1:<port>/`，由 WebView 发起正常 HTTP 请求。支持相对资源、中文/空格/#/% 文件名、查询参数、MIME、HEAD 和字节范围请求。资源 URL 中的 `#`、`%` 需要编码，例如 `file%23%25.js`。不列出目录，不提供 HTTP 写入或桥接端点；解析后的路径及符号链接/junction 不得越出根目录。
 
 每个根目录对应独立 profile 和保存的来源地址。同一目录中的窗口共享存储，不同目录隔离，包括 cookie 容器；只分配不同端口不足以隔离 cookie。句柄和订阅始终属于各自页面，不应将原生句柄保存到浏览器存储；请保存设置或 GUID。
 
@@ -70,13 +70,13 @@ profile 注册信息保存在 `<REAPER 资源目录>/ReaWebAPI/Apps/<appId>/`，
 
 仅监听回环地址，拒绝外来 Host/Origin 及跨来源 Fetch Metadata 请求，不设置宽松 CORS。最后一个 App 窗口关闭后停止服务，每个活动 App 使用两个有队列上限的资源线程；REAPER API 仍经原有桥接在主线程执行。App 根目录是资源加载边界，**不是原生 API 沙箱**：可信页面仍有已开放的文件和工程权限。不要在资源目录内放秘密文件或打开不可信 App。
 
-`ReaWeb_GetCapabilities()`、`ReaWeb_GetDiagnostics()` 都返回 `webRuntime`：
+`reaper.system.getCapabilities()`、`reaper.debug.getDiagnostics()` 都返回 `webRuntime`：
 `{ contract: 1, mode: 'app-http' | 'dev-http', appId, origin, storageIsolation: 'app-profile', localResources }`。
 内建本地资源模式的 `localResources` 为 true。
 
 ## TypeScript 与开发服务器
 
-[现代模板](../runtime/modern/README.zh-CN.md) 提供可选的 Vite/TypeScript **构建工具**。运行 `npm ci`、`npm run dev`，然后在 REAPER 运行 `OpenDev.lua`，默认地址 `http://localhost:5173/`。`ReaWeb_OpenDev` 只接受 127.0.0.1、localhost 或 [::1] 上带明确端口的 HTTP URL。开发服务器由开发者启动，扩展不内置 Vite、Node 或 npm。
+[现代模板](../runtime/modern/README.zh-CN.md) 提供可选的 Vite/TypeScript **构建工具**。运行 `npm ci`、`npm run dev`，然后在 REAPER 运行 `OpenDev.lua`，默认地址 `http://localhost:5173/`。`reaper.window.openDev` 只接受 127.0.0.1、localhost 或 [::1] 上带明确端口的 HTTP URL。开发服务器由开发者启动，扩展不内置 Vite、Node 或 npm。
 
 开发入口按完整 URL 分配独立 profile，应保持 URL 和端口稳定。允许 hash 导航，禁止切换到其他文档，入口应避免重定向。HMR 使用浏览器原生 WebSocket，已用 Vite 验证。
 

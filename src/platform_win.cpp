@@ -1,6 +1,8 @@
 #include "platform.hpp"
 #include <windows.h>
 #include <shellapi.h>
+#include <shlobj.h>
+#include <shobjidl.h>
 #include <wrl.h>
 #include <WebView2.h>
 #include <vector>
@@ -30,6 +32,43 @@ void check(HRESULT hr, const char* operation) {
   if (FAILED(hr)) throw std::runtime_error(std::string(operation) + " failed (HRESULT " + std::to_string(static_cast<unsigned long>(hr)) + ")");
 }
 constexpr wchar_t window_class[] = L"ReaWebAPI.Window";
+class DragSource final : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDropSource> {
+public:
+  std::function<bool()> alive;
+  HRESULT STDMETHODCALLTYPE QueryContinueDrag(BOOL escape, DWORD keys) override {
+    if (escape || !alive()) return DRAGDROP_S_CANCEL;
+    return keys & MK_LBUTTON ? S_OK : DRAGDROP_S_DROP;
+  }
+  HRESULT STDMETHODCALLTYPE GiveFeedback(DWORD) override { return DRAGDROP_S_USEDEFAULTCURSORS; }
+};
+class DragText final : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDataObject> {
+public:
+  std::wstring text;
+  HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* f) override {
+    if (!f) return E_POINTER;
+    return f->cfFormat == CF_UNICODETEXT && (f->tymed & TYMED_HGLOBAL) && f->dwAspect == DVASPECT_CONTENT && f->lindex == -1 ? S_OK : DV_E_FORMATETC;
+  }
+  HRESULT STDMETHODCALLTYPE GetData(FORMATETC* f, STGMEDIUM* medium) override {
+    if (!medium) return E_POINTER;
+    if (FAILED(QueryGetData(f))) return DV_E_FORMATETC;
+    auto memory = GlobalAlloc(GMEM_MOVEABLE, (text.size() + 1) * sizeof(wchar_t));
+    if (!memory) return E_OUTOFMEMORY;
+    auto bytes = GlobalLock(memory);
+    if (!bytes) { GlobalFree(memory); return E_OUTOFMEMORY; }
+    std::memcpy(bytes, text.c_str(), (text.size() + 1) * sizeof(wchar_t)); GlobalUnlock(memory);
+    *medium = {}; medium->tymed = TYMED_HGLOBAL; medium->hGlobal = memory; return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC*, STGMEDIUM*) override { return DATA_E_FORMATETC; }
+  HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC*, FORMATETC* f) override { if (f) f->ptd = nullptr; return E_NOTIMPL; }
+  HRESULT STDMETHODCALLTYPE SetData(FORMATETC*, STGMEDIUM*, BOOL) override { return E_NOTIMPL; }
+  HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD direction, IEnumFORMATETC** result) override {
+    if (direction != DATADIR_GET) return E_NOTIMPL;
+    FORMATETC f{CF_UNICODETEXT, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL}; return SHCreateStdEnumFmtEtc(1, &f, result);
+  }
+  HRESULT STDMETHODCALLTYPE DAdvise(FORMATETC*, DWORD, IAdviseSink*, DWORD*) override { return OLE_E_ADVISENOTSUPPORTED; }
+  HRESULT STDMETHODCALLTYPE DUnadvise(DWORD) override { return OLE_E_ADVISENOTSUPPORTED; }
+  HRESULT STDMETHODCALLTYPE EnumDAdvise(IEnumSTATDATA**) override { return OLE_E_ADVISENOTSUPPORTED; }
+};
 
 class WinWindow final : public Window, public std::enable_shared_from_this<WinWindow> {
   WindowOptions options_;
@@ -42,6 +81,7 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   bool maximized_ = false;
   std::string browser_version_;
   bool visible_ = true;
+  bool drop_enabled_ = false, dragging_ = false;
 public:
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto self = reinterpret_cast<WinWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -58,7 +98,8 @@ public:
       } else if (msg == WM_SETFOCUS && self->controller_) {
         self->controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
       } else if (msg == WM_CLOSE) {
-        self->closed_ = true; return 0;
+        if (self->options_.on_close) self->options_.on_close(); else self->closed_ = true;
+        return 0;
       } else if (msg == WM_NCDESTROY) {
         self->closed_ = true; self->hwnd_ = nullptr;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -118,8 +159,11 @@ public:
         if (auto self = weak.lock(); self && !self->closed_) {
           LPWSTR source = nullptr, message = nullptr;
           args->get_Source(&source);
-          if (same_document(utf8(source), self->uri_) && SUCCEEDED(args->TryGetWebMessageAsString(&message)))
-            self->options_.on_message(utf8(message));
+          if (same_document(utf8(source), self->uri_) && SUCCEEDED(args->TryGetWebMessageAsString(&message))) {
+            const auto text = utf8(message);
+            if (text.rfind("{\"__reawebNativeDrop\":", 0) == 0) self->native_drop(args, text);
+            else self->options_.on_message(text);
+          }
           CoTaskMemFree(source); CoTaskMemFree(message);
         }
         return S_OK;
@@ -129,6 +173,7 @@ public:
         LPWSTR uri = nullptr; args->get_Uri(&uri);
         auto self = weak.lock();
         if (!self || !same_document(utf8(uri), self->uri_)) args->put_Cancel(TRUE);
+        else if (self->options_.on_reload && self->options_.on_reload()) args->put_Cancel(TRUE);
         else if (self->options_.on_navigation) self->options_.on_navigation();
         CoTaskMemFree(uri); return S_OK;
       }).Get(), &token), "add_NavigationStarting");
@@ -201,6 +246,71 @@ public:
     if (controller_) controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
   }
   void set_title(const std::string& title) override { SetWindowTextW(hwnd_, wide(title).c_str()); }
+  void set_visible(bool visible) override { ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE); }
+  void reload() override { if (webview_) webview_->Reload(); }
+  Json bounds() const override {
+    RECT rect{}; if (!hwnd_ || !GetWindowRect(hwnd_, &rect)) return nullptr;
+    return {{"x", rect.left}, {"y", rect.top}, {"width", rect.right - rect.left}, {"height", rect.bottom - rect.top}};
+  }
+  void set_drop_enabled(bool enabled) override {
+    if (enabled) {
+      ComPtr<ICoreWebView2_23> modern;
+      if (!webview_ || FAILED(webview_.As(&modern))) throw Error("HOST_UNAVAILABLE", "Native drop requires a current WebView2 Runtime");
+    }
+    drop_enabled_ = enabled;
+  }
+  void native_drop(ICoreWebView2WebMessageReceivedEventArgs* args, const std::string& message) {
+    if (!drop_enabled_ || !options_.on_drop || message.size() > message_limit) return;
+    try {
+      const auto input = Json::parse(message).at("__reawebNativeDrop");
+      const auto text = input.at("text").get<std::string>();
+      if (text.size() > value_limit || text.find('\0') != std::string::npos) throw Error("BUFFER_LIMIT", "Invalid drop text");
+      ComPtr<ICoreWebView2WebMessageReceivedEventArgs2> extended;
+      check(args->QueryInterface(IID_PPV_ARGS(&extended)), "Native dropped objects");
+      ComPtr<ICoreWebView2ObjectCollectionView> objects; check(extended->get_AdditionalObjects(&objects), "Dropped objects");
+      UINT32 count = 0; if (objects) check(objects->get_Count(&count), "Dropped file count");
+      if (count > 256) throw Error("BUFFER_LIMIT", "At most 256 files may be dropped");
+      Json files = Json::array();
+      for (UINT32 i = 0; i < count; ++i) {
+        ComPtr<IUnknown> item; check(objects->GetValueAtIndex(i, &item), "Dropped file");
+        ComPtr<ICoreWebView2File> file; check(item.As(&file), "Dropped native file");
+        LPWSTR path = nullptr; check(file->get_Path(&path), "Dropped file path");
+        auto value = utf8(path); CoTaskMemFree(path);
+        if (value.empty() || value.size() > 32768) throw Error("INVALID_PATH", "Dropped File has no native path");
+        files.push_back(value);
+      }
+      if (files.empty() && text.empty()) return;
+      options_.on_drop({{"document", input.at("document")}, {"files", files}, {"text", text},
+        {"x", input.at("x")}, {"y", input.at("y")}});
+    } catch (const std::exception& error) {
+      evaluate("console.error('[ReaWebAPI native drop]'," + Json(error.what()).dump() + ");");
+    }
+  }
+  void start_drag(const Json& payload, Reply reply) override {
+    if (dragging_) throw Error("DRAG_BUSY", "A native drag is already active");
+    if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) throw Error("DRAG_GESTURE_REQUIRED", "Start a native drag while the left mouse button is held");
+    ComPtr<IDataObject> data;
+    if (!payload.at("files").empty()) {
+      std::vector<PIDLIST_ABSOLUTE> ids;
+      struct Release { std::vector<PIDLIST_ABSOLUTE>& ids; ~Release() { for (auto id : ids) CoTaskMemFree(id); } } release{ids};
+      for (const auto& path : payload.at("files")) {
+        auto id = ILCreateFromPathW(wide(path.get<std::string>()).c_str());
+        if (!id) throw Error("INVALID_PATH", "Cannot prepare file for native drag");
+        ids.push_back(id);
+      }
+      ComPtr<IShellItemArray> items;
+      check(SHCreateShellItemArrayFromIDLists(static_cast<UINT>(ids.size()), const_cast<PCIDLIST_ABSOLUTE*>(ids.data()), &items), "Native drag files");
+      check(items->BindToHandler(nullptr, BHID_DataObject, IID_PPV_ARGS(&data)), "Native file data object");
+    } else {
+      auto object = Microsoft::WRL::Make<DragText>(); object->text = wide(payload.at("text").get<std::string>()); data = object;
+    }
+    auto source = Microsoft::WRL::Make<DragSource>();
+    source->alive = [weak = weak_from_this()] { auto window = weak.lock(); return window && !window->closed(); };
+    dragging_ = true; DWORD effect = DROPEFFECT_NONE;
+    const auto result = DoDragDrop(data.Get(), source.Get(), DROPEFFECT_COPY, &effect); dragging_ = false;
+    if (FAILED(result)) throw Error("DRAG_FAILED", "The system could not start the drag");
+    reply({{"result", result == DRAGDROP_S_DROP && (effect & DROPEFFECT_COPY) != 0}});
+  }
   Json diagnostics() const override {
     return {{"backend", "WebView2"}, {"browserVersion", browser_version_}, {"controllerReady", controller_ != nullptr},
       {"controllerVisible", visible_}};
@@ -268,7 +378,7 @@ class WinPlatform final : public Platform {
   HWND clipboard_owner_ = nullptr;
 public:
   explicit WinPlatform(const fs::path& data) {
-    check(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED), "CoInitializeEx (WebView2 requires STA)");
+    check(OleInitialize(nullptr), "OleInitialize (WebView2 and native drag require STA)");
     com_ = true;
     // COM completion handlers can outlive extension teardown. Keep their code mapped until process exit.
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
@@ -277,7 +387,7 @@ public:
     cls.lpszClassName = window_class; cls.hCursor = LoadCursor(nullptr, IDC_ARROW);
     cls.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassW(&cls) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-      CoUninitialize(); com_ = false; throw std::runtime_error("RegisterClass failed");
+      OleUninitialize(); com_ = false; throw std::runtime_error("RegisterClass failed");
     }
     std::weak_ptr<EnvironmentState> weak = state_;
     auto hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, data.c_str(), nullptr,
@@ -297,16 +407,23 @@ public:
           return S_OK;
         }).Get());
     if (FAILED(hr)) {
-      UnregisterClassW(window_class, instance_); CoUninitialize(); com_ = false;
+      UnregisterClassW(window_class, instance_); OleUninitialize(); com_ = false;
       throw std::runtime_error("WebView2 Runtime is unavailable. Install Microsoft Edge WebView2 Evergreen Runtime.");
     }
   }
   ~WinPlatform() override {
     if (clipboard_owner_) DestroyWindow(clipboard_owner_);
     state_.reset(); UnregisterClassW(window_class, instance_);
-    if (com_) CoUninitialize();
+    if (com_) OleUninitialize();
   }
   void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
+    if (method == "ReaWeb_RevealPath") {
+      auto id = ILCreateFromPathW(wide(args.at(0).get<std::string>()).c_str());
+      if (!id) throw Error("INVALID_PATH", "Cannot locate file in Explorer");
+      const auto result = SHOpenFolderAndSelectItems(id, 0, nullptr, 0); CoTaskMemFree(id);
+      if (FAILED(result)) throw Error("REVEAL_FAILED", "Explorer could not reveal the path");
+      reply({{"result", true}}); return;
+    }
     if (method == "ReaWeb_OpenExternal") {
       const auto url = args[0].get<std::string>(); validate_external_url(url);
       if (reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)

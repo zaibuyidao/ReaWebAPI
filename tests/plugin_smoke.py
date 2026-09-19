@@ -22,12 +22,13 @@ parser.add_argument('--starter', action='store_true', help='Exercise the SDK sta
 parser.add_argument('--dev', action='store_true', help='Exercise Vite modules, Worker, fetch and CSS HMR through OpenDev')
 parser.add_argument('--modern', action='store_true', help='Exercise the built TypeScript template')
 parser.add_argument('--runtime', action='store_true', help='Exercise Web Runtime v1 and per-App browser storage')
+parser.add_argument('--studio', action='store_true', help='Exercise the v0.1.7 Runtime Studio UI')
 parser.add_argument('--resource-root', type=Path, help='Reuse a dedicated test resource directory across host processes')
 parser.add_argument('--empty', action='store_true', help='Use an empty project for demo tests')
 args = parser.parse_args()
 if args.dev: args.modern = True
 server_process = None
-window_count = 1 if args.demo or args.starter or args.modern else 2
+window_count = 1 if args.demo or args.starter or args.modern or args.studio else 2
 if args.webview and sys.platform != 'win32':
     raise SystemExit('--webview requires Windows; the ABI test supports all platforms')
 
@@ -184,7 +185,13 @@ def get_name(pointer, buffer, size):
 @api('GetMediaTrackInfo_Value', C.c_double, C.c_void_p, C.c_char_p)
 def get_value(pointer, key):
     if key == b'I_CUSTOMCOLOR': return color_value
+    if key == b'I_NCHAN': return 2.0
     return 1.0
+
+@api('Track_GetPeakInfo', C.c_double, C.c_void_p, C.c_int)
+def track_peak(pointer, channel):
+    assert threading.get_ident() == main_thread
+    return 0.5 if channel == 0 else 0.0
 
 @api('SetMediaTrackInfo_Value', C.c_bool, C.c_void_p, C.c_char_p, C.c_double)
 def set_value(pointer, key, value):
@@ -360,8 +367,12 @@ entry.restype = C.c_int
 info = Info(0x20E, owner_window, register, get_func)
 assert entry(None, C.byref(info)) == 1
 try:
-    assert len(registrations) == 36, registrations.keys()
-    open_window = C.CFUNCTYPE(C.c_int, C.c_char_p)(registrations[b'API_ReaWebOpen'])
+    assert len(registrations) == 37, list(registrations)
+    assert b'csurf_inst' in registrations
+    open_window = C.CFUNCTYPE(C.c_int, C.c_char_p)(registrations[b'API_ReaWeb_Open'])
+    for prefix in (b'API_', b'APIvararg_', b'APIdef_'):
+        assert prefix + b'ReaWeb_Open' in registrations
+        assert prefix + b'ReaWebOpen' not in registrations
     is_open = C.CFUNCTYPE(C.c_bool, C.c_int)(registrations[b'API_ReaWeb_IsOpen'])
     close_window = C.CFUNCTYPE(C.c_bool, C.c_int)(registrations[b'API_ReaWeb_Close'])
     get_error = C.CFUNCTYPE(C.c_char_p)(registrations[b'API_ReaWeb_GetLastError'])
@@ -382,9 +393,9 @@ try:
     saved_error = get_error()
     timer()
     assert b'does not exist' in saved_error and saved_error == get_error()
-    vararg = C.CFUNCTYPE(C.c_void_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWebOpen'])
     missing = C.create_string_buffer(b'missing.html')
     arguments = (C.c_void_p * 1)(C.addressof(missing))
+    vararg = C.CFUNCTYPE(C.c_void_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Open'])
     assert not vararg(arguments, 1)
     assert not is_open(999)
     assert saved_error == get_error()
@@ -401,47 +412,129 @@ try:
                         '<h1>ReaWebAPI native smoke test</h1>', encoding='utf-8')
         expected_name = json.dumps('Guitar 吉他 "A"')
         (folder / 'app.js').write_text('''(async () => {
-  await reaper.ready;
+  const capabilities = await reaper.lifecycle.ready;
+  const namespaces = ["window","theme","dialog","events","lifecycle","debug","fs","audio","clipboard","dragDrop","app","system","transaction"];
+  if (Object.keys(reaper).length !== 743 || Object.keys(reaper).some(name => name.startsWith('ReaWeb')) || 'ready' in reaper)
+    throw new Error('Runtime root exposes a flat API or has an incomplete Mirror');
+  if (JSON.stringify(capabilities.runtime.namespaces) !== JSON.stringify(namespaces) || namespaces.some(name => !Object.isFrozen(reaper[name])))
+    throw new Error('Incomplete Runtime namespaces');
+  if (JSON.stringify(capabilities.runtime.reservedNamespaces) !== JSON.stringify([]))
+    throw new Error('Every Runtime namespace is implemented');
+  if ('ReaWebOpen' in reaper || capabilities.methods.includes('ReaWebOpen')) throw new Error('Removed entry name is still exposed');
+  if (await reaper.app.getId() !== capabilities.webRuntime.appId || await reaper.app.getVersion() !== null ||
+      !await reaper.app.getName() || !await reaper.app.getRootPath()) throw new Error('App metadata');
+  if (await reaper.system.getPlatform() !== 'windows' || await reaper.system.getArchitecture() !== 'x64') throw new Error('System info');
+  const dataPath = await reaper.app.getDataPath();
+  await reaper.fs.writeText(dataPath + '/test.json', '{}', {overwrite:true});
+  if (await reaper.fs.readText(dataPath + '/test.json') !== '{}') throw new Error('App writable data path');
+  const dropped = () => { throw new Error('Unexpected native drop'); };
+  const stopDrop = await reaper.dragDrop.onDrop(dropped);
+  await reaper.events.off('native-drop', dropped); await stopDrop();
+  try { await reaper.dragDrop.startText('without mouse gesture'); throw new Error('Drag should require gesture'); }
+  catch (error) { if (error.code !== 'DRAG_GESTURE_REQUIRED') throw error; }
+  const cleanupPath = 'cleanup-' + capabilities.windowId + '.txt';
+  await reaper.lifecycle.on('before-reload', async () => {
+    await reaper.fs.writeFile(cleanupPath, 'reload saved', {overwrite:true});
+  });
+  await reaper.lifecycle.on('before-close', async () => {
+    await reaper.fs.writeFile(cleanupPath, 'close saved', {overwrite:true});
+  });
   if (!sessionStorage.getItem('reloaded')) {
     location.hash = 'fragment';
-    if (await reaper.CountTracks() !== 1) throw new Error('Fragment navigation broke bridge');
+    if (await reaper.CountTracks(0) !== 1) throw new Error('Fragment navigation broke bridge');
     sessionStorage.setItem('reloaded', 'yes');
     location.reload(); return;
   }
-  const info = await reaper.ReaWeb_GetDiagnostics();
+  const info = await reaper.debug.getDiagnostics();
+  if (await reaper.fs.readFile(cleanupPath) !== 'reload saved') throw new Error('Reload cleanup did not finish');
+  const theme = await reaper.theme.getColors();
+  if (!theme.cssVariables['--reaper-background']) throw new Error('Missing theme variables');
+  const size = await reaper.window.getSize();
+  if (size.mode !== 'floating' || size.width <= 0) throw new Error('Window geometry');
+  if (capabilities.windowId === 2) {
+    const changed = await reaper.window.setSize(780, 620);
+    if (changed.width !== 780 || changed.height !== 620) throw new Error('Native resize');
+    await reaper.window.setPosition(80, 90);
+    await reaper.window.hide(); await reaper.window.show();
+  }
   if (info.stage !== 'ready' || info.backend !== 'WebView2' || info.documentGeneration < 2) throw new Error('Bad diagnostics');
-  if (!(await reaper.ReaWeb_GetWindowState()).keyboardCapture) throw new Error('Keyboard policy missing');
-  const off = await reaper.ReaWeb_On('windowstatechange', state => window.dockState = state.docked);
+  if (!(await reaper.window.getState()).keyboardCapture) throw new Error('Keyboard policy missing');
+  const off = await reaper.events.on('windowstatechange', state => window.dockState = state.docked);
   const track = await reaper.GetSelectedTrack(0, 0);
+  const meter = await reaper.audio.getTrackMeter(track);
+  if (meter.channels !== 2 || meter.peak[0] !== 0.5 || meter.peakDb[1] !== null) throw new Error('Track meter');
   const [okName, name] = await reaper.GetTrackName(track);
   if (name !== EXPECTED || await reaper.CountTracks(0) !== 1) throw new Error('Wrong host data');
   if (await reaper.GetSelectedTrack(0, 99) !== null) throw new Error('Expected null track');
-  if ((await reaper.ReaWeb_GetCapabilities()).api.implemented !== 730) throw new Error('Generated schema not connected');
+  if ((await reaper.system.getCapabilities()).api.implemented !== 730) throw new Error('Generated schema not connected');
   if (await reaper.GetProjectName(0) !== 'API 工程.rpp') throw new Error('Project string ABI');
   if (JSON.stringify(await reaper.CountProjectMarkers(0)) !== '[2,1,1]') throw new Error('Count outputs ABI');
   const marker = await reaper.EnumProjectMarkers3(0, 1);
   if (marker.length !== 7 || marker[1] !== true || marker[4] !== '段落 A' || marker[5] !== 11) throw new Error('Marker outputs ABI');
-  if (JSON.stringify(await reaper.EnumProjectMarkers3(0, 2)) !== '[0,false,0,0,"",0,0]') throw new Error('End of enumeration');
+  if (JSON.stringify(await reaper.EnumProjectMarkers3(0, 2)) !== '[0,false,0,0,null,0,0]') throw new Error('End of enumeration');
   if (JSON.stringify(await reaper.TimeMap2_timeToBeats(0, 1.25)) !== '[2.5,0,4,2.5,4]') throw new Error('Beat outputs ABI');
   if (await reaper.SetEditCurPos(5, true, false) !== undefined || await reaper.GetCursorPosition() !== 5) throw new Error('Void result/cursor write');
   const nativeColor = await reaper.ColorToNative(37, 149, 211);
   if (JSON.stringify(await reaper.ColorFromNative(nativeColor)) !== '[37,149,211]') throw new Error('Color outputs ABI');
-  await reaper.ReaWeb_Batch([{ method: 'SetTrackColor', args: [track, nativeColor | 0x1000000] }], { undoLabel: 'Color test' });
+  await reaper.transaction.batch([{ method: 'SetTrackColor', args: [track, nativeColor | 0x1000000] }], { undoLabel: 'Color test' });
   if (await reaper.GetTrackColor(track) !== (nativeColor | 0x1000000)) throw new Error('Color readback');
   if (await reaper.TrackFX_GetCount(track) !== 1 || await reaper.TrackFX_GetNumParams(track, 0) !== 1) throw new Error('FX count ABI');
   if (JSON.stringify(await reaper.TrackFX_GetFXName(track, 0)) !== '[true,"EQ"]') throw new Error('FX name ABI');
   if (JSON.stringify(await reaper.TrackFX_GetParam(track, 0, 0)) !== '[0.5,0,1]') throw new Error('FX parameter ABI');
   const token = window.keepState = crypto.randomUUID();
-  if (!await reaper.ReaWeb_SetDocked(true) || !await reaper.ReaWeb_IsDocked()) throw new Error('Dock failed');
-  if (await reaper.ReaWeb_SetDocked(false) || await reaper.ReaWeb_IsDocked()) throw new Error('Undock failed');
+  if (!await reaper.window.setDocked(true) || !await reaper.window.isDocked()) throw new Error('Dock failed');
+  if (await reaper.window.setDocked(false) || await reaper.window.isDocked()) throw new Error('Undock failed');
   if (window.keepState !== token) throw new Error('Page state lost');
   if ((await reaper.GetTrackName(track))[1] !== name) throw new Error('Bridge broken after undocking');
-  if (!await reaper.ReaWeb_SetDocked(true)) throw new Error('Second dock failed');
+  if (!await reaper.window.setDocked(true)) throw new Error('Second dock failed');
   document.querySelector('h1').textContent = 'PASS: ' + name;
   await off();
-  await reaper.ReaWeb_Close();
-})().catch(error => { document.querySelector('h1').textContent = error.stack; });
+  await reaper.debug.log('Runtime log smoke');
+  await reaper.window.close();
+})().catch(async error => {
+  document.querySelector('h1').textContent = error.stack;
+  await reaper.debug.error(error);
+});
 '''.replace('EXPECTED', expected_name), encoding='utf-8')
+        if args.studio:
+            source = Path(__file__).resolve().parents[1] / 'runtime/runtime-demo'
+            for name in ('index.html', 'app.js', 'style.css'):
+                shutil.copyfile(source / name, folder / name)
+            driver = r'''
+(async () => {
+  const until = async predicate => {
+    const deadline = Date.now() + 15000;
+    while (!await predicate()) {
+      if (Date.now() > deadline) throw new Error('Timeout: ' + predicate.toString());
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+  };
+  const el = id => document.getElementById(id);
+  if (!el('status').textContent.startsWith('Connected to ReaWebAPI 0.1.7')) throw new Error(el('status').textContent);
+  if (!sessionStorage.getItem('studioReload')) {
+    sessionStorage.setItem('studioReload', 'yes');
+    await reaper.window.reload(); return;
+  }
+  if (JSON.parse(localStorage.getItem('lastCleanup')).reason !== 'reload') throw new Error('Studio cleanup persistence');
+  if (!document.documentElement.style.getPropertyValue('--reaper-background')) throw new Error('Studio theme');
+  el('meter').click();
+  await until(() => el('levels').textContent.includes('linear-amplitude'));
+  if (JSON.parse(el('levels').textContent).peak[0] !== 0.5) throw new Error('Studio meter');
+  el('resize').click();
+  await until(async () => (await reaper.window.getSize()).width === 900);
+  for (const state of [true, false, true]) {
+    el('dock').click();
+    await until(async () => (await reaper.window.getState()).docked === state);
+  }
+  if (document.documentElement.scrollWidth > innerWidth) throw new Error('Studio horizontal overflow');
+  el('diagnostics').click();
+  await until(() => el('status').textContent.includes('recentLogs'));
+  await reaper.window.setTitle('STUDIO PASS');
+  await reaper.window.close();
+})().catch(async error => { await reaper.debug.error(error); });
+'''
+            with (folder / 'app.js').open('a', encoding='utf-8') as stream:
+                stream.write(driver)
         if args.demo:
             source = Path(__file__).resolve().parents[1] / 'demo'
             for name in ('index.html', 'app.js', 'style.css', 'logo.svg'):
@@ -500,9 +593,9 @@ try:
   if (document.documentElement.scrollWidth > innerWidth) throw new Error('Docked horizontal overflow');
   click('dock'); await until(() => el('dock').textContent === 'Dock' && !el('dock').disabled);
   click('dock'); await until(() => el('dock').textContent === 'Undock' && !el('dock').disabled);
-  await reaper.ReaWeb_SetTitle('DEMO PASS');
-  await reaper.ReaWeb_Close();
-})().catch(async error => { await reaper.ReaWeb_SetTitle('DEMO FAIL: ' + error.message.slice(0, 160)); });
+  await reaper.window.setTitle('DEMO PASS');
+  await reaper.window.close();
+})().catch(async error => { await reaper.window.setTitle('DEMO FAIL: ' + error.message.slice(0, 160)); });
 '''
             with (folder / 'app.js').open('a', encoding='utf-8') as stream:
                 stream.write(driver.replace('EMPTY_PROJECT', 'true' if args.empty else 'false'))
@@ -531,9 +624,9 @@ try:
     if (window.starterState !== state) throw new Error('Docking lost document state');
   }
   if (document.documentElement.scrollWidth > innerWidth) throw new Error('Horizontal overflow');
-  await reaper.ReaWeb_SetTitle('STARTER PASS');
-  await reaper.ReaWeb_Close();
-})().catch(async error => { await reaper.ReaWeb_SetTitle('STARTER FAIL: ' + error.message.slice(0, 160)); });
+  await reaper.window.setTitle('STARTER PASS');
+  await reaper.window.close();
+})().catch(async error => { await reaper.window.setTitle('STARTER FAIL: ' + error.message.slice(0, 160)); });
 '''
             with (folder / 'app.js').open('a', encoding='utf-8') as stream:
                 stream.write(driver.replace('EXPECTED', json.dumps('No track selected') if args.empty else expected_name))
@@ -555,20 +648,20 @@ try:
   if (!el('project').textContent.includes('tracks')) throw new Error('Project data missing');
   el('gain').click(); await until(() => !el('gain').disabled);
   const bytes = Uint8Array.from({length:100000}, (_,i)=>i%256);
-  await reaper.ReaWeb_WriteFile('roundtrip.bin', bytes, {encoding:'binary'});
-  const read = await reaper.ReaWeb_ReadFile('roundtrip.bin', {encoding:'binary'});
+  await reaper.fs.writeFile('roundtrip.bin', bytes, {encoding:'binary'});
+  const read = await reaper.fs.readFile('roundtrip.bin', {encoding:'binary'});
   if (read.length !== bytes.length || read.some((v,i)=>v!==bytes[i])) throw new Error('Binary file mismatch');
-  await reaper.ReaWeb_WithUndo('Gesture smoke', async () => {
+  await reaper.transaction.withUndo('Gesture smoke', async () => {
     const track = await reaper.GetSelectedTrack(0, 0);
     await reaper.SetMediaTrackInfo_Value(track, 'D_VOL', .5);
   });
   for (const state of [true, false, true]) {
-    if (await reaper.ReaWeb_SetDocked(state) !== state) throw new Error('Dock failed');
+    if (await reaper.window.setDocked(state) !== state) throw new Error('Dock failed');
   }
   if (document.documentElement.scrollWidth > innerWidth) throw new Error('Horizontal overflow');
-  await reaper.ReaWeb_SetTitle('MODERN PASS');
-  await reaper.ReaWeb_Close();
-})().catch(async error => { await reaper.ReaWeb_SetTitle('MODERN FAIL: ' + error.message.slice(0,160)); });
+  await reaper.window.setTitle('MODERN PASS');
+  await reaper.window.close();
+})().catch(async error => { await reaper.window.setTitle('MODERN FAIL: ' + error.message.slice(0,160)); });
 '''
             if args.dev:
                 source = Path(__file__).resolve().parents[1] / 'runtime/modern'
@@ -578,8 +671,8 @@ try:
                 page.write_text(html.replace('</body>', '<script type="module" src="/smoke-driver.ts"></script></body>'), encoding='utf-8')
                 hmr = """
   const cssPath = STYLE_PATH;
-  const css = await reaper.ReaWeb_ReadFile(cssPath);
-  await reaper.ReaWeb_WriteFile(cssPath, css + '\\n:root{--hmr-smoke:updated}', {overwrite:true});
+  const css = await reaper.fs.readFile(cssPath);
+  await reaper.fs.writeFile(cssPath, css + '\\n:root{--hmr-smoke:updated}', {overwrite:true});
   await until(() => getComputedStyle(document.documentElement).getPropertyValue('--hmr-smoke') === 'updated');
 """
                 driver = driver.replace("  if (!el('project')", hmr.replace('STYLE_PATH', json.dumps(str(folder / 'src/style.css'))) + "  if (!el('project')")
@@ -657,11 +750,15 @@ try:
             time.sleep(0.01)
         assert captured_seen, 'Native keyboard capture hook was not active'
         diagnostics = C.CFUNCTYPE(C.c_char_p, C.c_int)(registrations[b'API_ReaWeb_GetDiagnostics'])
-        assert (name_calls == 0 if args.empty or args.modern else name_calls > 0 if args.demo or args.starter else name_calls == 4) and not any(is_open(window) for window in ids), (name_calls, messages, [diagnostics(id) for id in ids])
+        assert (name_calls == 0 if args.empty or args.modern else name_calls > 0 if args.demo or args.starter or args.studio else name_calls == 4) and not any(is_open(window) for window in ids), (name_calls, messages, [diagnostics(id) for id in ids])
         if args.demo:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'DEMO PASS'
             print('Shipped demo: empty project, 7 checks passed and 3 track checks skipped, cursor and docking passed' if args.empty else 'Shipped demo: 10 checks passed (including binary resize, GUID/RECT and audio array), project/marker/FX display, color write/read/reset, cursor write and dock buttons passed')
-        if args.modern:
+        if args.studio:
+            assert json.loads(diagnostics(ids[0]))['window']['title'] == 'STUDIO PASS'
+            assert extra_calls == set(), extra_calls
+            print('Runtime Studio: theme, selected track, peak meter, resize, docking, diagnostics and reload state persistence passed')
+        elif args.modern:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'MODERN PASS'
             assert extra_calls == {'project'}, extra_calls
             if args.dev: print('Development mode: loopback entry, Vite modules, HTTP fetch, Worker and live CSS HMR passed')
@@ -674,15 +771,23 @@ try:
             assert extra_calls == ({'project', 'cursor', 'beats', 'markers'} if args.empty else ({'project', 'cursor', 'beats', 'markers', 'color', 'fx'} | ({'binary-resize','array-write','accessor-release'} if args.demo else set()))), extra_calls
         timer()
         assert not docked and not dock_failures and dock_events.count('dock') == window_count * 2, (docked, dock_events, dock_failures)
-        assert not messages, messages
+        if not (args.demo or args.starter or args.modern or args.studio):
+            assert sorted(messages) == [f'[ReaWebAPI] [App {id}] [info] Runtime log smoke\n' for id in ids], messages
+            assert get_error() == saved_error, 'Runtime logs overwrote the last host error'
+        else:
+            assert not messages, messages
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
             states = [json.loads(file.read_text(encoding='utf-8')) for file in state_files]
             if all(state['placement']['x'] != 900000 and state['docked'] for state in states): break
             timer(); time.sleep(.01)
         assert all(state['placement']['x'] != 900000 and state['docked'] for state in states), states
-        assert states[0]['placement']['maximized'] is True, states
+        assert states[0]['placement']['maximized'] is (not args.studio), states
         assert list((root / 'ReaWebAPI' / 'Apps').glob('*/WebViewData'))
+        if not (args.demo or args.starter or args.modern or args.studio):
+            for id in ids:
+                assert (folder / f'cleanup-{id}.txt').read_text() == 'close saved'
+            print('Runtime SDK: native geometry, theme, meter and async reload/close persistence passed')
         print('WebView2: JS round-trip, Unicode, multi-window, shared UDF, dock/undock, owner restoration and close cleanup passed')
     print('Plugin ABI: exports, API registration, vararg wrapper, error retention and unload passed')
 finally:

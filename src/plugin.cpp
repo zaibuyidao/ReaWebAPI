@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <vector>
+#include <cstdio>
 
 namespace {
 using namespace reaweb;
@@ -13,9 +14,26 @@ void (*console)(const char*) = nullptr;
 std::string last_error;
 std::vector<std::pair<std::string, void*>> registrations;
 std::atomic<uint64_t> project_generation{0};
+std::atomic<uint64_t> marker_revision{0}, fx_revision{0}, save_revision{0};
+class EventSurface final : public IReaperControlSurface {
+public:
+  const char* GetTypeString() override { return "REAWEBAPI"; }
+  const char* GetDescString() override { return "ReaWebAPI event observer"; }
+  const char* GetConfigString() override { return ""; }
+  int Extended(int call, void*, void*, void*) override {
+    // A callback may originate outside the UI thread. Only publish counters;
+    // Runtime reads host state and dispatches JavaScript on the main thread.
+    if (call == CSURF_EXT_SETPROJECTMARKERCHANGE) { ++marker_revision; return 1; }
+    if (call == CSURF_EXT_SETFXCHANGE || call == CSURF_EXT_SETFXPARAM || call == CSURF_EXT_SETFXPARAM_RECFX ||
+        call == CSURF_EXT_SETFXENABLED || call == CSURF_EXT_TRACKFX_PRESET_CHANGED || call == CSURF_EXT_TAKEFX_PARAMINFO_CHANGED) {
+      ++fx_revision; return 1;
+    }
+    return 0;
+  }
+} event_surface;
 project_config_extension_t project_events{
   [](const char*, ProjectStateContext*, bool, project_config_extension_t*) { return false; },
-  [](ProjectStateContext*, bool, project_config_extension_t*) {},
+  [](ProjectStateContext*, bool is_undo, project_config_extension_t*) { if (!is_undo) ++save_revision; },
   [](bool is_undo, project_config_extension_t*) {
     // A file load can reuse the same ReaProject address. Undo is an edit, not a new project lifetime.
     if (!is_undo) project_generation.fetch_add(1, std::memory_order_relaxed);
@@ -32,7 +50,7 @@ template<class F> auto guarded(F&& fn, decltype(fn()) fallback) noexcept -> decl
   return fallback;
 }
 
-int ReaWebOpen(const char* path) {
+int ReaWeb_Open(const char* path) {
   return guarded([&] { return runtime->open(path ? path : ""); }, 0);
 }
 int ReaWeb_OpenDev(const char* url) { return guarded([&] { return runtime->open_dev(url ? url : ""); }, 0); }
@@ -49,7 +67,7 @@ const char* ReaWeb_GetDiagnostics(int id) {
 }
 const char* ReaWeb_GetLastError() { return last_error.c_str(); }
 void* open_vararg(void** args, int count) {
-  return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWebOpen(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
+  return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_Open(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
 }
 void* dev_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_OpenDev(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
@@ -142,6 +160,30 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     host.prevent_refresh = prevent_refresh;
     host.update_arrange = update;
     const auto get_function = rec->GetFunc;
+    auto count_tracks = reinterpret_cast<int (*)(ReaProject*)>(get_function("CountTracks"));
+    auto get_track = reinterpret_cast<MediaTrack* (*)(ReaProject*, int)>(get_function("GetTrack"));
+    if (count_tracks && get_track) {
+      host.track_count = [count_tracks, enum_projects] { return count_tracks(enum_projects(-1, nullptr, 0)); };
+      host.track_identity = [get_track, enum_projects, guid](int index) {
+        auto track = get_track(enum_projects(-1, nullptr, 0), index);
+        auto value = track ? guid(track) : nullptr;
+        if (!value) return std::string();
+        char text[40];
+        std::snprintf(text, sizeof(text), "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+          static_cast<unsigned>(value->Data1), value->Data2, value->Data3, value->Data4[0], value->Data4[1],
+          value->Data4[2], value->Data4[3], value->Data4[4], value->Data4[5], value->Data4[6], value->Data4[7]);
+        return std::string(text);
+      };
+    }
+    host.event_revision = [](const std::string& name) { return name == "marker-changed" ? marker_revision.load() : fx_revision.load(); };
+    auto dirty = reinterpret_cast<int (*)(ReaProject*)>(get_function("IsProjectDirty"));
+    if (dirty) host.project_save_state = [enum_projects, dirty] {
+      char name[32768]{}; auto project = enum_projects(-1, name, sizeof(name));
+      std::error_code error;
+      auto stamp = fs::last_write_time(fs::u8path(name), error);
+      return Json{{"available", !error && name[0] != 0}, {"path", name}, {"dirty", dirty(project) != 0},
+        {"stamp", error ? "" : std::to_string(stamp.time_since_epoch().count())}, {"serialization", save_revision.load()}};
+    };
     auto count_items = reinterpret_cast<int (*)(ReaProject*)>(get_function("CountSelectedMediaItems"));
     auto selected_item = reinterpret_cast<MediaItem* (*)(ReaProject*, int)>(get_function("GetSelectedMediaItem"));
     auto active_take = reinterpret_cast<MediaItem_Take* (*)(MediaItem*)>(get_function("GetActiveTake"));
@@ -208,7 +250,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       [remember_dock](const std::string& ident, int index) { remember_dock(ident.c_str(), index); },
       [refresh_dock](void* h) { if (refresh_dock) refresh_dock(static_cast<HWND>(h)); }};
     runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
-    add_api("ReaWebOpen", reinterpret_cast<void*>(ReaWebOpen), reinterpret_cast<void*>(open_vararg),
+    add_api("ReaWeb_Open", reinterpret_cast<void*>(ReaWeb_Open), reinterpret_cast<void*>(open_vararg),
       "int\0const char*\0path\0Open local HTML. Relative paths resolve under resource/Scripts. Returns a window id, or 0 on failure.\0");
     add_api("ReaWeb_Close", reinterpret_cast<void*>(ReaWeb_Close), reinterpret_cast<void*>(id_vararg<ReaWeb_Close>),
       "bool\0int\0windowId\0Close a ReaWebAPI window.\0");
@@ -232,6 +274,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       "int\0const char*\0url\0Open an explicitly trusted loopback HTTP development server.\0");
     add_registration("hwnd_info", reinterpret_cast<void*>(window_info));
     add_registration("projectconfig", &project_events);
+    add_registration("csurf_inst", &event_surface);
     add_registration("timer", reinterpret_cast<void*>(timer));
     return 1;
   } catch (const std::exception& e) { log_error(e.what()); unload(); return 0; }

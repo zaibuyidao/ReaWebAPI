@@ -50,7 +50,7 @@ async function refresh() {
       const track = await reaper.GetSelectedTrack(0, 0);
       const calls = [{ method: 'CountTracks', args: [0] }];
       if (track) calls.push({ method: 'GetTrackName', args: [track] }, { method: 'GetMediaTrackInfo_Value', args: [track, 'D_PAN'] });
-      const [count, name, pan] = await reaper.ReaWeb_Batch(calls);
+      const [count, name, pan] = await reaper.transaction.batch(calls);
       const color = track ? await reaper.GetTrackColor(track) : 0;
       const rgb = color ? await reaper.ColorFromNative(color) : null;
       if (refreshWanted) continue;
@@ -76,7 +76,7 @@ async function refresh() {
   }
 }
 ui['read-track'].addEventListener('click', () => run(async () => { await refresh(); log('Track data refreshed.'); }));
-ui.devtools.addEventListener('click', () => run(async () => { await reaper.ReaWeb_DevTools(); log('Developer Tools opened.'); }));
+ui.devtools.addEventListener('click', () => run(async () => { await reaper.debug.openDevTools(); log('Developer Tools opened.'); }));
 function showDockState(docked) {
   ui.dock.textContent = docked ? 'Undock' : 'Dock';
   ui.dock.setAttribute('aria-pressed', String(docked));
@@ -85,7 +85,7 @@ ui.dock.addEventListener('click', () => run(async () => {
   if (dockBusy) return;
   dockBusy = true; ui.dock.disabled = true;
   try {
-    const docked = await reaper.ReaWeb_SetDocked(!(await reaper.ReaWeb_IsDocked()));
+    const docked = await reaper.window.setDocked(!(await reaper.window.isDocked()));
     showDockState(docked); log(docked ? 'Window docked in REAPER.' : 'Window undocked.');
   } finally { dockBusy = false; ui.dock.disabled = false; }
 }));
@@ -100,7 +100,7 @@ async function applyColor(reset) {
     // SetTrackColor(0) means black. Clearing a custom color uses I_CUSTOMCOLOR.
     const call = reset ? { method: 'SetMediaTrackInfo_Value', args: [track, 'I_CUSTOMCOLOR', 0] }
       : { method: 'SetTrackColor', args: [track, color] };
-    await reaper.ReaWeb_Batch([call], { undoLabel: 'ReaWebAPI: track color' });
+    await reaper.transaction.batch([call], { undoLabel: 'ReaWebAPI: track color' });
     const actual = await reaper.GetTrackColor(track);
     if (actual !== (reset ? 0 : color | 0x1000000)) throw new Error('Track color readback differs from the requested value.');
     log('Track color written and read back. Undo is available in REAPER.');
@@ -167,7 +167,7 @@ ui['run-checks'].addEventListener('click', () => action('run-checks', async () =
     } catch (error) { rows.push(['FAIL', `${label}: ${error.code || error.message}`]); }
   };
   await check('Generated API definitions match the native host', async () => {
-    const c = await reaper.ReaWeb_GetCapabilities();
+    const c = await reaper.system.getCapabilities();
     const names = Object.keys(c.api.bindings);
     return c.api.implemented === names.length && names.every(n => c.methods.includes(n) && typeof reaper[n] === 'function');
   });
@@ -250,7 +250,7 @@ ui['run-checks'].addEventListener('click', () => action('run-checks', async () =
 ui.pan.addEventListener('input', () => {
   const track = selectedTrack, value = Number(ui.pan.value);
   ui['pan-value'].textContent = value.toFixed(2);
-  if (track) pendingPan = reaper.ReaWeb_SetTrackValueLatest(track, 'D_PAN', value).catch(report);
+  if (track) pendingPan = reaper.audio.setTrackValueLatest(track, 'D_PAN', value).catch(report);
 });
 ui['center-pan'].addEventListener('click', () => run(async () => {
   if (!selectedTrack) return;
@@ -258,7 +258,7 @@ ui['center-pan'].addEventListener('click', () => run(async () => {
   ui.pan.disabled = true;
   try {
     await pendingPan;
-    await reaper.ReaWeb_Batch([{ method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] }], { undoLabel: 'ReaWebAPI: center track pan' });
+    await reaper.transaction.batch([{ method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] }], { undoLabel: 'ReaWebAPI: center track pan' });
     showPan(0); log('Pan centered. Undo is available in REAPER.');
   } finally { ui.pan.disabled = !selectedTrack; }
 }));
@@ -270,7 +270,7 @@ async function readDiagnostics() {
   ui['diagnostic-snapshot'].classList.remove('failed');
   ui['diagnostic-snapshot'].textContent = 'Reading runtime details…';
   try {
-    const [runtime, capabilities] = await Promise.all([reaper.ReaWeb_GetDiagnostics(), reaper.ReaWeb_GetCapabilities()]);
+    const [runtime, capabilities] = await Promise.all([reaper.debug.getDiagnostics(), reaper.system.getCapabilities()]);
     if (request !== diagnosticRequest || ui['diagnostic-panel'].hidden) return;
     const { schemaVersion, reaperVersion, catalogueHash, official, implemented, compatible, partial, missing, available, unavailable } = capabilities.api;
     ui['diagnostic-backend'].textContent = runtime.backend;
@@ -315,7 +315,7 @@ run(async () => {
     for (const control of ['read-track', 'devtools', 'dock', 'diagnostics']) ui[control].disabled = true;
     throw new Error('Load Example.lua from the REAPER Action List to open this demo.');
   }
-  const capabilities = await reaper.ready;
+  const capabilities = await reaper.lifecycle.ready;
   if (capabilities.api?.implemented !== 730 || !capabilities.methods.includes('MIDI_GetAllEvts')) {
     ui.status.textContent = 'Extension update required';
     throw new Error('Install the matching ReaWebAPI extension and restart REAPER to use this demo.');
@@ -327,10 +327,10 @@ run(async () => {
   ui['api-coverage'].textContent = `${capabilities.api.implemented} bound APIs / ${capabilities.api.official} definitions · ${capabilities.api.available} available in this REAPER · ${capabilities.api.reaperVersion} catalogue`;
   if (capabilities.api.unavailable.length)
     log(`${capabilities.api.unavailable.length} APIs require a newer REAPER version. See Runtime diagnostics for their names.`);
-  await reaper.ReaWeb_SetTitle('ReaWebAPI · API Workbench');
-  dispose.push(await reaper.ReaWeb_On('windowstatechange', state => showDockState(state.docked)));
-  dispose.push(await reaper.ReaWeb_On('selectionchange', () => { selectedTrack = null; selectedControls(); list('fx-list', ['Selection changed. Inspect FX to refresh.']); void refresh(); }));
-  dispose.push(await reaper.ReaWeb_On('projectchange', state => {
+  await reaper.window.setTitle('ReaWebAPI · API Workbench');
+  dispose.push(await reaper.events.on('windowstatechange', state => showDockState(state.docked)));
+  dispose.push(await reaper.events.on('selectionchange', () => { selectedTrack = null; selectedControls(); list('fx-list', ['Selection changed. Inspect FX to refresh.']); void refresh(); }));
+  dispose.push(await reaper.events.on('projectchange', state => {
     projectEpoch = state.projectEpoch;
     selectedTrack = null; selectedControls();
     ui['project-name'].textContent = 'Project changed. Read a new snapshot.';

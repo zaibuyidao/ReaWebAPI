@@ -8,6 +8,7 @@
 @public
   reaweb::WindowOptions options;
   std::string entryURI;
+  std::string navigationURI;
   bool isClosed;
 }
 @end
@@ -21,9 +22,13 @@
 }
 - (void)webView:(WKWebView*)webView decidePolicyForNavigationAction:(WKNavigationAction*)action
     decisionHandler:(void (^)(WKNavigationActionPolicy))handler {
-  (void)webView;
+  const std::string uri = action.request.URL.absoluteString.UTF8String ?: "";
   bool allowed = action.targetFrame && action.targetFrame.mainFrame &&
-    reaweb::same_document(action.request.URL.absoluteString.UTF8String ?: "", entryURI);
+    reaweb::same_document(uri, entryURI);
+  const bool fragment = webView.URL && action.navigationType != WKNavigationTypeReload &&
+    uri != navigationURI && reaweb::same_document(uri, navigationURI);
+  if (allowed && !fragment && options.on_reload && options.on_reload()) allowed = false;
+  if (allowed) navigationURI = uri;
   handler(allowed ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
 }
 - (WKWebView*)webView:(WKWebView*)webView createWebViewWithConfiguration:(WKWebViewConfiguration*)configuration
@@ -49,12 +54,72 @@
 }
 @end
 
+@interface ReaWebNativeView : WKWebView <NSDraggingSource> {
+@public
+  bool dropEnabled;
+  bool sourceClosed;
+  NSEvent* lastDragEvent;
+  std::function<void(reaweb::Json)> receiveDrop;
+  std::function<void(reaweb::Json)> dragReply;
+}
+@end
+
+@implementation ReaWebNativeView
+- (NSDragOperation)draggingSession:(NSDraggingSession*)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
+  (void)session; (void)context; return sourceClosed ? NSDragOperationNone : NSDragOperationCopy;
+}
+- (BOOL)ignoreModifierKeysForDraggingSession:(NSDraggingSession*)session { (void)session; return YES; }
+- (void)draggingSession:(NSDraggingSession*)session endedAtPoint:(NSPoint)point operation:(NSDragOperation)operation {
+  (void)session; (void)point;
+  auto reply = std::move(dragReply);
+  if (reply) try { reply({{"result", !sourceClosed && (operation & NSDragOperationCopy) != 0}}); } catch (...) {}
+}
+- (BOOL)acceptsNativeDrop:(id<NSDraggingInfo>)sender {
+  if (!(sender.draggingSourceOperationMask & NSDragOperationCopy)) return NO;
+  auto pasteboard = sender.draggingPasteboard;
+  return [pasteboard canReadObjectForClasses:@[[NSURL class]] options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}] ||
+    [pasteboard availableTypeFromArray:@[NSPasteboardTypeString]] != nil;
+}
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+  if (!dropEnabled) return [super draggingEntered:sender];
+  return [self acceptsNativeDrop:sender] ? NSDragOperationCopy : NSDragOperationNone;
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+  if (!dropEnabled) return [super draggingUpdated:sender];
+  return [self acceptsNativeDrop:sender] ? NSDragOperationCopy : NSDragOperationNone;
+}
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender {
+  return dropEnabled ? [self acceptsNativeDrop:sender] : [super prepareForDragOperation:sender];
+}
+- (void)draggingExited:(id<NSDraggingInfo>)sender { if (!dropEnabled) [super draggingExited:sender]; }
+- (void)concludeDragOperation:(id<NSDraggingInfo>)sender { if (!dropEnabled) [super concludeDragOperation:sender]; }
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+  if (!dropEnabled) return [super performDragOperation:sender];
+  if (sourceClosed || !receiveDrop) return NO;
+  try {
+    auto urls = [sender.draggingPasteboard readObjectsForClasses:@[[NSURL class]] options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    if (urls.count > 256) return NO;
+    reaweb::Json files = reaweb::Json::array();
+    for (NSURL* url in urls) if (url.fileURL) files.push_back(std::string(url.path.UTF8String ?: ""));
+    const std::string text = [sender.draggingPasteboard stringForType:NSPasteboardTypeString].UTF8String ?: "";
+    if (text.size() > reaweb::value_limit || (files.empty() && text.empty())) return NO;
+    auto point = [self convertPoint:sender.draggingLocation fromView:nil];
+    const double zoom = self.pageZoom;
+    receiveDrop({{"files", files}, {"text", text}, {"x", (point.x - self.bounds.origin.x) / zoom},
+      {"y", (self.flipped ? point.y - self.bounds.origin.y : NSMaxY(self.bounds) - point.y) / zoom}});
+    return YES;
+  } catch (const std::exception& error) { NSLog(@"ReaWebAPI drop: %s", error.what()); return NO; }
+}
+@end
+
+
 namespace reaweb {
 namespace {
 NSString* ns(const std::string& text) { return [[NSString alloc] initWithBytes:text.data() length:text.size() encoding:NSUTF8StringEncoding]; }
 class MacWindow final : public Window {
   std::unique_ptr<SwellWindow> window_;
-  WKWebView* webview_;
+  ReaWebNativeView* webview_;
+  id mouse_monitor_;
   ReaWebDelegate* delegate_;
   mutable Json normal_;
   bool maximized_ = false;
@@ -63,6 +128,7 @@ public:
     delegate_ = [ReaWebDelegate new];
     delegate_->options = std::move(options);
     delegate_->entryURI = delegate_->options.url.empty() ? file_uri(delegate_->options.entry) : delegate_->options.url;
+    delegate_->navigationURI = delegate_->entryURI;
     delegate_->isClosed = false;
     auto config = [WKWebViewConfiguration new];
     config.websiteDataStore = data;
@@ -71,12 +137,24 @@ public:
     auto script = [[WKUserScript alloc] initWithSource:ns(delegate_->options.script)
       injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES];
     [config.userContentController addUserScript:script];
-    webview_ = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 860, 640) configuration:config];
+    webview_ = [[ReaWebNativeView alloc] initWithFrame:NSMakeRect(0, 0, 860, 640) configuration:config];
+    webview_->dropEnabled = false; webview_->sourceClosed = false;
+    webview_->receiveDrop = delegate_->options.on_drop;
+    [webview_ registerForDraggedTypes:@[NSPasteboardTypeFileURL, NSPasteboardTypeString]];
+    __weak ReaWebNativeView* weak_view = webview_;
+    mouse_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskLeftMouseDragged handler:^NSEvent*(NSEvent* event) {
+      auto view = weak_view;
+      if (view && event.window == view.window) {
+        const auto point = [view convertPoint:event.locationInWindow fromView:nil];
+        if (NSPointInRect(point, view.bounds)) view->lastDragEvent = event;
+      }
+      return event;
+    }];
     webview_.navigationDelegate = delegate_;
     webview_.UIDelegate = delegate_;
     webview_.inspectable = YES;
     webview_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent);
+    window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent, std::function<void()>{}, delegate_->options.on_close);
     auto content = (__bridge NSView*)GetDlgItem(static_cast<HWND>(window_->handle()), 0);
     webview_.frame = content.bounds;
     [content addSubview:webview_];
@@ -86,6 +164,10 @@ public:
     } else [webview_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:ns(delegate_->options.url)]]];
   }
   ~MacWindow() override {
+    if (mouse_monitor_) [NSEvent removeMonitor:mouse_monitor_];
+    webview_->sourceClosed = true; webview_->dropEnabled = false; webview_->receiveDrop = {};
+    auto drag_reply = std::move(webview_->dragReply);
+    if (drag_reply) try { drag_reply({{"result", false}}); } catch (...) {}
     delegate_->isClosed = true;
     [webview_ stopLoading];
     webview_.navigationDelegate = nil;
@@ -96,6 +178,35 @@ public:
   }
   void evaluate(const std::string& script) override {
     if (!closed()) [webview_ evaluateJavaScript:ns(script) completionHandler:nil];
+  }
+  void set_drop_enabled(bool enabled) override { webview_->dropEnabled = enabled; }
+  void start_drag(const Json& payload, Reply reply) override {
+    if (webview_->dragReply) throw Error("DRAG_BUSY", "A native drag is already active");
+    if (!([NSEvent pressedMouseButtons] & 1) || !webview_->lastDragEvent)
+      throw Error("DRAG_GESTURE_REQUIRED", "Hold the left mouse button in the WebView while starting a drag");
+    NSMutableArray<NSDraggingItem*>* items = [NSMutableArray array];
+    const auto point = [webview_ convertPoint:webview_->lastDragEvent.locationInWindow fromView:nil];
+    if (!payload.at("files").empty()) {
+      for (const auto& value : payload.at("files")) {
+        auto path = ns(value.get<std::string>());
+        auto item = [[NSDraggingItem alloc] initWithPasteboardWriter:[NSURL fileURLWithPath:path]];
+        [item setDraggingFrame:NSMakeRect(point.x, point.y, 32, 32) contents:[[NSWorkspace sharedWorkspace] iconForFile:path]];
+        [items addObject:item];
+      }
+    } else {
+      auto writer = [NSPasteboardItem new];
+      [writer setString:ns(payload.at("text").get<std::string>()) forType:NSPasteboardTypeString];
+      auto item = [[NSDraggingItem alloc] initWithPasteboardWriter:writer];
+      [item setDraggingFrame:NSMakeRect(point.x, point.y, 32, 32) contents:[NSImage imageNamed:NSImageNameMultipleDocuments]];
+      [items addObject:item];
+    }
+    webview_->dragReply = std::move(reply);
+    @try {
+      auto session = [webview_ beginDraggingSessionWithItems:items event:webview_->lastDragEvent source:webview_];
+      if (!session) { webview_->dragReply = {}; throw Error("DRAG_FAILED", "AppKit could not start native drag"); }
+    } @catch (NSException* error) {
+      webview_->dragReply = {}; throw Error("DRAG_FAILED", error.reason.UTF8String ?: "AppKit drag failed");
+    }
   }
   void devtools() override {
     throw Error("INSPECTOR_MENU", "macOS: enable Safari Settings > Advanced > Show features for web developers, then choose Develop > this Mac > REAPER > the tool page.");
@@ -113,6 +224,9 @@ public:
   }
   void focus() override { window_->focus(); [webview_.window makeFirstResponder:webview_]; }
   void set_title(const std::string& title) override { window_->set_title(title); }
+  void set_visible(bool visible) override { window_->set_visible(visible); }
+  Json bounds() const override { return window_->placement(); }
+  void reload() override { [webview_ reload]; }
   bool visible() const override { return window_->visible() && !webview_.hiddenOrHasHiddenAncestor && !webview_.window.miniaturized; }
   bool focused() const override {
     auto responder = webview_.window.firstResponder;
@@ -158,6 +272,11 @@ public:
   }
   void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
     @autoreleasepool {
+      if (method == "ReaWeb_RevealPath") {
+        auto url = [NSURL fileURLWithPath:ns(args.at(0).get<std::string>())];
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[url]];
+        reply({{"result", true}}); return;
+      }
       if (method == "ReaWeb_OpenExternal") {
         const auto url = args[0].get<std::string>(); validate_external_url(url);
         if (![[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:ns(url)]]) throw Error("EXTERNAL_OPEN_FAILED", "The system could not open this link");

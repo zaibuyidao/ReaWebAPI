@@ -10,13 +10,13 @@ INT_PTR SwellWindow::procedure(HWND window, UINT message, WPARAM, LPARAM paramet
   if (message == WM_INITDIALOG) { SetWindowLong(window, GWL_USERDATA, parameter); return TRUE; }
   auto self = reinterpret_cast<SwellWindow*>(GetWindowLong(window, GWL_USERDATA));
   if (!self) return FALSE;
-  if (message == WM_CLOSE) { self->closed_ = true; return TRUE; }
+  if (message == WM_CLOSE) { if (self->close_) self->close_(); else self->closed_ = true; return TRUE; }
   if (message == WM_DESTROY) { self->closed_ = true; self->window_ = nullptr; }
   if (message == WM_SETFOCUS && self->focus_) self->focus_();
   return FALSE;
 }
-SwellWindow::SwellWindow(const std::string& title, void* parent, std::function<void()> focus)
-  : owner_(static_cast<HWND>(parent)), focus_(std::move(focus)) {
+SwellWindow::SwellWindow(const std::string& title, void* parent, std::function<void()> focus, std::function<void()> close)
+  : owner_(static_cast<HWND>(parent)), focus_(std::move(focus)), close_(std::move(close)) {
   window_ = CreateDialogParam(nullptr, MAKEINTRESOURCE(101), static_cast<HWND>(parent), procedure, reinterpret_cast<LPARAM>(this));
   if (!window_) throw std::runtime_error("Cannot create the REAPER WebView container");
   SetWindowText(window_, title.c_str());
@@ -47,6 +47,7 @@ void SwellWindow::focus() {
   if (focus_) focus_();
 }
 void SwellWindow::set_title(const std::string& title) { SetWindowText(window_, title.c_str()); }
+void SwellWindow::set_visible(bool visible) { ShowWindow(window_, visible ? SW_SHOWNOACTIVATE : SW_HIDE); }
 bool SwellWindow::visible() const { return !closed() && IsWindowVisible(window_); }
 bool SwellWindow::focused() const {
   auto focus = GetFocus();

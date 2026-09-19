@@ -1,5 +1,5 @@
 {
-  "name": "reawebapi-modern-starter", "version": "0.1.6", "private": true, "type": "module",
+  "name": "reawebapi-modern-starter", "version": "0.1.7", "private": true, "type": "module",
   "scripts": { "dev": "vite --host 127.0.0.1 --port 5173 --strictPort", "check": "tsc --noEmit", "build": "npm run check && node build.mjs" },
   "devDependencies": { "typescript": "7.0.2", "vite": "8.3.0" },
   "engines": { "node": ">=22.12.0" }

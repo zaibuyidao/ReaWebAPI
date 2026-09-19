@@ -10,6 +10,7 @@
 SDK/
   reaper.d.ts
   reaper-api.generated.d.ts
+  runtime-api.d.ts
   starter/
     Open.lua
     index.html
@@ -18,16 +19,16 @@ SDK/
     jsconfig.json
 ```
 
-这个 JavaScript 模板无需服务器、npm 安装或构建步骤。Lua 调用 `ReaWebOpen` 后即可结束，窗口由扩展管理。页面运行于浏览器环境，不是 Node.js。普通浏览器不提供 `window.reaper`。
+这个 JavaScript 模板无需服务器、npm 安装或构建步骤。Lua 调用 `reaper.ReaWeb_Open` 后即可结束，窗口由扩展管理。页面运行于浏览器环境，不是 Node.js。普通浏览器不提供 `reaper.window.reaper`。
 
-资源使用相对路径，入口采用延迟执行的普通脚本 `<script src="app.js" defer></script>`。使用打包器时，应输出适合本地 HTML 入口的文件，并在各平台 WebView 中验证资源、模块及网络请求。`ReaWebOpen` 只接受本地 `.html` 或 `.htm` 文件，不能直接打开开发服务器网址。
+资源使用相对路径，入口采用延迟执行的普通脚本 `<script src="app.js" defer></script>`。使用打包器时，应输出适合本地 HTML 入口的文件，并在各平台 WebView 中验证资源、模块及网络请求。`reaper.window.open` 只接受本地 `.html` 或 `.htm` 文件，不能直接打开开发服务器网址。
 
-模板的 `jsconfig.json` 开启 JavaScript 类型检查，不生成编译产物，配置含义见 [TypeScript checkJs 文档](https://www.typescriptlang.org/tsconfig/checkJs.html)。使用 TypeScript 时，包含两个 `.d.ts` 文件，并先将 `.ts` 编译为浏览器 JavaScript。SDK 声明的是全局对象，不需要 `import reaper`。
+模板的 `jsconfig.json` 开启 JavaScript 类型检查，不生成编译产物，配置含义见 [TypeScript checkJs 文档](https://www.typescriptlang.org/tsconfig/checkJs.html)。使用 TypeScript 时，包含全部三个 `.d.ts` 文件，并先将 `.ts` 编译为浏览器 JavaScript。SDK 声明的是全局对象，不需要 `import reaper`。
 
 ## 调用约定
 
 ```javascript
-await reaper.ready;
+await reaper.lifecycle.ready;
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) {
   const [ok, name] = await reaper.GetTrackName(track);
@@ -35,7 +36,7 @@ if (track) {
 }
 ```
 
-所有方法均返回 Promise，包括 setter 和无返回值接口。方法会自动等待初次握手，显式等待 `ready` 可以集中处理启动错误。准确签名及返回名称见 [API 参考](api-reference.md)，单位、标志位、参数键和 REAPER 行为见每项的官方链接。
+所有方法均返回 Promise，包括 setter 和无返回值接口。方法会自动等待初次握手，显式等待 `reaper.lifecycle.ready` 可以集中处理启动错误。准确签名及返回名称见 [API 参考](api-reference.md)，单位、标志位、参数键和 REAPER 行为见每项的官方链接。
 
 | 原生 / Lua 概念 | JavaScript 约定 |
 | --- | --- |
@@ -57,7 +58,7 @@ if (track) {
 ## 可用性、工程与句柄
 
 ```javascript
-const { api } = await reaper.ReaWeb_GetCapabilities();
+const { api } = await reaper.system.getCapabilities();
 if (!api.availableMethods.includes('GetTrackName')) {
   throw new Error('当前 REAPER 没有提供 GetTrackName');
 }
@@ -76,7 +77,7 @@ if (project) console.log(await reaper.CountTracks(project));
 ```javascript
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) {
-  await reaper.ReaWeb_Batch([
+  await reaper.transaction.batch([
     { method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] },
     { method: 'SetMediaTrackInfo_Value', args: [track, 'B_MUTE', 0] }
   ], { undoLabel: '居中并取消轨道静音' });
@@ -85,9 +86,9 @@ if (track) {
 
 [批处理契约](host-api.zh-CN.md#批处理与连续参数) 覆盖 173 个已审核标准 API，支持结果引用和 128 项上限，全部 730 项仍可普通调用。批处理不是事务，中途失败不会撤销已经完成的写入，错误中会报告已完成结果。
 
-跨 await 的连续操作可使用 `ReaWeb_WithUndo` 或 `ReaWeb_BeginUndo` / `ReaWeb_EndUndo`；宿主负责重载、关闭、工程变化和 30 秒超时清理，方法范围与批处理相同。原生 Undo 方法仍可单独调用，但调用者须负责配对，不能依赖页面关闭后的 finally 请求。
+跨 await 的连续操作可使用 `reaper.transaction.withUndo` 或 `reaper.transaction.beginUndo` / `reaper.transaction.endUndo`；宿主负责重载、关闭、工程变化和 30 秒超时清理，方法范围与批处理相同。原生 Undo 方法仍可单独调用，但调用者须负责配对，不能依赖页面关闭后的 finally 请求。
 
-滑块可使用 `ReaWeb_SetTrackValueLatest`，合并同一轨道和参数的等待值。它不会自动生成 Undo 手势。有依赖的调用按顺序 `await`，独立读取采用有限并发，不要一次排队数千次。
+滑块可使用 `reaper.audio.setTrackValueLatest`，合并同一轨道和参数的等待值。它不会自动生成 Undo 手势。有依赖的调用按顺序 `await`，独立读取采用有限并发，不要一次排队数千次。
 
 ## 二进制与资源释放
 
@@ -124,7 +125,7 @@ if (accessor) {
 ## 事件、界面和存储
 
 ```javascript
-const stop = await reaper.ReaWeb_On('selectionchange', state => {
+const stop = await reaper.events.on('selectionchange', state => {
   console.log('选中轨道数：', state.count);
 });
 // 界面组件卸载时：
@@ -148,7 +149,7 @@ try {
 }
 ```
 
-`await reaper.ReaWeb_GetDiagnostics()` 可查看后端、加载阶段、队列计数和最近宿主错误。Windows/Linux 可调用 `ReaWeb_DevTools()`，macOS 需在 Safari 开启开发者功能，通过 Develop 菜单检查 REAPER 页面。修改资源后重新打开页面。重载会建立新文档，旧句柄失效。
+`await reaper.debug.getDiagnostics()` 可查看后端、加载阶段、队列计数和最近宿主错误。Windows/Linux 可调用 `reaper.debug.openDevTools()`，macOS 需在 Safari 开启开发者功能，通过 Develop 菜单检查 REAPER 页面。修改资源后重新打开页面。重载会建立新文档，旧句柄失效。
 
 尚未开始的原生请求在 25 秒后过期，客户端另有 30 秒等待保护。原生执行开始后停止排队计时，JavaScript 无法中断已开始的对话框或渲染。不要自动重试超时写入，应先检查状态。限制及错误码见 [宿主接口](host-api.zh-CN.md#错误与限制)。
 
@@ -162,4 +163,4 @@ try {
 
 ## 现代前端与宿主 I/O
 
-Vite/TypeScript、loopback 开发入口、原生本地资源 fetch与 Worker 示例见[前端资源约定](frontend.zh-CN.md)。统一文件读写、剪贴板和外链见[宿主参考](host-api.zh-CN.md#文件与桌面服务)。v0.1.6 专注标准 REAPER API，不提供自定义 Lua RPC 或第三方 API 注册机制。
+Vite/TypeScript、loopback 开发入口、原生本地资源 fetch与 Worker 示例见[前端资源约定](frontend.zh-CN.md)。统一文件读写、剪贴板和外链见[宿主参考](host-api.zh-CN.md#文件与桌面服务)。v0.1.7 专注标准 REAPER API，不提供自定义 Lua RPC 或第三方 API 注册机制。

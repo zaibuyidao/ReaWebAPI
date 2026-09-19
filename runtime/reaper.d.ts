@@ -1,4 +1,5 @@
 /// <reference path="./reaper-api.generated.d.ts" />
+/// <reference path="./runtime-api.d.ts" />
 
 interface MediaTrackHandle {
   readonly type: 'MediaTrack';
@@ -275,55 +276,5 @@ type ReaWebBatchArgs<T extends unknown[]> = { [I in keyof T]: T[I] | ReaWebBatch
 type ReaWebBatchCall = { [M in ReaWebBatchMethod]: { method: M; args: ReaWebBatchArgs<Parameters<ReaWebAPI[M]>> } }[ReaWebBatchMethod];
 interface ReaWebFileInfo { path: string; exists: boolean; type: 'file' | 'directory' | 'other'; size: number | null; }
 interface ReaWebDirectoryEntry extends ReaWebFileInfo { name: string; }
-interface ReaWebAPI {
-  /** Capacity for fixed native output buffers in this document (4096..16777216 bytes). Default 65536.
-   * NeedBig buffers grow through REAPER's allocator automatically. */
-  ReaWeb_SetBufferSize(bytes: number): Promise<number>;
-  /** Resolves after the native protocol handshake. API calls wait for this automatically. */
-  readonly ready: Promise<Readonly<ReaWebCapabilities & { windowId: number; projectEpoch: number }>>;
-  ReaWebOpen(path: string): Promise<number>;
-  ReaWeb_Close(): Promise<boolean>;
-  ReaWeb_DevTools(): Promise<boolean>;
-  ReaWeb_SetDocked(docked: boolean): Promise<boolean>;
-  ReaWeb_IsDocked(): Promise<boolean>;
-  ReaWeb_Focus(): Promise<boolean>;
-  ReaWeb_SetTitle(title: string): Promise<boolean>;
-  /** Default true. False allows REAPER's normal global shortcut policy for this window. */
-  ReaWeb_SetKeyboardCapture(capture: boolean): Promise<boolean>;
-  ReaWeb_GetWindowState(): Promise<ReaWebWindowState>;
-  ReaWeb_GetDiagnostics(): Promise<ReaWebDiagnostics>;
-  ReaWeb_GetCapabilities(): Promise<ReaWebCapabilities>;
-  /** Receives the initial snapshot and coalesced changes. Dispose is idempotent. */
-  ReaWeb_On<K extends keyof ReaWebEvents>(name: K, callback: (state: ReaWebEvents[K]) => void): Promise<() => Promise<void>>;
-  /** 1–128 synchronous calls on the current project. Literal arguments are validated up front;
-   * references are resolved and validated before their call. See capabilities.batchMethods.
-   * BATCH_FAILED includes completed/results/cause; completed writes are not rolled back.
-   */
-  ReaWeb_Batch(calls: ReaWebBatchCall[], options?: { undoLabel?: string }): Promise<unknown[]>;
-  /** Explicitly trust a loopback HTTP server; regular ReaWebOpen stays local-file only. */
-  ReaWeb_OpenDev(url: string): Promise<number>;
-  /** One managed gesture at a time. Ends on close, reload, project change or after 30 seconds.
-   * Does not hold PreventUIRefresh across browser events. Uses the reviewed batch API set. End before batching. */
-  ReaWeb_BeginUndo(label: string): Promise<string>;
-  ReaWeb_EndUndo(token: string): Promise<boolean>;
-  ReaWeb_WithUndo<T>(label: string, callback: () => T | Promise<T>): Promise<T>;
-  /** Files run on the worker, relative to the entry directory. Absolute local paths are allowed. */
-  ReaWeb_ReadFile(path: string, options?: { encoding?: 'utf8' }): Promise<string>;
-  ReaWeb_ReadFile(path: string, options: { encoding: 'binary' }): Promise<Uint8Array>;
-  /** Atomic replacement; overwrite defaults to false. Parent directory must exist. Limit 16 MiB. */
-  ReaWeb_WriteFile(path: string, data: string, options?: { encoding?: 'utf8'; overwrite?: boolean }): Promise<{ path: string; bytes: number }>;
-  ReaWeb_WriteFile(path: string, data: Uint8Array, options: { encoding: 'binary'; overwrite?: boolean }): Promise<{ path: string; bytes: number }>;
-  ReaWeb_Stat(path: string): Promise<ReaWebFileInfo>;
-  ReaWeb_ReadDirectory(path: string): Promise<ReaWebDirectoryEntry[]>;
-  ReaWeb_MakeDirectory(path: string, options?: { recursive?: boolean }): Promise<boolean>;
-  ReaWeb_ClipboardReadText(): Promise<string>;
-  ReaWeb_ClipboardWriteText(text: string): Promise<boolean>;
-  /** Opens http/https/mailto using the operating system; never navigates the privileged page. */
-  ReaWeb_OpenExternal(url: string): Promise<boolean>;
-  /** Explicit coalescing: one in-flight write and the latest waiting value per track/key.
-   * Superseded values settle without being sent. Does not create an Undo gesture.
-   */
-  ReaWeb_SetTrackValueLatest(track: MediaTrackHandle, key: ReaWebContinuousTrackKey, value: number): Promise<{ applied: boolean; superseded: boolean }>;
-}
 declare const reaper: Readonly<ReaWebAPI>;
 interface Window { readonly reaper: Readonly<ReaWebAPI>; }

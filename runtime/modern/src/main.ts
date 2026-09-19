@@ -18,25 +18,25 @@ function action(id: string, run: () => Promise<unknown>) {
 async function main() {
   if (!window.reaper) throw new Error('Open this page with Open.lua or OpenDev.lua in REAPER.');
   const r = window.reaper;
-  await r.ready;
+  await r.lifecycle.ready;
   projectName = await r.GetProjectName(0);
   el('project').textContent = (projectName || 'Unsaved project') + ' · ' + await r.CountTracks(0) + ' tracks';
   action('gain', async () => {
     const track = await r.GetSelectedTrack(0, 0);
     if (!track) throw new Error('Select a track first.');
-    return r.ReaWeb_Batch([{ method: 'SetMediaTrackInfo_Value', args: [track, 'D_VOL', Math.pow(10, -6 / 20)] }],
+    return r.transaction.batch([{ method: 'SetMediaTrackInfo_Value', args: [track, 'D_VOL', Math.pow(10, -6 / 20)] }],
       { undoLabel: 'Set track to −6 dB' });
   });
-  action('save', () => r.ReaWeb_WriteFile('snapshot.json', JSON.stringify({ projectName, saved: new Date().toISOString() }, null, 2), { overwrite: true }));
-  action('read', async () => JSON.parse(await r.ReaWeb_ReadFile('snapshot.json')));
-  action('copy', () => r.ReaWeb_ClipboardWriteText(projectName));
-  action('paste', () => r.ReaWeb_ClipboardReadText());
-  action('docs', () => r.ReaWeb_OpenExternal('https://www.reaper.fm/sdk/reascript/reascripthelp.html'));
-  disposers.push(await r.ReaWeb_On('transportchange', state => {
+  action('save', () => r.fs.writeFile('snapshot.json', JSON.stringify({ projectName, saved: new Date().toISOString() }, null, 2), { overwrite: true }));
+  action('read', async () => JSON.parse(await r.fs.readFile('snapshot.json')));
+  action('copy', () => r.clipboard.writeText(projectName));
+  action('paste', () => r.clipboard.readText());
+  action('docs', () => r.system.openExternal('https://www.reaper.fm/sdk/reascript/reascripthelp.html'));
+  disposers.push(await r.events.on('transportchange', state => {
     if (!state.available) { el('transport').textContent = 'Transport state unavailable'; return; }
     el('transport').textContent = 'State ' + state.state + ' · ' + (state.position ?? 0).toFixed(2) + ' s · ' + state.tempo + ' BPM';
   }));
-  disposers.push(await r.ReaWeb_On('projectchange', () => { el('status').textContent = 'Project changed. Reload this example to refresh the project info.'; }));
+  disposers.push(await r.events.on('projectchange', () => { el('status').textContent = 'Project changed. Reload this example to refresh the project info.'; }));
   const response = await fetch('./data.json');
   if (!response.ok) throw new Error('Resource request failed');
   const data = await response.json();

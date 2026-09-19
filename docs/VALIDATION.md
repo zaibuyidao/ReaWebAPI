@@ -1,3 +1,48 @@
+# v0.1.7 validation — 2026-09-19
+
+| Target | Result |
+| --- | --- |
+| Standard REAPER mirror | 730 definitions/reviewed bindings and all 730 typed native ABI mappings passed; original generated mirror files are unchanged |
+| Windows x64 / MSVC | Release build and all 9 CTest suites passed, including 29 JS cases, 22 Python contracts and the new native audio suite |
+| Linux x86_64 / Ubuntu 24.04 | Release build and all 8 native/Python/HTTP CTest suites passed; JS VM coverage ran on Windows because the local WSL CMake cache selects Windows node.exe |
+| Runtime native coverage | Window geometry/visibility/Docker rejection, lifecycle acknowledgements/wrong tokens/timeouts, async file saving, event invalidation/deltas/save/load, logs and cleanup passed |
+| Audio native coverage | Independent PCM-source fixture checked metadata, channel-interleaved min/max data, incremental peak building, cancelled-source cleanup and error paths; native meter validation checked stale/null handles and linear-to-dB values |
+| WebView2 / mock REAPER | Native resize/position/show/hide, theme, track meter, asynchronous reload/close file persistence, Unicode, multiple windows and dock/undock passed |
+| Runtime Studio / WebView2 | Shipped module App passed initialization, theme application, selected-track/meter display, resize, docking, diagnostics and reload state persistence |
+| Web Runtime v1 | All 17 required/exercised optional groups passed in WebView2 and WebKitGTK, including modules, local fetch, both Workers, Canvas/WebGL, HTTP CORS, WebSocket, persistent storage and cross-App isolation |
+| WebKitGTK embedding/reload | Large message, two windows, reparenting after parent destruction, preserved page state, fragment navigation without cleanup, two successive host-gated reloads and independent close passed |
+| SDK/manifest | Strict TypeScript contract and Vite production build passed; schema/entry checks, SDK links, content and checksum packaging passed |
+| Windows source-only CRLF checkout | Actual Git CRLF checkout plus all modified/new v0.1.7 files preserved every source byte and mtime through offline verify/update. Python: 21 passed, one optional cached-HTML test skipped; no .cache dependency |
+| macOS arm64/x86_64 and Linux aarch64 | Backends and existing CI matrix updated/preserved; not compiled or run locally |
+
+These are local results, not a completed GitHub Actions run. New native dialog calls reuse the checked standard mirror; interactive dialogs, actual decoder formats/waveforms, theme changes and real-project event/Undo effects still require the per-platform REAPER acceptance in [SMOKE_TEST.md](SMOKE_TEST.md). Audio tests use an independent native fixture rather than a real REAPER decoder. The Linux browser runs used WSLg with WEBKIT_DISABLE_DMABUF_RENDERER=1; the extension does not force that setting.
+
+Browser follow-ups caught and fixed a WebKit hash-navigation cleanup regression. Ordinary Runtime log output is also checked not to overwrite the Lua last-host-error value. Track event GUID formatting matches the uppercase standard mirror representation. The old Windows smoke test also had obsolete no-argument CountTracks and null-string enumeration assertions; these now follow the unchanged standard mirror contract. Linux Web Runtime tests now use unique fixture directories so reused WSL process IDs do not collide with previous reports.
+
+Local Windows/Linux platform bundles and the independent SDK are staged under dist/v0.1.7 with revision local-v0.1.7. No commit, push or remote release was performed. A “Published https://github.com/test/repo/…” line printed by the Python release unit test is a mocked publication fixture, not a network publication.
+
+The new App/system/native-drag checks cover five App getters, shared/reopened identity, separate data directories, optional metadata validation, write probes, platform/architecture, native path validation, native drop ordering without replay, callback removal during pending subscriptions, and drag ownership after source closure.
+
+Windows WebView2/OLE integration uses two disposable real browser windows: Unicode file/text copy round trips, actual native paths and Escape cancellation passed. GTK/WebKit integration uses disposable native/browser windows: Unicode file/text round trips in both directions, copy results, coordinates and gesture rejection passed. These do not claim actual REAPER Arrange import acceptance or macOS runtime validation. The Linux Python test target emits GTK widget-cleanup warnings; the native helper completes the tested transfers.
+
+Runtime Studio now displays App metadata/data path/platform/architecture, offers a data-folder button and native drag sources, and shows incoming drop payloads. Type declarations, bilingual behavior docs and the inventory are synchronized.
+
+JavaScript exposes exactly 730 unchanged Mirror functions and thirteen frozen Runtime namespaces (67 methods plus lifecycle.ready). All thirteen namespaces are implemented and runtime.reservedNamespaces is empty. App metadata/data paths, native file/text drag/drop, platform/architecture/file-manager methods and events.off are implemented; debug.info is removed. Eight existing methods were moved to transaction, clipboard and system, with previous namespace paths removed. No flat ReaWeb_* or root ready aliases remain. Namespace/transport regression tests cover window IDs, host errors, subscriptions, batch/Undo, binary/text file helpers and clipboard services. Lua native bootstrap remains ReaWeb_Open; native protocol command names are private to the bridge. The complete inventory is checked against the actual JavaScript surface.
+
+Useful v0.1.7 commands:
+
+```sh
+ctest --test-dir build -C Release --output-on-failure
+python tests/plugin_smoke.py --dll build/Release/reaper_reawebapi-x64.dll --webview
+python tests/plugin_smoke.py --dll build/Release/reaper_reawebapi-x64.dll --webview --studio
+python tests/plugin_smoke.py --dll build/Release/reaper_reawebapi-x64.dll --webview --runtime
+WEBKIT_DISABLE_DMABUF_RENDERER=1 python3 tests/linux_web_runtime.py
+WEBKIT_DISABLE_DMABUF_RENDERER=1 python3 tests/linux_webkit_smoke.py
+python tools/validate_app.py runtime/runtime-demo/app.json
+```
+
+---
+
 # v0.1.6 validation — 2026-09-19
 
 | Target | Result |

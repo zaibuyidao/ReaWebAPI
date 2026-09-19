@@ -18,7 +18,7 @@ REAPER 6.68+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/Jav
 
 退出 REAPER，把扩展放入资源目录的 `UserPlugins/`，再重启。Linux 还需将同架构的 `reawebapi-webview-<arch>` 辅助程序放在 `.so` 旁边。
 
-每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.6.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
+每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.7.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
 
 将平台 ZIP 合并到 REAPER 资源目录，在 Action List 加载 `Scripts/ReaWebAPI/Example/Example.lua`。Demo 提供工程、轨道和 FX 查询，颜色及声像 Undo 操作，以及停靠切换。**Run read-only checks** 执行 10 条检查，覆盖对象句柄、多返回值、GUID、RECT、MIDI 字节和音频数组。选中带 MIDI Item 的轨道可覆盖全部路径，空工程会明确显示跳过项。
 
@@ -33,14 +33,14 @@ REAPER 6.68+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/Jav
 ```lua
 local file = debug.getinfo(1, "S").source:sub(2)
 local directory = file:match("^(.*[/\\])")
-local id = reaper.ReaWebOpen(directory .. "index.html")
+local id = reaper.ReaWeb_Open(directory .. "index.html")
 if id == 0 then reaper.ShowConsoleMsg(reaper.ReaWeb_GetLastError() .. "\n") end
 ```
 
 Lua 提供 `ReaWeb_Close`、`ReaWeb_IsOpen`、`ReaWeb_IsReady`、`ReaWeb_Focus`、`ReaWeb_DevTools`、`ReaWeb_SetDocked`、`ReaWeb_IsDocked` 和 `ReaWeb_GetDiagnostics`，均接收窗口 ID。`SetDocked` 另接收布尔值，返回实际停靠状态。`GetDiagnostics` 返回 JSON。相对路径从 `<资源目录>/Scripts/` 解析，异步加载错误写入 REAPER 控制台。
 
 ```javascript
-await reaper.ready;
+await reaper.lifecycle.ready;
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) {
   const [ok, name] = await reaper.GetTrackName(track);
@@ -50,27 +50,29 @@ const [total, markers, regions] = await reaper.CountProjectMarkers(0);
 const [beat, bar] = await reaper.TimeMap2_timeToBeats(0, await reaper.GetCursorPosition());
 ```
 
-页面无需导入桥接脚本。**REAPER 7.80 的 730 个标准 API 均已绑定原生调用**，参数和返回值按 Lua 签名排列。单值返回标量，多值返回数组，无返回值得到 `undefined`。声明见 [SDK](runtime/reaper-api.generated.d.ts)。较旧 REAPER 缺少的函数会报 `API_UNAVAILABLE`，可通过 `ReaWeb_GetCapabilities().api` 的 `available`、`unavailable` 查询。要使用全部 730 项，请使用 REAPER 7.80 或更新版本。
+页面无需导入桥接脚本。**REAPER 7.80 的 730 个标准 API 均已绑定原生调用**，参数和返回值按 Lua 签名排列。单值返回标量，多值返回数组，无返回值得到 `undefined`。声明见 [SDK](runtime/reaper-api.generated.d.ts)。较旧 REAPER 缺少的函数会报 `API_UNAVAILABLE`，可通过 `reaper.system.getCapabilities().api` 的 `available`、`unavailable` 查询。要使用全部 730 项，请使用 REAPER 7.80 或更新版本。
 
 `0` 或 `null` 表示当前工程，`EnumProjects` 返回的工程句柄可用于其他已打开工程。轨道、Item、Take、包络及资源均使用类型化句柄，不传裸指针。删除对象或重载页面后需重新获取。MIDI 字节使用 `Uint8Array`，音频缓冲区使用 `Float64Array` 或 `number[]`，在 `await` 完成后读取回写数据。GUID 使用字符串，RECT 按官方 Lua 的四个坐标参数展开。
 
 **升级注意：** `GetTrackName` 现在返回 `[ok, name]`，工程和索引参数应按官方签名显式传入。原来的 5 个轨道参数白名单已移除，普通调用支持 REAPER 提供的参数键。
 
-JavaScript 窗口控制方法作用于当前页面，无需窗口 ID。`ReaWebOpen(path)` 从当前 HTML 目录解析相对路径。失败会抛出带 `code`、`message` 和可选 `details` 的错误。工程切换后旧请求会被拒绝，未开始的请求在 25 秒后过期。原生调用开始后会停止排队计时，允许对话框和渲染正常完成。已经开始的调用不能取消，超时后不要自动重试写操作。
+JavaScript 窗口控制方法作用于当前页面，无需窗口 ID。`reaper.window.open(path)` 从当前 HTML 目录解析相对路径。失败会抛出带 `code`、`message` 和可选 `details` 的错误。工程切换后旧请求会被拒绝，未开始的请求在 25 秒后过期。原生调用开始后会停止排队计时，允许对话框和渲染正常完成。已经开始的调用不能取消，超时后不要自动重试写操作。
 
 通用宿主接口：
 
 | 能力 | JavaScript |
 | --- | --- |
-| 就绪、诊断 | `ready`、`ReaWeb_GetDiagnostics()` |
-| 窗口控制 | `ReaWeb_Focus()`、`ReaWeb_SetTitle(title)`、`ReaWeb_GetWindowState()` |
-| 键盘策略 | `ReaWeb_SetKeyboardCapture(boolean)`，默认捕获，关闭后遵循 REAPER 的快捷键规则 |
-| 事件 | `ReaWeb_On(name, callback)`，返回可重复调用的异步取消订阅函数 |
-| 批处理、Undo | `ReaWeb_Batch(calls, { undoLabel })`，每组最多 128 个调用 |
-| 固定输出缓冲区 | `ReaWeb_SetBufferSize(bytes)`，默认 64 KiB，最大 16 MiB |
-| 连续参数 | `ReaWeb_SetTrackValueLatest(track, key, value)`，被合并的等待值返回 `superseded: true` |
+| 就绪、诊断 | `reaper.lifecycle.ready`、`reaper.debug.getDiagnostics()` |
+| 窗口控制 | `reaper.window.focus()`、`reaper.window.setTitle(title)`、`reaper.window.getState()` |
+| 键盘策略 | `reaper.window.setKeyboardCapture(boolean)`，默认捕获，关闭后遵循 REAPER 的快捷键规则 |
+| 事件 | `reaper.events.on(name, callback)`，返回可重复调用的异步取消订阅函数 |
+| 批处理、Undo | `reaper.transaction.batch(calls, { undoLabel })`，每组最多 128 个调用 |
+| 固定输出缓冲区 | `reaper.debug.setBufferSize(bytes)`，默认 64 KiB，最大 16 MiB |
+| 连续参数 | `reaper.audio.setTrackValueLatest(track, key, value)`，被合并的等待值返回 `superseded: true` |
 
 事件包含轨道、Item、Take 选择，以及播放、FX、工程和窗口状态。批处理扩展至 173 个已审核标准 API，支持结果引用、当前工程校验及 Undo/刷新清理。托管 Undo 可跨 await，并由宿主在重载、关闭或超时后结束。新增统一文件、剪贴板和外链接口，以及 TypeScript/Vite loopback 开发入口。详见[宿主参考](docs/host-api.zh-CN.md)、[前端约定](docs/frontend.zh-CN.md)和 [v0.1.6 变更](docs/release-notes.md)。
+
+v0.1.7 固定了 13 个 Runtime 命名空间：`reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`。全部命名空间均已有具体方法，新增 App 身份／数据目录、原生文件／文本拖放、系统信息及 events.off；debug.info 移除，统一使用 log。详见 [Runtime API](docs/runtime-api.zh-CN.md)，运行 `SDK/runtime-demo/Open.lua` 可体验 Runtime Studio。
 
 ## 运行环境
 
@@ -108,3 +110,7 @@ Windows 使用 MSVC x64，配置时加 `-A x64`。macOS 加 `-DCMAKE_OSX_ARCHITE
 推送到默认分支后，Actions 会构建五个平台目标，并按 `CMakeLists.txt` 中的版本发布到 **Releases**。匹配的 `v*` 标签和默认分支上的手动运行也可发布。PR 只构建。已有正式版本不会被覆盖，发布新版时递增版本号。
 
 回归测试已纳入仓库，各平台 CI 必须通过测试才会打包/发布。依赖缓存和构建产物仍不入库。使用 `-DBUILD_TESTING=ON` 配置后，运行 `ctest --test-dir build -C Release --output-on-failure`。第三方依赖见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+
+JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`，不保留 `reaper.ReaWeb_*`、`reaper.ReaWebOpen` 或 `reaper.ready` 兼容入口。Lua 在网页尚未启动时仍通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
+
+[Runtime API 完整清单 / Complete inventory](docs/runtime-api-inventory.md) — 13 implemented namespaces, 67 methods, 1 Promise property.

@@ -32,6 +32,7 @@ void Runtime::fail(Session& session, const std::string& message) {
   log_(message);
 }
 void Runtime::navigate(Session& session) {
+  if (session.window) session.window->set_drop_enabled(false);
   if (undo_owner_ == session.id) finish_undo();
   ++session.generation;
   session.ready = false;
@@ -41,6 +42,10 @@ void Runtime::navigate(Session& session) {
   session.subscriptions.clear();
   session.outstanding = session.output_pending = 0;
   session.capture_keyboard = true;
+  session.audio.clear();
+  session.lifecycle_enabled = false;
+  session.allow_reload = false;
+  session.lifecycle_action.clear(); session.lifecycle_token.clear();
   session.started = Clock::now();
   session.bridge->reset_handles();
 }
@@ -63,6 +68,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     app->id = app_id;
     app->mode = dev_url.empty() ? "app-http" : "dev-http";
     const auto profile = resource_ / "ReaWebAPI" / "Apps" / app_id;
+    app->info = app_info(fs::canonical(entry.parent_path()), profile / "Data", app_id);
     if (dev_url.empty()) {
       app->resources = std::make_unique<WebResources>(entry.parent_path(), profile);
       app->origin = app->resources->origin();
@@ -103,7 +109,20 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
       }
     }, [this, weak](std::string error) {
       if (auto s = weak.lock()) fail(*s, error);
-    }, dock_.parent, [this, weak] { if (auto s = weak.lock()) navigate(*s); }, app->resources ? app->resources->entry_url(entry) : dev_url});
+    }, dock_.parent, [this, weak] { if (auto s = weak.lock()) navigate(*s); }, app->resources ? app->resources->entry_url(entry) : dev_url,
+    [this, id] { close(id); }, [this, id] { return defer_reload(id); },
+    [this, weak](Json payload) {
+      auto s = weak.lock();
+      if (!s || s->closing || !s->ready || !s->subscriptions.count("native-drop")) return;
+      if (payload.contains("document") && payload["document"] != s->document) return;
+      payload.erase("document");
+      // Drops are discrete user actions, not coalesced state invalidations.
+      Work output; output.kind = Work::Encode; output.session = s->id; output.generation = s->generation;
+      output.counted_output = true;
+      output.data = {{"document", s->document}, {"event", "native-drop"}, {"sequence", ++s->event_sequence}, {"data", payload}};
+      if (s->output_pending >= 256 || !worker_.submit(std::move(output))) { fail(*s, "Native drop queue limit exceeded"); return; }
+      ++s->output_pending;
+    }});
   sessions_.emplace(id, session);
   try {
     auto cached = state_cache_.find(session->ident);
@@ -134,6 +153,7 @@ bool Runtime::close(int id) {
   if (undo_owner_ == id) finish_undo();
   auto it = sessions_.find(id);
   if (it == sessions_.end()) return false;
+  if (!it->second->closing && lifecycle(*it->second, "close")) return true;
   if (!it->second->closing) it->second->closing_since = Clock::now();
   it->second->closing = true;
   return true;
@@ -223,11 +243,76 @@ Json Runtime::diagnostics(int id) const {
   result.update({{"version", REAWEB_VERSION}, {"protocol", 1}, {"window", window_state(s)},
     {"stage", s.closing ? "closing" : s.ready ? "ready" : "loading"}, {"documentGeneration", s.generation},
     {"projectEpoch", project_epoch_}, {"pendingCalls", s.outstanding}, {"queuedCalls", s.queue.size()},
-    {"processedCalls", s.processed}, {"lastError", s.last_error}, {"schedulerBudgetMs", 2}});
+    {"processedCalls", s.processed}, {"lastError", s.last_error}, {"schedulerBudgetMs", 2},
+    {"lifecycleAction", s.lifecycle_action}, {"audioJobs", s.audio.size()}, {"recentLogs", s.logs}});
   return result;
 }
 Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   auto& s = *sessions_.at(id);
+  if (method == "ReaWeb_GetAppInfo") return s.app->info;
+  if (method == "ReaWeb_GetPlatform") return runtime_platform();
+  if (method == "ReaWeb_GetArchitecture") return runtime_architecture();
+  if (method == "ReaWeb_GetBounds") {
+    auto bounds = s.window->bounds();
+    if (!bounds.is_object()) throw Error("HOST_UNAVAILABLE", "Window geometry unavailable");
+    bounds["mode"] = is_docked(id) ? "docked" : "floating"; bounds["units"] = "native";
+    return bounds;
+  }
+  if (method == "ReaWeb_SetBounds") {
+    if (is_docked(id)) throw Error("WINDOW_DOCKED", "REAPER controls Docker geometry; undock before setting bounds");
+    if (!args[0].is_object() || args[0].empty()) throw Error("INVALID_ARGUMENT", "Expected window bounds");
+    auto bounds = s.window->bounds();
+    if (!bounds.is_object()) throw Error("HOST_UNAVAILABLE", "Window geometry unavailable");
+    for (const auto& field : args[0].items()) {
+      const bool size = field.key() == "width" || field.key() == "height";
+      if ((!size && field.key() != "x" && field.key() != "y") || !field.value().is_number_integer() ||
+          field.value().get<double>() < (size ? 100 : -1000000) || field.value().get<double>() > (size ? 16384 : 1000000))
+        throw Error("INVALID_ARGUMENT", "Invalid window bounds: dimensions 100..16384; coordinates -1000000..1000000");
+      bounds[field.key()] = field.value();
+    }
+    bounds["maximized"] = false;
+    const bool visible = s.window->visible();
+    s.window->restore_placement(bounds);
+    if (!visible) s.window->set_visible(false);
+    return host_call(id, "ReaWeb_GetBounds", Json::array());
+  }
+  if (method == "ReaWeb_SetVisible") {
+    if (!args[0].is_boolean()) throw Error("INVALID_ARGUMENT", "Expected visibility boolean");
+    s.window->set_visible(args[0].get<bool>());
+    if (args[0].get<bool>() && is_docked(id) && dock_.activate) dock_.activate(s.window->native_handle());
+    return window_state(s);
+  }
+  if (method == "ReaWeb_GetTheme") return theme_colors(host_);
+  if (method == "ReaWeb_GetLogs") return s.logs;
+  if (method == "ReaWeb_Log") {
+    const auto& entry = args[0];
+    if (!entry.is_object() || !entry.contains("message") || !entry["message"].is_string() ||
+        !entry.contains("level") || !entry["level"].is_string()) throw Error("INVALID_ARGUMENT", "Expected a log level and message");
+    const auto level = entry["level"].get<std::string>(), message = entry["message"].get<std::string>();
+    if ((level != "debug" && level != "info" && level != "warn" && level != "error") || message.size() > 16384)
+      throw Error("INVALID_ARGUMENT", "Invalid log level or message larger than 16 KiB");
+    append_log(s, {{"level", level}, {"source", "javascript"}, {"message", message}});
+    const auto line = "[App " + std::to_string(id) + "] [" + level + "] " + message;
+    auto console = host_.native_function ? reinterpret_cast<void (*)(const char*)>(host_.native_function("ShowConsoleMsg")) : nullptr;
+    // Developer output is not a host failure and must not overwrite the Lua
+    // ReaWeb_GetLastError value used to diagnose failed extension operations.
+    if (console) console(("[ReaWebAPI] " + line + "\n").c_str());
+    else log_(line);
+    return true;
+  }
+  if (method == "ReaWeb_LifecycleSubscribe") {
+    if (!args[0].is_boolean()) throw Error("INVALID_ARGUMENT", "Expected a lifecycle subscription boolean");
+    s.lifecycle_enabled = args[0].get<bool>(); return true;
+  }
+  if (method == "ReaWeb_LifecycleComplete") {
+    if (!args[0].is_string() || s.lifecycle_token.empty() || args[0] != s.lifecycle_token)
+      throw Error("LIFECYCLE_STALE", "Cleanup token no longer active");
+    complete_lifecycle(s); return true;
+  }
+  if (method == "ReaWeb_Reload") {
+    if (!lifecycle(s, "reload")) { s.allow_reload = true; s.window->reload(); }
+    return true;
+  }
   if (method == "ReaWeb_GetDiagnostics") return diagnostics(id);
   if (method == "ReaWeb_GetWindowState") return window_state(s);
   if (method == "ReaWeb_Focus") return focus(id);
@@ -268,10 +353,13 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
     throw Error("INVALID_REQUEST", "This host operation requires asynchronous dispatch");
   if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected an event name");
   auto name = args[0].get<std::string>();
-  if (name != "projectchange" && name != "selectionchange" && name != "windowstatechange" &&
-      name != "itemselectionchange" && name != "takeselectionchange" && name != "transportchange" && name != "fxchange")
+  if (std::find(runtime_events().begin(), runtime_events().end(), name) == runtime_events().end())
     throw Error("UNKNOWN_EVENT", "Unknown host event");
-  if (method == "ReaWeb_Unsubscribe") { s.subscriptions.erase(name); s.events.erase(name); return true; }
+  if (method == "ReaWeb_Unsubscribe") {
+    if (name == "native-drop") s.window->set_drop_enabled(false);
+    s.subscriptions.erase(name); s.events.erase(name); return true;
+  }
+  if (name == "native-drop") s.window->set_drop_enabled(true);
   s.subscriptions.insert(name);
   next_observation_ = Clock::now();
   if (name == "windowstatechange") return window_state(s);
@@ -280,7 +368,10 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   if (name == "takeselectionchange") return take_event_;
   if (name == "transportchange") return transport_event_;
   if (name == "fxchange") return fx_event_;
-  return selection_event_;
+  if (name == "selectionchange" || name == "track-selected") return selection_event_;
+  if (name == "theme-changed") return theme_colors(host_);
+  if (extra_events_.count(name)) return extra_events_.at(name);
+  return nullptr;
 }
 void Runtime::finish_undo() {
   if (!undo_owner_) return;
@@ -295,13 +386,20 @@ void Runtime::finish_undo() {
 bool Runtime::start_async(Session& session, const Work& request) {
   const auto method = request.data.at("method").get<std::string>();
   const auto& args = request.data.at("args");
+  if (method == "ReaWeb_AudioFileInfo" || method == "ReaWeb_AudioWaveform") {
+    size_t pending = 0; for (const auto& item : sessions_) pending += item.second->audio.size();
+    if (pending >= 8) throw Error("QUEUE_LIMIT", "At most eight audio jobs may be pending");
+    session.audio.push_back({request, std::make_unique<AudioJob>(host_, session.entry.parent_path(), args, method == "ReaWeb_AudioWaveform")});
+    return true;
+  }
   if (is_file_method(method)) {
     Work file = request; file.kind = Work::File; file.path = session.entry.parent_path(); file.text.clear(); file.counted_output = true;
     if (!worker_.submit(std::move(file))) throw Error("QUEUE_LIMIT", "File operation queue is full");
     ++session.output_pending;
     return true;
   }
-  if (method != "ReaWeb_ClipboardReadText" && method != "ReaWeb_ClipboardWriteText" && method != "ReaWeb_OpenExternal") return false;
+  const bool drag = method == "ReaWeb_DragFiles" || method == "ReaWeb_DragText";
+  if (!drag && method != "ReaWeb_RevealPath" && method != "ReaWeb_ClipboardReadText" && method != "ReaWeb_ClipboardWriteText" && method != "ReaWeb_OpenExternal") return false;
   std::weak_ptr<Session> weak = sessions_.at(session.id);
   auto complete = [this, weak, request](Json result) mutable {
     auto s = weak.lock();
@@ -310,6 +408,24 @@ bool Runtime::start_async(Session& session, const Work& request) {
     response.update(result);
     reply(*s, std::move(request), std::move(response));
   };
+  if (drag) {
+    if (drag_owner_) throw Error("DRAG_BUSY", "A native drag is already active");
+    auto payload = drag_payload(session.entry.parent_path(), method, args);
+    drag_owner_ = session.id;
+    try {
+      session.window->start_drag(payload, [this, owner = session.id, complete = std::move(complete)](Json value) mutable {
+        if (drag_owner_ == owner) drag_owner_ = 0;
+        complete(std::move(value));
+      });
+    } catch (...) { drag_owner_ = 0; throw; }
+    return true;
+  }
+  if (method == "ReaWeb_RevealPath") {
+    if (args.size() != 1) throw Error("INVALID_ARGUMENT", "Expected one local path");
+    auto path = existing_local_path(session.entry.parent_path(), args[0]);
+    session.app->platform->desktop(method, Json::array({path.u8string()}), std::move(complete));
+    return true;
+  }
   {
     if (method == "ReaWeb_ClipboardReadText") {
       if (!args.empty()) throw Error("INVALID_ARGUMENT", "ClipboardReadText takes no arguments");
@@ -324,7 +440,11 @@ bool Runtime::start_async(Session& session, const Work& request) {
   return true;
 }
 void Runtime::reply(Session& session, Work work, Json response) {
-  if (response.contains("error")) session.last_error = response["error"].value("message", "Native error");
+  if (response.contains("error")) {
+    session.last_error = response["error"].value("message", "Native error");
+    append_log(session, {{"level", "error"}, {"source", "native"}, {"message", session.last_error.substr(0, 8192)},
+      {"code", response["error"].value("code", "NATIVE_ERROR")}, {"method", work.data.value("method", "")}, {"requestId", response.value("id", Json())}});
+  }
   work.kind = Work::Encode;
   work.counted_output = true;
   work.data = std::move(response);
@@ -350,10 +470,12 @@ void Runtime::observe(Clock::time_point deadline) {
     selection_index_ = 0; selection_count_ = -1; last_selection_hash_ = 0;
     selection_event_ = nullptr;
     if (loaded) for (auto& item : sessions_) item.second->bridge->reset_handles();
+    if (loaded) for (auto& item : sessions_) emit(*item.second, "project-loaded", {{"projectEpoch", project_epoch_}});
     next_observation_ = Clock::now();
   }
   if (Clock::now() < next_observation_) return;
   const auto changes = host_.change_count ? host_.change_count(project_) : 0;
+  observe_extra(deadline, changes);
   Json next{{"projectEpoch", project_epoch_}, {"changeCount", changes}};
   if (next != project_event_) {
     project_event_ = next;
@@ -364,7 +486,7 @@ void Runtime::observe(Clock::time_point deadline) {
     item_index_ = 0; item_count_ = -1;
   }
   bool wanted = false;
-  for (const auto& item : sessions_) wanted = wanted || item.second->subscriptions.count("selectionchange");
+  for (const auto& item : sessions_) wanted = wanted || item.second->subscriptions.count("selectionchange") || item.second->subscriptions.count("track-selected");
   if (wanted) {
     const auto count = host_.count_selected_tracks(project_);
     if (count != selection_count_ || selection_index_ == 0) {
@@ -380,7 +502,7 @@ void Runtime::observe(Clock::time_point deadline) {
     if (last_selection_hash_ != selection_hash_ || selection_event_.is_null()) {
       last_selection_hash_ = selection_hash_;
       selection_event_ = {{"projectEpoch", project_epoch_}, {"revision", ++selection_revision_}, {"count", count}};
-      for (auto& item : sessions_) emit(*item.second, "selectionchange", selection_event_);
+      for (auto& item : sessions_) { emit(*item.second, "selectionchange", selection_event_); emit(*item.second, "track-selected", selection_event_); }
     }
     selection_index_ = 0;
   }
@@ -389,12 +511,21 @@ void Runtime::observe(Clock::time_point deadline) {
     return false;
   };
   if (host_.event_snapshot) for (const auto* name : {"transportchange", "fxchange"}) {
-    if (!subscribed(name) || Clock::now() >= deadline) continue;
+    bool transport = std::string(name) == "transportchange";
+    if ((!subscribed(name) && !(transport && (subscribed("playback-state-changed") || subscribed("tempo-changed")))) || Clock::now() >= deadline) continue;
     auto state = host_.event_snapshot(name);
     if (!state.is_object()) continue;
     state["projectEpoch"] = project_epoch_;
     if (std::string(name) == "fxchange") state["changeCount"] = changes;
     auto& previous = std::string(name) == "fxchange" ? fx_event_ : transport_event_;
+    if (transport) for (const auto* event : {"playback-state-changed", "tempo-changed"}) {
+      const auto key = std::string(event) == "tempo-changed" ? "tempo" : "state";
+      Json snapshot{{"projectEpoch", project_epoch_}, {"available", state.value("available", false)}};
+      if (state.contains(key)) snapshot[key] = state[key];
+      if (!extra_events_.count(event) || extra_events_[event] != snapshot) {
+        extra_events_[event] = snapshot; for (auto& item : sessions_) emit(*item.second, event, snapshot);
+      }
+    }
     if (state != previous) { previous = state; for (auto& item : sessions_) emit(*item.second, name, state); }
   }
   if (host_.count_selected_items && host_.item_identity && (subscribed("itemselectionchange") || subscribed("takeselectionchange"))) {
@@ -521,7 +652,7 @@ void Runtime::tick() {
       } else {
         if (!s->ready || s->document != document) throw Error("DOCUMENT_STALE", "The bridge document is no longer active");
         const bool project_call = method.rfind("ReaWeb", 0) != 0 || method == "ReaWeb_Batch" ||
-          method == "ReaWeb_BeginUndo";
+          method == "ReaWeb_BeginUndo" || method == "ReaWeb_GetTrackMeter";
         if (project_call && (request.project != project_epoch_ || data.value("project", project_epoch_) != project_epoch_))
           throw Error("PROJECT_CHANGED", "The current project changed. Refresh the tool state before trying again.", {{"projectEpoch", project_epoch_}});
         // Deliver directly before entering a potentially modal native call.
@@ -544,6 +675,20 @@ void Runtime::tick() {
     auto& s = *it->second;
     try {
       s.window->tick();
+      if (!s.lifecycle_action.empty() && Clock::now() >= s.lifecycle_deadline) {
+        append_log(s, {{"level", "warn"}, {"source", "runtime"}, {"message", "Lifecycle cleanup timed out after 2000 ms"}});
+        complete_lifecycle(s);
+      }
+      if (!s.closing && !s.window->closed() && !s.audio.empty() && Clock::now() < deadline) {
+        auto& audio = s.audio.front();
+        std::optional<Json> response;
+        try {
+          if (auto output = audio.job->step()) response = Json{{"id", audio.request.data["id"]},
+            {"document", audio.request.data["document"]}, {"result", *output}};
+        } catch (const Error& error) { response = error_response(audio.request.data, error.code, error.what()); }
+        catch (const std::exception& error) { response = error_response(audio.request.data, "AUDIO_ERROR", error.what()); }
+        if (response) { auto request = std::move(audio.request); s.audio.pop_front(); reply(s, std::move(request), *response); }
+      }
       if (s.closing || s.window->closed()) {
         // Close requests get a bounded chance to flush their reply before destroying the page.
         if (s.closing && !s.window->closed() && s.output_pending && Clock::now() - s.closing_since < std::chrono::milliseconds(250)) { ++it; continue; }
@@ -555,6 +700,7 @@ void Runtime::tick() {
         final_state["pendingCalls"] = final_state["queuedCalls"] = 0;
         if (closed_diagnostics_.size() >= 32) closed_diagnostics_.erase(closed_diagnostics_.begin());
         closed_diagnostics_[s.id] = std::move(final_state);
+        if (drag_owner_ == s.id) drag_owner_ = 0;
         detach(s); it = sessions_.erase(it); continue;
       }
       if (!s.ready && Clock::now() - s.started > std::chrono::seconds(30)) fail(s, "WebView bridge did not become ready within 30 seconds");

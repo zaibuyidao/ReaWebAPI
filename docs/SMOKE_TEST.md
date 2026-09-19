@@ -2,14 +2,14 @@
 
 Run against a disposable REAPER project on each target architecture. CI core tests use a mock REAPER host and do not establish real-host UI compatibility.
 
-- Install one architecture-matching binary in the resource `UserPlugins` directory and restart REAPER. Verify `reaper.APIExists("ReaWebOpen")`.
+- Install one architecture-matching binary in the resource `UserPlugins` directory and restart REAPER. Verify `reaper.APIExists("ReaWeb_Open")`.
 - Load `Example.lua`. Open a page from a path containing spaces, Chinese characters, `#` and `%`.
 - Select a track named `Guitar 吉他 "A"`; click **Get selected track name**. Verify exact text and console output. Clear selection and check the empty state.
 - Open three windows while transport plays. Move/resize, type into an HTML input, and use REAPER controls. Closing any window must not stop transport or close REAPER.
 - From Inspector, retain a track handle, delete that track, then call `GetTrackName` with the old handle. Expect `STALE_HANDLE`. Repeat after switching project tabs.
 - Reload the page with requests pending. Old responses must not settle new-page requests.
 - Open Inspector and verify `console.log`. On macOS use Safari Develop; Windows/Linux support the demo button.
-- Open another HTML tool with `ReaWebOpen`. Verify that windows in one App directory share persistent storage and different directories have isolated localStorage, cookies and IndexedDB profiles.
+- Open another HTML tool with `reaper.window.open`. Verify that windows in one App directory share persistent storage and different directories have isolated localStorage, cookies and IndexedDB profiles.
 - Close a window immediately during browser initialization, reopen it, then exit REAPER with several windows open. Check for crashes and surviving application windows.
 - On Windows test a machine without WebView2 Runtime. Lua receives an error/console diagnostic without crashing REAPER; retry after installing the runtime.
 - Test a missing entry file, remote URL, unknown API, forged handle and oversized message. No arbitrary native function or external navigation should execute.
@@ -21,3 +21,26 @@ macOS filesystem placement and programmatic Inspector differences are documented
 - Keep the window visible for animation checks, then dock/undock and resize: viewport dimensions must follow the native window and frames must resume. Check optional Workers, network and GPU capabilities on the target environment.
 - Exercise item/take selection, transport and FX events; large MIDI payloads; batched/managed Undo cleanup on errors, close and project switch; file/clipboard/external-link helpers; production and Vite HMR. Confirm Undo/redo on a disposable real project.
 - On macOS verify the localhost entry against the actual REAPER bundle's ATS policy. On Linux verify the default renderer and consult the Web Runtime document if WSLg/DMA-BUF stalls frames.
+
+
+## v0.1.7 Runtime and audio acceptance
+
+- Load SDK/runtime-demo/Open.lua. Confirm theme colors, selected-track name, diagnostics, floating resize and dock/undock; hiding/showing must affect only this App container. Docked geometry setters should report WINDOW_DOCKED.
+- Register asynchronous before-close/before-reload handlers that save a settings file, plus cleanup that terminates a Worker and destroys an owned audio accessor. Trigger the OS close button, Lua close API, SDK reload and browser reload. Reopen and inspect the saved file; no listener should run twice for one transition. A never-resolving callback must time out after approximately two seconds without blocking REAPER indefinitely.
+- Change only the URL fragment with listeners registered. The page, handles and pending operations must remain alive, without a cleanup notification. Reload twice consecutively and verify that both reloads wait for cleanup.
+- Add/delete/select tracks, edit Items/Takes, play/pause/stop, change tempo, edit markers/regions and FX parameters, load a project, save it, and use Save As. Verify the documented event payloads, no initial false added-track history, and cancellation on reload/close. Undo serialization alone must not report a saved project.
+- Change REAPER's theme and verify CSS variables update. Dispose theme.apply and confirm prior inline colors return. Test JS uncaught errors, rejected Promises and invalid Native calls; inspect recentLogs for useful diagnostics.
+- Use native dialogs to open Unicode paths, select a folder, cancel, and choose a save destination with filters. Choosing a path must not create the file until the App explicitly writes it.
+- Open mono/stereo/multichannel WAV, FLAC and a compressed format supported by the installed REAPER. Compare sample rate, duration, channels and meaningful bit depth with REAPER. Draw a known test tone and silence from min/max waveform arrays; check channel ordering and a partial time range. Export JSON and compare it with the displayed data.
+- Try an unsupported/corrupt file, an empty range and out-of-bounds options. No fabricated waveform or leaked PCM source should remain. Close/reload while a long waveform builds; the source and pending request must be cleaned up. Slow decoder calls may still occupy the main thread.
+- During playback compare track meter channels with REAPER, including silence, multichannel tracks and a deleted/stale track handle. The API is a sampled peak reading, not a streaming or loudness analyzer.
+- Validate a minimal manifest with the distributed tool. Reject a missing entry, absolute/parent-traversal path and a symlink escaping its App directory. Confirm an old App without a manifest still launches normally.
+
+### App, system and native drag additions
+
+- Check all five App getters with and without app.json; two windows from one entry directory must share ID/data, while another App directory gets its own data. Close/reopen, restart, rename and read-only data-directory cases should follow the documented identity/error rules. A writable probe runs at App creation; no probe file should remain.
+- Runtime Studio shows metadata, platform and process architecture. Reveal a file and a folder in Explorer/Finder/the Linux file manager (including Linux ShowItems fallback).
+- Choose audio first, then hold and drag its button into a disposable REAPER Arrange project. Confirm one native copy operation and Undo the imported Item; source files remain. Drag the App-name text to a native text editor. Escape and an incompatible target should resolve false.
+- Drag standard native files/text from OS and REAPER into Studio, including Unicode paths and multiple files. Confirm files/text/x/y, no initial replay, and no duplicate notification after off/on or reload. REAPER proprietary drag formats are outside this contract.
+- Use events.off with the same callback reference, duplicate registrations and an absent callback. Check no debug.info or lowercase dragdrop alias exists.
+- Optional automated native checks: build the Windows `windows_native_drag` target and run it from the build directory; on Linux run `WEBKIT_DISABLE_DMABUF_RENDERER=1 python3 tests/linux_native_drag.py` (PyGObject GTK 3, libXtst and X11 needed). These create temporary windows and restore the pointer afterward. They are deliberately excluded from unattended CTest. macOS requires real REAPER/AppKit testing.

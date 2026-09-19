@@ -106,9 +106,9 @@ if (window.reawebProbeEndpoints?.websocket) await check('WebSocket round-trip', 
   })); } finally { socket.close(); }
 });
 await check('REAPER mirror / main page bridge', true, async () => {
-  await reaper.ready;
+  await reaper.lifecycle.ready;
   report.reaperVersion = await reaper.GetAppVersion();
-  report.runtime = (await reaper.ReaWeb_GetCapabilities()).webRuntime;
+  report.runtime = (await reaper.system.getCapabilities()).webRuntime;
   assert(report.runtime?.contract === 1 && report.runtime.origin === location.origin);
 });
 report.passed = report.checks.filter(check => check.required).every(check => check.ok);

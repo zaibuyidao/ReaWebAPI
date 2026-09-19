@@ -21,9 +21,13 @@ struct WindowOptions {
   void* parent = nullptr;
   std::function<void()> on_navigation;
   std::string url;
+  std::function<void()> on_close;
+  std::function<bool()> on_reload;
+  std::function<void(Json)> on_drop;
 };
 class Window {
 public:
+  using Reply = std::function<void(Json)>;
   virtual ~Window() = default;
   virtual void evaluate(const std::string& script) = 0;
   virtual void devtools() = 0;
@@ -39,6 +43,11 @@ public:
   virtual bool focused() const { return false; }
   virtual Json placement() const { return nullptr; }
   virtual void restore_placement(const Json&) {}
+  virtual Json bounds() const { return placement(); }
+  virtual void set_visible(bool) { throw Error("HOST_UNAVAILABLE", "Window visibility control unavailable"); }
+  virtual void reload() { evaluate("window.location.reload();"); }
+  virtual void set_drop_enabled(bool enabled) { if (enabled) throw Error("HOST_UNAVAILABLE", "Native drop unavailable"); }
+  virtual void start_drag(const Json&, Reply) { throw Error("HOST_UNAVAILABLE", "Native drag unavailable"); }
   virtual Json diagnostics() const { return {{"backend", "unknown"}}; }
 };
 class Platform {

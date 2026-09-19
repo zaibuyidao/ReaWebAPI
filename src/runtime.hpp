@@ -2,6 +2,7 @@
 #include "platform.hpp"
 #include "worker.hpp"
 #include "web_resources.hpp"
+#include "runtime_services.hpp"
 #include <deque>
 #include <set>
 #include <thread>
@@ -26,6 +27,7 @@ public:
 private:
   struct App {
     std::string id, origin, mode;
+    Json info;
     std::unique_ptr<WebResources> resources;
     std::unique_ptr<Platform> platform;
   };
@@ -48,6 +50,12 @@ private:
     bool ready = false, capture_keyboard = true;
     bool closing = false;
     bool failed = false;
+    bool lifecycle_enabled = false, allow_reload = false;
+    std::string lifecycle_action, lifecycle_token;
+    Clock::time_point lifecycle_deadline;
+    Json logs = Json::array();
+    struct Audio { Work request; std::unique_ptr<AudioJob> job; };
+    std::deque<Audio> audio;
   };
   Host host_;
   DockApi dock_;
@@ -61,6 +69,7 @@ private:
   int cursor_ = 0;
   Worker worker_;
   int undo_owner_ = 0;
+  int drag_owner_ = 0;
   uint64_t undo_sequence_ = 0;
   std::string undo_token_, undo_label_;
   void* undo_project_ = nullptr;
@@ -77,6 +86,15 @@ private:
   int item_index_ = 0, item_count_ = -1, take_count_ = 0;
   uint64_t item_hash_ = 0, take_hash_ = 0, last_item_hash_ = 0, last_take_hash_ = 0;
   uint64_t item_revision_ = 0, take_revision_ = 0;
+  std::map<std::string, Json> extra_events_;
+  std::map<std::string, uint64_t> extra_revisions_;
+  std::vector<std::string> track_scan_, last_tracks_;
+  int track_scan_count_ = -1, extra_change_ = -1;
+  uint64_t extra_epoch_ = 0, track_revision_ = 0;
+  bool tracks_initialized_ = false;
+  Json saved_project_state_;
+  Clock::time_point next_theme_ = Clock::now();
+  uint64_t lifecycle_sequence_ = 0;
   bool ticking_ = false;
   std::thread::id main_thread_;
   void check_thread() const;
@@ -91,6 +109,11 @@ private:
   void reply(Session& session, Work work, Json response);
   void emit(Session& session, const std::string& name, Json data);
   void observe(Clock::time_point deadline);
+  void observe_extra(Clock::time_point deadline, int changes);
+  bool lifecycle(Session& session, const std::string& action);
+  bool defer_reload(int id);
+  void complete_lifecycle(Session& session);
+  void append_log(Session& session, Json entry);
   void persist(Session& session, bool force = false);
   void fail(Session& session, const std::string& message);
 };

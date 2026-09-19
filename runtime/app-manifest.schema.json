@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReaWebAPI App Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "entry"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?$" },
+    "author": { "type": "string", "maxLength": 256 },
+    "entry": { "type": "string", "minLength": 1, "maxLength": 4096,
+      "description": "Existing .html/.htm path relative to this manifest. Forward slashes only; absolute paths, parent traversal, and links outside the App directory are rejected by validate_app.py." }
+  }
+}

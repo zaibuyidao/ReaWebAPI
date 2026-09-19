@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ReaWebAPI Runtime Studio</title>
+<link rel="stylesheet" href="style.css">
+<header><span>REAWEBAPI / 0.1.7</span><h1>Runtime Studio</h1><p>Explore an audio file and the current REAPER session.</p></header>
+<main>
+  <section><h2>Audio file</h2><div class="buttons"><button id="open">Open audio</button><button id="export" disabled>Export waveform JSON</button></div>
+    <p id="file">Choose a file to read its metadata and waveform.</p><canvas id="wave" width="1200" height="240" aria-label="Audio waveform"></canvas></section>
+  <section><h2>REAPER session</h2><p id="track">No track selected</p><button id="meter">Read track meter</button><pre id="levels">Peak readings appear here.</pre><p id="event">Waiting for host events…</p></section>
+  <section><h2>App and native drag/drop</h2><pre id="app-info">Reading App information…</pre><div class="buttons"><button id="data-folder">Show data folder</button><button id="drag-file" disabled>Drag selected audio out</button><button id="drag-text">Drag App name out</button></div><p>Hold and drag a button to another application. Drop files or text anywhere in this window to inspect them.</p><pre id="drop">No native drop yet.</pre></section>
+  <section><h2>Window and diagnostics</h2><div class="buttons"><button id="resize">Resize to 900 × 760</button><button id="dock">Toggle Docker</button><button id="reload">Reload</button><button id="diagnostics">Diagnostics</button></div><pre id="status" role="status">Connecting to REAPER…</pre></section>
+</main>
+<footer>Uses native REAPER APIs. File analysis does not edit your project.</footer>
+<script type="module" src="app.js"></script>
+</html>

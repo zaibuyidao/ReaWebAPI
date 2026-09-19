@@ -84,7 +84,7 @@ try:
     send(dict(id=1, op='open', uri=page.as_uri(), script=script))
     geometry(1, parents[0])
     receive_until(lambda: (1, 'CountTracks', [0]) in results)
-    send(dict(id=1, op='eval', script='reaper.ReaWeb_WriteFile("large.txt", "x".repeat(100000));'))
+    send(dict(id=1, op='eval', script='reaper.fs.writeFile("large.txt", "x".repeat(100000));'))
     receive_until(lambda: any(row[1] == 'ReaWeb_WriteFile' and len(row[2][1]) == 100000 for row in results))
     navigations = sum(row[1] == 'navigating' for row in results)
     send(dict(id=1, op='eval', script='location.hash="fragment"; reaper.CountSelectedTracks(42);'))
@@ -103,17 +103,25 @@ try:
     send(dict(id=1, op='eval', script='reaper.CountSelectedTracks(window.token === "kept" ? 0 : 999);'))
     receive_until(lambda: (1, 'CountSelectedTracks', [0]) in results)
     assert set(first_children).issubset(children(parents[1])), 'WebKit was not reparented'
-    send(dict(id=2, op='open', uri=page.as_uri(), script=script))
+    send(dict(id=2, op='open', uri=page.as_uri(), script=script, lifecycleReload=True))
     geometry(2, parents[0])
     receive_until(lambda: (2, 'CountTracks', [0]) in results)
     send(dict(id=1, op='close'))
     send(dict(id=2, op='eval', script='reaper.GetTrack(0, 0);'))
     receive_until(lambda: (2, 'GetTrack', [0, 0]) in results)
     hellos = sum(row[1] == '__reawebHello' for row in results)
-    send(dict(id=2, op='eval', script='location.reload();'))
-    receive_until(lambda: sum(row[1] == '__reawebHello' for row in results) > hellos)
+    send(dict(id=2, op='eval', script='location.hash="fragment"; reaper.CountSelectedTracks(43);'))
+    receive_until(lambda: (2, 'CountSelectedTracks', [43]) in results)
+    assert not any(row[1] == 'reload-request' for row in results), 'Fragment triggered cleanup'
+    for attempt in (1, 2):
+        send(dict(id=2, op='eval', script='location.reload();'))
+        receive_until(lambda: sum(row[1] == 'reload-request' for row in results) == attempt)
+        assert sum(row[1] == '__reawebHello' for row in results) == hellos, 'Reload bypassed host cleanup'
+        send(dict(id=2, op='reload'))
+        receive_until(lambda: sum(row[1] == '__reawebHello' for row in results) > hellos)
+        hellos += 1
     send(dict(id=2, op='close'))
-    print('WebKitGTK: JS round-trip, two windows, docking after old parent destruction, preserved page state and independent close passed')
+    print('WebKitGTK: JS round-trip, two windows, docking after old parent destruction, preserved page state, two host-gated reloads and independent close passed')
 finally:
     parent.close()
     deadline = time.monotonic() + 2

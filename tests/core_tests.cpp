@@ -170,14 +170,21 @@ int main() {
     CHECK(batch["error"]["details"]["completed"] == 1 && batch["error"]["details"]["rolledBack"] == false);
     CHECK(ended == 2 && began == 2 && refresh == 0 && updates == 2);
     CHECK(f.call("ReaWeb_Batch", {Json::array({{{"method", "ReaWeb_Close"}, {"args", Json::array()}}})})["error"]["code"] == "INVALID_ARGUMENT");
-    CHECK(f.call("ReaWebOpen", {"Other/index.html"})["result"] == 7);
+    CHECK(f.call("ReaWeb_Open", {"Other/index.html"})["result"] == 7);
+    CHECK(f.call("ReaWeb_Open", {42})["error"]["code"] == "INVALID_ARGUMENT");
+    CHECK(f.call("ReaWebOpen", {"Other/index.html"})["error"]["code"] == "UNKNOWN_API");
     f.call("ReaWeb_DevTools"); f.call("ReaWeb_Close");
     CHECK(f.inspected && f.closed);
     CHECK(f.call("ReaWeb_SetDocked", {true})["result"] == true);
     CHECK(f.call("ReaWeb_IsDocked")["result"] == true);
     CHECK(f.call("ReaWeb_SetDocked", {false})["result"] == false);
     CHECK(f.call("ReaWeb_SetDocked", {1})["error"]["code"] == "INVALID_ARGUMENT");
-    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["methods"].size() == 756);
+    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["methods"].size() == 774);
+    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["contract"] == 2);
+    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["namespaces"] ==
+      Json({"window", "theme", "dialog", "events", "lifecycle", "debug", "fs", "audio",
+            "clipboard", "dragDrop", "app", "system", "transaction"}));
+    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["reservedNamespaces"] == Json::array());
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["version"] == REAWEB_VERSION);
     CHECK(same_document("file:///a/index.html#x", "file:///a/index.html"));
     CHECK(!same_document("file:///a/evil.html", "file:///a/index.html"));
