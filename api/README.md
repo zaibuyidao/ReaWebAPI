@@ -66,19 +66,19 @@ Every C argument and Lua input/output needs exactly one mapping. Types, lengths,
 - GUIDs use `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}` strings. RECTs expand into the Lua coordinate arguments. Nullable native strings and GUIDs resolve to `null`.
 - Integers are checked against their C ABI range. `size_t` also respects JavaScript's safe integer limit. Ordinary scalar floating-point arguments must be finite.
 
-`NeedBig` buffers grow through REAPER's `realloc_cmd_register_buf` and are released after copying the results. Fixed buffers default to 64 KiB. `ReaWeb_SetBufferSize(bytes)` adjusts them from 4 KiB to 16 MiB. MIDI event readers can grow and retry using the size reported by REAPER. Individual strings/binary results are capped at 16 MiB, sample arrays at 1,048,576 doubles, and JSON messages at 64 MiB. Oversized results fail explicitly instead of silently truncating.
+`NeedBig` buffers grow through REAPER's `realloc_cmd_register_buf` and are released after copying the results. Fixed buffers default to 64 KiB. `reaper.debug.setBufferSize(bytes)` adjusts them from 4 KiB to 16 MiB. MIDI event readers can grow and retry using the size reported by REAPER. Individual strings/binary results are capped at 16 MiB, sample arrays at 1,048,576 doubles, and JSON messages at 64 MiB. Oversized results fail explicitly instead of silently truncating.
 
-`ReaWeb_Batch` retains prevalidators for the nine track APIs listed in the SDK. Other APIs use ordinary async calls. The queue deadline applies until native execution starts, not while waiting for a dialog or render to finish. If manually opening Undo/UI refresh scopes across asynchronous calls, pair their end calls in `try/finally`.
+`reaper.transaction.batch` supports the 173 reviewed synchronous APIs listed in `ReaWebBatchMethod`. Other APIs use individual async calls. The queue deadline applies until native execution starts, not while waiting for a dialog or render to finish. If manually opening Undo/UI refresh scopes across asynchronous calls, pair their end calls in `try/finally`.
 
 ## Availability and verification
 
-`ReaWeb_GetCapabilities().api.implemented` counts bindings compiled into the extension. `available` counts functions resolved in the running REAPER. `unavailable` lists host functions that are missing and will reject with `API_UNAVAILABLE`. Older REAPER versions keep working for their existing APIs. All functions in this catalogue require REAPER 7.80 or newer.
+`(await reaper.system.getCapabilities()).api.implemented` counts bindings compiled into the extension. `available` counts functions resolved in the running REAPER. `unavailable` lists host functions that are missing and will reject with `API_UNAVAILABLE`. Complete catalogue availability requires REAPER 7.80 or newer.
 
 Compilation verifies ABI types and complete registration. Development checks include 730 harmless mocked native calls, JS binary/array tests and the demo in real WebViews. Mocked calls do not mean every mutating API has been exercised in a real REAPER project. Releases still need real REAPER regression testing on each platform.
 
 The demo's **Run read-only checks** covers ten paths without project edits. Accessors are released in `finally`. Empty projects show skips. Color, pan and cursor writes require their respective button clicks.
 
-The extension embeds the schema projection, native calls and JavaScript methods. No runtime JSON installation or network access is needed. ReaPack remains seven native files under `extension/` and the root `ReaWebAPI.ext`.
+The extension embeds the schema projection, native calls and JavaScript methods. The ReaPack package contains seven native files under `extension/`, `ReaWebAPI.ext` and license notices.
 
 ## Exchange inputs
 

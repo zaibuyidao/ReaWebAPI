@@ -1,4 +1,4 @@
-/** ReaWebAPI Runtime contract 2 (v0.1.7). REAPER mirror names are unchanged. */
+/** ReaWebAPI Runtime contract 2. Standard REAPER APIs use their original names. */
 type ReaWebDispose = () => Promise<void>;
 type ReaWebPlatform = 'windows' | 'macos' | 'linux';
 /** Architecture of the running extension process (including under emulation). */
@@ -58,7 +58,7 @@ type ReaWebRuntimeNamespace = 'window' | 'theme' | 'dialog' | 'events' | 'lifecy
   | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction';
 interface ReaWebRuntimeCapabilities {
   contract: 2; namespaces: ReaWebRuntimeNamespace[]; cleanupTimeoutMs: number;
-  /** Empty in v0.1.7: all thirteen namespaces provide implemented methods. */
+  /** Reserved Runtime namespace identifiers. */
   reservedNamespaces: ReaWebRuntimeNamespace[];
   dragDrop: { maxFiles: number; maxTextBytes: number; effect: 'copy' };
   audio: { maxChannels: number; maxWaveformPoints: number; maxPendingJobs: number };

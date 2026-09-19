@@ -132,9 +132,9 @@ const stop = await reaper.events.on('selectionchange', state => {
 await stop();
 ```
 
-Subscriptions deliver an initial snapshot and coalesced changes. Project and selection checks run about every 100 ms. These are UI refresh signals, not an edit history or sample clock. Catch failures inside asynchronous callbacks. Dispose subscriptions when a component unmounts. Page closure clears the document's subscriptions.
+Subscriptions deliver an initial snapshot and coalesced changes. Project changes and native track-selection notifications are checked on each main-thread tick, with a 100 ms selection fallback for silent edits. These are UI refresh signals, not an edit history or sample clock. Catch failures inside asynchronous callbacks. Dispose subscriptions when a component unmounts. Page closure clears the document's subscriptions.
 
-Docking preserves page state. Browser profiles are isolated by App directory; windows in the same directory share storage. Use the [Web Runtime contract](frontend.md) for origin persistence and migration rules. Persist GUIDs or tool settings rather than object handles, and resolve persisted references against the appropriate project on the next run. Browser storage and network behavior follow the platform WebView. ReaWebAPI does not add Node.js filesystem or shell APIs.
+Docking preserves page state. Browser profiles are isolated by App directory; windows in the same directory share storage. Use the [Web Runtime contract](frontend.md) for origin persistence and storage rules. Persist GUIDs or tool settings rather than object handles, and resolve persisted references against the appropriate project on the next run. Browser storage and network behavior follow the platform WebView. ReaWebAPI does not add Node.js filesystem or shell APIs.
 
 ## Errors and debugging
 
@@ -159,8 +159,8 @@ Ship the Lua launcher, HTML, built JavaScript, CSS and required assets, preservi
 
 State your minimum REAPER and ReaWebAPI versions. Feature-detect required methods and explain missing dependencies in the UI. Test empty projects, missing selection, Unicode paths, deleted objects, project switches, docking, repeated open/close and each supported OS. Use the larger bundled Demo for bridge diagnostics. A passing simulated ABI test is not proof of all native side effects on real projects.
 
-The dedicated `ReaWebAPI-ReaPack-v<version>.zip` remains the extension payload only: seven native files in `extension/` plus `ReaWebAPI.ext`. Publish your own tool's pages and Lua entry separately. The SDK ZIP contains development materials and does not replace the platform runtime download.
+`ReaWebAPI-ReaPack-v<version>.zip` contains seven native files in `extension/`, `ReaWebAPI.ext` and license notices. Publish your tool's pages and Lua entry separately. The SDK ZIP contains development materials.
 
 ## Modern frontend and host I/O
 
-See the [frontend contract](frontend.md) for Vite/TypeScript, loopback development, native local-resource fetch and Workers. The [host reference](host-api.md#files-and-desktop-services) covers common file, clipboard and external-link APIs. v0.1.8 focuses on standard REAPER APIs; custom Lua RPC and third-party registration are outside its scope.
+See the [frontend contract](frontend.md) for Vite/TypeScript, loopback development, native local-resource fetch and Workers. The [host reference](host-api.md#files-and-desktop-services) covers common file, clipboard and external-link APIs.

@@ -2,6 +2,7 @@
 const el = id => document.getElementById(id);
 let waveform = null;
 let selectedAudioPath = null, appName = 'Runtime Studio';
+let trackRevision = 0;
 const showError = error => { el('status').textContent = `${error.code || 'ERROR'}: ${error.message}`; };
 const action = (id, fn) => el(id).addEventListener('click', () => Promise.resolve().then(fn).catch(showError));
 function draw() {
@@ -21,8 +22,10 @@ function draw() {
   }
 }
 async function selectedTrack() {
+  const revision = ++trackRevision;
   const track = await reaper.GetSelectedTrack(0, 0);
-  el('track').textContent = track ? (await reaper.GetTrackName(track))[1] : 'No track selected';
+  const name = track ? (await reaper.GetTrackName(track))[1] : 'No track selected';
+  if (revision === trackRevision) el('track').textContent = name;
   return track;
 }
 action('open', async () => {

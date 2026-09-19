@@ -16,11 +16,15 @@ std::string last_error;
 std::vector<std::pair<std::string, void*>> registrations;
 std::atomic<uint64_t> project_generation{0};
 std::atomic<uint64_t> marker_revision{0}, fx_revision{0}, save_revision{0};
+std::atomic<uint64_t> selection_revision{0};
 class EventSurface final : public IReaperControlSurface {
 public:
   const char* GetTypeString() override { return "REAWEBAPI"; }
   const char* GetDescString() override { return "ReaWebAPI event observer"; }
   const char* GetConfigString() override { return ""; }
+  void SetSurfaceSelected(MediaTrack*, bool) override { ++selection_revision; }
+  void OnTrackSelection(MediaTrack*) override { ++selection_revision; }
+  void SetTrackListChange() override { ++selection_revision; }
   int Extended(int call, void*, void*, void*) override {
     // A callback may originate outside the UI thread. Only publish counters;
     // Runtime reads host state and dispatches JavaScript on the main thread.
@@ -176,7 +180,12 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
         return std::string(text);
       };
     }
-    host.event_revision = [](const std::string& name) { return name == "marker-changed" ? marker_revision.load() : fx_revision.load(); };
+    host.event_revision = [](const std::string& name) {
+      if (name == "track-selected") return selection_revision.load();
+      if (name == "marker-changed") return marker_revision.load();
+      if (name == "fx-changed") return fx_revision.load();
+      return uint64_t{0};
+    };
     auto dirty = reinterpret_cast<int (*)(ReaProject*)>(get_function("IsProjectDirty"));
     if (dirty) host.project_save_state = [enum_projects, dirty] {
       char name[32768]{}; auto project = enum_projects(-1, name, sizeof(name));

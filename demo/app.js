@@ -3,6 +3,7 @@ const ui = Object.fromEntries(['status', 'track-count', 'track-name', 'read-trac
 const events = [], dispose = [];
 for (const id of ['diagnostic-panel', 'refresh-diagnostics', 'diagnostic-backend', 'diagnostic-stage', 'diagnostic-api', 'diagnostic-queue', 'diagnostic-snapshot', 'diagnostic-details']) ui[id] = document.getElementById(id);
 let selectedTrack = null, refreshWanted = false, refreshing = false, dockBusy = false;
+let selectionRevision = 0, colorRevision = 0;
 let pendingPan = Promise.resolve();
 let projectEpoch = 0, colorBusy = false;
 const busy = new Set();
@@ -40,29 +41,43 @@ function showPan(value) {
   ui.pan.value = value;
   ui['pan-value'].textContent = Number(value).toFixed(2);
 }
-async function refresh() {
+async function refresh(invalidate = false) {
+  if (invalidate) {
+    ++selectionRevision; ++colorRevision;
+    selectedTrack = null;
+    ui.pan.disabled = ui['center-pan'].disabled = true;
+    selectedControls();
+  }
   refreshWanted = true;
   if (refreshing) return;
   refreshing = true;
   try {
     do {
       refreshWanted = false;
+      const revision = selectionRevision;
       const track = await reaper.GetSelectedTrack(0, 0);
+      if (revision !== selectionRevision) continue;
       const calls = [{ method: 'CountTracks', args: [0] }];
-      if (track) calls.push({ method: 'GetTrackName', args: [track] }, { method: 'GetMediaTrackInfo_Value', args: [track, 'D_PAN'] });
-      const [count, name, pan] = await reaper.transaction.batch(calls);
-      const color = track ? await reaper.GetTrackColor(track) : 0;
-      const rgb = color ? await reaper.ColorFromNative(color) : null;
-      if (refreshWanted) continue;
+      if (track) calls.push({ method: 'GetTrackName', args: [track] },
+        { method: 'GetMediaTrackInfo_Value', args: [track, 'D_PAN'] }, { method: 'GetTrackColor', args: [track] });
+      const [count, name, pan, color = 0] = await reaper.transaction.batch(calls);
+      if (revision !== selectionRevision) continue;
+      const trackChanged = selectedTrack?.id !== track?.id;
       selectedTrack = track;
       ui['track-name'].textContent = name?.[1] ?? 'No track selected.';
       ui['track-count'].textContent = `${count} ${count === 1 ? 'track' : 'tracks'} in project`;
       ui.pan.disabled = ui['center-pan'].disabled = !track;
       selectedControls();
       ui['color-state'].textContent = !track ? 'No track selected' : color ? 'Custom track color' : 'Default track color';
-      if (rgb && document.activeElement !== ui['track-color'])
-        ui['track-color'].value = '#' + rgb.map(n => n.toString(16).padStart(2, '0')).join('');
-      if (document.activeElement !== ui.pan) showPan(pan ?? 0);
+      if (trackChanged || document.activeElement !== ui.pan) showPan(pan ?? 0);
+      // Render the name and controls first. Native color conversion must not
+      // delay selection feedback or the next refresh, and late results expire.
+      const colorRequest = ++colorRevision;
+      if (!color && document.activeElement !== ui['track-color']) ui['track-color'].value = '#b7f58a';
+      if (color) void reaper.ColorFromNative(color).then(rgb => {
+        if (colorRequest === colorRevision && document.activeElement !== ui['track-color'])
+          ui['track-color'].value = '#' + rgb.map(n => n.toString(16).padStart(2, '0')).join('');
+      }).catch(error => { if (colorRequest === colorRevision) report(error); });
     } while (refreshWanted);
   } catch (error) {
     selectedTrack = null;
@@ -308,7 +323,7 @@ ui.diagnostics.addEventListener('click', () => {
 ui['refresh-diagnostics'].addEventListener('click', () => {
   if (!ui['diagnostic-panel'].hidden && !ui['refresh-diagnostics'].disabled) void readDiagnostics();
 });
-window.addEventListener('pagehide', () => { for (const off of dispose) void off(); });
+window.addEventListener('pagehide', () => { ++selectionRevision; ++colorRevision; for (const off of dispose) void off(); });
 run(async () => {
   if (!window.reaper) {
     ui.status.textContent = 'Outside REAPER';
@@ -329,15 +344,15 @@ run(async () => {
     log(`${capabilities.api.unavailable.length} APIs require a newer REAPER version. See Runtime diagnostics for their names.`);
   await reaper.window.setTitle('ReaWebAPI · API Workbench');
   dispose.push(await reaper.events.on('windowstatechange', state => showDockState(state.docked)));
-  dispose.push(await reaper.events.on('selectionchange', () => { selectedTrack = null; selectedControls(); list('fx-list', ['Selection changed. Inspect FX to refresh.']); void refresh(); }));
+  dispose.push(await reaper.events.on('selectionchange', () => { list('fx-list', ['Selection changed. Inspect FX to refresh.']); void refresh(true); }));
   dispose.push(await reaper.events.on('projectchange', state => {
+    const switched = projectEpoch !== state.projectEpoch;
     projectEpoch = state.projectEpoch;
-    selectedTrack = null; selectedControls();
     ui['project-name'].textContent = 'Project changed. Read a new snapshot.';
     for (const id of ['cursor-position', 'play-state', 'tempo', 'beat-position']) ui[id].textContent = '—';
     ui['marker-count'].textContent = 'Markers and regions';
     list('marker-list', ['Read the project to refresh.']); list('fx-list', ['Inspect FX to refresh.']);
-    void refresh();
+    void refresh(switched);
   }));
   ui.dock.disabled = false;
   for (const id of ['read-project', 'move-cursor', 'cursor-target', 'run-checks']) ui[id].disabled = false;

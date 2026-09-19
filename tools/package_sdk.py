@@ -39,7 +39,7 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/SDK/api/{name}'] = root / 'api' / name
     for name in ('README.md', 'README.zh-CN.md'):
         paths[f'ReaWebAPI/api/{name}'] = root / 'api' / name
-    for name in ('README.md', 'README.zh-CN.md', 'THIRD_PARTY.md'):
+    for name in ('README.md', 'README.zh-CN.md', 'THIRD_PARTY.md', 'LICENSE.md', 'COPYING', 'COPYING.LESSER'):
         paths[f'ReaWebAPI/{name}'] = root / name
     files = {}
     for name, path in paths.items():

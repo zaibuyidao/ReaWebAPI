@@ -94,6 +94,8 @@ def assemble(directory, version, revision):
     reapack = directory / f'ReaWebAPI-ReaPack-v{version}.zip'
     with zipfile.ZipFile(reapack, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.write(ext, ext.name)
+        for name in ('LICENSE.md', 'COPYING', 'COPYING.LESSER', 'THIRD_PARTY.md'):
+            archive.write(Path(__file__).resolve().parents[1] / name, name)
         for _, name in native_files():
             # Preserve executable permission even when Actions normalized downloaded files to 0644.
             info = zipfile.ZipInfo(f'extension/{name}')
@@ -155,7 +157,7 @@ def main():
     args = parser.parse_args()
     version = source_version()
     assets = assemble(args.assets, version, args.revision)
-    print(f'Prepared v{version}: {len(assets)} release assets, 8 files in the ReaPack ZIP')
+    print(f'Prepared v{version}: {len(assets)} release assets')
     if args.publish:
         if not args.repo:
             parser.error('--repo is required when publishing')

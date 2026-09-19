@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-适用于 ReaWebAPI 0.1.7+ 的 Vite 与 TypeScript 模板，开发环境需要 Node.js 22.12+。
+配合当前 ReaWebAPI 扩展使用的 Vite 与 TypeScript 模板，开发环境需要 Node.js 22.12+。
 
 将此目录放在 SDK 声明文件旁边。运行 `npm ci` 和 `npm run dev`，再在 REAPER 中运行 `OpenDev.lua`。生成正式构建时，运行 `npm run build`，通过 `Open.lua` 启动。分发时包含 `Open.lua` 和 `dist/`。
 

@@ -2,7 +2,7 @@
 -- @about Opens the local starter page. Rename this action for your tool.
 
 if not reaper.APIExists("ReaWeb_Open") then
-  reaper.MB("Install ReaWebAPI 0.1.7 or newer in UserPlugins and restart REAPER.", "ReaWebAPI", 0)
+  reaper.MB("Install the current ReaWebAPI extension in UserPlugins and restart REAPER.", "ReaWebAPI", 0)
   return
 end
 

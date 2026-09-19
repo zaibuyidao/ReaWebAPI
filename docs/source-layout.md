@@ -57,13 +57,13 @@ These are source responsibility groups, not five independent libraries. `reaweb_
 
 ## API boundaries / API 边界
 
-The 730 REAPER Mirror bindings, eleven Lua `ReaWeb_*` host APIs, thirteen JavaScript Runtime namespaces, wire protocol and return values are unchanged. File organization does not introduce API aliases or new public methods.
+The public API consists of 730 REAPER Mirror bindings, eleven Lua `ReaWeb_*` host APIs and thirteen JavaScript Runtime namespaces.
 
-源码整理保留 730 项 Mirror、11 项 Lua `ReaWeb_*` 宿主 API、13 个 JavaScript Runtime 命名空间、协议和返回值，不增加兼容别名或公开接口。
+公开接口包含 730 项 REAPER Mirror、11 项 Lua `ReaWeb_*` 宿主 API 和 13 个 JavaScript Runtime 命名空间。
 
-Namespace names do not require one C++ file each. `reaper.dialog.*` currently wraps the existing `GetUserFileName` Mirror in `runtime/reaper.js`; clipboard operations use the common asynchronous dispatcher and the OS implementations in `platform/`. There is no empty `dialog.cpp` or `clipboard.cpp`. Add a dedicated implementation file when it has an actual native responsibility.
+Namespace names do not require one C++ file each. `reaper.dialog.*` wraps the `GetUserFileName` Mirror in `runtime/reaper.js`. Clipboard operations use the common asynchronous dispatcher and the OS implementations in `platform/`.
 
-命名空间不要求与 C++ 文件一一对应。`reaper.dialog.*` 目前在 `runtime/reaper.js` 包装已有 `GetUserFileName` Mirror；剪贴板由通用异步分发和 `platform/` 内各系统实现承接。因此不创建空的 `dialog.cpp` 或 `clipboard.cpp`，后续有独立原生职责时再拆分。
+命名空间不要求与 C++ 文件一一对应。`reaper.dialog.*` 在 `runtime/reaper.js` 包装 `GetUserFileName` Mirror。剪贴板由通用异步分发和 `platform/` 内各系统实现承接。
 
 ## Maintenance / 维护
 

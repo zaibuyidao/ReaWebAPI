@@ -66,19 +66,19 @@ python -m tools.api_sync verify
 - GUID 使用 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}` 字符串，RECT 按 Lua 的四个坐标展开。可空原生字符串或 GUID 返回 `null`。
 - 整数按对应 C ABI 范围校验，`size_t` 还受 JS 安全整数范围约束。普通浮点参数要求有限值。
 
-`NeedBig` 通过 REAPER 的 `realloc_cmd_register_buf` 动态扩容并在复制结果后释放。普通固定缓冲区默认 64 KiB，可用 `ReaWeb_SetBufferSize(bytes)` 调整，范围 4 KiB 到 16 MiB。MIDI 事件读取可按宿主报告的长度扩容重读。单个字符串/二进制结果上限 16 MiB，音频数组上限 1,048,576 个 double，JSON 消息上限 64 MiB。超限明确报错，不静默截断。
+`NeedBig` 通过 REAPER 的 `realloc_cmd_register_buf` 动态扩容并在复制结果后释放。普通固定缓冲区默认 64 KiB，可用 `reaper.debug.setBufferSize(bytes)` 调整，范围 4 KiB 到 16 MiB。MIDI 事件读取可按宿主报告的长度扩容重读。单个字符串/二进制结果上限 16 MiB，音频数组上限 1,048,576 个 double，JSON 消息上限 64 MiB。超限明确报错，不静默截断。
 
-`ReaWeb_Batch` 的预校验范围仍是 SDK 中的 9 个轨道接口。其他 API 使用普通异步调用。排队超时只约束尚未开始的请求，不会打断等待用户输入的对话框或长时间渲染。跨多个异步调用自行打开 Undo 或 UI refresh 保护时，应使用 `try/finally` 配对关闭。
+`reaper.transaction.batch` 支持 `ReaWebBatchMethod` 列出的 173 个已审核同步接口。其他 API 使用独立异步调用。排队超时只约束尚未开始的请求，不会打断等待用户输入的对话框或长时间渲染。跨多个异步调用自行打开 Undo 或 UI refresh 保护时，应使用 `try/finally` 配对关闭。
 
 ## 运行时可用性与验证
 
-`ReaWeb_GetCapabilities().api` 区分两个数字：`implemented` 是编入扩展的绑定数，`available` 是当前 REAPER 能解析到的原生函数数。`unavailable` 列出宿主缺少的函数，调用时报 `API_UNAVAILABLE`。旧版 REAPER 不会让其他已存在的接口失效，完整使用本目录对应的全部函数需要 REAPER 7.80 或更新版本。
+`(await reaper.system.getCapabilities()).api` 区分两个数字：`implemented` 是编入扩展的绑定数，`available` 是当前 REAPER 能解析到的原生函数数。`unavailable` 列出宿主缺少的函数，调用时报 `API_UNAVAILABLE`。完整使用本目录对应的全部函数需要 REAPER 7.80 或更新版本。
 
 编译验证确保 730 个函数的 ABI 类型和注册完整。开发验证另包含 730 个无副作用的模拟原生调用、JS 二进制/数组测试及真实 WebView 中的 Demo 测试。模拟调用不代表已在实际工程中执行过全部有副作用 API。发布仍需各平台真实 REAPER 回归。
 
 Demo 的 **Run read-only checks** 覆盖 10 条调用路径，不修改工程，资源检查会在 `finally` 释放 accessor。空工程显示跳过项。只有用户点击颜色、声像和光标按钮才执行对应写入。
 
-CMake 将定义摘要、调用入口和 JS 方法列表嵌入扩展。用户无需安装 JSON 或访问网络。ReaPack 包结构仍为 `extension/` 内 7 个原生文件，加根目录的 `ReaWebAPI.ext`。
+CMake 将定义摘要、调用入口和 JS 方法列表嵌入扩展。ReaPack 包包含 `extension/` 内 7 个原生文件、`ReaWebAPI.ext` 和许可声明。
 
 ## 其他输入
 

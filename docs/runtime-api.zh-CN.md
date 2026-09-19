@@ -4,19 +4,19 @@
 
 [English](runtime-api.md) | **简体中文**
 
-JavaScript Runtime 只公开下列 13 个命名空间，不保留 `reaper.ReaWeb_*` 兼容别名。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
+JavaScript Runtime 使用下列 13 个命名空间。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
 
 `capabilities.runtime.contract` 为 2，描述宿主 SDK；`capabilities.webRuntime.contract` 仍为 1，描述 Web 资源和存储约定。能力信息列出命名空间、事件、清理超时和音频上限；底层标准 API 是否存在仍应查询 `api.availableMethods`。
 
-就绪入口为 `await reaper.lifecycle.ready`，没有根级 `reaper.ready` 别名。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。原有参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
+就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
 13 个命名空间均提供具体方法，共 67 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
-`transaction` 仅管理原有批处理和 Undo 分组，不承诺数据库式原子性、回滚或隔离；已完成写入不会自动撤回，其他编辑仍可能交错。8 个方法的迁移对照见[完整清单](runtime-api-inventory.md)。
+`transaction` 管理批处理和 Undo 分组，不承诺数据库式原子性、回滚或隔离；已完成写入不会自动撤回，其他编辑仍可能交错。方法与类型见[完整清单](runtime-api-inventory.md)。
 
 ## FS
 
-`reaper.fs` 提供 `readText`、`writeText`、`readBinary`、`writeBinary`，以及支持 encoding 重载的 `readFile` / `writeFile`、`stat`、`readDirectory`、`makeDirectory`。文本使用 UTF-8，二进制使用 `Uint8Array`。写入可传 `{overwrite:true}`，默认拒绝覆盖已有文件；继续采用 worker 文件操作和 16 MiB 上限。剪贴板文本改用 `reaper.clipboard.readText()` / `reaper.clipboard.writeText(text)`。外部链接使用 `reaper.system.openExternal(url)`。
+`reaper.fs` 提供 `readText`、`writeText`、`readBinary`、`writeBinary`，以及支持 encoding 重载的 `readFile` / `writeFile`、`stat`、`readDirectory`、`makeDirectory`。文本使用 UTF-8，二进制使用 `Uint8Array`。写入可传 `{overwrite:true}`，默认拒绝覆盖已有文件；继续采用 worker 文件操作和 16 MiB 上限。剪贴板文本使用 `reaper.clipboard.readText()` / `reaper.clipboard.writeText(text)`。外部链接使用 `reaper.system.openExternal(url)`。
 
 ## Window
 
@@ -31,7 +31,7 @@ await reaper.window.hide();
 
 另有 `open(path)`、`openDev(url)`、`getState`、`setTitle`、`focus`、`dock`、`undock`、`setDocked`、`isDocked`、`setKeyboardCapture`、`close`、`reload`。创建新窗口返回窗口 ID，其余窗口控制针对当前调用页，不接收 ID。尺寸是包含边框的原生桌面窗口尺寸，坐标是屏幕坐标，返回 `units: 'native'`；不要当作网页 CSS 像素。后端和桌面缩放可能影响它们与 CSS 像素的比例。宽高允许 100–16384，位置允许 -1000000–1000000，系统会将窗口限制到可用屏幕区域。
 
-返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。标题、聚焦、停靠和已有位置保存继续使用原有实现。
+返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。窗口支持标题、聚焦、停靠和位置保存。
 
 ## Lifecycle
 
@@ -43,7 +43,7 @@ await reaper.lifecycle.on('cleanup', () => worker.terminate());
 // 不再需要时：await stop();
 ```
 
-支持 `before-close`、`before-reload`、`cleanup`，`destroy` 是 `cleanup` 的别名，均在文档销毁前运行。回调收到 `{reason, timeoutMs}`，可以返回 Promise；相关 before-* 和 cleanup 回调会一起调用并并发等待，总等待上限 2000 ms；需要顺序执行的保存与释放应放在同一回调内。异常或超时不阻止宿主原有关闭/重载及原生资源清理。不注册生命周期的旧应用保持原来的关闭行为。
+支持 `before-close`、`before-reload`、`cleanup`，`destroy` 是 `cleanup` 的别名，均在文档销毁前运行。回调收到 `{reason, timeoutMs}`，可以返回 Promise；相关 before-* 和 cleanup 回调会一起调用并并发等待，总等待上限 2000 ms；需要顺序执行的保存与释放应放在同一回调内。异常或超时不阻止宿主原有关闭/重载及原生资源清理。未注册生命周期监听器的应用直接关闭。
 
 扩展关闭 API、窗口关闭按钮、同页原生导航/重载均接入通知。清理期间桥接仍可用于保存设置；完成或超时后，旧文档的请求、句柄、事件和音频任务失效。普通关闭和重载不能被应用否决。不要在清理回调内再次调用关闭或重载。
 
@@ -56,12 +56,12 @@ const stop = await reaper.events.on('track-added', event => console.log(event.gu
 await stop();
 ```
 
-JavaScript 只通过 `reaper.events.on` 订阅，扁平订阅入口已移除；原有事件名继续可用。新增事件使用小写连字符名称，事件只用于更新界面，不是完整编辑历史；忙碌时同名通知可能合并，不能把 GUID 列表当作无遗漏的增量日志。
+JavaScript 通过 `reaper.events.on` 订阅宿主事件。事件只用于更新界面，不是完整编辑历史；忙碌时同名通知可能合并，不能把 GUID 列表当作无遗漏的增量日志。
 
 | 事件 | 含义 |
 | --- | --- |
 | `track-added` / `track-deleted` | 当前工程轨道 GUID 集合的增减；初次扫描建立基线，不把已有轨道当作新增 |
-| `track-selected` | 与原有 `selectionchange` 相同的轨道选择快照 |
+| `track-selected` | 轨道选择快照，与 `selectionchange` 等价 |
 | `item-changed` / `take-changed` | 当前工程内容变化使 Item/Take 缓存失效，`scope: 'project'`；可能包含与该缓存无关的编辑，不返回虚构的逐对象差异 |
 | `playback-state-changed` | 播放状态位变化，独立于连续播放位置更新 |
 | `tempo-changed` | 当前主速度值变化；不表示整个速度图的逐标记差异 |
@@ -71,7 +71,7 @@ JavaScript 只通过 `reaper.events.on` 订阅，扁平订阅入口已移除；�
 | `project-saved` | 观察到当前工程文件更新且工程变为已保存状态；排除仅 Undo 序列化及自动备份文件，不承诺每次保存恰好一条 |
 | `theme-changed` | 当前主题颜色和 CSS 变量快照 |
 
-原生通知只记录线程安全计数；读取 REAPER 状态和向页面分发均在主线程。没有可靠通知的部分使用按需、分段扫描。状态更新约 100 ms 合并一次，主题约 500 ms；大工程及繁忙宿主可能延迟。轨道、工程加载和保存是变化通知，没有历史回放；其他事件可提供初始快照。页面关闭/重载会取消订阅，异步回调异常不会破坏其他监听器。
+原生通知只记录线程安全计数；读取 REAPER 状态和向页面分发均在主线程。没有可靠通知的部分使用按需、分段扫描。原生轨道选择通知和工程变更计数在每个主线程调度周期检查。轨道选择保留 100 ms 兜底检查，以覆盖没有原生通知的修改。其他状态扫描约 100 ms，主题约 500 ms。事件异步送达，实际延迟取决于宿主调度、扫描预算和 WebView 响应。轨道、工程加载和保存是变化通知，没有历史回放；其他事件可提供初始快照。页面关闭/重载会取消订阅，异步回调异常不会破坏其他监听器。
 
 ## Dialog and theme
 
@@ -97,7 +97,7 @@ button { border-color:var(--reaper-highlight); }
 
 `reaper.debug.log/warn/error(...values)` 写入 REAPER 控制台及本窗口日志，`inspect(object)` 记录有长度限制的对象快照，可处理循环引用。`getLogs()` 返回最近 200 项；`getDiagnostics()` 包含原生错误、请求 ID、文档代次、当前清理阶段和音频任务数。自动记录页面未捕获异常和未处理的 Promise 拒绝，不替换 `console`。
 
-`openDevTools()` 复用原有检查器入口；macOS 仍通过 Safari Develop 连接。日志不上传到任何服务，也不默认记录全部 API 参数或音频数据。
+`openDevTools()` 使用原生浏览器检查器，macOS 通过 Safari Develop 连接。日志不上传到任何服务，也不默认记录全部 API 参数或音频数据。
 
 ## Audio
 
@@ -150,7 +150,7 @@ await dispose(); // off 后仍可安全调用
 
 `onDrop(callback)` 等同于 `events.on('native-drop', callback)`，返回异步 disposer。统一 payload 为 `{files:string[], text:string, x:number, y:number}`；files 是绝对本机路径，接收时允许目录；text 无文本时为空字符串；x/y 是视口 CSS 坐标。不读取文件内容。系统／REAPER 拖拽源必须提供标准文件或文本数据，不解析 REAPER 专有对象格式。有订阅时捕获原生 Drop，无订阅时保留普通 WebView DOM 拖放。Drop 不合并、不提供初始快照、不回放；关闭／重载清理订阅。Windows 需要支持原生附加文件对象的 WebView2，旧版不支持时订阅报 `HOST_UNAVAILABLE`。
 
-`events.off(name, callback)` 返回 `Promise<void>`，移除该事件名下原回调引用的全部匹配订阅，包括尚未注册完成的订阅；其他回调不受影响。未订阅时无操作，已在执行的回调不会被中断。原有 disposer 继续可用。`debug.info` 已移除，使用 `debug.log`，日志内部级别仍为 info。
+`events.off(name, callback)` 返回 `Promise<void>`，移除该事件名下原回调引用的全部匹配订阅，包括尚未注册完成的订阅；其他回调不受影响。未订阅时无操作，已在执行的回调不会被中断。`on()` 和 `onDrop()` 返回的 disposer 可单独取消订阅。`debug.log` 使用 info 日志级别。
 
 ## Manifest 校验与示例
 

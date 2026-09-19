@@ -2,7 +2,7 @@
 
 **English** | [简体中文](frontend.zh-CN.md) · [Host API](host-api.md)
 
-ReaWebAPI introduced the **Web Runtime v1** contract in v0.1.6 and preserves it in **v0.1.8**. The Web contract version is independent of the extension version. The 730 standard REAPER 7.80 mirror bindings and their Promise-based calling convention remain unchanged. No custom Lua RPC or third-party REAPER API registration is included.
+The **Web Runtime v1** contract defines browser capabilities, resource loading and storage. Its version is independent of the extension version. JavaScript calls the 730 standard REAPER 7.80 APIs through Promises.
 
 ## Plain Web Apps
 
@@ -66,7 +66,7 @@ The profile registry is `<REAPER resource>/ReaWebAPI/Apps/<appId>/`. `origin.jso
 
 If a saved port is occupied, opening fails with `APP_ORIGIN_BUSY` instead of silently changing origin and losing access to storage. Close the conflicting process and reopen. Malformed/mismatched origin metadata fails with `APP_ORIGIN_INVALID`. Do not delete that record as a routine fix: a new port gives a new origin. Normal browser quotas and clearing data still apply.
 
-Older `file://` storage in `ReaWebAPI/WebViewData/` is left untouched and is **not automatically migrated**. Export existing settings from an older version before changing versions if needed. Keep browser data and origin metadata when preserving an App's state.
+Keep browser data and origin metadata together when preserving an App’s state.
 
 Only the loopback interface is bound. Requests with a foreign Host/Origin or cross-origin Fetch Metadata are rejected; there is no permissive CORS header. Serving stops when the last App window closes. The listener uses two bounded worker threads per active App; REAPER calls continue through the existing main-thread bridge. The root is a resource boundary, **not a sandbox for trusted native APIs**: pages retain the exposed filesystem and REAPER privileges. Do not put secrets in a directory you serve or open untrusted Apps.
 
@@ -84,13 +84,13 @@ Run `npm run build` and `Open.lua` for production; ship `Open.lua` and `dist/`. 
 
 A page CSP must allow its scripts/styles, `connect-src 'self'` for local fetch and the appropriate `worker-src`. The modern template's Blob Worker needs `worker-src blob:`. Development additionally needs its Vite HTTP/WebSocket URLs. Host clipboard and external-link helpers provide the cross-platform native operations.
 
-## Platform validation and differences
+## Platform backends
 
-| Platform | Backend/profile | v0.1.6 local validation |
+| Platform | Backend | Storage isolation |
 | --- | --- | --- |
-| Windows x64 | WebView2, per-App user-data folder | Required check App, storage reopen/host-process restart/isolation, IndexedDB, both Workers, HTTP CORS fetch and WebSocket round-trip, WebGL; native plugin in mock REAPER |
-| Linux x86_64 | WebKitGTK 4.1, X11/XWayland; separate helper per App | Required checks, browser process restart/isolation, HTTP CORS/WebSocket and Workers passed on WebKitGTK 2.52.6/WSLg with the renderer compatibility setting below |
-| macOS 14+ | WKWebView, per-App persistent data-store UUID | Implemented with public APIs; requires macOS build and real-host acceptance, not verified on this Windows machine |
+| Windows x64 | WebView2 | Separate user-data directory per App |
+| Linux x64 / ARM64 | WebKitGTK 4.1, X11/XWayland | Separate helper and data directory per App |
+| macOS ARM64 / Intel | WKWebView | Separate persistent data-store UUID per App |
 
 WebView2 follows the installed runtime; WKWebView follows macOS updates; WebKitGTK follows distribution packages. Linux needs its matching helper beside the extension. Optional capability behavior can differ with engine versions and graphics environments. HTTPS transport is delegated to the WebView; the automated network fixture verifies HTTP CORS and WebSocket, not arbitrary external TLS endpoints. DOM drop checks use synthetic events; physical OS file drops and real REAPER drag gestures remain manual acceptance cases.
 

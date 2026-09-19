@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-适用于 ReaWebAPI 0.1.7+ 的 TypeScript 类型声明、开发模板和示例。从 [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases) 下载 SDK，或配合已安装的扩展使用本目录。
+配合当前 ReaWebAPI 扩展使用的 TypeScript 类型声明、开发模板和示例。从 [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases) 下载 SDK，或配合已安装的扩展使用本目录。
 
 | 入口 | 用途 |
 | --- | --- |

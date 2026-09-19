@@ -51,7 +51,7 @@
 | `fxchange` | `{ projectEpoch, available, focused, touched, changeCount }` |
 | `windowstatechange` | `ReaWebWindowState` |
 
-工程及选择状态约每 100 ms 检查一次。工程切换或加载会更新 `projectEpoch`，应据此刷新依赖工程对象的界面。关闭文档会清理订阅。`ReaWeb_Subscribe`、`ReaWeb_Unsubscribe`、`__reawebHello` 和 `__reawebReceive` 是桥接内部实现，不作为应用接口使用。
+工程变化和原生轨道选择通知在每个主线程调度周期检查。轨道选择保留 100 ms 兜底检查，以覆盖没有通知的修改。工程切换或加载会更新 `projectEpoch`，应据此刷新依赖工程对象的界面。关闭文档会清理订阅。`ReaWeb_Subscribe`、`ReaWeb_Unsubscribe`、`__reawebHello` 和 `__reawebReceive` 是桥接内部实现，不作为应用接口使用。
 
 FX 事件追踪焦点、最后触碰参数及工程 changeCount，用于使 FX 界面缓存失效，不是所有插件参数变化的逐条通知。state 是 REAPER 播放状态位掩码；available 为 false 时其他播放字段可能缺省。选择扫描按帧分段，大型选择通知可能晚于 100 ms。
 
@@ -154,6 +154,6 @@ Lua 相对 HTML 路径从 REAPER 的 `Scripts/` 目录解析，模板使用启�
 
 [v0.1.8 Runtime namespaces](runtime-api.md) · [v0.1.8 命名空间接口](runtime-api.zh-CN.md)
 
-JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`，不保留 `reaper.ReaWeb_*`、`reaper.ReaWebOpen` 或 `reaper.ready` 兼容入口。Lua 在网页尚未启动时仍通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
+JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`。Lua 在网页尚未启动时通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
 
-`reaper.events.off(name, callback)` 可按回调引用取消该事件的全部匹配订阅。新增 `native-drop` 事件由 `reaper.dragDrop.onDrop` 共享，返回 files/text/x/y，不合并、不提供初始快照。详见 [Runtime API](runtime-api.zh-CN.md)。
+`reaper.events.off(name, callback)` 可按回调引用取消该事件的全部匹配订阅。`native-drop` 事件由 `reaper.dragDrop.onDrop` 共享，返回 files/text/x/y，不合并、不提供初始快照。详见 [Runtime API](runtime-api.zh-CN.md)。

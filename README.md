@@ -55,3 +55,5 @@ cmake --install build --config Release --prefix stage
 On Windows, use MSVC x64 with `-A x64`. On macOS, select `-DCMAKE_OSX_ARCHITECTURES=arm64` or `x86_64`.
 
 [Source layout](docs/source-layout.md) · [API maintenance](api/README.md) · [Release notes](docs/release-notes.md) · [Third-party notices](THIRD_PARTY.md)
+
+Licensed under [LGPL-3.0-or-later](LICENSE.md).

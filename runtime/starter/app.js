@@ -13,15 +13,19 @@
     status.textContent = error instanceof Error ? error.message : String(error);
   };
   let busy = false, requested = false;
-  const refresh = async () => {
+  let selectionRevision = 0, projectEpoch = 0;
+  const refresh = async (invalidate = false) => {
+    if (invalidate) ++selectionRevision;
     requested = true;
     if (busy) return;
     busy = true;
     try {
       do {
         requested = false;
+        const revision = selectionRevision;
         const track = await reaper.GetSelectedTrack(0, 0);
         const name = track ? await reaper.GetTrackName(track) : null;
+        if (revision !== selectionRevision) continue;
         label.textContent = name?.[0] ? name[1] : 'No track selected';
       } while (requested);
     } catch (error) {
@@ -29,6 +33,7 @@
       showError(error);
     } finally {
       busy = false;
+      if (requested) void refresh();
     }
   };
 
@@ -40,7 +45,7 @@
     }
     const { api } = await reaper.lifecycle.ready;
     if (!api || !Array.isArray(api.availableMethods)) {
-      throw new Error('Install ReaWebAPI 0.1.3 or newer and reopen this page.');
+      throw new Error('Install the current ReaWebAPI extension and reopen this page.');
     }
     if (!['GetSelectedTrack', 'GetTrackName'].every(name => api.availableMethods.includes(name))) {
       throw new Error('This REAPER installation is missing a required API.');
@@ -50,8 +55,12 @@
       dockButton.textContent = state.docked ? 'Undock' : 'Dock';
     });
     // Refresh catches its own asynchronous errors. Initial snapshots also refresh.
-    await reaper.events.on('selectionchange', () => { void refresh(); });
-    await reaper.events.on('projectchange', () => { void refresh(); });
+    await reaper.events.on('selectionchange', () => { void refresh(true); });
+    await reaper.events.on('projectchange', state => {
+      const switched = projectEpoch !== state.projectEpoch;
+      projectEpoch = state.projectEpoch;
+      void refresh(switched);
+    });
     refreshButton.addEventListener('click', () => { void refresh(); });
     dockButton.addEventListener('click', async () => {
       dockButton.disabled = true;

@@ -77,8 +77,10 @@ private:
   void* project_ = nullptr;
   uint64_t project_epoch_ = 0, selection_revision_ = 0;
   uint64_t host_generation_ = 0;
+  uint64_t host_selection_revision_ = 0;
   int project_changes_ = -1;
   int selection_index_ = 0, selection_count_ = -1;
+  bool selection_pending_ = true;
   uint64_t selection_hash_ = 0, last_selection_hash_ = 0;
   Clock::time_point next_observation_ = Clock::now();
   Json project_event_, selection_event_;

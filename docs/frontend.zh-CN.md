@@ -2,7 +2,7 @@
 
 [English](frontend.md) | **简体中文** · [宿主 API](host-api.zh-CN.md)
 
-ReaWebAPI 在 v0.1.6 引入 **Web Runtime v1** 能力约定，**v0.1.8** 继续保持兼容；v1 是 Web 能力约定版本，与扩展版本独立。保持 REAPER 7.80 的 730 项标准镜像绑定和现有 Promise 调用方式，不引入自定义 Lua RPC 或第三方 REAPER API 注册机制。
+ReaWebAPI 的 **Web Runtime v1** 定义浏览器能力、资源加载和存储约定。Web 能力约定版本独立于扩展版本。JavaScript 通过 Promise 调用 730 项 REAPER 7.80 标准 API。
 
 ## 普通 Web App
 
@@ -66,7 +66,7 @@ profile 注册信息保存在 `<REAPER 资源目录>/ReaWebAPI/Apps/<appId>/`，
 
 若保存的端口被占用，返回 `APP_ORIGIN_BUSY`，不会悄悄改端口导致存储不可见。关闭冲突进程后重开即可。来源记录损坏或不匹配时返回 `APP_ORIGIN_INVALID`。不要把删除来源记录当作常规修复；新端口意味着新来源。浏览器配额、用户清理数据等正常限制仍然适用。
 
-旧版 `file://` 在 `ReaWebAPI/WebViewData/` 中的数据保持原状，**不会自动迁移**；需要保留旧设置时，请先从旧版本导出。保留 App 状态时应同时保留浏览器数据和来源记录。
+保留 App 状态时，应同时保留浏览器数据和来源记录。
 
 仅监听回环地址，拒绝外来 Host/Origin 及跨来源 Fetch Metadata 请求，不设置宽松 CORS。最后一个 App 窗口关闭后停止服务，每个活动 App 使用两个有队列上限的资源线程；REAPER API 仍经原有桥接在主线程执行。App 根目录是资源加载边界，**不是原生 API 沙箱**：可信页面仍有已开放的文件和工程权限。不要在资源目录内放秘密文件或打开不可信 App。
 
@@ -84,13 +84,13 @@ profile 注册信息保存在 `<REAPER 资源目录>/ReaWebAPI/Apps/<appId>/`，
 
 页面 CSP 需允许实际脚本/样式、本地 fetch 的 `connect-src 'self'` 和对应 `worker-src`；现代模板的 Blob Worker 需要 `worker-src blob:`，开发还需 Vite HTTP/WebSocket 地址。统一剪贴板与外链操作使用宿主 API。
 
-## 平台差异与验证边界
+## 平台后端
 
-| 平台 | 后端与 profile | 本次 v0.1.6 验证 |
+| 平台 | 后端 | 存储隔离 |
 | --- | --- | --- |
-| Windows x64 | WebView2，按 App 的用户数据目录 | 实际浏览器必需项、重开与宿主进程重启持久化/隔离、IndexedDB、两种 Worker、HTTP CORS 和 WebSocket 收发、WebGL；原生插件使用 mock REAPER |
-| Linux x86_64 | WebKitGTK 4.1，X11/XWayland；每个 App 独立 helper | WebKitGTK 2.52.6/WSLg 下必需项、浏览器进程重启/隔离、HTTP CORS/WebSocket、Worker 已通过，使用下述渲染兼容开关 |
-| macOS 14+ | WKWebView，按 App 的持久化 data-store UUID | 已用公开 API 实现；仍需 macOS 构建和真机 REAPER 验收，本 Windows 环境未验证 |
+| Windows x64 | WebView2 | 每个 App 使用独立用户数据目录 |
+| Linux x64 / ARM64 | WebKitGTK 4.1、X11/XWayland | 每个 App 使用独立辅助进程和数据目录 |
+| macOS ARM64 / Intel | WKWebView | 每个 App 使用独立持久数据存储 UUID |
 
 WebView2 取决于已安装运行时，WKWebView 跟随系统更新，WebKitGTK 取决于发行版包。Linux 扩展旁必须放同版本 helper。可选能力会随引擎和图形环境变化。HTTPS 交给 WebView 处理；自动网络测试验证 HTTP CORS 与 WebSocket，不代表验证任意外部 TLS 服务。DOM 拖放测试使用合成事件，实体系统文件拖入和真实 REAPER 拖放仍需人工验收。
 

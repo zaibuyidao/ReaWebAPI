@@ -33,8 +33,10 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(assets), 16)
         self.assertIn(self.directory / f'ReaWebAPI-SDK-v{self.version}.zip', assets)
         with zipfile.ZipFile(self.directory / f'ReaWebAPI-ReaPack-v{self.version}.zip') as bundle:
-            self.assertEqual(set(bundle.namelist()), {'ReaWebAPI.ext'} | {f'extension/{name}' for _, name in release.native_files()})
-            self.assertEqual(len(bundle.namelist()), 8)
+            notices = {'LICENSE.md', 'COPYING', 'COPYING.LESSER', 'THIRD_PARTY.md'}
+            self.assertEqual(set(bundle.namelist()), {'ReaWebAPI.ext'} | notices | {f'extension/{name}' for _, name in release.native_files()})
+            for name in notices:
+                self.assertEqual(bundle.read(name), (Path(__file__).parents[1] / name).read_bytes())
             self.assertNotIn('web/', bundle.read('ReaWebAPI.ext').decode())
             self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 7)
         body = release.release_body('test/repo', self.version)

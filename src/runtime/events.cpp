@@ -25,22 +25,30 @@ void Runtime::observe(Clock::time_point deadline) {
     if (loaded) for (auto& item : sessions_) emit(*item.second, "project-loaded", {{"projectEpoch", project_epoch_}});
     next_observation_ = Clock::now();
   }
-  if (Clock::now() < next_observation_) return;
+  const bool poll = Clock::now() >= next_observation_;
   const auto changes = host_.change_count ? host_.change_count(project_) : 0;
-  observe_extra(deadline, changes);
+  const bool changed = changes != project_changes_;
   Json next{{"projectEpoch", project_epoch_}, {"changeCount", changes}};
   if (next != project_event_) {
     project_event_ = next;
     for (auto& item : sessions_) emit(*item.second, "projectchange", next);
   }
-  if (changes != project_changes_) {
+  if (changed) {
     project_changes_ = changes; selection_index_ = 0; selection_count_ = -1;
     item_index_ = 0; item_count_ = -1;
   }
   bool wanted = false;
   for (const auto& item : sessions_) wanted = wanted || item.second->subscriptions.count("selectionchange") || item.second->subscriptions.count("track-selected");
-  if (wanted) {
+  // Control-surface callbacks only increment an atomic revision. Observe their
+  // final state on the next main-thread tick, without waiting for the fallback
+  // poll. Restart partial scans when another selection change arrives.
+  const auto revision = host_.event_revision ? host_.event_revision("track-selected") : 0;
+  const bool selection_changed = revision != host_selection_revision_;
+  host_selection_revision_ = revision;
+  if (selection_changed) { selection_index_ = 0; selection_count_ = -1; }
+  if (wanted && (poll || changed || selection_changed || selection_event_.is_null() || selection_pending_)) {
     const auto count = host_.count_selected_tracks(project_);
+    selection_pending_ = true;
     if (count != selection_count_ || selection_index_ == 0) {
       selection_count_ = count; selection_index_ = 0; selection_hash_ = 14695981039346656037ull;
     }
@@ -50,14 +58,19 @@ void Runtime::observe(Clock::time_point deadline) {
       if (!track || !host_.valid_track(project_, track)) { selection_index_ = 0; selection_count_ = -1; return; }
       for (auto byte : host_.track_guid(track)) { selection_hash_ ^= byte; selection_hash_ *= 1099511628211ull; }
     }
-    if (selection_index_ < count) return;
-    if (last_selection_hash_ != selection_hash_ || selection_event_.is_null()) {
-      last_selection_hash_ = selection_hash_;
-      selection_event_ = {{"projectEpoch", project_epoch_}, {"revision", ++selection_revision_}, {"count", count}};
-      for (auto& item : sessions_) { emit(*item.second, "selectionchange", selection_event_); emit(*item.second, "track-selected", selection_event_); }
+    if (selection_index_ == count) {
+      if (last_selection_hash_ != selection_hash_ || selection_event_.is_null()) {
+        last_selection_hash_ = selection_hash_;
+        selection_event_ = {{"projectEpoch", project_epoch_}, {"revision", ++selection_revision_}, {"count", count}};
+        for (auto& item : sessions_) { emit(*item.second, "selectionchange", selection_event_); emit(*item.second, "track-selected", selection_event_); }
+      }
+      selection_index_ = 0;
+      selection_pending_ = false;
     }
-    selection_index_ = 0;
   }
+  // More expensive project-wide scans retain a bounded polling cadence.
+  if (!poll) return;
+  observe_extra(deadline, changes);
   auto subscribed = [&](const char* name) {
     for (const auto& item : sessions_) if (item.second->subscriptions.count(name)) return true;
     return false;

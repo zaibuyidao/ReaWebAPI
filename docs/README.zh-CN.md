@@ -14,6 +14,6 @@
 | [宿主 API](host-api.zh-CN.md) | Lua 入口、原生桥接行为和错误码 |
 | [Web 运行环境](frontend.zh-CN.md) | 资源、存储、Worker 和平台要求 |
 | [源码结构](source-layout.md) | 原生模块与构建目标 |
-| [版本更新](release-notes.md) | 版本记录 |
+| [版本更新](release-notes.md) | 当前版本说明 |
 
 扩展维护者可参考 [API Sync 指南](https://github.com/zaibuyidao/ReaWebAPI/tree/main/api)，更新和校验 API 目录。

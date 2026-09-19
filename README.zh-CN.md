@@ -55,3 +55,5 @@ cmake --install build --config Release --prefix stage
 Windows 使用 MSVC x64，并添加 `-A x64`。macOS 使用 `-DCMAKE_OSX_ARCHITECTURES=arm64` 或 `x86_64` 指定架构。
 
 [源码结构](docs/source-layout.md) · [API 维护](api/README.zh-CN.md) · [版本更新](docs/release-notes.md) · [第三方声明](THIRD_PARTY.md)
+
+采用 [LGPL-3.0-or-later](LICENSE.md) 许可。

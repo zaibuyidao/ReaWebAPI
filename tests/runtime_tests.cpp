@@ -93,6 +93,8 @@ int main() {
     auto entry = root / "Scripts" / "Tool" / "index.html";
     fs::create_directories(entry.parent_path()); std::ofstream(entry) << "<html></html>";
     int storage = 0, other = 0, track = 0, calls = 0, changes = 0;
+    int selected_count = 1, selected_reads = 0, selection_checks = 0;
+    uint64_t selection_signal = 0;
     void* current = &storage;
     Guid guid{};
     uint64_t generation = 0;
@@ -104,8 +106,9 @@ int main() {
     host.get_track = [&](void*, int index) -> void* { order.push_back(index); std::this_thread::sleep_for(std::chrono::milliseconds(1)); return nullptr; };
     host.project_generation = [&] { return generation; };
     host.change_count = [&](void*) { return changes; };
-    host.count_selected_tracks = [](void*) { return 1; };
-    host.get_selected_track = [&](void*, int) -> void* { return &track; };
+    host.count_selected_tracks = [&](void*) { ++selection_checks; return selected_count; };
+    host.get_selected_track = [&](void*, int) -> void* { ++selected_reads; return &track; };
+    host.event_revision = [&](const std::string& name) { return name == "track-selected" ? selection_signal : uint64_t{0}; };
     host.valid_track = [&](void*, void* p) { return p == &track; };
     host.track_guid = [&](void*) { return guid; };
     adapter::connect(host);
@@ -171,6 +174,35 @@ int main() {
       until(runtime, [&] { for (const auto& r : first->responses) if (r.value("event", "") == "selectionchange") return true; return false; });
       auto before = first->responses.size(); ++guid[0]; ++changes;
       until(runtime, [&] { for (size_t i = before; i < first->responses.size(); ++i) if (first->responses[i].value("event", "") == "selectionchange") return true; return false; });
+      result(runtime, *first, first->send("ReaWeb_Subscribe", {"track-selected"}));
+      auto selection_event = [&](size_t start, const char* name, int count) {
+        for (size_t i = start; i < first->responses.size(); ++i)
+          if (first->responses[i].value("event", "") == name && first->responses[i]["data"]["count"] == count) return true;
+        return false;
+      };
+      // Same-count selection changes need no project edit or 100 ms wait.
+      before = first->responses.size(); ++guid[0]; ++selection_signal;
+      auto reads = selected_reads;
+      runtime.tick(); CHECK(selected_reads > reads);
+      until(runtime, [&] { return selection_event(before, "selectionchange", 1) && selection_event(before, "track-selected", 1); });
+      // Deselect-all is also observed on the next tick.
+      before = first->responses.size(); selected_count = 0; ++selection_signal;
+      auto checks = selection_checks;
+      runtime.tick(); CHECK(selection_checks > checks);
+      until(runtime, [&] { return selection_event(before, "track-selected", 0); });
+      // Abandon an unfinished large-selection scan if the selection changes.
+      before = first->responses.size(); selected_count = 130; ++selection_signal;
+      reads = selected_reads; runtime.tick();
+      CHECK(selected_reads > reads && selected_reads - reads <= 64);
+      selected_count = 1; ++guid[0]; ++selection_signal;
+      reads = selected_reads; runtime.tick(); CHECK(selected_reads > reads);
+      until(runtime, [&] { return selection_event(before, "track-selected", 1); });
+      CHECK(!selection_event(before, "track-selected", 130));
+      // Silent native/API edits still use the fallback poll.
+      before = first->responses.size(); ++guid[0];
+      until(runtime, [&] { return selection_event(before, "track-selected", 1); });
+      // A project edit also invalidates immediately, without a surface callback.
+      reads = selected_reads; ++changes; runtime.tick(); CHECK(selected_reads > reads);
       const auto queued = first->send("CountTracks", Json::array({0}), 1);
       current = &other;
       CHECK(result(runtime, *first, queued)["error"]["code"] == "PROJECT_CHANGED");

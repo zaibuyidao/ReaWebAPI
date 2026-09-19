@@ -1,9 +1,9 @@
 -- @description ReaWebAPI: Example
--- @version 0.1.7
+-- @version 0.1.8
 -- @about Opens the bundled JavaScript REAPER API demo.
 
 if not reaper.APIExists("ReaWeb_Open") then
-  reaper.MB("Install ReaWebAPI 0.1.7 or newer in UserPlugins and restart REAPER.", "ReaWebAPI", 0)
+  reaper.MB("Install the current ReaWebAPI extension in UserPlugins and restart REAPER.", "ReaWebAPI", 0)
   return
 end
 

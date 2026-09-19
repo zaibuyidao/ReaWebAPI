@@ -51,7 +51,7 @@ Window placement and docking are persisted by entry file and instance slot. At m
 | `fxchange` | `{ projectEpoch, available, focused, touched, changeCount }` |
 | `windowstatechange` | `ReaWebWindowState` |
 
-Project/selection observation runs about every 100 ms. `projectEpoch` changes on a project switch or load. Refresh object-dependent UI when it changes. A document close clears its subscriptions. `ReaWeb_Subscribe`, `ReaWeb_Unsubscribe`, `__reawebHello` and `__reawebReceive` are bridge internals, not application APIs.
+Project changes and native track-selection notifications are observed on each main-thread tick. Selection retains a 100 ms fallback poll for edits without a notification. `projectEpoch` changes on a project switch or load. Refresh object-dependent UI when it changes. A document close clears its subscriptions. `ReaWeb_Subscribe`, `ReaWeb_Unsubscribe`, `__reawebHello` and `__reawebReceive` are bridge internals, not application APIs.
 
 FX events observe focus, last-touched parameters and project changeCount to invalidate cached FX UI; they do not report every plugin parameter edit. Transport state is the REAPER bitmask; when available is false other transport fields may be absent. Selection scans are incremental, so large selections may take longer than 100 ms.
 
@@ -154,6 +154,6 @@ Lua relative HTML paths resolve from REAPER's `Scripts/` directory. The starter 
 
 [v0.1.8 Runtime namespaces](runtime-api.md) · [v0.1.8 命名空间接口](runtime-api.zh-CN.md)
 
-JavaScript opens pages with `reaper.window.open(path)` and waits on `reaper.lifecycle.ready`. No flat `reaper.ReaWeb_*`, `reaper.ReaWebOpen` or `reaper.ready` aliases are exposed. Lua bootstrap remains `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains Lua-only native functions. The 730 standard REAPER mirror names are unchanged.
+JavaScript opens pages with `reaper.window.open(path)` and waits on `reaper.lifecycle.ready`. Lua bootstrap uses `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains Lua-only native functions. The 730 standard REAPER mirror names are unchanged.
 
 `reaper.events.off(name, callback)` removes all matching registrations of that callback. The new `native-drop` event is shared with `reaper.dragDrop.onDrop`, carries files/text/x/y, and has neither coalescing nor an initial snapshot. See [Runtime API](runtime-api.md).

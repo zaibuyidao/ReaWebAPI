@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-TypeScript declarations, templates and examples for ReaWebAPI 0.1.7+. Download the SDK from [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases) or use this directory with an installed extension.
+TypeScript declarations, templates and examples for the current ReaWebAPI release. Download the SDK from [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases) or use this directory with an installed extension.
 
 | Entry | Purpose |
 | --- | --- |

@@ -1,15 +1,13 @@
-# Future permissions / 后续权限设计
+# App trust model / 应用信任模型
 
-This is a design note, not an implemented v0.1.7 contract. Current Apps are trusted and can call the complete standard REAPER mirror and privileged native file services. Browser origin isolation protects Web storage; it does not sandbox Native APIs. No consent dialog, capability grant or manifest `permissions` field is implemented.
+ReaWebAPI runs trusted local Apps. An App can call the standard REAPER APIs and native file services available to the extension.
 
-v0.1.7 只保留设计：可信应用可调用完整标准镜像和已有宿主能力。Manifest 校验不能形成安全边界，也不加入许可弹窗。未来出现未知来源应用分发后，再单独评估下面的方案。
+Each App has its own browser profile and local resource origin. This isolates browser storage and cookies. Native API access uses the REAPER process permissions.
 
-## Requirements for a future design
+The manifest validator checks App metadata and entry paths. Review an App and its source before opening it with ReaWebAPI.
 
-- Identify an App by verified package identity and origin, and bind grants to its installed version/source. A directory name alone is insufficient to establish publisher trust.
-- Describe meaningful capabilities such as project read/write, filesystem locations, external URLs and audio analysis. Audit equivalent standard REAPER entry points so a restricted namespace cannot be bypassed through the mirror.
-- Enforce decisions in the native dispatcher and worker operations, including batches, indirect paths, symlinks, handles and cross-window requests. JavaScript checks alone are insufficient.
-- Define grant persistence, revocation, migration for existing trusted Apps, and behavior for already-running operations. Make denial errors and diagnostics consistent.
-- Validate the model with adversarial Apps before claiming isolation. Keep privileged developer mode explicit and distinguish browser network/storage policy from REAPER capabilities.
+ReaWebAPI 运行受信任的本地应用，应用可调用扩展提供的标准 REAPER API 和原生文件服务。
 
-Those decisions require their own threat model, compatibility policy and release scope. They do not change v0.1.7 behavior.
+每个 App 使用独立的浏览器配置与本地资源来源，隔离浏览器存储和 Cookie。原生 API 使用 REAPER 进程的访问权限。
+
+Manifest 校验工具检查应用元数据和入口路径。使用 ReaWebAPI 打开应用前，应确认其来源和代码可信。

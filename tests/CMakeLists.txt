@@ -28,6 +28,7 @@ if(MSVC)
 endif()
 find_program(NODE_EXECUTABLE node REQUIRED)
 add_test(NAME bridge COMMAND "${NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/bridge.test.cjs")
+add_test(NAME demo COMMAND "${NODE_EXECUTABLE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/demo.test.cjs")
 if(REAWEB_BUILD_EXTENSION)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   add_test(NAME plugin_abi COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/plugin_smoke.py"

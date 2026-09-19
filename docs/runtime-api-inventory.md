@@ -6,11 +6,11 @@ The JavaScript Runtime exposes only these thirteen namespaces: 67 methods and on
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
-Lua 启动器仍使用原生函数 `reaper.ReaWeb_Open(path)`；网页 JavaScript 不公开任何 `reaper.ReaWeb_*`、`reaper.ReaWebOpen` 或根级 `reaper.ready` 兼容别名。内部通信命令可以保留 `ReaWeb_*` 名称，它们不属于应用可调用的 JavaScript API。
+Lua 通过原生函数 `reaper.ReaWeb_Open(path)` 启动页面。JavaScript 使用本清单中的 Runtime 命名空间。内部通信命令是桥接协议的一部分。
 
 全部 13 个命名空间已有具体能力；`capabilities.runtime.reservedNamespaces` 现在为空数组。`app` 提供当前应用信息，`dragDrop` 提供原生文件／文本拖放；大小写统一为 `dragDrop`，没有 `dragdrop` 别名。
 
-All thirteen namespaces have implemented members. App identity reuses the existing storage identity. Manifest metadata is read at App creation; the separate validator still checks complete manifests. No App installer or manager is introduced.
+All thirteen namespaces have implemented members. App identity is shared with browser storage. Manifest metadata is read at App creation, and the validator checks complete manifests.
 
 ## reaper.window
 
@@ -64,7 +64,6 @@ REAPER 工程、对象、播放及窗口状态通知。Host state notifications;
 | API | 返回 / Result | 用途 |
 | --- | --- | --- |
 | `reaper.events.on(name, callback)` | `Promise<ReaWebDispose>` | 订阅宿主事件，返回异步取消订阅函数 |
-
 | `reaper.events.off(name, callback)` | `Promise<void>` | 按原回调引用取消该事件的全部匹配订阅；不存在时无操作 |
 
 ## reaper.lifecycle
@@ -173,33 +172,15 @@ REAPER 工程、对象、播放及窗口状态通知。Host state notifications;
 | `reaper.transaction.endUndo(token)` | `Promise<boolean>` | 结束托管编辑手势 |
 | `reaper.transaction.withUndo(label, callback)` | `Promise<T>` | 执行回调并在 finally 结束 Undo，保留回调返回值 |
 
-## 迁移与使用 / Migration and usage
+## 使用 / Usage
 
-以下旧 namespace 路径已移除，不保留别名。The old namespace paths below are removed without compatibility aliases.
+JavaScript 通过 `reaper.lifecycle.ready` 等待就绪，再调用标准 REAPER API 和 Runtime 接口。
 
-| 旧路径 / Previous path | 当前路径 / Current path |
-| --- | --- |
-| `lifecycle.batch` | `transaction.batch` |
-| `lifecycle.beginUndo` | `transaction.beginUndo` |
-| `lifecycle.endUndo` | `transaction.endUndo` |
-| `lifecycle.withUndo` | `transaction.withUndo` |
-| `fs.readClipboardText` | `clipboard.readText` |
-| `fs.writeClipboardText` | `clipboard.writeText` |
-| `window.openExternal` | `system.openExternal` |
-| `debug.getCapabilities` | `system.getCapabilities` |
-| `debug.info` | `debug.log` |
-
-全部方法以 `reaper.` 开头。All method paths are relative to `reaper`.
-
-- `reaper.ReaWeb_Open(path)` → `reaper.window.open(path)`（仅 JavaScript；Lua 保持原生启动入口）。
-- `reaper.ready` → `reaper.lifecycle.ready`。
-- `reaper.ReaWeb_On(name, callback)` → `reaper.events.on(name, callback)`；原有 19 个事件名保持有效，新增 `native-drop`。
-- `reaper.ReaWeb_Batch` / `ReaWeb_BeginUndo` / `ReaWeb_EndUndo` / `ReaWeb_WithUndo` → `reaper.transaction` 中对应方法。编辑分组的开始、结束与异常清理归属事务管理；不会回滚已完成的写入。
-- 文件归 `fs`，剪贴板文本归 `clipboard`；外部链接归 `reaper.system.openExternal`；连续混音参数写入归 `reaper.audio.setTrackValueLatest`。
+Await `reaper.lifecycle.ready` before using REAPER APIs and Runtime services.
 
 ```js
 await reaper.lifecycle.ready;
-const track = await reaper.GetTrack(0, 0); // REAPER Mirror: unchanged
+const track = await reaper.GetTrack(0, 0); // REAPER Mirror
 if (track) {
   await reaper.transaction.withUndo("Set volume", async () => {
     await reaper.audio.setTrackValueLatest(track, "D_VOL", 0.5);

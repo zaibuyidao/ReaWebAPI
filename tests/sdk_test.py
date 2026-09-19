@@ -42,7 +42,7 @@ class SdkTests(unittest.TestCase):
         self.assertEqual(len(headings), 730)
         files = {p.relative_to(ROOT).as_posix(): p.read_bytes() for directory in ('docs', 'runtime', 'api')
                  for p in (ROOT / directory).rglob('*') if 'node_modules' not in p.parts and 'dist' not in p.parts and p.is_file() and p.suffix in ('.md', '.ts', '.js', '.json', '.lua', '.html', '.css')}
-        files.update({n: (ROOT / n).read_bytes() for n in ('README.md', 'README.zh-CN.md', 'THIRD_PARTY.md')})
+        files.update({n: (ROOT / n).read_bytes() for n in ('README.md', 'README.zh-CN.md', 'THIRD_PARTY.md', 'LICENSE.md', 'COPYING', 'COPYING.LESSER')})
         check_links(files)
 
     def test_batch_declarations_match_native_registry(self):
@@ -71,6 +71,8 @@ class SdkTests(unittest.TestCase):
                 self.assertIn('ReaWebAPI/docs/runtime-api-inventory.md', files)
                 self.assertIn('ReaWebAPI/SDK/runtime-demo/app.js', files)
                 self.assertIn('ReaWebAPI/SDK/tools/validate_app.py', files)
+                for name in ('LICENSE.md', 'COPYING', 'COPYING.LESSER', 'THIRD_PARTY.md'):
+                    self.assertEqual(files[f'ReaWebAPI/{name}'], (ROOT / name).read_bytes())
                 for line in files['SHA256SUMS.txt'].decode().splitlines():
                     digest, name = line.split('  ', 1)
                     self.assertEqual(hashlib.sha256(files[name]).hexdigest(), digest)

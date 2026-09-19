@@ -14,6 +14,6 @@ Reference for building WebView tools in REAPER.
 | [Host API](host-api.md) | Lua entry points, native bridge behavior and error codes |
 | [Web runtime](frontend.md) | Resources, storage, Workers and platform requirements |
 | [Source layout](source-layout.md) | Native modules and build targets |
-| [Release notes](release-notes.md) | Version history |
+| [Release notes](release-notes.md) | Current release |
 
 Extension maintainers can use the [API Sync guide](https://github.com/zaibuyidao/ReaWebAPI/tree/main/api) to update and verify the API catalogue.

@@ -132,9 +132,9 @@ const stop = await reaper.events.on('selectionchange', state => {
 await stop();
 ```
 
-订阅会提供初始快照及合并后的变化，工程和选择状态约每 100 ms 检查一次。它们用于刷新界面，不是编辑历史或采样时钟。异步回调需自行处理异常，组件卸载时取消订阅，整个页面关闭时会自动清理本页订阅。
+订阅会提供初始快照及合并后的变化，工程变化和原生轨道选择通知在每个主线程调度周期检查，轨道选择另保留 100 ms 兜底检查。它们用于刷新界面，不是编辑历史或采样时钟。异步回调需自行处理异常，组件卸载时取消订阅，整个页面关闭时会自动清理本页订阅。
 
-停靠切换会保留页面状态。浏览器 profile 按 App 目录隔离，同一目录的窗口共享存储。来源持久化与迁移规则见 [Web Runtime 约定](frontend.zh-CN.md)。保存 GUID 或工具设置，不要保存对象句柄，下次打开时针对正确的工程重新解析引用。浏览器存储和网络行为由各平台 WebView 决定。ReaWebAPI 不提供 Node.js 文件系统或 shell 接口。
+停靠切换会保留页面状态。浏览器 profile 按 App 目录隔离，同一目录的窗口共享存储。来源持久化与存储规则见 [Web Runtime 约定](frontend.zh-CN.md)。保存 GUID 或工具设置，不要保存对象句柄，下次打开时针对正确的工程重新解析引用。浏览器存储和网络行为由各平台 WebView 决定。ReaWebAPI 不提供 Node.js 文件系统或 shell 接口。
 
 ## 错误与调试
 
@@ -159,8 +159,8 @@ try {
 
 注明最低 REAPER 和 ReaWebAPI 版本，通过能力查询检查依赖的方法，并在界面解释缺失依赖。发布前检查空工程、没有选择、Unicode 路径、对象删除、工程切换、停靠、反复开关窗口及各目标系统。完整 Demo 可辅助桥接诊断，模拟 ABI 测试通过不代表已验证所有原生 API 对真实工程的影响。
 
-`ReaWebAPI-ReaPack-v<版本>.zip` 保持扩展专用结构：`extension/` 下七个原生文件，加 `ReaWebAPI.ext`。你的工具页面及 Lua 入口应独立发布。SDK ZIP 提供开发资料，不替代平台运行时下载。
+`ReaWebAPI-ReaPack-v<版本>.zip` 包含 `extension/` 下七个原生文件、`ReaWebAPI.ext` 和许可声明。工具页面及 Lua 入口应独立发布。SDK ZIP 提供开发资料。
 
 ## 现代前端与宿主 I/O
 
-Vite/TypeScript、loopback 开发入口、原生本地资源 fetch与 Worker 示例见[前端资源约定](frontend.zh-CN.md)。统一文件读写、剪贴板和外链见[宿主参考](host-api.zh-CN.md#文件与桌面服务)。v0.1.8 专注标准 REAPER API，不提供自定义 Lua RPC 或第三方 API 注册机制。
+Vite/TypeScript、loopback 开发入口、原生本地资源 fetch与 Worker 示例见[前端资源约定](frontend.zh-CN.md)。统一文件读写、剪贴板和外链见[宿主参考](host-api.zh-CN.md#文件与桌面服务)。
