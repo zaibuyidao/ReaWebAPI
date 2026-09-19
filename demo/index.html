@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'">
-  <title>ReaWebAPI · API Workbench</title>
+  <title>ReaWebAPI - Runtime Showcase</title>
   <link rel="icon" href="logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
@@ -12,13 +12,13 @@
 <body>
   <main>
     <header>
-      <div class="brand"><img class="mark" src="logo.svg" width="52" height="52" alt=""><div>ReaWebAPI<small>RUNTIME EXAMPLE / 001</small></div></div>
+      <div class="brand"><img class="mark" src="logo.svg" width="52" height="52" alt=""><div>ReaWebAPI<small>RUNTIME SHOWCASE</small></div></div>
       <div class="toolbar"><span class="status" id="status">Connecting</span><button id="dock" class="dock-button" type="button" aria-pressed="false" disabled>Dock</button></div>
     </header>
     <section class="intro">
       <span class="eyebrow">REAPER MEETS JAVASCRIPT</span>
-      <h1>Your session.<br><span>A new interface.</span></h1>
-      <p>Read your project, inspect track FX and try native API calls from JavaScript. Track edits support REAPER Undo.</p>
+      <h1>Your project.<br><span>A new interface.</span></h1>
+      <p>Explore your project, inspect track FX, and call native REAPER APIs directly from JavaScript. Track edits integrate with REAPER Undo.</p>
     </section>
     <section class="track-panel" aria-labelledby="track-label">
       <div class="panel-top"><span class="eyebrow" id="track-label">SELECTED TRACK</span><span id="track-count">— tracks in project</span></div>
@@ -46,7 +46,7 @@
       <ol id="check-results" class="data-list" aria-live="polite"><li>Checks cover handles, tuples, GUIDs, rectangles, MIDI bytes and audio buffers. Select a track with a MIDI item to exercise every path. No project edits.</li></ol>
     </section>
     <div class="lower-grid">
-      <section class="code-panel" aria-label="JavaScript example"><span class="eyebrow">NATIVE OUTPUTS. JAVASCRIPT TUPLES.</span><pre><code><span class="keyword">const</span> [total, markers, regions] =
+      <section class="code-panel" aria-label="JavaScript example"><span class="eyebrow">REAPER API MIRROR, JAVASCRIPT RETURNS</span><pre><code><span class="keyword">const</span> [total, markers, regions] =
   <span class="keyword">await</span> reaper.<span class="function">CountProjectMarkers</span>(0);
 <span class="keyword">const</span> [beat, bar, beatsPerBar] =
   <span class="keyword">await</span> reaper.<span class="function">TimeMap2_timeToBeats</span>(0, 5);</code></pre></section>
