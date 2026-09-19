@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-A native REAPER 6.60+ extension for running local HTML/CSS/JavaScript in a dockable WebView. Lua opens the page. The injected `reaper` object calls native APIs through Promises.
+A native REAPER 6.68+ extension for running local HTML/CSS/JavaScript in a dockable WebView. Lua opens the page. The injected `reaper` object calls native APIs through Promises.
 
 ## Install
 
@@ -18,9 +18,9 @@ Download from [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases). Choo
 
 Quit REAPER, place the extension in its resource directory's `UserPlugins/`, then restart. Linux also needs the matching `reawebapi-webview-<arch>` helper beside the `.so`.
 
-Each native file is available separately. Platform ZIPs include the demo and SDK. `ReaWebAPI-ReaPack-v0.1.2.zip` contains only seven native files in `extension/` and `ReaWebAPI.ext`, ready to copy into the ReaScripts repository. The `.ext` is also a separate release asset.
+Each native file is available separately. Platform ZIPs include the demo and SDK. `ReaWebAPI-ReaPack-v0.1.3.zip` contains only seven native files in `extension/` and `ReaWebAPI.ext`, ready to copy into the ReaScripts repository. The `.ext` is also a separate release asset.
 
-For the demo, merge a platform ZIP into the REAPER resource directory and load `Scripts/ReaWebAPI/Example/Example.lua` in the Action List. The demo follows track selection automatically. Its pan slider demonstrates coalesced writes, **Center pan (Undo)** demonstrates an Undo batch, and **Runtime diagnostics** shows host state. **Dock / Undock** moves the live page into or out of REAPER's Docker.
+Merge a platform ZIP into the REAPER resource directory and load `Scripts/ReaWebAPI/Example/Example.lua` in the Action List. The demo includes project, track and FX queries, color/pan Undo operations and docking. **Run read-only checks** exercises ten paths covering handles, tuples, GUIDs, rectangles, MIDI bytes and audio buffers. Select a track containing a MIDI item to cover every path. Empty projects show explicit skips.
 
 ## API
 
@@ -36,15 +36,23 @@ Lua exposes `ReaWeb_Close`, `ReaWeb_IsOpen`, `ReaWeb_IsReady`, `ReaWeb_Focus`, `
 ```javascript
 await reaper.ready;
 const track = await reaper.GetSelectedTrack(0, 0);
-if (track) console.log(await reaper.GetTrackName(track));
-const unsubscribe = await reaper.ReaWeb_On('selectionchange', state => console.log(state.count));
+if (track) {
+  const [ok, name] = await reaper.GetTrackName(track);
+  if (ok) console.log(name);
+}
+const [total, markers, regions] = await reaper.CountProjectMarkers(0);
+const [beat, bar] = await reaper.TimeMap2_timeToBeats(0, await reaper.GetCursorPosition());
 ```
 
-No bridge import is needed. The current API covers track counts, selection, names and `D_VOL`, `D_PAN`, `B_MUTE`, `I_SOLO`, plus window controls and `GetAppVersion()`. See [TypeScript declarations](runtime/reaper.d.ts) or call `ReaWeb_GetCapabilities()` for the full list. JavaScript window controls target the current page, without an ID. `ReaWebOpen(path)` opens another page relative to the current HTML directory.
+No bridge import is needed. **All 730 standard REAPER 7.80 APIs have native bindings.** Arguments and results follow Lua signature order. One result resolves to a scalar, multiple results to an array, and void to `undefined`. See the [SDK declarations](runtime/reaper-api.generated.d.ts). Older REAPER versions report `API_UNAVAILABLE` for missing functions. Check `ReaWeb_GetCapabilities().api.available` and `.unavailable`. Use REAPER 7.80 or newer for all 730 functions.
 
-Only the current project (`0` or `null`) is supported. Track handles belong to one window and project. Reacquire them after deleting tracks or switching projects. Errors reject with `code`, `message` and optional `details`. Reloading discards the old document queue. Project switches and file reloads reject stale requests. Requests expire after 25 seconds if execution has not started. Started calls cannot be cancelled. Check the resulting state after a timeout and do not automatically retry writes.
+Use `0` or `null` for the current project, or a project handle returned by `EnumProjects` for another open project. Tracks, items, takes, envelopes and resources use typed handles, never raw addresses. Reacquire deleted objects and handles from reloaded documents. MIDI bytes use `Uint8Array`. Audio buffers accept `Float64Array` or `number[]` and are updated before the Promise resolves. GUIDs use strings. RECT arguments follow the four coordinates in the Lua signature.
 
-Common host interfaces:
+**Migration:** `GetTrackName` now returns `[ok, name]`. Supply project and index arguments explicitly, as documented by REAPER. Ordinary track value calls accept the full native parameter set.
+
+JavaScript window controls target the current page without an ID. `ReaWebOpen(path)` resolves relative to the current HTML directory. Errors reject with `code`, `message` and optional `details`. Project switches reject stale queued calls. Requests expire after 25 seconds if execution has not started. Execution acknowledgement stops the queue timer, so native dialogs and renders can finish normally. Started calls cannot be cancelled. Do not automatically retry timed-out writes.
+
+Host APIs:
 
 | Capability | JavaScript |
 | --- | --- |
@@ -53,9 +61,10 @@ Common host interfaces:
 | Keyboard policy | `ReaWeb_SetKeyboardCapture(boolean)`, enabled by default. Disable to follow REAPER's shortcut rules |
 | Events | `ReaWeb_On(name, callback)`, returns an idempotent async disposer |
 | Batches, Undo | `ReaWeb_Batch(calls, { undoLabel })`, up to 32 calls |
+| Fixed output buffers | `ReaWeb_SetBufferSize(bytes)`, 64 KiB default, 16 MiB maximum |
 | Continuous controls | `ReaWeb_SetTrackValueLatest(track, key, value)`, superseded waiting values resolve with `superseded: true` |
 
-Events include `projectchange`, `selectionchange` and `windowstatechange`, with an initial snapshot and coalesced updates. Project and selection checks run about every 100 ms. Use them to refresh UI, not to record every edit. Batches validate arguments before execution and close Undo and UI refresh scopes synchronously. A partial failure returns `BATCH_FAILED` with completed results, without rolling back earlier writes. Coalescing is opt-in and leaves ordinary API calls unchanged. It does not create an Undo group for a drag gesture.
+Events include `projectchange`, `selectionchange` and `windowstatechange`, with an initial snapshot and coalesced updates. Project and selection checks run about every 100 ms. Use them to refresh UI, not to record every edit. Batches accept the nine APIs listed by `ReaWebBatchCall` in the SDK, validate before execution and close Undo/UI refresh scopes synchronously. All 730 APIs support ordinary calls. A partial failure returns `BATCH_FAILED` with completed results, without rolling back earlier writes. Coalescing is opt-in and leaves ordinary API calls unchanged. It does not create an Undo group for a drag gesture.
 
 ## Runtime
 
@@ -65,11 +74,22 @@ Floating windows are owned by REAPER. Docking preserves the page and its JavaScr
 
 REAPER APIs run on the main thread. Bridge dispatch rotates between windows with a 2 ms soft budget per tick. A single native call or docking operation cannot be preempted. Bridge JSON parsing, serialization and state file writes run on a worker. Messages and queues have fixed limits.
 
-Load trusted local pages only. ReaWebAPI exposes an explicit subset of REAPER APIs, not the entire native API. Browser profiles are shared, so prefix storage keys with your tool's name.
+Pages have the full capabilities of the exposed APIs, including project writes and file operations. Load trusted local pages. Browser profiles are shared, so prefix storage keys with your tool's name.
+
+## API definition maintenance
+
+The independent [API Sync Tool](api/README.md) maintains definitions and differences. `tools/native_bindings.py` lowers native arguments and generates C++ during the build. CMake checks the complete schema, bindings and official SDK types offline. Unmapped arguments and signature drift block the build. Runtime JSON installation is unnecessary.
+
+```sh
+python -m tools.api_sync check --require-complete
+python -m tools.api_sync report
+```
+
+API Sync `update` never accepts binding changes automatically. See the maintenance guide for the review workflow.
 
 ## Build and release
 
-Requires CMake 3.24+, C++17, Python 3 and platform development tools. Linux also needs `pkg-config`, `libwebkit2gtk-4.1-dev` and `libx11-dev`. Dependency revisions are pinned in `CMakeLists.txt`.
+Requires CMake 3.24+, C++17, Python 3.10+ and platform development tools. Linux also needs `pkg-config`, `libwebkit2gtk-4.1-dev` and `libx11-dev`. Dependency revisions are pinned in `CMakeLists.txt`.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

@@ -107,26 +107,20 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     console = load<void (*)(const char*)>(rec, "ShowConsoleMsg");
     auto resource = load<const char* (*)()>(rec, "GetResourcePath");
     auto enum_projects = load<ReaProject* (*)(int, char*, int)>(rec, "EnumProjects");
-    auto count_tracks = load<int (*)(ReaProject*)>(rec, "CountTracks");
     auto count_selected = load<int (*)(ReaProject*)>(rec, "CountSelectedTracks");
-    auto get_track = load<MediaTrack* (*)(ReaProject*, int)>(rec, "GetTrack");
     auto get_selected = load<MediaTrack* (*)(ReaProject*, int)>(rec, "GetSelectedTrack");
     auto valid = load<bool (*)(ReaProject*, void*, const char*)>(rec, "ValidatePtr2");
     auto guid = load<GUID* (*)(MediaTrack*)>(rec, "GetTrackGUID");
-    auto name = load<bool (*)(MediaTrack*, char*, int)>(rec, "GetTrackName");
-    auto get_value = load<double (*)(MediaTrack*, const char*)>(rec, "GetMediaTrackInfo_Value");
-    auto set_value = load<bool (*)(MediaTrack*, const char*, double)>(rec, "SetMediaTrackInfo_Value");
-    auto version = load<const char* (*)()>(rec, "GetAppVersion");
     auto update = load<void (*)()>(rec, "UpdateArrange");
     auto changes = load<int (*)(ReaProject*)>(rec, "GetProjectStateChangeCount");
     auto begin_undo = load<void (*)(ReaProject*)>(rec, "Undo_BeginBlock2");
     auto end_undo = load<void (*)(ReaProject*, const char*, int)>(rec, "Undo_EndBlock2");
     auto prevent_refresh = load<void (*)(int)>(rec, "PreventUIRefresh");
     Host host;
+    host.native_function = rec->GetFunc;
+    host.valid_window = [](void* w) { return IsWindow(static_cast<HWND>(w)) != 0; };
     host.current_project = [enum_projects] { return enum_projects(-1, nullptr, 0); };
-    host.count_tracks = [count_tracks](void* p) { return count_tracks(static_cast<ReaProject*>(p)); };
     host.count_selected_tracks = [count_selected](void* p) { return count_selected(static_cast<ReaProject*>(p)); };
-    host.get_track = [get_track](void* p, int i) { return get_track(static_cast<ReaProject*>(p), i); };
     host.get_selected_track = [get_selected](void* p, int i) { return get_selected(static_cast<ReaProject*>(p), i); };
     host.valid_track = [valid](void* p, void* t) { return valid(static_cast<ReaProject*>(p), t, "MediaTrack*"); };
     host.track_guid = [guid](void* t) {
@@ -137,17 +131,6 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       std::memcpy(result.data(), source, result.size());
       return result;
     };
-    host.track_name = [name](void* t) {
-      std::vector<char> buffer(65536);
-      if (!name(static_cast<MediaTrack*>(t), buffer.data(), static_cast<int>(buffer.size())))
-        throw Error("NATIVE_ERROR", "GetTrackName failed");
-      return std::string(buffer.data());
-    };
-    host.get_track_value = [get_value](void* t, const std::string& key) { return get_value(static_cast<MediaTrack*>(t), key.c_str()); };
-    host.set_track_value = [set_value](void* t, const std::string& key, double value) {
-      return set_value(static_cast<MediaTrack*>(t), key.c_str(), value);
-    };
-    host.version = [version] { return std::string(version()); };
     host.change_count = [changes](void* project) { return changes(static_cast<ReaProject*>(project)); };
     host.project_generation = [] { return project_generation.load(std::memory_order_relaxed); };
     host.begin_undo = [begin_undo](void* project) { begin_undo(static_cast<ReaProject*>(project)); };

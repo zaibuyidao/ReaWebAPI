@@ -38,6 +38,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libx11-dev
+      - name: Verify API definitions and native coverage
+        run: python -m tools.api_sync verify
       - name: Configure Windows
         if: matrix.platform == 'windows'
         run: cmake -S . -B build -A x64 -DBUILD_TESTING=OFF

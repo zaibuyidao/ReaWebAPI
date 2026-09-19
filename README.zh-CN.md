@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-REAPER 6.60+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/JavaScript。Lua 负责打开页面，JavaScript 通过注入的 `reaper` 对象异步调用原生 API。
+REAPER 6.68+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/JavaScript。Lua 负责打开页面，JavaScript 通过注入的 `reaper` 对象异步调用原生 API。
 
 ## 安装
 
@@ -18,9 +18,9 @@ REAPER 6.60+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/Jav
 
 退出 REAPER，把扩展放入资源目录的 `UserPlugins/`，再重启。Linux 还需将同架构的 `reawebapi-webview-<arch>` 辅助程序放在 `.so` 旁边。
 
-每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.2.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
+每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.3.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
 
-运行 Demo 时，将平台 ZIP 合并到 REAPER 资源目录，在 Action List 加载 `Scripts/ReaWebAPI/Example/Example.lua`。Demo 会跟随轨道选择自动更新。声像滑块演示连续写入合并，**Center pan (Undo)** 演示 Undo 批处理，**Runtime diagnostics** 显示宿主状态。**Dock / Undock** 可切换停靠和浮动。
+将平台 ZIP 合并到 REAPER 资源目录，在 Action List 加载 `Scripts/ReaWebAPI/Example/Example.lua`。Demo 提供工程、轨道和 FX 查询，颜色及声像 Undo 操作，以及停靠切换。**Run read-only checks** 执行 10 条检查，覆盖对象句柄、多返回值、GUID、RECT、MIDI 字节和音频数组。选中带 MIDI Item 的轨道可覆盖全部路径，空工程会明确显示跳过项。
 
 ## API
 
@@ -36,13 +36,21 @@ Lua 提供 `ReaWeb_Close`、`ReaWeb_IsOpen`、`ReaWeb_IsReady`、`ReaWeb_Focus`�
 ```javascript
 await reaper.ready;
 const track = await reaper.GetSelectedTrack(0, 0);
-if (track) console.log(await reaper.GetTrackName(track));
-const unsubscribe = await reaper.ReaWeb_On('selectionchange', state => console.log(state.count));
+if (track) {
+  const [ok, name] = await reaper.GetTrackName(track);
+  if (ok) console.log(name);
+}
+const [total, markers, regions] = await reaper.CountProjectMarkers(0);
+const [beat, bar] = await reaper.TimeMap2_timeToBeats(0, await reaper.GetCursorPosition());
 ```
 
-页面无需导入桥接脚本。当前支持轨道数量、选择、名称，以及 `D_VOL`、`D_PAN`、`B_MUTE`、`I_SOLO` 的读写，另有窗口控制和 `GetAppVersion()`。完整列表见 [TypeScript 声明](runtime/reaper.d.ts)，也可调用 `ReaWeb_GetCapabilities()` 查询。JavaScript 窗口控制方法作用于当前页面，无需传 ID。`ReaWebOpen(path)` 从当前 HTML 所在目录解析新页面的相对路径。
+页面无需导入桥接脚本。**REAPER 7.80 的 730 个标准 API 均已绑定原生调用**，参数和返回值按 Lua 签名排列。单值返回标量，多值返回数组，无返回值得到 `undefined`。声明见 [SDK](runtime/reaper-api.generated.d.ts)。较旧 REAPER 缺少的函数会报 `API_UNAVAILABLE`，可通过 `ReaWeb_GetCapabilities().api` 的 `available`、`unavailable` 查询。要使用全部 730 项，请使用 REAPER 7.80 或更新版本。
 
-工程参数目前仅支持当前工程（`0` 或 `null`）。轨道句柄只在所属窗口和工程内有效，删除轨道或切换工程后应重新获取。调用失败时 Promise 抛出带有 `code`、`message` 和可选 `details` 的错误。页面重载会丢弃旧页面队列，切换或重新载入工程后旧请求会被拒绝。请求超过 25 秒尚未开始执行时会过期，已开始的调用无法取消。超时后应核对状态，写操作不要自动重试。
+`0` 或 `null` 表示当前工程，`EnumProjects` 返回的工程句柄可用于其他已打开工程。轨道、Item、Take、包络及资源均使用类型化句柄，不传裸指针。删除对象或重载页面后需重新获取。MIDI 字节使用 `Uint8Array`，音频缓冲区使用 `Float64Array` 或 `number[]`，在 `await` 完成后读取回写数据。GUID 使用字符串，RECT 按官方 Lua 的四个坐标参数展开。
+
+**升级注意：** `GetTrackName` 现在返回 `[ok, name]`，工程和索引参数应按官方签名显式传入。原来的 5 个轨道参数白名单已移除，普通调用支持 REAPER 提供的参数键。
+
+JavaScript 窗口控制方法作用于当前页面，无需窗口 ID。`ReaWebOpen(path)` 从当前 HTML 目录解析相对路径。失败会抛出带 `code`、`message` 和可选 `details` 的错误。工程切换后旧请求会被拒绝，未开始的请求在 25 秒后过期。原生调用开始后会停止排队计时，允许对话框和渲染正常完成。已经开始的调用不能取消，超时后不要自动重试写操作。
 
 通用宿主接口：
 
@@ -53,9 +61,10 @@ const unsubscribe = await reaper.ReaWeb_On('selectionchange', state => console.l
 | 键盘策略 | `ReaWeb_SetKeyboardCapture(boolean)`，默认捕获，关闭后遵循 REAPER 的快捷键规则 |
 | 事件 | `ReaWeb_On(name, callback)`，返回可重复调用的异步取消订阅函数 |
 | 批处理、Undo | `ReaWeb_Batch(calls, { undoLabel })`，每组最多 32 个调用 |
+| 固定输出缓冲区 | `ReaWeb_SetBufferSize(bytes)`，默认 64 KiB，最大 16 MiB |
 | 连续参数 | `ReaWeb_SetTrackValueLatest(track, key, value)`，被合并的等待值返回 `superseded: true` |
 
-事件包含 `projectchange`、`selectionchange`、`windowstatechange`，提供初始状态并合并后续变化。工程和选择事件约每 100 ms 检查一次，适合刷新界面，不用于逐条记录编辑历史。批处理会预先校验参数，并同步结束 Undo 和刷新保护。中途失败返回 `BATCH_FAILED` 及已完成的结果，不回滚已经发生的修改。连续参数合并需要显式使用对应接口，不改变普通 API 的逐次调用行为，也不自动创建拖动手势的 Undo 分组。
+事件包含 `projectchange`、`selectionchange`、`windowstatechange`，提供初始状态并合并后续变化。工程和选择事件约每 100 ms 检查一次，适合刷新界面，不用于逐条记录编辑历史。批处理只接受 SDK 中 `ReaWebBatchCall` 列出的 9 个接口，预先校验参数，并同步结束 Undo 和刷新保护。全部 730 个接口均可普通调用。中途失败返回 `BATCH_FAILED` 及已完成的结果，不回滚已经发生的修改。连续参数合并需要显式使用对应接口，不改变普通 API 的逐次调用行为，也不自动创建拖动手势的 Undo 分组。
 
 ## 运行环境
 
@@ -65,11 +74,22 @@ Windows 使用 WebView2，macOS 使用 WKWebView，Linux 通过独立共享进�
 
 REAPER API 始终在主线程执行，窗口轮流处理请求，桥接调度采用每轮 2 ms 的软预算。单个原生调用和停靠操作无法抢占。桥接 JSON 解析、序列化及状态文件写入交给工作线程，队列和消息大小均有限制。
 
-仅加载可信的本地页面。当前桥接提供明确实现的一组 API，尚未覆盖整个 REAPER API。浏览器 profile 共用，存储 key 建议加上工具名称前缀。
+页面拥有所绑定 API 的完整能力，包括工程写入和文件操作，请仅加载可信页面。浏览器 profile 共用，存储 key 建议加上工具名称前缀。
+
+## API 定义维护
+
+[API Sync Tool](api/README.zh-CN.md) 独立维护定义与差异，`tools/native_bindings.py` 负责原生参数映射和构建期代码生成。CMake 离线检查全部定义、绑定和官方 SDK 类型，任何未映射参数或签名漂移都会阻止构建。运行时无需额外安装 JSON。
+
+```sh
+python -m tools.api_sync check --require-complete
+python -m tools.api_sync report
+```
+
+API Sync 的 `update` 不自动接受绑定变更。升级官方定义的审阅流程见维护文档。
 
 ## 构建与发布
 
-需要 CMake 3.24+、C++17、Python 3 和对应平台开发工具。Linux 还需 `pkg-config`、`libwebkit2gtk-4.1-dev`、`libx11-dev`。依赖版本固定在 `CMakeLists.txt`。
+需要 CMake 3.24+、C++17、Python 3.10+ 和对应平台开发工具。Linux 还需 `pkg-config`、`libwebkit2gtk-4.1-dev`、`libx11-dev`。依赖版本固定在 `CMakeLists.txt`。
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

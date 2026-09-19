@@ -75,7 +75,7 @@ int Runtime::open(const std::string& path, const fs::path& base) {
         Work work;
         work.session = s->id; work.generation = s->generation; work.project = project_epoch_;
         work.text = std::move(message); work.reply = true;
-        if (work.text.size() > 65536 || s->outstanding >= 256 || !worker_.submit(std::move(work)))
+        if (work.text.size() > 64 * 1024 * 1024 || s->outstanding >= 256 || !worker_.submit(std::move(work)))
           fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.");
         else ++s->outstanding;
       }
@@ -244,13 +244,14 @@ void Runtime::observe(Clock::time_point deadline) {
   const auto project = host_.current_project();
   const auto generation = host_.project_generation ? host_.project_generation() : 0;
   if (project_ != project || host_generation_ != generation) {
+    const bool loaded = host_generation_ != generation;
     project_ = project;
     host_generation_ = generation;
     ++project_epoch_;
     project_changes_ = -1;
     selection_index_ = 0; selection_count_ = -1; last_selection_hash_ = 0;
     selection_event_ = nullptr;
-    for (auto& item : sessions_) item.second->bridge->reset_handles();
+    if (loaded) for (auto& item : sessions_) item.second->bridge->reset_handles();
     next_observation_ = Clock::now();
   }
   if (Clock::now() < next_observation_) return;
@@ -377,6 +378,9 @@ void Runtime::tick() {
         const bool project_call = method.rfind("ReaWeb", 0) != 0 || method == "ReaWeb_Batch";
         if (project_call && (request.project != project_epoch_ || data.value("project", project_epoch_) != project_epoch_))
           throw Error("PROJECT_CHANGED", "The current project changed. Refresh the tool state before trying again.", {{"projectEpoch", project_epoch_}});
+        // Deliver directly before entering a potentially modal native call.
+        // Queuing this on the worker would defer delivery until the call returns.
+        s->window->evaluate("window.__reawebReceive(" + Json{{"id", data["id"]}, {"document", document}, {"started", true}}.dump() + ");");
         response = s->bridge->dispatch_request(data);
       }
     } catch (const Error& e) { response = error_response(data, e.code, e.what(), e.details); }

@@ -3,14 +3,18 @@
 #include <iomanip>
 #include <sstream>
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 
 namespace reaweb {
 namespace {
-constexpr size_t byte_limit = 16 * 1024 * 1024;
+constexpr size_t byte_limit = 256 * 1024 * 1024;
 size_t json_cost(const Json& value) {
   size_t size = 64;
   if (value.is_string()) return size + value.get_ref<const std::string&>().size() * 6;
@@ -81,8 +85,8 @@ void Worker::run() {
       }
       if (work.kind == Work::Encode) {
         auto encoded = work.data.dump(-1, ' ', true, Json::error_handler_t::replace);
-        if (encoded.size() > 512 * 1024) {
-          encoded = error_response(work.data, "RESPONSE_LIMIT", "Response exceeds 512 KiB. Use a smaller batch.").dump();
+        if (encoded.size() > 64 * 1024 * 1024) {
+          encoded = error_response(work.data, "RESPONSE_LIMIT", "Response exceeds 64 MiB. Request a smaller block.").dump();
         }
         work.text = "window.__reawebReceive(" + encoded + ");";
         work.data = nullptr;

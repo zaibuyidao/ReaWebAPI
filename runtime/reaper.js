@@ -12,6 +12,30 @@
       ? message => window.webkit.messageHandlers.reaweb.postMessage(message)
       : null;
   const failure = (code, message, details) => Object.assign(new Error(message), { code, ...(details ? { details } : {}) });
+  const byteString = value => {
+    let binary = '';
+    for (let i = 0; i < value.length; i += 8192) binary += String.fromCharCode(...value.subarray(i, i + 8192));
+    return btoa(binary);
+  };
+  const encodeValue = (_, value) => {
+    if (value instanceof Uint8Array) return { __reawebBytes: byteString(value) };
+    if (value instanceof Float64Array) {
+      const data = new Uint8Array(value.length * 8), view = new DataView(data.buffer);
+      for (let i = 0; i < value.length; ++i) view.setFloat64(i * 8, value[i], true);
+      return { __reawebFloat64: byteString(data) };
+    }
+    if (typeof value === 'number' && !Number.isFinite(value))
+      throw failure('INVALID_ARGUMENT', 'NaN and Infinity are not native API arguments');
+    return value;
+  };
+  const decodeValue = value => {
+    if (value && typeof value === 'object' && typeof value.__reawebBytes === 'string') {
+      const binary = atob(value.__reawebBytes);
+      return Uint8Array.from(binary, c => c.charCodeAt(0));
+    }
+    if (Array.isArray(value)) return value.map(decodeValue);
+    return value;
+  };
   const notify = (callback, data) => {
     try { callback(data); } catch (error) { console.error('[ReaWebAPI event]', error); }
   };
@@ -30,13 +54,15 @@
     }
     const item = pending.get(message?.id);
     if (!item) return;
+    // Native dialogs and renders can legitimately outlive the queue timeout.
+    if (message.started === true) { clearTimeout(item.timer); return; }
     pending.delete(message.id);
     clearTimeout(item.timer);
     if (message.error) {
       if (message.error.code === 'PROJECT_CHANGED' && message.error.details?.projectEpoch)
         projectEpoch = message.error.details.projectEpoch;
       item.reject(failure(message.error.code, message.error.message, message.error.details));
-    } else item.resolve(message.result);
+    } else item.resolve(decodeValue(message.result));
   };
   Object.defineProperty(window, '__reawebReceive', { value: receive });
   const send = (method, args) => new Promise((resolve, reject) => {
@@ -50,8 +76,8 @@
     }, 30000);
     pending.set(id, { resolve, reject, timer });
     try {
-      const message = JSON.stringify({ id, document: documentId, project: projectEpoch, expiresAt: Date.now() + 25000, method, args });
-      if (new TextEncoder().encode(message).length > 65536) throw failure('MESSAGE_LIMIT', 'Bridge message exceeds 64 KiB');
+      const message = JSON.stringify({ id, document: documentId, project: projectEpoch, expiresAt: Date.now() + 25000, method, args }, encodeValue);
+      if (new TextEncoder().encode(message).length > 64 * 1024 * 1024) throw failure('MESSAGE_LIMIT', 'Bridge message exceeds 64 MiB');
       post(message);
     } catch (error) {
       clearTimeout(timer);
@@ -61,6 +87,8 @@
   });
   const ready = send('__reawebHello', [1]).then(capabilities => {
     if (capabilities?.protocol !== 1) throw failure('PROTOCOL_MISMATCH', 'Unsupported native bridge protocol');
+    if (!Array.isArray(capabilities.methods) || reawebApiMethods.some(name => !capabilities.methods.includes(name)))
+      throw failure('SCHEMA_MISMATCH', 'JavaScript API definitions do not match the native host');
     projectEpoch = capabilities.projectEpoch;
     return Object.freeze(capabilities);
   });
@@ -74,14 +102,28 @@
   };
   const api = Object.create(null);
   const methods = [
-    'CountTracks', 'CountSelectedTracks', 'GetTrack', 'GetSelectedTrack', 'GetTrackName',
-    'GetMediaTrackInfo_Value', 'SetMediaTrackInfo_Value', 'GetAppVersion', 'ReaWebOpen',
+    ...reawebApiMethods, 'ReaWebOpen',
     'ReaWeb_Close', 'ReaWeb_DevTools', 'ReaWeb_SetDocked', 'ReaWeb_IsDocked', 'ReaWeb_GetCapabilities',
     'ReaWeb_Batch', 'ReaWeb_GetWindowState', 'ReaWeb_GetDiagnostics', 'ReaWeb_Focus',
-    'ReaWeb_SetTitle', 'ReaWeb_SetKeyboardCapture'
+    'ReaWeb_SetTitle', 'ReaWeb_SetKeyboardCapture', 'ReaWeb_SetBufferSize'
   ];
   api.ready = ready;
-  for (const name of methods) api[name] = (...args) => call(name, args);
+  for (const name of methods) api[name] = (...args) => call(name, args).then(result => {
+    if (result?.__reawebCall === true) {
+      for (const update of result.arrays) {
+        const target = args[update.index];
+        const data = decodeValue(update.values);
+        const binary = data instanceof Uint8Array;
+        const length = binary ? data.byteLength / 8 : data.length;
+        if (!target || !Number.isInteger(length) || target.length !== length)
+          throw failure('ARRAY_CHANGED', 'Keep sample buffers the same size until the API call resolves');
+        const view = binary ? new DataView(data.buffer, data.byteOffset, data.byteLength) : null;
+        for (let i = 0; i < length; ++i) target[i] = view ? view.getFloat64(i * 8, true) : data[i];
+      }
+      result = decodeValue(result.value);
+    }
+    return reawebApiVoidMethods.includes(name) ? undefined : result;
+  });
   api.ReaWeb_On = async (name, callback) => {
     if (!['projectchange', 'selectionchange', 'windowstatechange'].includes(name))
       throw failure('UNKNOWN_EVENT', 'Unknown host event');

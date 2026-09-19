@@ -7,3 +7,5 @@
 - macOS links the system Cocoa/WebKit frameworks. The Linux helper dynamically links system GTK 3, WebKitGTK 4.1 and Xlib. These libraries are not bundled.
 
 Dependency notices are included under `ReaWebAPI/licenses/` in installation bundles. Exact source revisions and the WebView2 package SHA-256 are pinned in `CMakeLists.txt`.
+
+The API catalogue is derived from the [official REAPER ReaScript documentation](https://www.reaper.fm/sdk/reascript/reascripthelp.html), Cockos Incorporated. It stores factual API signatures and links, with source version and SHA-256 recorded in `api/reaper_api.json`. Full documentation prose is not bundled.

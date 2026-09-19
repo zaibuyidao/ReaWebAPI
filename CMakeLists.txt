@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.1.2 LANGUAGES CXX)
+project(ReaWebAPI VERSION 0.1.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,29 +16,53 @@ FetchContent_Declare(json
   GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03)
 FetchContent_MakeAvailable(json)
 
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/runtime/reaper.js" REAWEB_BRIDGE_JS)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS runtime/reaper.js)
-configure_file(src/bridge_script.hpp.in generated/bridge_script.hpp @ONLY)
+FetchContent_Declare(reaper_sdk
+  GIT_REPOSITORY https://github.com/justinfrankel/reaper-sdk.git
+  GIT_TAG 08e885d14c87c2973ec301d220ff9fe6b6a7cbeb)
+FetchContent_Declare(wdl
+  GIT_REPOSITORY https://github.com/justinfrankel/WDL.git
+  GIT_TAG 8f4d783de745126ac8c201455dc30818c8613324)
+FetchContent_MakeAvailable(reaper_sdk wdl)
+# The official SDK uses a sibling ../WDL include.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
+configure_file("${reaper_sdk_SOURCE_DIR}/sdk/reaper_plugin.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk/reaper_plugin.h" COPYONLY)
+configure_file("${reaper_sdk_SOURCE_DIR}/sdk/reaper_plugin_functions.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk/reaper_plugin_functions.h" COPYONLY)
+file(COPY "${wdl_SOURCE_DIR}/WDL/" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/WDL")
+
+find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+# Offline and deterministic: builds never fetch or silently update API definitions.
+file(GLOB REAWEB_SYNC_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/api_sync/*.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  ${REAWEB_SYNC_SOURCES} tools/native_bindings.py api/reaper_api.json api/bindings.json src/core.cpp
+  runtime/reaper.js runtime/reaper.d.ts runtime/reaper-api.generated.js runtime/reaper-api.generated.d.ts)
+execute_process(COMMAND "${Python3_EXECUTABLE}" -m tools.api_sync export-runtime
+  --output "${CMAKE_CURRENT_BINARY_DIR}/generated/api_schema.hpp"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESULT_VARIABLE REAWEB_SCHEMA_RESULT)
+if(NOT REAWEB_SCHEMA_RESULT EQUAL 0)
+  message(FATAL_ERROR "API schema validation failed. Run python -m tools.api_sync verify.")
+endif()
+execute_process(COMMAND "${Python3_EXECUTABLE}" tools/native_bindings.py
+  --output "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESULT_VARIABLE REAWEB_NATIVE_RESULT)
+if(NOT REAWEB_NATIVE_RESULT EQUAL 0)
+  message(FATAL_ERROR "Native API compilation failed. No incomplete bindings are emitted.")
+endif()
 
 find_package(Threads REQUIRED)
-add_library(reaweb_core STATIC src/core.cpp src/worker.cpp)
+add_library(reaweb_core STATIC src/core.cpp src/worker.cpp src/native.cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
 target_include_directories(reaweb_core PUBLIC src)
+target_include_directories(reaweb_core SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
+target_compile_definitions(reaweb_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+if(NOT WIN32)
+  target_compile_definitions(reaweb_core PRIVATE SWELL_PROVIDED_BY_APP)
+endif()
+target_include_directories(reaweb_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(reaweb_core PUBLIC nlohmann_json::nlohmann_json Threads::Threads)
 target_compile_definitions(reaweb_core PUBLIC REAWEB_VERSION="${PROJECT_VERSION}")
 
 if(REAWEB_BUILD_EXTENSION)
-  FetchContent_Declare(reaper_sdk
-    GIT_REPOSITORY https://github.com/justinfrankel/reaper-sdk.git
-    GIT_TAG 08e885d14c87c2973ec301d220ff9fe6b6a7cbeb)
-  FetchContent_Declare(wdl
-    GIT_REPOSITORY https://github.com/justinfrankel/WDL.git
-    GIT_TAG 8f4d783de745126ac8c201455dc30818c8613324)
-  FetchContent_MakeAvailable(reaper_sdk wdl)
-  # The official SDK uses a sibling ../WDL include.
-  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
-  configure_file("${reaper_sdk_SOURCE_DIR}/sdk/reaper_plugin.h"
-    "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk/reaper_plugin.h" COPYONLY)
-  file(COPY "${wdl_SOURCE_DIR}/WDL/" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/WDL")
 
   add_library(reawebapi MODULE src/plugin.cpp src/runtime.cpp)
   target_link_libraries(reawebapi PRIVATE reaweb_core)

@@ -5,6 +5,7 @@
 #include <functional>
 #include <deque>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -22,17 +23,13 @@ struct Error : std::runtime_error {
 };
 
 struct Host {
+  std::function<void*(const char*)> native_function;
+  std::function<bool(void*)> valid_window;
   std::function<void*()> current_project;
-  std::function<int(void*)> count_tracks;
   std::function<int(void*)> count_selected_tracks;
-  std::function<void*(void*, int)> get_track;
   std::function<void*(void*, int)> get_selected_track;
   std::function<bool(void*, void*)> valid_track;
   std::function<Guid(void*)> track_guid;
-  std::function<std::string(void*)> track_name;
-  std::function<double(void*, const std::string&)> get_track_value;
-  std::function<bool(void*, const std::string&, double)> set_track_value;
-  std::function<std::string()> version;
   std::function<int(void*)> change_count;
   std::function<uint64_t()> project_generation;
   std::function<void(void*)> begin_undo;
@@ -58,26 +55,23 @@ public:
     std::function<Json(const std::string&, const Json&)> host_call;
   };
   Bridge(Host& host, Controls controls, std::string session);
+  ~Bridge();
   Json dispatch(const std::string& message);
   Json dispatch_request(const Json& request);
   void observe_project();
   void reset_handles();
 private:
-  struct Handle { void* pointer; void* project; Guid guid; };
   struct Method { size_t min_args, max_args; std::function<Json(const Json&)> invoke; };
   Host& host_;
+  std::unique_ptr<class NativeContext> native_;
   Controls controls_;
   std::string session_;
   void* project_ = nullptr;
-  uint64_t next_handle_ = 0;
-  std::unordered_map<std::string, Handle> handles_;
-  std::unordered_map<void*, std::string> track_tokens_;
-  std::deque<std::string> handle_scan_;
   std::map<std::string, Method> methods_;
   bool batching_ = false;
   void add(const std::string& name, size_t min, size_t max, std::function<Json(const Json&)> fn);
+  void add_reaper(const std::string& name, std::function<Json(const Json&)> fn);
   void* project(const Json& args);
-  Json track_handle(void* pointer);
   void* track(const Json& value);
   Json batch(const Json& args);
 };

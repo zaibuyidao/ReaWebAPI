@@ -9,6 +9,15 @@
 !/src/
 !/runtime/
 !/demo/
+!/api/
+/api/*
+!/api/reaper_api.json
+!/api/bindings.json
+!/api/README.md
+!/api/README.zh-CN.md
+!/api/changelog/
+/api/changelog/*
+!/api/changelog/*.md
 
 !/.github/
 /.github/*
@@ -20,6 +29,10 @@
 /tools/*
 !/tools/package.py
 !/tools/release.py
+!/tools/native_bindings.py
+!/tools/api_sync/
+/tools/api_sync/*
+!/tools/api_sync/*.py
 
 # Generated files inside the allowed source directories.
 CMakeFiles/
