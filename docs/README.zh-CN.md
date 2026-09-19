@@ -21,8 +21,10 @@
 
 - [Frontend / 前端资源约定](frontend.md)
 - [前端资源约定（中文）](frontend.zh-CN.md)
-- [v0.1.7 release notes / 发布说明](release-notes.md)
+- [v0.1.8 release notes / 发布说明](release-notes.md)
 
-[v0.1.7 Runtime namespaces](runtime-api.md) · [v0.1.7 命名空间接口](runtime-api.zh-CN.md)
+[v0.1.8 Runtime namespaces](runtime-api.md) · [v0.1.8 命名空间接口](runtime-api.zh-CN.md)
 
 [Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) — 13 implemented namespaces, 67 methods, 1 Promise property.
+
+[Source layout / 源码结构](source-layout.md) — v0.1.8 native source organization.

@@ -33,7 +33,7 @@ def payload(root, version, revision):
                  'src/main.ts', 'src/worker.ts', 'src/style.css', 'public/data.json'):
         paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'runtime/modern' / name
     for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md',
-                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md'):
+                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reaper_api.json', 'bindings.json'):
         paths[f'ReaWebAPI/SDK/api/{name}'] = root / 'api' / name

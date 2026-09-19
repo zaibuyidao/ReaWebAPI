@@ -18,7 +18,7 @@ REAPER 6.68+ 原生扩展，在可停靠的 WebView 中运行本地 HTML/CSS/Jav
 
 退出 REAPER，把扩展放入资源目录的 `UserPlugins/`，再重启。Linux 还需将同架构的 `reawebapi-webview-<arch>` 辅助程序放在 `.so` 旁边。
 
-每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.7.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
+每个原生文件均可单独下载。各平台 ZIP 包含 Demo 和 SDK。`ReaWebAPI-ReaPack-v0.1.8.zip` 只包含 `extension/` 内的 7 个原生文件和 `ReaWebAPI.ext`，可复制到 ReaScripts 仓库。`.ext` 也提供独立下载。
 
 将平台 ZIP 合并到 REAPER 资源目录，在 Action List 加载 `Scripts/ReaWebAPI/Example/Example.lua`。Demo 提供工程、轨道和 FX 查询，颜色及声像 Undo 操作，以及停靠切换。**Run read-only checks** 执行 10 条检查，覆盖对象句柄、多返回值、GUID、RECT、MIDI 字节和音频数组。选中带 MIDI Item 的轨道可覆盖全部路径，空工程会明确显示跳过项。
 
@@ -114,3 +114,5 @@ Windows 使用 MSVC x64，配置时加 `-A x64`。macOS 加 `-DCMAKE_OSX_ARCHITE
 JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`，不保留 `reaper.ReaWeb_*`、`reaper.ReaWebOpen` 或 `reaper.ready` 兼容入口。Lua 在网页尚未启动时仍通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
 
 [Runtime API 完整清单 / Complete inventory](docs/runtime-api-inventory.md) — 13 implemented namespaces, 67 methods, 1 Promise property.
+
+v0.1.8 将原生源码整理为 `core/`、`runtime/`、`platform/`、`web/`、`plugin/` 五层，按职责拆分 Runtime 实现，扩展与测试共用会话运行库。详见[源码结构](docs/source-layout.md)和[发布说明](docs/release-notes.md)。

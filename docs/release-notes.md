@@ -1,3 +1,21 @@
+# ReaWebAPI v0.1.8
+
+## Source organization / 源码整理
+
+- Group native sources into `src/core/`, `src/runtime/`, `src/platform/`, `src/web/` and `src/plugin/`. Separate Windows, macOS and Linux backends, with shared SWELL support under `platform/shared/`.
+- Split batch execution from bridge dispatch; split Runtime window, event, lifecycle, diagnostic, transaction, App, audio, theme, file, system and drag responsibilities into focused implementation files.
+- Build session orchestration once as `reaweb_runtime`, shared by the extension and native Runtime tests. Update CMake, qualified includes, API generation, ABI generation, SDK/source checks and source documentation for the new paths.
+- Preserve all 730 standard REAPER Mirror bindings, eleven Lua host APIs, thirteen browser Runtime namespaces (67 methods and one Promise property), existing behavior and SDK minimum extension requirement of 0.1.7.
+- Retain the macOS file-time fix: timestamps are converted without narrowing 128-bit values or losing tick precision.
+
+v0.1.8 以原生源码分层为主：五个职责目录、三平台后端目录及共享 SWELL 支持；拆分已有实现，并同步构建、生成器、测试和 SDK 文档。公开 API、协议、730 项镜像绑定和行为保持兼容。没有为命名空间添加空文件或新 API。完整目录及职责见[源码结构](source-layout.md)。
+
+## Validation / 验证
+
+See the repository validation record for the checks actually run on this revision. Native macOS/ARM builds and REAPER acceptance remain platform-specific; local Windows/Linux verification is not a macOS build result.
+
+---
+
 # ReaWebAPI v0.1.7
 
 ## Changes

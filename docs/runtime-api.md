@@ -1,4 +1,4 @@
-# v0.1.7 Runtime API
+# v0.1.8 Runtime API
 
 [Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) · [TypeScript](../runtime/runtime-api.d.ts)
 

@@ -27,8 +27,9 @@ class SyncTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         for directory in ('api', 'src', 'runtime', 'docs'):
             (self.root / directory).mkdir()
-        for name in ('api/reaper_api.json', 'api/bindings.json', 'src/core.cpp',
+        for name in ('api/reaper_api.json', 'api/bindings.json', 'src/core/core.cpp',
                      'runtime/reaper-api.generated.js', 'runtime/reaper-api.generated.d.ts', 'runtime/reaper.d.ts', 'docs/api-reference.md'):
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, self.root / name)
 
     def command(self, *args):
@@ -114,11 +115,11 @@ class SyncTests(unittest.TestCase):
         self.assertIn('returns', report['difference']['changed']['GetAppVersion']['fields'])
         self.assertEqual(report['coverage']['needsReview'], ['GetAppVersion'])
         self.assertEqual(report['coverage']['implemented'], 729)
-        native = (self.root / 'src/core.cpp').read_bytes()
+        native = (self.root / 'src/core/core.cpp').read_bytes()
         bindings = (self.root / 'api/bindings.json').read_bytes()
         result = self.command('update', '--source', location)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.root / 'src/core.cpp').read_bytes(), native)
+        self.assertEqual((self.root / 'src/core/core.cpp').read_bytes(), native)
         self.assertEqual((self.root / 'api/bindings.json').read_bytes(), bindings)
         self.assertEqual(self.command('verify').returncode, 2)
         before = self.snapshot()
@@ -161,7 +162,7 @@ class SyncTests(unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout)['written'], ['runtime/reaper-api.generated.d.ts'])
                 self.assertEqual(path.read_bytes(), original.encode('utf-8'))
                 self.assertEqual(self.command('verify').returncode, 0)
-        native = self.root / 'src/core.cpp'
+        native = self.root / 'src/core/core.cpp'
         native.write_text(native.read_text().replace('native_->invoke', 'unwired_native'))
         self.assertEqual(self.command('verify').returncode, 2)
 

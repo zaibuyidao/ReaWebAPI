@@ -18,7 +18,7 @@ Download from [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases). Choo
 
 Quit REAPER, place the extension in its resource directory's `UserPlugins/`, then restart. Linux also needs the matching `reawebapi-webview-<arch>` helper beside the `.so`.
 
-Each native file is available separately. Platform ZIPs include the demo and SDK. `ReaWebAPI-ReaPack-v0.1.7.zip` contains only seven native files in `extension/` and `ReaWebAPI.ext`, ready to copy into the ReaScripts repository. The `.ext` is also a separate release asset.
+Each native file is available separately. Platform ZIPs include the demo and SDK. `ReaWebAPI-ReaPack-v0.1.8.zip` contains only seven native files in `extension/` and `ReaWebAPI.ext`, ready to copy into the ReaScripts repository. The `.ext` is also a separate release asset.
 
 Merge a platform ZIP into the REAPER resource directory and load `Scripts/ReaWebAPI/Example/Example.lua` in the Action List. The demo includes project, track and FX queries, color/pan Undo operations and docking. **Run read-only checks** exercises ten paths covering handles, tuples, GUIDs, rectangles, MIDI bytes and audio buffers. Select a track containing a MIDI item to cover every path. Empty projects show explicit skips.
 
@@ -70,7 +70,7 @@ Host APIs:
 | Fixed output buffers | `reaper.debug.setBufferSize(bytes)`, 64 KiB default, 16 MiB maximum |
 | Continuous controls | `reaper.audio.setTrackValueLatest(track, key, value)`, superseded waiting values resolve with `superseded: true` |
 
-Events now include track/item/take selection, transport, FX, project and window state. Batches expose 173 reviewed standard APIs with result references, current-project validation and paired Undo/refresh cleanup. Managed Undo gestures survive browser awaits and are closed by the host on reload/close or timeout. Files, clipboard and external links have common host APIs; TypeScript/Vite development uses an explicit loopback entry. See the [host reference](docs/host-api.md), [frontend contract](docs/frontend.md) and [v0.1.7 changes](docs/release-notes.md).
+Events now include track/item/take selection, transport, FX, project and window state. Batches expose 173 reviewed standard APIs with result references, current-project validation and paired Undo/refresh cleanup. Managed Undo gestures survive browser awaits and are closed by the host on reload/close or timeout. Files, clipboard and external links have common host APIs; TypeScript/Vite development uses an explicit loopback entry. See the [host reference](docs/host-api.md), [frontend contract](docs/frontend.md) and [v0.1.8 changes](docs/release-notes.md).
 
 v0.1.7 fixes 13 typed Runtime namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`. All thirteen provide implemented APIs, including App identity/data paths, native file/text drag/drop, system information and events.off; debug.info is removed in favor of log. See the [Runtime API](docs/runtime-api.md) and run `SDK/runtime-demo/Open.lua` for Runtime Studio.
 
@@ -114,3 +114,5 @@ Regression tests are committed and run on every CI platform before packaging/rel
 JavaScript uses `reaper.window.open(path)` and `reaper.lifecycle.ready`, with no flat Runtime aliases. Lua bootstrap remains `reaper.ReaWeb_Open(path)`; these native Lua functions are separate from the browser SDK. The 730 standard REAPER mirror names are unchanged.
 
 [Runtime API 完整清单 / Complete inventory](docs/runtime-api-inventory.md) — 13 implemented namespaces, 67 methods, 1 Promise property.
+
+v0.1.8 organizes native sources into `core/`, `runtime/`, `platform/`, `web/` and `plugin/`, with focused Runtime implementation files and a shared session library for the extension and tests. See the [source layout](docs/source-layout.md) and [release notes](docs/release-notes.md).

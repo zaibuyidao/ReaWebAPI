@@ -6,7 +6,7 @@ sys.path.insert(0,str(ROOT))
 from tools.native_bindings import plans,canonical,HANDLES
 schema=json.loads((ROOT/'api/reaper_api.json').read_text())
 rows=plans(schema)
-lines=['#include "native_call.hpp"','#include <cstring>','#include <iostream>', 'using namespace reaweb;', '#define CHECK(x) do {if(!(x)) throw std::runtime_error(std::string(active)+": " #x);}while(false)', 'static const char* active="setup";', 'static int calls[730]{};', 'static GUID guid{0x12345678,0x1234,0x5678,{1,2,3,4,5,6,7,8}};', 'static int register_buffer(char**,int*) { return 123; }', 'static void clear_buffer(int t) { CHECK(t==123); }']
+lines=['#include "core/native_call.hpp"','#include <cstring>','#include <iostream>', 'using namespace reaweb;', '#define CHECK(x) do {if(!(x)) throw std::runtime_error(std::string(active)+": " #x);}while(false)', 'static const char* active="setup";', 'static int calls[730]{};', 'static GUID guid{0x12345678,0x1234,0x5678,{1,2,3,4,5,6,7,8}};', 'static int register_buffer(char**,int*) { return 123; }', 'static void clear_buffer(int t) { CHECK(t==123); }']
 inputs={};outputs={}
 pointers={t: 4096+i*256 for i,t in enumerate(sorted(HANDLES))}
 for fi,row in enumerate(rows):

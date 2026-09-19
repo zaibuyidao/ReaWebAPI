@@ -46,7 +46,7 @@ class SdkTests(unittest.TestCase):
         check_links(files)
 
     def test_batch_declarations_match_native_registry(self):
-        source = (ROOT / 'src/batch.hpp').read_text(encoding='utf-8')
+        source = (ROOT / 'src/core/batch.hpp').read_text(encoding='utf-8')
         native = set(re.findall(r'"([A-Za-z][A-Za-z0-9_]+)"', source))
         types = (ROOT / 'runtime/reaper.d.ts').read_text(encoding='utf-8')
         union = types.split('type ReaWebBatchMethod =', 1)[1].split(';', 1)[0]
@@ -58,7 +58,7 @@ class SdkTests(unittest.TestCase):
 
     def test_standalone_sdk_content_links_and_checksums(self):
         with tempfile.TemporaryDirectory() as directory:
-            archive = build_sdk(Path(directory), '0.1.7', 'test-sdk')
+            archive = build_sdk(Path(directory), '0.1.8', 'test-sdk')
             with zipfile.ZipFile(archive) as z:
                 files = {name: z.read(name) for name in z.namelist()}
                 self.assertFalse(any(name.startswith('UserPlugins/') or name.endswith(('.dll', '.so', '.dylib')) for name in files))

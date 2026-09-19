@@ -151,7 +151,7 @@ def manifest(schema):
 
 def cpp(schema):
     rows = plans(schema)
-    lines = ['// Generated in the build directory. Never edit.', '#include "native_call.hpp"',
+    lines = ['// Generated in the build directory. Never edit.', '#include "core/native_call.hpp"',
              '#define REAPERAPI_FUNCNAME(name) reaweb_sdk_##name', '#include <reaper_plugin_functions.h>',
              '#undef REAPERAPI_FUNCNAME', 'namespace reaweb {', 'namespace {']
     for i, row in enumerate(rows):

@@ -163,4 +163,4 @@ try {
 
 ## 现代前端与宿主 I/O
 
-Vite/TypeScript、loopback 开发入口、原生本地资源 fetch与 Worker 示例见[前端资源约定](frontend.zh-CN.md)。统一文件读写、剪贴板和外链见[宿主参考](host-api.zh-CN.md#文件与桌面服务)。v0.1.7 专注标准 REAPER API，不提供自定义 Lua RPC 或第三方 API 注册机制。
+Vite/TypeScript、loopback 开发入口、原生本地资源 fetch与 Worker 示例见[前端资源约定](frontend.zh-CN.md)。统一文件读写、剪贴板和外链见[宿主参考](host-api.zh-CN.md#文件与桌面服务)。v0.1.8 专注标准 REAPER API，不提供自定义 Lua RPC 或第三方 API 注册机制。

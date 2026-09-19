@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.1.7 LANGUAGES CXX)
+project(ReaWebAPI VERSION 0.1.8 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,7 +47,7 @@ find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
 # Offline and deterministic: builds never fetch or silently update API definitions.
 file(GLOB REAWEB_SYNC_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/api_sync/*.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  ${REAWEB_SYNC_SOURCES} tools/native_bindings.py api/reaper_api.json api/bindings.json src/core.cpp
+  ${REAWEB_SYNC_SOURCES} tools/native_bindings.py api/reaper_api.json api/bindings.json src/core/core.cpp
   runtime/reaper.js runtime/reaper.d.ts runtime/reaper-api.generated.js runtime/reaper-api.generated.d.ts
   docs/api-reference.md)
 execute_process(COMMAND "${Python3_EXECUTABLE}" -m tools.api_sync export-runtime
@@ -64,7 +64,20 @@ if(NOT REAWEB_NATIVE_RESULT EQUAL 0)
 endif()
 
 find_package(Threads REQUIRED)
-add_library(reaweb_core STATIC src/core.cpp src/worker.cpp src/native.cpp src/host_io.cpp src/web_resources.cpp src/runtime_services.cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
+add_library(reaweb_core STATIC
+  src/core/core.cpp
+  src/core/batch.cpp
+  src/core/native.cpp
+  src/core/worker.cpp
+  src/runtime/services.cpp
+  src/runtime/app.cpp
+  src/runtime/audio.cpp
+  src/runtime/drag_drop.cpp
+  src/runtime/fs.cpp
+  src/runtime/system.cpp
+  src/runtime/theme.cpp
+  src/web/web_resources.cpp
+  "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
 target_include_directories(reaweb_core PUBLIC src)
 target_include_directories(reaweb_core SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
 target_compile_definitions(reaweb_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -75,10 +88,21 @@ target_include_directories(reaweb_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/gene
 target_link_libraries(reaweb_core PUBLIC nlohmann_json::nlohmann_json Threads::Threads PRIVATE httplib::httplib)
 target_compile_definitions(reaweb_core PUBLIC REAWEB_VERSION="${PROJECT_VERSION}")
 
+# Share the same session implementation between the plugin and native tests.
+add_library(reaweb_runtime STATIC
+  src/runtime/runtime.cpp
+  src/runtime/window.cpp
+  src/runtime/events.cpp
+  src/runtime/lifecycle.cpp
+  src/runtime/debug.cpp
+  src/runtime/transaction.cpp)
+target_link_libraries(reaweb_runtime PUBLIC reaweb_core)
+target_include_directories(reaweb_runtime PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
 if(REAWEB_BUILD_EXTENSION)
 
-  add_library(reawebapi MODULE src/plugin.cpp src/runtime.cpp src/runtime_events.cpp src/runtime_lifecycle.cpp)
-  target_link_libraries(reawebapi PRIVATE reaweb_core)
+  add_library(reawebapi MODULE src/plugin/plugin.cpp)
+  target_link_libraries(reawebapi PRIVATE reaweb_runtime)
   target_compile_definitions(reawebapi PRIVATE NOMINMAX)
   target_include_directories(reawebapi PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
   target_include_directories(reawebapi SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
@@ -94,7 +118,7 @@ if(REAWEB_BUILD_EXTENSION)
       URL_HASH SHA256=ef128016dd1e51c59178c827ed5b8aa3322c57afa8675d930f8109505542ad74
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     FetchContent_MakeAvailable(webview2)
-    target_sources(reawebapi PRIVATE src/platform_win.cpp)
+    target_sources(reawebapi PRIVATE src/platform/windows/platform_win.cpp)
     target_include_directories(reawebapi PRIVATE "${webview2_SOURCE_DIR}/build/native/include")
     target_link_libraries(reawebapi PRIVATE
       "${webview2_SOURCE_DIR}/build/native/x64/WebView2LoaderStatic.lib"
@@ -105,8 +129,8 @@ if(REAWEB_BUILD_EXTENSION)
     enable_language(OBJCXX)
     set_target_properties(reawebapi PROPERTIES OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED ON)
     target_compile_definitions(reawebapi PRIVATE SWELL_PROVIDED_BY_APP)
-    target_sources(reawebapi PRIVATE src/platform_mac.mm src/swell_window.cpp "${wdl_SOURCE_DIR}/WDL/swell/swell-modstub.mm")
-    set_source_files_properties(src/platform_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_sources(reawebapi PRIVATE src/platform/macos/platform_mac.mm src/platform/shared/swell_window.cpp "${wdl_SOURCE_DIR}/WDL/swell/swell-modstub.mm")
+    set_source_files_properties(src/platform/macos/platform_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(reawebapi PRIVATE "-framework Cocoa" "-framework WebKit")
     if(CMAKE_OSX_ARCHITECTURES)
       set(REAWEB_ARCH "${CMAKE_OSX_ARCHITECTURES}")
@@ -121,10 +145,10 @@ if(REAWEB_BUILD_EXTENSION)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(WEBKIT REQUIRED IMPORTED_TARGET webkit2gtk-4.1>=2.40)
     find_package(X11 REQUIRED)
-    add_executable(reaweb_webkit src/linux_webkit.cpp)
+    add_executable(reaweb_webkit src/platform/linux/linux_webkit.cpp)
     target_link_libraries(reaweb_webkit PRIVATE reaweb_core PkgConfig::WEBKIT X11::X11)
     target_compile_definitions(reawebapi PRIVATE SWELL_PROVIDED_BY_APP)
-    target_sources(reawebapi PRIVATE src/platform_linux.cpp src/swell_window.cpp
+    target_sources(reawebapi PRIVATE src/platform/linux/platform_linux.cpp src/platform/shared/swell_window.cpp
       "${wdl_SOURCE_DIR}/WDL/swell/swell-modstub-generic.cpp")
     target_link_libraries(reawebapi PRIVATE ${CMAKE_DL_LIBS})
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
@@ -161,11 +185,13 @@ endif()
 
 if(MSVC)
   target_compile_options(reaweb_core PRIVATE /W4 /utf-8)
+  target_compile_options(reaweb_runtime PRIVATE /W4 /utf-8)
   if(TARGET reawebapi)
     target_compile_options(reawebapi PRIVATE /W4 /utf-8)
   endif()
 else()
   target_compile_options(reaweb_core PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(reaweb_runtime PRIVATE -Wall -Wextra -Wpedantic)
   if(TARGET reawebapi)
     target_compile_options(reawebapi PRIVATE -Wall -Wextra)
   endif()

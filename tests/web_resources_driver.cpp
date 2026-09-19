@@ -1,4 +1,4 @@
-#include "web_resources.hpp"
+#include "web/web_resources.hpp"
 #include <iostream>
 int main(int argc, char** argv) {
   if (argc != 3) return 1;

@@ -1,8 +1,8 @@
 add_executable(core_tests core_tests.cpp)
 target_link_libraries(core_tests PRIVATE reaweb_core)
 add_test(NAME core COMMAND core_tests)
-add_executable(runtime_tests runtime_tests.cpp "${PROJECT_SOURCE_DIR}/src/runtime.cpp" "${PROJECT_SOURCE_DIR}/src/runtime_events.cpp" "${PROJECT_SOURCE_DIR}/src/runtime_lifecycle.cpp")
-target_link_libraries(runtime_tests PRIVATE reaweb_core)
+add_executable(runtime_tests runtime_tests.cpp)
+target_link_libraries(runtime_tests PRIVATE reaweb_runtime)
 target_include_directories(runtime_tests PRIVATE "${PROJECT_BINARY_DIR}/generated")
 add_test(NAME runtime COMMAND runtime_tests)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -51,9 +51,8 @@ endif()
 # Interactive native integration test: opt in explicitly; never manipulate a CI desktop from ctest.
 if(WIN32 AND REAWEB_BUILD_EXTENSION)
   add_executable(windows_native_drag EXCLUDE_FROM_ALL windows_native_drag.cpp
-    "${PROJECT_SOURCE_DIR}/src/platform_win.cpp" "${PROJECT_SOURCE_DIR}/src/runtime.cpp"
-    "${PROJECT_SOURCE_DIR}/src/runtime_events.cpp" "${PROJECT_SOURCE_DIR}/src/runtime_lifecycle.cpp")
-  target_link_libraries(windows_native_drag PRIVATE reaweb_core
+    "${PROJECT_SOURCE_DIR}/src/platform/windows/platform_win.cpp")
+  target_link_libraries(windows_native_drag PRIVATE reaweb_runtime
     "${webview2_SOURCE_DIR}/build/native/x64/WebView2LoaderStatic.lib"
     ole32 oleaut32 user32 shlwapi shell32 version advapi32 uuid)
   target_include_directories(windows_native_drag PRIVATE "${PROJECT_BINARY_DIR}/generated" "${webview2_SOURCE_DIR}/build/native/include")

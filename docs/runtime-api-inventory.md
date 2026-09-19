@@ -1,6 +1,6 @@
 # Runtime API 完整清单 / Complete API inventory
 
-v0.1.7 的 JavaScript Runtime 只公开以下 **13 个命名空间、67 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
+v0.1.8 的 JavaScript Runtime 只公开以下 **13 个命名空间、67 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
 
 The JavaScript Runtime exposes only these thirteen namespaces: 67 methods and one Promise property. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact parameter and result types, including overloads, are in [runtime-api.d.ts](../runtime/runtime-api.d.ts). Behavior and limits: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Host services](host-api.md).
 

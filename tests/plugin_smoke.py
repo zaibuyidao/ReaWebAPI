@@ -22,7 +22,7 @@ parser.add_argument('--starter', action='store_true', help='Exercise the SDK sta
 parser.add_argument('--dev', action='store_true', help='Exercise Vite modules, Worker, fetch and CSS HMR through OpenDev')
 parser.add_argument('--modern', action='store_true', help='Exercise the built TypeScript template')
 parser.add_argument('--runtime', action='store_true', help='Exercise Web Runtime v1 and per-App browser storage')
-parser.add_argument('--studio', action='store_true', help='Exercise the v0.1.7 Runtime Studio UI')
+parser.add_argument('--studio', action='store_true', help='Exercise the v0.1.8 Runtime Studio UI')
 parser.add_argument('--resource-root', type=Path, help='Reuse a dedicated test resource directory across host processes')
 parser.add_argument('--empty', action='store_true', help='Use an empty project for demo tests')
 args = parser.parse_args()
@@ -510,7 +510,7 @@ try:
     }
   };
   const el = id => document.getElementById(id);
-  if (!el('status').textContent.startsWith('Connected to ReaWebAPI 0.1.7')) throw new Error(el('status').textContent);
+  if (!el('status').textContent.startsWith('Connected to ReaWebAPI 0.1.8')) throw new Error(el('status').textContent);
   if (!sessionStorage.getItem('studioReload')) {
     sessionStorage.setItem('studioReload', 'yes');
     await reaper.window.reload(); return;

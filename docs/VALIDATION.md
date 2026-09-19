@@ -1,3 +1,22 @@
+# v0.1.8 source-layout validation — 2026-09-19
+
+| Target | Result |
+| --- | --- |
+| Windows x64 / MSVC | Release extension build and all 9 CTest suites passed, including the native ABI, Runtime, JavaScript, Python/SDK and resource checks |
+| Linux x86_64 / GCC | Release extension and WebKit helper built; all 8 native/Python/resource suites passed; the JS bridge suite was excluded because this WSL cache selects Windows node.exe, and passed on Windows |
+| Optional Windows native-drag target | Compiled and linked against the shared `reaweb_runtime` library; interactive gestures were not rerun for this source-only refactor |
+| TypeScript / Vite | Strict SDK contract check and modern starter production build passed with package version 0.1.8 |
+| Mirror / browser contract | API Sync verified all 730 definitions and reviewed bindings; the Mirror catalogue, binding manifest, browser bridge and all declaration files are unchanged from the preceding revision |
+| Installation / packaging | Windows CMake installation and local v0.1.8 platform package succeeded, including SDK/source-layout documentation and 79 checksummed files; standalone SDK packaging/link/checksum checks passed in the Python suite |
+| Source references | Build targets, generated native includes, ABI generator, API Sync fixtures, batch checks and documentation use the new paths; the old flat source references were checked for leftovers |
+| macOS / ARM targets | CMake paths and qualified includes updated; no local macOS or ARM build/runtime result is claimed |
+
+The five source groups and build-target boundaries are described in [source layout](source-layout.md). Existing Runtime definitions were accounted for after extraction; host-call routing now delegates managed Undo to `transaction.cpp`. The macOS lossless file-time conversion and its 64/128-bit regression cases are retained.
+
+The local packaging check is under `.cache/v018-package-check/` and uses revision `local-v0.1.8-layout`. No commit, push, tag or remote publication was performed. The release unit test's `github.com/test/repo` output is a mocked fixture. Prior browser/native interaction results below belong to their original versions; they were not rerun as v0.1.8 acceptance.
+
+---
+
 # v0.1.7 validation — 2026-09-19
 
 | Target | Result |

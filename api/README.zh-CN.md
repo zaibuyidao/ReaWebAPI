@@ -10,8 +10,8 @@
 | --- | --- |
 | `tools/api_sync/` | 解析、规范化、比较官方定义，生成定义文件和 SDK，不修改原生实现、审阅清单或 Git |
 | `tools/native_bindings.py` | 校验 Lua/C 参数对应关系，生成强类型 C++ 调用入口，显式接受已审阅的绑定契约 |
-| `src/native.cpp`、`src/native_call.hpp` | 参数转换、输出缓冲区、对象句柄和资源生命周期 |
-| `src/core.cpp`、`src/runtime.cpp` | 主线程调度、页面隔离、错误和宿主能力 |
+| `src/core/native.cpp`、`src/core/native_call.hpp` | 参数转换、输出缓冲区、对象句柄和资源生命周期 |
+| `src/core/core.cpp`、`src/runtime/runtime.cpp` | 主线程调度、页面隔离、错误和宿主能力 |
 
 `api/reaper_api.json` 保留原始签名、规范化参数、返回值、分类和来源 SHA-256。每项 `signatureHash` 包含 C 与 Lua 契约，`catalogueHash` 覆盖全表。文档只存链接和哈希，不整篇复制。`schemaVersion` 管理数据结构版本，`generatorVersion` 管理规范化算法版本。
 

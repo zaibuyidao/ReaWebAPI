@@ -152,7 +152,7 @@ const results = await reaper.transaction.batch([
 
 Lua 相对 HTML 路径从 REAPER 的 `Scripts/` 目录解析，模板使用启动器所在目录的绝对路径。正数窗口 ID 表示窗口已创建，不表示页面就绪。异步加载错误可能稍后出现在 REAPER 控制台和诊断信息中，启动器无需 defer 循环维持页面。
 
-[v0.1.7 Runtime namespaces](runtime-api.md) · [v0.1.7 命名空间接口](runtime-api.zh-CN.md)
+[v0.1.8 Runtime namespaces](runtime-api.md) · [v0.1.8 命名空间接口](runtime-api.zh-CN.md)
 
 JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`，不保留 `reaper.ReaWeb_*`、`reaper.ReaWebOpen` 或 `reaper.ready` 兼容入口。Lua 在网页尚未启动时仍通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
 

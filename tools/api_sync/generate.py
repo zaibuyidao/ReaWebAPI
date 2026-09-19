@@ -109,7 +109,7 @@ def verify(root, schema, manifest, check_generated=True):
     registered = [p['name'] for p in plans(schema)]
     if set(registered) != set(manifest['functions']) or manifest != native_manifest(schema):
         raise ValueError('Native compiler mappings do not match api/bindings.json. Review tools/native_bindings.py.')
-    source = (root / 'src/core.cpp').read_text(encoding='utf-8-sig')
+    source = (root / 'src/core/core.cpp').read_text(encoding='utf-8-sig')
     if 'native_entries()' not in source or 'native_->invoke' not in source:
         raise ValueError('Native compiler registry is not connected to Bridge')
     direct = re.findall(r'\badd\("([A-Za-z_]\w*)"\s*,', source)

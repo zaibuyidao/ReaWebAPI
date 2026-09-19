@@ -8,7 +8,7 @@
 | --- | --- |
 | `reaper.d.ts` | 编辑器入口，声明全局 `reaper`、宿主接口、句柄、事件和诊断类型 |
 | `reaper-api.generated.d.ts` | 全部 730 项 REAPER 方法、Promise 返回类型、返回值名称和官方链接 |
-| `runtime-api.d.ts` | v0.1.7 Runtime namespace types / 命名空间类型 |
+| `runtime-api.d.ts` | v0.1.8 Runtime namespace types / 命名空间类型 |
 | `runtime-demo/` | Runtime Studio: audio, events, lifecycle, windows and theme / 音频与宿主功能示例 |
 | `app-manifest.schema.json` | Minimal App manifest schema / 最小应用描述 |
 | `starter/` | 可运行的 Lua + HTML/CSS/JavaScript 模板，附带 `checkJs` 配置 |
@@ -29,7 +29,7 @@
 
 独立 ZIP 还包含 `SDK/api/` 下的机器可读定义和绑定清单、版本及提交记录、校验和。这些是开发资料，不负责注册 API，分发工具时也无需附带。
 
-[v0.1.7 Runtime API](../docs/runtime-api.md) · [Runtime API 中文](../docs/runtime-api.zh-CN.md)
+[v0.1.8 Runtime API](../docs/runtime-api.md) · [Runtime API 中文](../docs/runtime-api.zh-CN.md)
 
 JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`，不保留 `reaper.ReaWeb_*`、`reaper.ReaWebOpen` 或 `reaper.ready` 兼容入口。Lua 在网页尚未启动时仍通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
 

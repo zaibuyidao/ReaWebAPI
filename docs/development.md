@@ -163,4 +163,4 @@ The dedicated `ReaWebAPI-ReaPack-v<version>.zip` remains the extension payload o
 
 ## Modern frontend and host I/O
 
-See the [frontend contract](frontend.md) for Vite/TypeScript, loopback development, native local-resource fetch and Workers. The [host reference](host-api.md#files-and-desktop-services) covers common file, clipboard and external-link APIs. v0.1.7 focuses on standard REAPER APIs; custom Lua RPC and third-party registration are outside its scope.
+See the [frontend contract](frontend.md) for Vite/TypeScript, loopback development, native local-resource fetch and Workers. The [host reference](host-api.md#files-and-desktop-services) covers common file, clipboard and external-link APIs. v0.1.8 focuses on standard REAPER APIs; custom Lua RPC and third-party registration are outside its scope.

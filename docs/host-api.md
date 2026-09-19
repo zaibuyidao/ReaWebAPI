@@ -152,7 +152,7 @@ These native extension functions are called synchronously from Lua. First use `r
 
 Lua relative HTML paths resolve from REAPER's `Scripts/` directory. The starter uses its own absolute directory for portability. A positive window ID means the window was created, not that the page is ready. Loading errors can arrive later in the REAPER console and diagnostics. A Lua launcher does not need a defer loop to keep its page alive.
 
-[v0.1.7 Runtime namespaces](runtime-api.md) · [v0.1.7 命名空间接口](runtime-api.zh-CN.md)
+[v0.1.8 Runtime namespaces](runtime-api.md) · [v0.1.8 命名空间接口](runtime-api.zh-CN.md)
 
 JavaScript opens pages with `reaper.window.open(path)` and waits on `reaper.lifecycle.ready`. No flat `reaper.ReaWeb_*`, `reaper.ReaWebOpen` or `reaper.ready` aliases are exposed. Lua bootstrap remains `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains Lua-only native functions. The 730 standard REAPER mirror names are unchanged.
 

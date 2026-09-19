@@ -10,8 +10,8 @@ Scope: **all 730 standard C/Lua APIs in REAPER 7.80**. Every entry has a generat
 | --- | --- |
 | `tools/api_sync/` | Parse, normalize and compare official definitions, write schema and SDK data without changing native code, binding reviews or Git |
 | `tools/native_bindings.py` | Lower Lua/C arguments into typed C++ calls and explicitly accept reviewed binding contracts |
-| `src/native.cpp`, `src/native_call.hpp` | Marshalling, buffers, typed handles and resource lifetimes |
-| `src/core.cpp`, `src/runtime.cpp` | Main-thread dispatch, document isolation, errors and host facilities |
+| `src/core/native.cpp`, `src/core/native_call.hpp` | Marshalling, buffers, typed handles and resource lifetimes |
+| `src/core/core.cpp`, `src/runtime/runtime.cpp` | Main-thread dispatch, document isolation, errors and host facilities |
 
 `api/reaper_api.json` retains signatures, normalized arguments/results, categories and source SHA-256. Each `signatureHash` covers C and Lua contracts. `catalogueHash` covers the complete schema. Documentation is linked and hashed rather than copied. `schemaVersion` versions the data structure, `generatorVersion` the normalization algorithm.
 
