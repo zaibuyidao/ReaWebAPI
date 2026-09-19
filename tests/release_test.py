@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.parse import unquote
 import zipfile
 
 spec = importlib.util.spec_from_file_location('release', Path(__file__).parents[1] / 'tools/release.py')
@@ -33,8 +34,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(assets), 16)
         self.assertIn(self.directory / f'ReaWebAPI-SDK-v{self.version}.zip', assets)
         with zipfile.ZipFile(self.directory / f'ReaWebAPI-ReaPack-v{self.version}.zip') as bundle:
-            demo = Path(__file__).parents[1] / 'demo'
-            demo_files = {f'demo/{path.relative_to(demo).as_posix()}': path.read_bytes()
+            demo = Path(__file__).parents[1] / 'web'
+            demo_files = {f'web/{path.relative_to(demo).as_posix()}': path.read_bytes()
                           for path in demo.rglob('*') if path.is_file()}
             files = {entry.filename for entry in bundle.infolist() if not entry.is_dir()}
             self.assertEqual(files, {'ReaWebAPI.ext'} | demo_files.keys() |
@@ -45,7 +46,19 @@ class ReleaseTests(unittest.TestCase):
             for _, name in release.native_files():
                 self.assertEqual(bundle.read(f'extension/{name}'), (self.directory / name).read_bytes())
                 self.assertEqual(bundle.getinfo(f'extension/{name}').external_attr >> 16, 0o100755)
-            self.assertNotIn('web/', bundle.read('ReaWebAPI.ext').decode())
+            descriptor = bundle.read('ReaWebAPI.ext').decode()
+            entries = release.re.findall(r'^  \[script (main|nomain)\] (web/.+?) (https://\S+)$',
+                                         descriptor, release.re.MULTILINE)
+            self.assertEqual(len(entries), len(demo_files))
+            self.assertEqual({target for _, target, _ in entries}, set(demo_files))
+            self.assertEqual([target for mode, target, _ in entries if mode == 'main'],
+                             ['web/ReaWebAPI_Demo.lua'])
+            for _, target, url in entries:
+                self.assertEqual(unquote(url),
+                                 'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/' + target)
+                self.assertEqual(bundle.read(target), demo_files[target])
+            self.assertIn('-- @noindex', bundle.read('web/ReaWebAPI_Demo.lua').decode())
+            self.assertEqual((self.directory / 'ReaWebAPI.ext').read_text(encoding='utf-8'), descriptor)
             self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 7)
             self.assertIn(f'@version {self.version}\n', bundle.read('ReaWebAPI.ext').decode())
         body = release.release_body('test/repo', self.version)
@@ -63,14 +76,32 @@ class ReleaseTests(unittest.TestCase):
         with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as bundle:
             release.add_demo(bundle, demo)
         with zipfile.ZipFile(output) as bundle:
-            self.assertEqual(set(bundle.namelist()), {'demo/', 'demo/assets/', 'demo/assets/empty/'} |
-                             {f'demo/{name}' for name in resources})
+            self.assertEqual(set(bundle.namelist()), {'web/', 'web/assets/', 'web/assets/empty/'} |
+                             {f'web/{name}' for name in resources})
             for name, data in resources.items():
-                self.assertEqual(bundle.read(f'demo/{name}'), data)
+                self.assertEqual(bundle.read(f'web/{name}'), data)
     def test_missing_demo_is_rejected(self):
         with zipfile.ZipFile(self.directory / 'demo-test.zip', 'w') as bundle:
             with self.assertRaisesRegex(ValueError, 'Missing Demo directory'):
                 release.add_demo(bundle, self.directory / 'missing-demo')
+    def test_descriptor_includes_new_nested_resources(self):
+        demo = self.directory / 'demo'
+        (demo / 'assets').mkdir(parents=True)
+        (demo / 'ReaWebAPI_Demo.lua').write_text('-- @noindex\n', encoding='utf-8')
+        (demo / 'assets/音频 #%.wav').write_bytes(bytes(range(256)))
+        (demo / '.config').write_text('hidden', encoding='utf-8')
+        descriptor = release.descriptor(self.version, demo)
+        self.assertIn('[script nomain] web/.config ', descriptor)
+        self.assertIn('[script nomain] web/assets/音频 #%.wav '
+                      'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/web/'
+                      'assets/%E9%9F%B3%E9%A2%91%20%23%25.wav\n', descriptor)
+        self.assertEqual(descriptor.count('[script main]'), 1)
+    def test_missing_demo_launcher_blocks_descriptor(self):
+        demo = self.directory / 'demo'
+        demo.mkdir()
+        (demo / 'index.html').write_text('<html>Demo</html>', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'Missing Demo launcher'):
+            release.descriptor(self.version, demo)
     def test_release_notes_select_exact_version(self):
         text = '# ReaWebAPI v1.2.3\n\n## Changes\n\n- Current release.\n\n# ReaWebAPI v1.2.2\n\n- Previous release.\n'
         with patch.object(release.Path, 'read_text', return_value=text):

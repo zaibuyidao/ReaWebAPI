@@ -78,7 +78,7 @@ python -m tools.api_sync verify
 
 Demo 的 **Run read-only checks** 覆盖 10 条调用路径，不修改工程，资源检查会在 `finally` 释放 accessor。空工程显示跳过项。只有用户点击颜色、声像和光标按钮才执行对应写入。
 
-CMake 将定义摘要、调用入口和 JS 方法列表嵌入扩展。ReaPack 包包含 `ReaWebAPI.ext`、`extension/` 内 7 个原生文件和完整的 `demo/` 文件夹。
+CMake 将定义摘要、调用入口和 JS 方法列表嵌入扩展。ReaPack 包包含 `ReaWebAPI.ext`、`extension/` 内 7 个原生文件和完整的 `web/` 示例文件夹。
 
 ## 其他输入
 

@@ -14,7 +14,7 @@
 !/docs/
 /docs/*
 !/docs/*.md
-!/demo/
+!/web/
 !/api/
 /api/*
 !/api/reaper_api.json
@@ -76,6 +76,7 @@ Thumbs.db
 !/tests/*.cjs
 !/tests/*.ts
 !/tests/*.lua
+!/tests/reapack_check.rb
 !/tests/CMakeLists.txt
 /tests/native_abi_generated.cpp
 node_modules/

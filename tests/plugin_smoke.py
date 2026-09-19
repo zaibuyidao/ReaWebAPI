@@ -542,7 +542,7 @@ try:
             with (folder / 'app.js').open('a', encoding='utf-8') as stream:
                 stream.write(driver)
         if args.demo:
-            source = Path(__file__).resolve().parents[1] / 'demo'
+            source = Path(__file__).resolve().parents[1] / 'web'
             for name in ('index.html', 'app.js', 'style.css', 'logo.svg'):
                 shutil.copyfile(source / name, folder / name)
             driver = r'''

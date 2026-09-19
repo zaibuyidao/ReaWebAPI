@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.1.8.9 LANGUAGES CXX)
+project(ReaWebAPI VERSION 0.1.9 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -164,7 +164,7 @@ if(REAWEB_BUILD_EXTENSION)
     install(TARGETS reaweb_webkit RUNTIME DESTINATION UserPlugins)
   endif()
   install(TARGETS reawebapi LIBRARY DESTINATION UserPlugins RUNTIME DESTINATION UserPlugins)
-  install(DIRECTORY demo/ DESTINATION Scripts/ReaWebAPI/Example)
+  install(DIRECTORY web/ DESTINATION Scripts/ReaWebAPI/Example)
   # A single packager keeps installed docs, the standalone SDK and release bundles identical.
   install(CODE "
     execute_process(COMMAND \"${Python3_EXECUTABLE}\" \"${CMAKE_CURRENT_SOURCE_DIR}/tools/package_sdk.py\"

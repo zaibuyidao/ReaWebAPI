@@ -36,7 +36,7 @@ function fixture() {
   const context = vm.createContext({ document, reaper, window: { reaper, addEventListener() {} },
     console: Object.fromEntries(['log', 'warn', 'error'].map(level => [level, (...values) => consoleLogs.push({ level, values })])),
     setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id) });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../demo/app.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8'), context);
   return { context, element, document, reaper, reads, batches, colors, writes, copies, hostLogs, consoleLogs, timers };
 }
 async function selected(f, id) {

@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from urllib.parse import quote
 import zipfile
 
 if not __package__:
@@ -60,23 +61,42 @@ def release_body(repo, version):
             f'[Documentation / 文档](https://github.com/{repo}#readme)\n')
 
 
-def descriptor(version):
-    lines = ['@description ReaWebAPI', f'@version {version}', '@author zaibuyidao',
+def demo_entries(directory):
+    if not directory.is_dir():
+        raise ValueError(f'Missing Demo directory: {directory}')
+    return sorted(directory.rglob('*'))
+
+
+def descriptor(version, demo_directory=None):
+    if demo_directory is None:
+        demo_directory = Path(__file__).resolve().parents[1] / 'web'
+    entries = demo_entries(demo_directory)
+    if not (demo_directory / 'ReaWebAPI_Demo.lua').is_file():
+        raise ValueError('Missing Demo launcher: ReaWebAPI_Demo.lua')
+    lines = ['@description ReaWebAPI: JavaScript Runtime for REAPER', f'@version {version}', '@author zaibuyidao',
              '@link https://github.com/zaibuyidao/ReaScripts/tree/master/ReaWebAPI', '@provides']
     for platform, name in native_files():
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/extension/{name}'
         lines.append(f'  [{platform} extension] {name} {url}')
+    for path in entries:
+        if not path.is_file():
+            continue
+        name = path.relative_to(demo_directory).as_posix()
+        # An .ext package defaults to extension targets, so the launcher also
+        # needs an explicit script type for Action List registration.
+        options = 'script main' if name == 'ReaWebAPI_Demo.lua' else 'script nomain'
+        url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/web/{quote(name, safe="/")}'
+        lines.append(f'  [{options}] web/{name} {url}')
     changes = version_notes(version).split('## 更新', 1)[0]
     lines += ['@changelog'] + ['  ' + line for line in re.findall(r'^- (.+)$', changes, re.MULTILINE)]
     return '\n'.join(lines) + '\n'
 
 
 def add_demo(archive, directory):
-    if not directory.is_dir():
-        raise ValueError(f'Missing Demo directory: {directory}')
-    archive.write(directory, 'demo/')
-    for path in sorted(directory.rglob('*')):
-        archive.write(path, 'demo/' + path.relative_to(directory).as_posix())
+    entries = demo_entries(directory)
+    archive.write(directory, 'web/')
+    for path in entries:
+        archive.write(path, 'web/' + path.relative_to(directory).as_posix())
 
 
 def assemble(directory, version, revision):
@@ -100,7 +120,7 @@ def assemble(directory, version, revision):
     reapack = directory / f'ReaWebAPI-ReaPack-v{version}.zip'
     with zipfile.ZipFile(reapack, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.write(ext, ext.name)
-        add_demo(archive, Path(__file__).resolve().parents[1] / 'demo')
+        add_demo(archive, Path(__file__).resolve().parents[1] / 'web')
         for _, name in native_files():
             # Preserve executable permission even when Actions normalized downloaded files to 0644.
             info = zipfile.ZipInfo(f'extension/{name}')

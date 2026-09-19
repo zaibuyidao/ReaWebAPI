@@ -78,7 +78,7 @@ Compilation verifies ABI types and complete registration. Development checks inc
 
 The demo's **Run read-only checks** covers ten paths without project edits. Accessors are released in `finally`. Empty projects show skips. Color, pan and cursor writes require their respective button clicks.
 
-The extension embeds the schema projection, native calls and JavaScript methods. The ReaPack package contains `ReaWebAPI.ext`, seven native files under `extension/` and the complete `demo/` folder.
+The extension embeds the schema projection, native calls and JavaScript methods. The ReaPack package contains `ReaWebAPI.ext`, seven native files under `extension/` and the complete `web/` Demo folder.
 
 ## Exchange inputs
 

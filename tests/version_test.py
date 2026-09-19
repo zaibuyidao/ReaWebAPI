@@ -56,7 +56,7 @@ class VersionTests(unittest.TestCase):
             binary = stage / 'UserPlugins/reaper_reawebapi-x64.dll'
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b'TEST FIXTURE - NOT A NATIVE EXTENSION')
-            shutil.copytree(ROOT / 'demo', stage / 'Scripts/ReaWebAPI/Example')
+            shutil.copytree(ROOT / 'web', stage / 'Scripts/ReaWebAPI/Example')
             stage_sdk(stage, version)
             result = subprocess.run([
                 sys.executable, str(ROOT / 'tools/package.py'), '--stage', str(stage),
