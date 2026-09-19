@@ -1,4 +1,4 @@
--- @description ReaWebAPI: Example
+-- @description ReaWebAPI Demo
 -- @version 0.1.8
 -- @about Opens the bundled JavaScript REAPER API demo.
 
