@@ -86,7 +86,8 @@ void Worker::run() {
       if (work.kind == Work::Save) { save(work.path, work.data); continue; }
       if (work.kind == Work::Icon) {
         try {
-          if (!work.icon_source) work.icon_source = load_icon(work.path, work.data.at("args").at(0));
+          if (!work.icon_source) work.icon_source = work.icon_from_page
+            ? icon_from_page(work.data.at("args").at(0).at("icon")) : load_icon(work.path, work.data.at("args").at(0));
           work.icon_bitmaps = render_icon(*work.icon_source, work.icon_sizes);
         } catch (const Error& e) { work.icon_error = {{"code", e.code}, {"message", e.what()}}; }
         catch (const std::exception& e) { work.icon_error = {{"code", "ICON_INVALID"}, {"message", e.what()}}; }

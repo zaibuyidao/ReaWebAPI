@@ -55,6 +55,8 @@ private:
     std::vector<int> icon_sizes;
     uint64_t icon_sequence = 0;
     bool icon_pending = false;
+    bool icon_explicit = false;
+    uint64_t favicon_revision = 0;
     bool failed = false;
     bool lifecycle_enabled = false, allow_reload = false;
     std::string lifecycle_action, lifecycle_token;

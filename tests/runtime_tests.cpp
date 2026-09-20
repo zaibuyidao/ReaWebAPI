@@ -29,6 +29,7 @@ struct FakeWindow : Window {
     if (reject_icon) throw Error("ICON_APPLY_FAILED", "Test native failure");
     icons = value; ++icon_changes;
   }
+  void clear_icon() override { icons.clear(); ++icon_changes; }
   DevToolsPreferences inspector;
   Json devtools_state() const override { return inspector.state(); }
   void restore_devtools(const Json& value) override { inspector.restore(value); }
@@ -185,7 +186,33 @@ int main() {
       CHECK(!runtime.is_docked(id) && first->reloads == 0 && runtime.is_ready(id));
       const auto icon_path = entry.parent_path() / "icon.svg";
       std::ofstream(icon_path) << "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect width='16' height='16' fill='red'/></svg>";
+      const std::string blue_svg = "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect width='16' height='16' fill='blue'/></svg>";
+      const Json page_icon{{"format", ".svg"}, {"bytes", encode_binary(blue_svg.data(), blue_svg.size())}};
+      const auto favicon = [&](uint64_t revision, const Json& icon) {
+        return first->send("ReaWeb_Favicon", {{{"revision", revision}, {"icon", icon}}});
+      };
+      const auto begin_icon = [&](uint64_t revision) {
+        return result(runtime, *first, first->send("ReaWeb_Favicon", {{{"revision", revision}}}));
+      };
+      CHECK(begin_icon(1)["result"] == true);
+      CHECK(result(runtime, *first, favicon(1, page_icon))["result"] == true);
+      CHECK(first->icons[0].rgba[2] == 255 && first->icons[0].rgba[0] == 0);
+      CHECK(begin_icon(2)["result"] == true);
+      CHECK(result(runtime, *first, favicon(1, nullptr))["result"] == false);
+      CHECK(result(runtime, *first, favicon(2, {{"format", ".svg"}, {"bytes", encode_binary("invalid", 7)}}))["error"]["code"] == "ICON_INVALID");
+      CHECK(first->icons[0].rgba[2] == 255);
+      CHECK(begin_icon(3)["result"] == true);
+      const auto stale_icon = favicon(3, page_icon);
+      CHECK(begin_icon(4)["result"] == true);
+      CHECK(result(runtime, *first, favicon(4, nullptr))["result"] == true);
+      result(runtime, *first, stale_icon);
+      CHECK(first->icons.empty());
+      CHECK(begin_icon(5)["result"] == true);
+      const auto overridden_icon = favicon(5, page_icon);
       CHECK(result(runtime, *first, first->send("ReaWeb_SetIcon", {"icon.svg"}))["result"] == true);
+      result(runtime, *first, overridden_icon);
+      CHECK(begin_icon(6)["result"] == false);
+      CHECK(result(runtime, *first, favicon(5, nullptr))["result"] == false);
       CHECK(first->icons.size() == 2 && first->icons[0].size == 16 && first->icons[1].size == 32);
       CHECK(first->icons[0].rgba[0] == 255 && first->icons[0].rgba[3] == 255);
       auto icon_changes = first->icon_changes;
@@ -252,6 +279,9 @@ int main() {
       first->options.on_navigation(); first->document = "reloaded";
       result(runtime, *first, first->send("__reawebHello", {1}));
       CHECK(calls == 1 && first->response(abandoned).is_null());
+      CHECK(begin_icon(1)["result"] == true);
+      CHECK(result(runtime, *first, favicon(1, page_icon))["result"] == true);
+      CHECK(first->icons[0].rgba[2] == 255 && first->icons[0].rgba[0] == 0);
       CHECK(runtime.captures_keyboard(first.get(), [](void*, void*) { return false; }));
       result(runtime, *first, first->send("ReaWeb_Open", {"index.html"}));
       CHECK(windows.size() == 2 && platform_count == 1);

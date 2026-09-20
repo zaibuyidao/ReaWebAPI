@@ -34,7 +34,7 @@ Both capabilities and diagnostics include `webRuntime`: `contract` (1), `mode` (
 | `reaper.window.focus()` | `boolean` | Focuses the current window |
 | `reaper.debug.openDevTools()` | `boolean` | Requests showing DevTools (idempotent). macOS shows a Safari guide and rejects with `INSPECTOR_MENU`. See [DevTools](devtools.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 1–256 UTF-8 bytes, no NUL |
-| `reaper.window.setIcon(path)` | `boolean` | PNG, ICO or SVG from a local path relative to the App root. See [window icons](runtime-api.md#window-icons) |
+| `reaper.window.setIcon(path)` | `boolean` | Override the HTML favicon for this document. PNG, ICO or SVG from a local path relative to the App root. See [window icons](runtime-api.md#window-icons) |
 | `reaper.window.setDocked(docked)` | `boolean` | Returns the actual docked state, preserving the page |
 | `reaper.window.isDocked()` | `boolean` | Reads docked state |
 | `reaper.window.setKeyboardCapture(capture)` | `boolean` | Default `true`. Setting `false` allows REAPER's normal global shortcut policy |

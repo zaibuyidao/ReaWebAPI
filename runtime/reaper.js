@@ -110,6 +110,98 @@
     ++waiting;
     return ready.then(() => send(method, args)).finally(() => --waiting);
   };
+  let stopFavicon = () => {};
+  const startFavicon = () => {
+    const document = window.document;
+    if (closed || !document?.querySelectorAll || !window.MutationObserver || !window.fetch) return;
+    const formats = { 'image/png': '.png', 'image/svg+xml': '.svg', 'image/x-icon': '.ico', 'image/vnd.microsoft.icon': '.ico' };
+    const limit = 4 * 1024 * 1024;
+    let revision = 0, selected, timer, controller, stopped = false;
+    let mediaListeners = [];
+    const releaseMedia = () => {
+      for (const [query, listener] of mediaListeners) query.removeEventListener('change', listener);
+      mediaListeners = [];
+    };
+    const readIcon = async (response, signal) => {
+      if (!response.ok) throw new Error(`Favicon HTTP ${response.status}`);
+      if (Number(response.headers.get('content-length')) > limit) throw new Error('Favicon exceeds 4 MiB');
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Favicon response has no readable body');
+      const chunks = [];
+      let length = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (signal.aborted) throw new DOMException('Favicon request aborted', 'AbortError');
+          if (done) break;
+          length += value.byteLength;
+          if (length > limit) { await reader.cancel(); throw new Error('Favicon exceeds 4 MiB'); }
+          chunks.push(value);
+        }
+      } finally { reader.releaseLock(); }
+      const bytes = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      return bytes;
+    };
+    const sync = async (icon, current, signal) => {
+      let timeout, timedOut = false;
+      try {
+        // Invalidate an earlier native decode before fetching the new resource.
+        if (!await call('ReaWeb_Favicon', [{ revision: current }])) { if (current === revision) stopFavicon(); return; }
+        if (signal.aborted || current !== revision) return;
+        let data = null;
+        if (icon) {
+          const active = controller;
+          timeout = setTimeout(() => { timedOut = true; active.abort(); }, 15000);
+          const response = await window.fetch(icon.url, { signal });
+          data = { format: icon.format, bytes: await readIcon(response, signal) };
+          clearTimeout(timeout);
+        }
+        if (signal.aborted || current !== revision) return;
+        if (!await call('ReaWeb_Favicon', [{ revision: current, icon: data }]) && current === revision) stopFavicon();
+      } catch (error) {
+        if (current === revision) controller?.abort();
+        if (!closed && !stopped && current === revision && (timedOut || error.name !== 'AbortError') && error.code !== 'ICON_SUPERSEDED')
+          console.warn('[ReaWebAPI favicon]', timedOut ? new Error('Favicon request timed out') : error);
+      } finally { clearTimeout(timeout); }
+    };
+    const update = () => {
+      if (closed || stopped) return;
+      releaseMedia();
+      let icon = null;
+      for (const link of document.head?.querySelectorAll('link[rel][href]') || []) {
+        if (!link.rel.toLowerCase().split(/\s+/).includes('icon') || !link.getAttribute('href')?.trim()) continue;
+        if (link.media && window.matchMedia) {
+          const query = window.matchMedia(link.media);
+          query.addEventListener('change', schedule);
+          mediaListeners.push([query, schedule]);
+          if (!query.matches) continue;
+        }
+        try {
+          const url = new window.URL(link.getAttribute('href'), document.baseURI);
+          const type = (link.type || (url.protocol === 'data:' ? url.pathname.split(/[;,]/, 1)[0] : '')).split(';', 1)[0].trim().toLowerCase();
+          const format = type ? (Object.hasOwn(formats, type) ? formats[type] : null) : url.pathname.toLowerCase().match(/\.(png|ico|svg)$/)?.[0];
+          if (format && ['http:', 'https:', 'data:', 'blob:'].includes(url.protocol)) icon = { url: url.href, format };
+        } catch { /* Ignore invalid favicon URLs. */ }
+      }
+      const key = icon ? `${icon.format}:${icon.url}` : '';
+      if (key === selected) return;
+      selected = key;
+      controller?.abort();
+      controller = new window.AbortController();
+      void sync(icon, ++revision, controller.signal);
+    };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(update, 0); };
+    const relevant = node => node.nodeType === 1 && (['LINK', 'BASE', 'HEAD'].includes(node.tagName) || node.querySelector('link,base,head'));
+    const observer = new window.MutationObserver(records => {
+      if (records.some(record => record.type === 'attributes' ? ['LINK', 'BASE'].includes(record.target.tagName)
+        : [...record.addedNodes, ...record.removedNodes].some(relevant))) schedule();
+    });
+    observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['href', 'rel', 'type', 'media', 'sizes'] });
+    stopFavicon = () => { stopped = true; clearTimeout(timer); controller?.abort(); observer.disconnect(); releaseMedia(); };
+    update();
+  };
   const api = Object.create(null);
   // Only the official REAPER mirror is exposed at the root. ReaWeb_* strings
   // below are private transport commands, never public JavaScript aliases.
@@ -363,7 +455,9 @@
     }
   });
   Object.defineProperty(window, 'reaper', { value: Object.freeze(api), enumerable: true });
+  ready.then(startFavicon).catch(() => {});
   window.addEventListener('pagehide', () => {
+    stopFavicon();
     if (!cleanupToken) for (const callback of lifecycleListeners.get('cleanup') || [])
       notify(callback, Object.freeze({ reason: 'unload', timeoutMs: 0 }));
     closed = true;

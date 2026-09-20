@@ -26,6 +26,14 @@ int main(int argc, char** argv) {
       CHECK(values[0] == 16 && values[1] == 16 && values[258] == 32 && values[259] == 32);
       CHECK((values[2] & 0xffffff) == 0xff0000 && (values[2] >> 24) >= 127 && (values[2] >> 24) <= 128);
       XFree(bytes);
+      if (n == 2) {
+        icon.clear(native); icon.refresh(native);
+        bytes = nullptr;
+        CHECK(XGetWindowProperty(display, gdk_x11_window_get_xid(native), XInternAtom(display, "_NET_WM_ICON", False),
+          0, 2048, False, XA_CARDINAL, &actual, &format, &count, &remaining, &bytes) == Success);
+        CHECK(count == 0);
+        if (bytes) XFree(bytes);
+      }
       icon.refresh(nullptr); gtk_widget_destroy(window);
     }
     std::cout << "Linux native window icon, alpha and reparent restoration passed\n";

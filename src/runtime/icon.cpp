@@ -146,4 +146,18 @@ std::vector<IconBitmap> render_icon(const IconSource& source, const std::vector<
   }
   return result;
 }
+std::shared_ptr<const IconSource> icon_from_page(const Json& value) {
+  if (!value.is_object() || !value.contains("format") || !value["format"].is_string() || !value.contains("bytes"))
+    throw Error("INVALID_ARGUMENT", "Expected favicon format and bytes");
+  const auto format = value["format"].get<std::string>();
+  if (format != ".png" && format != ".ico" && format != ".svg") throw Error("ICON_FORMAT", "Favicons must be PNG, ICO or SVG");
+  const auto& bytes = value["bytes"];
+  if (!bytes.is_object() || !bytes.contains("__reawebBytes") || !bytes["__reawebBytes"].is_string())
+    throw Error("INVALID_ARGUMENT", "Expected encoded favicon bytes");
+  if (bytes["__reawebBytes"].get_ref<const std::string&>().size() > ((4 * 1024 * 1024 + 2) / 3) * 4)
+    throw Error("ICON_LIMIT", "Icon files must contain 1 byte to 4 MiB");
+  const auto decoded = decode_binary(bytes);
+  if (decoded.empty() || decoded.size() > 4 * 1024 * 1024) throw Error("ICON_LIMIT", "Icon files must contain 1 byte to 4 MiB");
+  return std::make_shared<IconSource>(IconSource{format, {decoded.begin(), decoded.end()}});
+}
 }

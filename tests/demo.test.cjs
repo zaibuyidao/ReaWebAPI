@@ -55,7 +55,10 @@ test('first track read does not wait for the version label or window setup', asy
   await flush();
   assert.equal(f.element('status').textContent, 'Runtime connected');
   assert.equal(f.reads.length, 1);
-  assert.equal(icon, 'logo.svg');
+  assert.equal(icon, undefined);
+  const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
+  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="logo\.svg" sizes="any">/);
+  assert.equal([...html.matchAll(/<link\s+rel="icon"/g)].length, 1);
   const batch = await selected(f, 'first');
   batch.resolve([1, [true, 'First track'], 0.25, 0]);
   await flush();

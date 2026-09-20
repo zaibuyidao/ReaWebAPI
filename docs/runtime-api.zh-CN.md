@@ -37,6 +37,18 @@ await reaper.window.hide();
 
 ### 窗口图标
 
+在 `<head>` 中声明 favicon，Runtime 会自动同步到原生宿主窗口：
+
+```html
+<link rel="icon" type="image/svg+xml" href="logo.svg" sizes="any">
+```
+
+选择最后一个格式受支持且 `media` 匹配的 `rel="icon"` 声明，兼容 `rel="shortcut icon"`。声明、`<base href>` 或媒体查询变化时自动更新。移除所有有效声明后恢复默认窗口图标，不会自动探测 `/favicon.ico`。
+
+支持 PNG、ICO、SVG。URL 没有对应扩展名时需声明 `type`。相对 URL 按 `document.baseURI` 解析，包括 `<base href>` 的影响。HTTP(S)、data 和 blob URL 通过浏览器 `fetch` 加载，遵循 CSP `connect-src` 和 CORS。加载失败保留当前图标，并在 Console 中报告警告。
+
+需要显式覆盖时使用 `setIcon()`：
+
 ```js
 await reaper.lifecycle.ready;
 await reaper.window.setIcon('logo.svg');
@@ -44,9 +56,11 @@ await reaper.window.setIcon('logo.svg');
 
 `setIcon(path)` 设置当前宿主窗口的图标，成功返回 `true`。支持本地 `.png`、`.ico` 和 `.svg` 文件及绝对路径。相对路径按当前 App 根目录解析，即 `reaper.app.getRootPath()`。不接受 URL。文件上限为 4 MiB，解码后的位图尺寸上限为 4096 × 4096。
 
-Runtime 在后台线程解码，根据当前显示缩放与原生图标尺寸在内存中栅格化 SVG，并保留源数据供 DPI 变化时重新渲染，不生成临时图片。SVG 应自包含，文字需转换为路径。图标在窗口生命周期内保留，包括重载和停靠切换。新建窗口后需重新设置。无效文件不替换已应用的图标。较新的请求会取代尚未完成的旧请求，旧请求以 `ICON_SUPERSEDED` 拒绝。
+有效的 `setIcon()` 请求进入队列后，当前文档停止自动同步，即使随后文件加载失败也是如此。重载或导航到新文档后恢复自动同步。无效文件不替换已应用的图标。较新的请求会取代尚未完成的旧请求，旧请求以 `ICON_SUPERSEDED` 拒绝。
 
-Windows 设置窗口大小图标。macOS 使用浮动窗口的文档代理图标，不更改 REAPER 的应用或 Dock 图标。Linux 设置浮动窗口图标，是否显示由桌面主题和窗口管理器决定。停靠标签的显示由 REAPER 控制。HTML 的 `<link rel="icon">` 仍用于浏览器 favicon。
+两种方式共用相同的大小限制和原生渲染流程。Runtime 在后台线程解码，根据当前显示缩放与原生图标尺寸在内存中栅格化 SVG，并保留源数据供 DPI 变化时重新渲染，不生成临时图片。SVG 应自包含，文字需转换为路径。停靠切换保留当前图标。
+
+Windows 设置窗口大小图标。macOS 使用浮动窗口的文档代理图标，不更改 REAPER 的应用或 Dock 图标。Linux 设置浮动窗口图标，是否显示由桌面主题和窗口管理器决定。停靠标签的显示由 REAPER 控制。`setIcon()` 不修改 HTML 中的 favicon 声明。
 
 ## Lifecycle
 

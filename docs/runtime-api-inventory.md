@@ -28,7 +28,7 @@ All thirteen namespaces have implemented members. App identity is shared with br
 | `reaper.window.hide()` | `Promise<ReaWebWindowState>` | 隐藏当前窗口 |
 | `reaper.window.getState()` | `Promise<ReaWebWindowState>` | 读取 ID、标题、停靠、可见、焦点和键盘策略 |
 | `reaper.window.setTitle(title)` | `Promise<boolean>` | 设置标题 |
-| `reaper.window.setIcon(path)` | `Promise<boolean>` | 设置当前宿主窗口图标，支持 PNG、ICO、SVG，相对路径基于 App 根目录 |
+| `reaper.window.setIcon(path)` | `Promise<boolean>` | 显式设置当前宿主窗口图标，覆盖当前文档的 favicon 自动同步。支持 PNG、ICO、SVG，相对路径基于 App 根目录 |
 | `reaper.window.focus()` | `Promise<boolean>` | 聚焦当前窗口 |
 | `reaper.window.setDocked(docked)` | `Promise<boolean>` | true 停靠、false 取消停靠；返回实际停靠状态，取消停靠成功返回 false |
 | `reaper.window.isDocked()` | `Promise<boolean>` | 读取停靠状态 |
@@ -192,4 +192,3 @@ const childId = await reaper.window.open("other/index.html");
 ```
 
 `Size` / `Position` are the relevant fields of `ReaWebBounds` plus `mode` and `units`; `Capabilities` is `ReaWebCapabilities` plus `windowId` and `projectEpoch`. `string or null` / `string or Uint8Array` in the table denote unions; the declarations enforce overload-specific results. Except `reaper.lifecycle.ready`, every member is a method returning a Promise. Returned disposer functions also return Promises.
-

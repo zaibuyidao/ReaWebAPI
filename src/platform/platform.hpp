@@ -46,6 +46,7 @@ public:
   virtual void set_title(const std::string&) {}
   virtual std::vector<int> icon_sizes() const { return {16, 32}; }
   virtual void set_icon(const std::vector<IconBitmap>&) { throw Error("HOST_UNAVAILABLE", "Native window icons unavailable"); }
+  virtual void clear_icon() { throw Error("HOST_UNAVAILABLE", "Native window icons unavailable"); }
   virtual bool visible() const { return !closed(); }
   virtual bool focused() const { return false; }
   virtual Json placement() const { return nullptr; }

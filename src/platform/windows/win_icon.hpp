@@ -32,6 +32,11 @@ class WinIcon {
   }
 public:
   ~WinIcon() { if (small_) DestroyIcon(small_); if (large_) DestroyIcon(large_); }
+  void clear(HWND window) {
+    SendMessageW(window, WM_SETICON, ICON_SMALL, 0); SendMessageW(window, WM_SETICON, ICON_BIG, 0);
+    if (small_) DestroyIcon(small_); if (large_) DestroyIcon(large_);
+    small_ = large_ = nullptr;
+  }
   void set(HWND window, const std::vector<IconBitmap>& images) {
     auto small_icon = create(images.front());
     HICON large_icon = nullptr;

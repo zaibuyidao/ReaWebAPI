@@ -162,13 +162,43 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
 bool Runtime::start_async(Session& session, const Work& request) {
   const auto method = request.data.at("method").get<std::string>();
   const auto& args = request.data.at("args");
+  if (method == "ReaWeb_Favicon") {
+    if (args.size() != 1 || !args[0].is_object() || !args[0].contains("revision") ||
+        !args[0]["revision"].is_number_integer() || args[0]["revision"].get<double>() < 1 ||
+        args[0]["revision"].get<double>() > 9007199254740991.0)
+      throw Error("INVALID_ARGUMENT", "Expected a favicon revision");
+    const auto& value = args[0];
+    const auto revision = value["revision"].get<uint64_t>();
+    const auto finish = [&](bool applied) {
+      reply(session, request, {{"id", request.data.at("id")}, {"document", request.data.at("document")}, {"result", applied}});
+    };
+    if (session.icon_explicit || revision < session.favicon_revision) { finish(false); return true; }
+    if (!value.contains("icon")) {
+      if (revision == session.favicon_revision) { finish(false); return true; }
+      session.favicon_revision = revision;
+      ++session.icon_sequence; session.icon_pending = false;
+      finish(true); return true;
+    }
+    if (revision != session.favicon_revision) { finish(false); return true; }
+    if (value["icon"].is_null()) {
+      ++session.icon_sequence; session.icon_pending = false;
+      if (session.icon_source) session.window->clear_icon();
+      session.icon_source.reset(); session.icon_sizes.clear();
+      finish(true); return true;
+    }
+    Work icon = request; icon.kind = Work::Icon; icon.text.clear(); icon.icon_from_page = true;
+    icon.icon_sizes = session.window->icon_sizes(); icon.icon_sequence = session.icon_sequence + 1;
+    if (!worker_.submit(std::move(icon))) throw Error("QUEUE_LIMIT", "Icon queue is full");
+    ++session.icon_sequence; session.icon_pending = true;
+    return true;
+  }
   if (method == "ReaWeb_SetIcon") {
     if (args.size() != 1 || !args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected one PNG, ICO or SVG path");
     Work icon = request; icon.kind = Work::Icon; icon.text.clear();
     icon.path = fs::u8path(session.app->info.at("rootPath").get<std::string>());
     icon.icon_sizes = session.window->icon_sizes(); icon.icon_sequence = session.icon_sequence + 1;
     if (!worker_.submit(std::move(icon))) throw Error("QUEUE_LIMIT", "Icon queue is full");
-    ++session.icon_sequence; session.icon_pending = true;
+    ++session.icon_sequence; session.icon_pending = true; session.icon_explicit = true;
     return true;
   }
   if (method == "ReaWeb_AudioFileInfo" || method == "ReaWeb_AudioWaveform") {

@@ -241,6 +241,7 @@ public:
   void set_icon(const std::vector<IconBitmap>& images) override {
     icon_.set(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow"), images);
   }
+  void clear_icon() override { icon_.clear(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow")); }
   void set_visible(bool visible) override { window_->set_visible(visible); }
   Json bounds() const override { return window_->placement(); }
   void reload() override { process_->send({{"id", id_}, {"op", "reload"}}); }

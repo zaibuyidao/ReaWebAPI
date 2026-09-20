@@ -19,6 +19,11 @@ class LinuxIcon {
   std::vector<IconBitmap> images_;
 public:
   std::string last_error;
+  void clear(void* window) {
+    if (window && !set_) throw Error("HOST_UNAVAILABLE", "REAPER's GTK backend does not expose window icons");
+    if (window) set_(window, nullptr);
+    images_.clear(); applied_ = nullptr; last_error.clear();
+  }
   static int scale(void* window) {
     using Scale = int (*)(void*);
     static auto get = reinterpret_cast<Scale>(dlsym(RTLD_DEFAULT, "gdk_window_get_scale_factor"));

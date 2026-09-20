@@ -20,6 +20,7 @@ struct Work {
   fs::path path;
   bool reply = false;
   bool counted_output = false;
+  bool icon_from_page = false;
   uint64_t icon_sequence = 0;
   std::shared_ptr<const IconSource> icon_source;
   std::vector<int> icon_sizes;

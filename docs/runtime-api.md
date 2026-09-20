@@ -36,6 +36,18 @@ Users can dock or undock through the native host’s **Dock/Undock** control wit
 
 ### Window icons
 
+Declare a favicon in `<head>` to set the native host-window icon automatically:
+
+```html
+<link rel="icon" type="image/svg+xml" href="logo.svg" sizes="any">
+```
+
+The Runtime selects the last supported `rel="icon"` declaration whose `media` matches, including `rel="shortcut icon"`. It follows changes to declarations, `<base href>` and media queries. Removing all eligible declarations restores the default window icon. It does not probe `/favicon.ico`.
+
+PNG, ICO and SVG are supported. Specify `type` for URLs without a supported extension. Relative URLs resolve against `document.baseURI`, including `<base href>`. HTTP(S), data and blob URLs use browser `fetch`, subject to CSP `connect-src` and CORS. Failed loads leave the current icon intact and report a Console warning.
+
+Use `setIcon()` for an explicit override:
+
 ```js
 await reaper.lifecycle.ready;
 await reaper.window.setIcon('logo.svg');
@@ -43,9 +55,11 @@ await reaper.window.setIcon('logo.svg');
 
 `setIcon(path)` sets the calling host window’s icon and resolves to `true`. It accepts local `.png`, `.ico` and `.svg` files, including absolute paths. Relative paths resolve from the current App root (`reaper.app.getRootPath()`). URLs are not accepted. Files are limited to 4 MiB and decoded raster dimensions to 4096 × 4096.
 
-The Runtime decodes images off the UI thread and renders SVG in memory at native icon sizes for the current display scale. It retains the source for DPI changes and writes no temporary images. Use self-contained SVG artwork with text converted to paths. Icons last for the window’s lifetime, including reloads and docking. Set the icon again when opening a new window. Invalid files leave the last applied icon intact. A newer request replaces an older pending request, which rejects with `ICON_SUPERSEDED`.
+Once a valid `setIcon()` request is queued, automatic synchronization stops for the current document, even if loading the file fails. Reloading or navigating to a new document restores automatic synchronization. Invalid files leave the last applied icon intact. A newer request replaces an older pending request, which rejects with `ICON_SUPERSEDED`.
 
-Windows applies small and large window icons. macOS uses the floating window’s document proxy icon and does not change REAPER’s application/Dock icon. Linux sets the floating window’s icon, with visibility controlled by the desktop theme/window manager. Docked tabs use REAPER’s presentation. HTML `<link rel="icon">` remains a separate browser favicon.
+Both paths share the same size limits and native rendering. The Runtime decodes images off the UI thread and renders SVG in memory at native icon sizes for the current display scale. It retains the source for DPI changes and writes no temporary images. Use self-contained SVG artwork with text converted to paths. Docking preserves the current icon.
+
+Windows applies small and large window icons. macOS uses the floating window’s document proxy icon and does not change REAPER’s application/Dock icon. Linux sets the floating window’s icon, with visibility controlled by the desktop theme/window manager. Docked tabs use REAPER’s presentation. `setIcon()` does not modify the HTML favicon declaration.
 
 ## Events
 

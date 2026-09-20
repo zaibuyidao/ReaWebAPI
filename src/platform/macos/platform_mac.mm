@@ -130,9 +130,12 @@ class MacWindow final : public Window {
   bool maximized_ = false;
   NSImage* icon_ = nil;
   __weak NSWindow* icon_window_ = nil;
+  bool icon_clear_pending_ = false;
   void apply_icon() {
     auto native = webview_.window;
-    if (!icon_ || !native || (delegate_->options.is_docked && delegate_->options.is_docked())) { icon_window_ = nil; return; }
+    if (!native || (delegate_->options.is_docked && delegate_->options.is_docked())) { icon_window_ = nil; return; }
+    if (icon_clear_pending_) { native.representedURL = nil; icon_clear_pending_ = false; }
+    if (!icon_) return;
     if (native == icon_window_) return;
     native.representedURL = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
     auto button = [native standardWindowButton:NSWindowDocumentIconButton];
@@ -302,6 +305,7 @@ public:
     }
     icon_ = icon; icon_window_ = nil; apply_icon();
   }
+  void clear_icon() override { icon_ = nil; icon_window_ = nil; icon_clear_pending_ = true; apply_icon(); }
   void set_visible(bool visible) override { window_->set_visible(visible); }
   Json bounds() const override { return window_->placement(); }
   void reload() override { [webview_ reload]; }

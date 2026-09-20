@@ -307,6 +307,7 @@ public:
     return {std::clamp(GetSystemMetricsForDpi(SM_CXSMICON, dpi), 8, 256), std::clamp(GetSystemMetricsForDpi(SM_CXICON, dpi), 8, 256)};
   }
   void set_icon(const std::vector<IconBitmap>& images) override { icon_.set(hwnd_, images); }
+  void clear_icon() override { icon_.clear(hwnd_); }
   void set_visible(bool visible) override { ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE); }
   void reload() override { if (webview_) webview_->Reload(); }
   Json bounds() const override {

@@ -25,6 +25,12 @@ int main() {
   try {
     auto source = svg("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 10'><rect width='20' height='10' fill='#ff0000' fill-opacity='.5'/></svg>");
     auto images = render_icon(source, {16, 32, 48, 64});
+    auto page = icon_from_page({{"format", ".svg"}, {"bytes", encode_binary(reinterpret_cast<const char*>(source.bytes.data()), source.bytes.size())}});
+    CHECK(page->bytes == source.bytes && page->format == source.format);
+    try { icon_from_page({{"format", ".gif"}, {"bytes", encode_binary("GIF", 3)}}); throw std::runtime_error("Unsupported favicon accepted"); }
+    catch (const Error& error) { CHECK(error.code == "ICON_FORMAT"); }
+    try { icon_from_page({{"format", ".png"}, {"bytes", {{"__reawebBytes", std::string(6 * 1024 * 1024, 'A')}}}}); throw std::runtime_error("Oversize favicon accepted"); }
+    catch (const Error& error) { CHECK(error.code == "ICON_LIMIT"); }
     for (auto& image : images) {
       CHECK(image.rgba.size() == size_t(image.size * image.size * 4));
       CHECK(image.rgba[3] == 0);
@@ -96,6 +102,9 @@ int main() {
       CHECK(GetIconInfo(latest, &info));
       CHECK(GetObjectW(info.hbmColor, sizeof(description), &description)); CHECK(description.bmWidth == 64);
       DeleteObject(info.hbmColor); DeleteObject(info.hbmMask);
+      native.clear(window);
+      CHECK(!SendMessageW(window, WM_GETICON, ICON_SMALL, 0) && !SendMessageW(window, WM_GETICON, ICON_BIG, 0));
+      native.set(window, images);
       DestroyWindow(window);
     }
 #endif

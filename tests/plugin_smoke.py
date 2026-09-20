@@ -633,6 +633,23 @@ try:
   if (!el('error').hidden) throw new Error(el('error').textContent);
   if (document.documentElement.scrollWidth > innerWidth) throw new Error('Horizontal overflow');
   if (el('dock')) throw new Error('Demo should use native docking controls');
+  const favicon = document.querySelector('link[rel="icon"]');
+  if (!favicon) throw new Error('Demo favicon declaration is missing');
+  const iconStep = async step => {
+    await reaper.window.setTitle('FAVICON:' + step);
+    const deadline = Date.now() + 5000;
+    while (!(await reaper.fs.stat('favicon-' + step + '.ok')).exists) {
+      if (Date.now() > deadline) throw new Error('Native favicon timeout: ' + step);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+  };
+  await iconStep(1);
+  await reaper.fs.writeText('alternate.svg', '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="blue"/></svg>', {overwrite:true});
+  favicon.href = 'alternate.svg'; await iconStep(2);
+  favicon.remove(); await iconStep(3);
+  favicon.href = 'logo.svg'; document.head.append(favicon); await iconStep(4);
+  await reaper.window.setIcon('alternate.svg'); await iconStep(5);
+  favicon.remove(); await new Promise(resolve => setTimeout(resolve, 200)); await iconStep(6);
   for (const step of [1, 2, 3]) {
     await reaper.window.setTitle('NATIVE DOCK:' + step);
     const deadline = Date.now() + 5000;
@@ -775,6 +792,9 @@ try:
         user32.TranslateMessage.argtypes = [C.POINTER(W.MSG)]
         user32.DispatchMessageW.argtypes = [C.POINTER(W.MSG)]
         native_steps = set()
+        favicon_icons = {}
+        for step in range(1, 7):
+            (folder / f'favicon-{step}.ok').unlink(missing_ok=True)
         user32.GetWindowTextW.argtypes = [W.HWND, W.LPWSTR, C.c_int]
         user32.GetDlgItem.argtypes = [W.HWND, C.c_int]
         user32.GetDlgItem.restype = W.HWND
@@ -809,6 +829,19 @@ try:
                 for handle in set(handles) | docked.copy():
                     title = C.create_unicode_buffer(256)
                     user32.GetWindowTextW(handle, title, 256)
+                    if args.demo and title.value.startswith('FAVICON:'):
+                        step = int(title.value.split(':')[1])
+                        small = user32.SendMessageW(handle, 0x7F, 0, 0)
+                        large = user32.SendMessageW(handle, 0x7F, 1, 0)
+                        previous = favicon_icons.get(step - 1)
+                        correct = (not small and not large) if step == 3 else bool(small and large)
+                        if step in (2, 5):
+                            correct = correct and small != previous
+                        elif step == 6:
+                            correct = correct and small == previous
+                        if correct and step not in favicon_icons:
+                            favicon_icons[step] = small
+                            (folder / f'favicon-{step}.ok').write_text('ok', encoding='utf-8')
                     if not title.value.startswith('NATIVE DOCK:') or (handle, title.value) in native_steps:
                         continue
                     native_steps.add((handle, title.value))
@@ -829,6 +862,8 @@ try:
         assert (name_calls == 0 if args.empty or args.modern else name_calls > 0 if args.demo or args.starter or args.studio else name_calls == 4) and not any(is_open(window) for window in ids), (name_calls, messages, [diagnostics(id) for id in ids])
         if args.demo:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'DEMO PASS'
+            assert set(favicon_icons) == set(range(1, 7)), favicon_icons
+            print('HTML favicon: initial native icon, replacement, removal, restoration and explicit override passed')
             assert any('[READ]' in message and '[ReaWebAPI]' in message for message in messages), 'Native console mirror missing'
             print('Demo debug log: explicit track snapshot, REAPER console mirror and clear passed' + ('' if args.empty else ', including confirmed Pan changes'))
             print('Shipped demo: DevTools opened, project settings returned 200 and no CSP violations')
