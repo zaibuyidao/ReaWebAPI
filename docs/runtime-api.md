@@ -18,7 +18,7 @@ All thirteen namespaces provide implemented members: 64 methods and one Promise 
 
 ## Window and lifecycle
 
-`reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `setIcon`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
+`reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `setIcon`, `setIconVisible`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
 
 ```js
 await reaper.window.setSize(900, 700);
@@ -42,7 +42,7 @@ Declare a favicon in `<head>` to set the native host-window icon automatically:
 <link rel="icon" type="image/svg+xml" href="logo.svg" sizes="any">
 ```
 
-The Runtime selects the last supported `rel="icon"` declaration whose `media` matches, including `rel="shortcut icon"`. It follows changes to declarations, `<base href>` and media queries. Removing all eligible declarations restores the default window icon. It does not probe `/favicon.ico`.
+The Runtime selects the last supported `rel="icon"` declaration whose `media` matches, including `rel="shortcut icon"`. It follows changes to declarations, `<base href>` and media queries. Removing all eligible declarations restores the default window icon. An initially absent declaration preserves the current Runtime icon. It does not probe `/favicon.ico`.
 
 PNG, ICO and SVG are supported. Specify `type` for URLs without a supported extension. Relative URLs resolve against `document.baseURI`, including `<base href>`. HTTP(S), data and blob URLs use browser `fetch`, subject to CSP `connect-src` and CORS. Failed loads leave the current icon intact and report a Console warning.
 
@@ -55,11 +55,19 @@ await reaper.window.setIcon('logo.svg');
 
 `setIcon(path)` sets the calling host window’s icon and resolves to `true`. It accepts local `.png`, `.ico` and `.svg` files, including absolute paths. Relative paths resolve from the current App root (`reaper.app.getRootPath()`). URLs are not accepted. Files are limited to 4 MiB and decoded raster dimensions to 4096 × 4096.
 
-Once a valid `setIcon()` request is queued, automatic synchronization stops for the current document, even if loading the file fails. Reloading or navigating to a new document restores automatic synchronization. Invalid files leave the last applied icon intact. A newer request replaces an older pending request, which rejects with `ICON_SUPERSEDED`.
+Once a valid `setIcon()` request is queued, automatic synchronization stops for the current document, even if loading the file fails. A successful override lasts for the window session, including reloads and navigation. If no override succeeded, a new document resumes automatic synchronization. Invalid files leave the last applied icon intact. A newer request replaces an older pending request, which rejects with `ICON_SUPERSEDED`.
 
-Both paths share the same size limits and native rendering. The Runtime decodes images off the UI thread and renders SVG in memory at native icon sizes for the current display scale. It retains the source for DPI changes and writes no temporary images. Use self-contained SVG artwork with text converted to paths. Docking preserves the current icon.
+Both paths share the same size limits and native rendering. The Runtime retains the source, rendered images and visibility for the window session, reapplying them after Dock/Undock, native host or floating-window recreation, and reloads. It decodes images off the UI thread and renders SVG in memory at native icon sizes, rerendering from the retained source when DPI changes. It writes no temporary images. Use self-contained SVG artwork with text converted to paths.
 
-Windows applies small and large window icons. macOS uses the floating window’s document proxy icon and does not change REAPER’s application/Dock icon. Linux sets the floating window’s icon, with visibility controlled by the desktop theme/window manager. Docked tabs use REAPER’s presentation. `setIcon()` does not modify the HTML favicon declaration.
+```js
+await reaper.window.setIconVisible(false);
+await reaper.window.setIconVisible(true);
+const { iconVisible } = await reaper.window.getState();
+```
+
+`setIconVisible(boolean)` defaults to `true` and resolves to `true` on success. Hiding removes the title-bar icon and its reserved space without clearing the current icon. Icon updates continue while hidden. Showing restores the current icon. The setting survives docking, native window recreation and reloads within the same window session.
+
+Windows applies small and large window icons. macOS uses the floating window’s document proxy icon and does not change REAPER’s application/Dock icon. Linux sets the floating window’s icon and requests title-bar icon removal through window-decoration hints. The theme/window manager determines whether those hints remove the icon and its space. Docked tabs use REAPER’s presentation. These APIs do not modify HTML favicon declarations.
 
 ## Events
 

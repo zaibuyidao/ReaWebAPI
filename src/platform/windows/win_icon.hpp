@@ -5,6 +5,7 @@
 namespace reaweb {
 class WinIcon {
   HICON small_ = nullptr, large_ = nullptr;
+  bool visible_ = true;
   static HICON create(const IconBitmap& image) {
     BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth = image.size; info.bmiHeader.biHeight = -image.size;
@@ -32,19 +33,37 @@ class WinIcon {
   }
 public:
   ~WinIcon() { if (small_) DestroyIcon(small_); if (large_) DestroyIcon(large_); }
+  void refresh(HWND window) {
+    if (!window) return;
+    const auto small_icon = visible_ ? small_ : nullptr, large_icon = visible_ ? large_ : nullptr;
+    if (reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_SMALL, 0)) != small_icon)
+      SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+    if (reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_BIG, 0)) != large_icon)
+      SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
+    const auto style = GetWindowLongPtrW(window, GWL_STYLE);
+    const auto extended = GetWindowLongPtrW(window, GWL_EXSTYLE);
+    const bool hide_slot = !visible_ && !(style & WS_CHILD) && (style & WS_CAPTION);
+    const auto next = hide_slot ? extended | WS_EX_DLGMODALFRAME : extended & ~LONG_PTR(WS_EX_DLGMODALFRAME);
+    if (next != extended) {
+      SetWindowLongPtrW(window, GWL_EXSTYLE, next);
+      SetWindowPos(window, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
+  }
+  void set_visible(HWND window, bool visible) { visible_ = visible; refresh(window); }
   void clear(HWND window) {
-    SendMessageW(window, WM_SETICON, ICON_SMALL, 0); SendMessageW(window, WM_SETICON, ICON_BIG, 0);
-    if (small_) DestroyIcon(small_); if (large_) DestroyIcon(large_);
+    auto previous_small = small_, previous_large = large_;
     small_ = large_ = nullptr;
+    refresh(window);
+    if (previous_small) DestroyIcon(previous_small); if (previous_large) DestroyIcon(previous_large);
   }
   void set(HWND window, const std::vector<IconBitmap>& images) {
     auto small_icon = create(images.front());
     HICON large_icon = nullptr;
     try { large_icon = create(images.back()); } catch (...) { DestroyIcon(small_icon); throw; }
-    SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
-    SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
-    if (small_) DestroyIcon(small_); if (large_) DestroyIcon(large_);
+    auto previous_small = small_, previous_large = large_;
     small_ = small_icon; large_ = large_icon;
+    refresh(window);
+    if (previous_small) DestroyIcon(previous_small); if (previous_large) DestroyIcon(previous_large);
   }
 };
 }

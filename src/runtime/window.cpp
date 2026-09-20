@@ -184,6 +184,7 @@ bool Runtime::set_docked(int id, bool docked) {
     dock_.add(handle, session.title, session.ident);
     if (!is_docked(id)) {
       session.window->restore_floating();
+      session.icon_dirty = true; refresh_icon(session);
       throw Error("DOCK_FAILED", "REAPER did not accept the window into its Docker");
     }
     dock_.activate(handle);
@@ -194,6 +195,7 @@ bool Runtime::set_docked(int id, bool docked) {
     dock_.remove(handle);
     session.window->restore_floating();
   }
+  session.icon_dirty = true; refresh_icon(session);
   return is_docked(id);
 }
 
@@ -205,6 +207,17 @@ void Runtime::detach(const Session& session) {
 }
 
 void Runtime::refresh_icon(Session& s) {
+  auto target = s.window->icon_target();
+  if (s.icon_dirty || target != s.icon_target) {
+    s.icon_target = target; s.icon_dirty = false;
+    try {
+      s.window->set_icon_visible(s.icon_visible);
+      if (!s.icon_bitmaps.empty()) s.window->set_icon(s.icon_bitmaps);
+      else if (s.icon_initialized) s.window->clear_icon();
+    } catch (const std::exception& error) {
+      s.last_error = error.what(); log_(s.last_error);
+    }
+  }
   if (!s.icon_source || s.icon_pending) return;
   auto sizes = s.window->icon_sizes();
   if (sizes == s.icon_sizes) return;
@@ -215,7 +228,8 @@ void Runtime::refresh_icon(Session& s) {
 
 Json Runtime::window_state(const Session& s) const {
   return {{"id", s.id}, {"title", s.title}, {"docked", is_docked(s.id)},
-    {"visible", s.window->visible()}, {"focused", s.window->focused()}, {"keyboardCapture", s.capture_keyboard}};
+    {"visible", s.window->visible()}, {"focused", s.window->focused()}, {"keyboardCapture", s.capture_keyboard},
+    {"iconVisible", s.icon_visible}};
 }
 
 void Runtime::persist(Session& s, bool force) {

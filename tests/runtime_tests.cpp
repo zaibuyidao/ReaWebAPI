@@ -23,7 +23,13 @@ struct FakeWindow : Window {
   std::vector<int> sizes{16, 32};
   std::vector<IconBitmap> icons;
   bool reject_icon = false;
+  bool icon_visible = true;
+  int icon_target_generation = 0;
   int icon_changes = 0;
+  void* icon_target() const override { return reinterpret_cast<void*>(uintptr_t(icon_target_generation + 1)); }
+  void set_icon_visible(bool value) override { icon_visible = value; }
+  void prepare_dock() override { icons.clear(); icon_visible = true; }
+  void restore_floating() override { icons.clear(); icon_visible = true; }
   std::vector<int> icon_sizes() const override { return sizes; }
   void set_icon(const std::vector<IconBitmap>& value) override {
     if (reject_icon) throw Error("ICON_APPLY_FAILED", "Test native failure");
@@ -197,6 +203,20 @@ int main() {
       CHECK(begin_icon(1)["result"] == true);
       CHECK(result(runtime, *first, favicon(1, page_icon))["result"] == true);
       CHECK(first->icons[0].rgba[2] == 255 && first->icons[0].rgba[0] == 0);
+      CHECK(runtime.diagnostics(id)["window"]["iconVisible"] == true);
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {"false"}))["error"]["code"] == "INVALID_ARGUMENT");
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {false}))["result"] == true);
+      CHECK(!first->icon_visible && first->icons[0].rgba[2] == 255);
+      CHECK(runtime.set_docked(id, true) && !first->icon_visible && first->icons[0].rgba[2] == 255);
+      CHECK(!runtime.set_docked(id, false) && !first->icon_visible && first->icons[0].rgba[2] == 255);
+      first->icons.clear(); first->icon_visible = true; ++first->icon_target_generation;
+      runtime.tick(); CHECK(!first->icon_visible && first->icons[0].rgba[2] == 255);
+      first->icons.clear(); first->icon_visible = true;
+      first->options.on_navigation(); first->document = "favicon-reloaded";
+      result(runtime, *first, first->send("__reawebHello", {1}));
+      CHECK(!first->icon_visible && first->icons[0].rgba[2] == 255);
+      CHECK(begin_icon(1)["result"] == true);
+      CHECK(result(runtime, *first, favicon(1, page_icon))["result"] == true);
       CHECK(begin_icon(2)["result"] == true);
       CHECK(result(runtime, *first, favicon(1, nullptr))["result"] == false);
       CHECK(result(runtime, *first, favicon(2, {{"format", ".svg"}, {"bytes", encode_binary("invalid", 7)}}))["error"]["code"] == "ICON_INVALID");
@@ -215,6 +235,9 @@ int main() {
       CHECK(result(runtime, *first, favicon(5, nullptr))["result"] == false);
       CHECK(first->icons.size() == 2 && first->icons[0].size == 16 && first->icons[1].size == 32);
       CHECK(first->icons[0].rgba[0] == 255 && first->icons[0].rgba[3] == 255);
+      CHECK(!first->icon_visible);
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {true}))["result"] == true);
+      CHECK(first->icon_visible && first->icons[0].rgba[0] == 255);
       auto icon_changes = first->icon_changes;
       CHECK(result(runtime, *first, first->send("ReaWeb_SetIcon", {"index.html"}))["error"]["code"] == "ICON_FORMAT");
       CHECK(result(runtime, *first, first->send("ReaWeb_SetIcon", {"missing.png"}))["error"]["code"] == "FILE_NOT_FOUND");
@@ -227,6 +250,13 @@ int main() {
       first->sizes = {24, 48};
       until(runtime, [&] { return first->icon_changes > icon_changes; });
       CHECK(first->icons[0].size == 24 && first->icons[1].size == 48 && first->icons[1].rgba[0] == 255);
+      for (int cycle = 0; cycle < 3; ++cycle) {
+        CHECK(runtime.set_docked(id, true) && first->icons[0].rgba[0] == 255);
+        CHECK(!runtime.set_docked(id, false) && first->icons[0].rgba[0] == 255);
+      }
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {false}))["result"] == true);
+      first->icons.clear(); first->icon_visible = true; ++first->icon_target_generation;
+      runtime.tick(); CHECK(!first->icon_visible && first->icons[0].rgba[0] == 255);
       CHECK(runtime.captures_keyboard(first.get(), [](void*, void*) { return false; }));
       CHECK(result(runtime, *first, first->send("ReaWeb_SetKeyboardCapture", {false}))["result"] == false);
       CHECK(!runtime.captures_keyboard(first.get(), [](void*, void*) { return false; }));
@@ -276,16 +306,21 @@ int main() {
       CHECK(result(runtime, *first, before_reload)["error"]["code"] == "PROJECT_CHANGED");
       CHECK(runtime.diagnostics(id)["projectEpoch"] == 3 && calls == 1);
       const auto abandoned = first->send("CountTracks", {0});
+      first->icons.clear(); first->icon_visible = true;
       first->options.on_navigation(); first->document = "reloaded";
       result(runtime, *first, first->send("__reawebHello", {1}));
       CHECK(calls == 1 && first->response(abandoned).is_null());
-      CHECK(begin_icon(1)["result"] == true);
-      CHECK(result(runtime, *first, favicon(1, page_icon))["result"] == true);
-      CHECK(first->icons[0].rgba[2] == 255 && first->icons[0].rgba[0] == 0);
+      CHECK(begin_icon(1)["result"] == false);
+      CHECK(result(runtime, *first, favicon(1, page_icon))["result"] == false);
+      CHECK(first->icons[0].rgba[0] == 255 && first->icons[0].rgba[2] == 0 && !first->icon_visible);
+      CHECK(runtime.diagnostics(id)["window"]["iconVisible"] == false);
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {true}))["result"] == true);
+      CHECK(first->icon_visible && first->icons[0].rgba[0] == 255);
       CHECK(runtime.captures_keyboard(first.get(), [](void*, void*) { return false; }));
       result(runtime, *first, first->send("ReaWeb_Open", {"index.html"}));
       CHECK(windows.size() == 2 && platform_count == 1);
       const auto second_id = id + 1; auto second = windows.back().lock();
+      CHECK(second->icon_visible && second->icons.empty());
       result(runtime, *second, second->send("__reawebHello", {1}));
       CHECK(result(runtime, *second, second->send("ReaWeb_GetAppInfo"))["result"] == app);
       for (int n = 0; n < 16; ++n) first->send("GetTrack", {0, 1});

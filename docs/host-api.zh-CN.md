@@ -34,11 +34,12 @@
 | `reaper.window.focus()` | `boolean` | 聚焦当前窗口 |
 | `reaper.debug.openDevTools()` | `boolean` | 幂等请求显示 DevTools。macOS 显示 Safari 指引，并以 `INSPECTOR_MENU` 错误拒绝 Promise。详见 [DevTools](devtools.zh-CN.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 标题为 1–256 UTF-8 字节，不含 NUL |
-| `reaper.window.setIcon(path)` | `boolean` | 在当前文档中覆盖 HTML favicon 的自动同步。本地 PNG、ICO 或 SVG，相对路径基于 App 根目录。详见[窗口图标](runtime-api.zh-CN.md#窗口图标) |
+| `reaper.window.setIcon(path)` | `boolean` | 在当前窗口会话中覆盖 HTML favicon，重载后保留。本地 PNG、ICO 或 SVG，相对路径基于 App 根目录，也支持绝对路径。详见[窗口图标](runtime-api.zh-CN.md#窗口图标) |
+| `reaper.window.setIconVisible(visible)` | `boolean` | 显示或隐藏标题栏图标及占位，保留图标数据。默认 `true`，重载后保留。Linux 装饰支持取决于窗口管理器 |
 | `reaper.window.setDocked(docked)` | `boolean` | 返回实际停靠状态，保留页面 |
 | `reaper.window.isDocked()` | `boolean` | 获取停靠状态 |
 | `reaper.window.setKeyboardCapture(capture)` | `boolean` | 默认 `true`，设为 `false` 后遵循 REAPER 的全局快捷键规则 |
-| `reaper.window.getState()` | `ReaWebWindowState` | `id`、`title`、`docked`、`visible`、`focused`、`keyboardCapture` |
+| `reaper.window.getState()` | `ReaWebWindowState` | `id`、`title`、`docked`、`visible`、`focused`、`keyboardCapture`、`iconVisible` |
 
 窗口位置和停靠状态按入口文件及实例序号保存，最多同时打开 32 个窗口。同一 App 目录的窗口共享浏览器存储，不同目录隔离；句柄、订阅及等待请求始终只属于本页。
 

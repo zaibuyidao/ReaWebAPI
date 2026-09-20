@@ -285,6 +285,7 @@ public:
     return hwnd_ && (focus == hwnd_ || IsChild(hwnd_, focus));
   }
   void tick() override {
+    if (!closed_) icon_.refresh(hwnd_);
     if (!closed_ && devtools_) devtools_->tick(webview_.Get());
     const bool next = visible();
     if (controller_ && next != visible_) { controller_->put_IsVisible(next); visible_ = next; }
@@ -303,6 +304,7 @@ public:
   }
   void set_icon(const std::vector<IconBitmap>& images) override { icon_.set(hwnd_, images); }
   void clear_icon() override { icon_.clear(hwnd_); }
+  void set_icon_visible(bool visible) override { icon_.set_visible(hwnd_, visible); }
   void set_visible(bool visible) override { ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE); }
   void reload() override { if (webview_) webview_->Reload(); }
   Json bounds() const override {
@@ -416,6 +418,7 @@ public:
     SetParent(hwnd_, nullptr);
     SetWindowLongPtrW(hwnd_, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN);
     SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(options_.parent));
+    icon_.refresh(hwnd_);
     restore_placement({{"x", floating_rect_.left}, {"y", floating_rect_.top},
       {"width", floating_rect_.right - floating_rect_.left}, {"height", floating_rect_.bottom - floating_rect_.top}, {"maximized", maximized_}});
     if (controller_) controller_->NotifyParentWindowPositionChanged();

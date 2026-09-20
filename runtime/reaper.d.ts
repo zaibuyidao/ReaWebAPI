@@ -64,6 +64,7 @@ interface ReaWebWindowState {
   visible: boolean;
   focused: boolean;
   keyboardCapture: boolean;
+  iconVisible: boolean;
 }
 interface ReaWebEvents {
   projectchange: { projectEpoch: number; changeCount: number };

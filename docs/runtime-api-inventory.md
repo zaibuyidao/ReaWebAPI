@@ -26,9 +26,10 @@ All thirteen namespaces have implemented members. App identity is shared with br
 | `reaper.window.setPosition(x, y)` | `Promise<ReaWebBounds>` | 设置浮动窗口位置 |
 | `reaper.window.show()` | `Promise<ReaWebWindowState>` | 显示当前窗口 |
 | `reaper.window.hide()` | `Promise<ReaWebWindowState>` | 隐藏当前窗口 |
-| `reaper.window.getState()` | `Promise<ReaWebWindowState>` | 读取 ID、标题、停靠、可见、焦点和键盘策略 |
+| `reaper.window.getState()` | `Promise<ReaWebWindowState>` | 读取 ID、标题、停靠、可见、焦点、键盘策略和 `iconVisible` |
 | `reaper.window.setTitle(title)` | `Promise<boolean>` | 设置标题 |
-| `reaper.window.setIcon(path)` | `Promise<boolean>` | 显式设置当前宿主窗口图标，覆盖当前文档的 favicon 自动同步。支持 PNG、ICO、SVG，相对路径基于 App 根目录 |
+| `reaper.window.setIcon(path)` | `Promise<boolean>` | 显式设置当前窗口会话图标，覆盖 favicon 自动同步，重载后保留。支持 PNG、ICO、SVG，相对路径基于 App 根目录 |
+| `reaper.window.setIconVisible(visible)` | `Promise<boolean>` | 控制标题栏图标及占位，保留图标数据，默认显示。停靠切换、原生窗口重建和重载后保留，Linux 效果取决于窗口管理器 |
 | `reaper.window.focus()` | `Promise<boolean>` | 聚焦当前窗口 |
 | `reaper.window.setDocked(docked)` | `Promise<boolean>` | true 停靠、false 取消停靠；返回实际停靠状态，取消停靠成功返回 false |
 | `reaper.window.isDocked()` | `Promise<boolean>` | 读取停靠状态 |

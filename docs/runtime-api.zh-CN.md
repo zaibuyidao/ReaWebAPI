@@ -29,7 +29,7 @@ await reaper.window.show();
 await reaper.window.hide();
 ```
 
-另有 `open(path)`、`openDev(url)`、`getState`、`setTitle`、`setIcon`、`focus`、`setDocked`、`isDocked`、`setKeyboardCapture`、`close`、`reload`。使用 `setDocked(true)` 停靠、`setDocked(false)` 取消停靠；返回实际停靠状态，取消停靠成功返回 false。创建新窗口返回窗口 ID，其余窗口控制针对当前调用页，不接收 ID。尺寸是包含边框的原生桌面窗口尺寸，坐标是屏幕坐标，返回 `units: 'native'`；不要当作网页 CSS 像素。后端和桌面缩放可能影响它们与 CSS 像素的比例。宽高允许 100–16384，位置允许 -1000000–1000000，系统会将窗口限制到可用屏幕区域。
+另有 `open(path)`、`openDev(url)`、`getState`、`setTitle`、`setIcon`、`setIconVisible`、`focus`、`setDocked`、`isDocked`、`setKeyboardCapture`、`close`、`reload`。使用 `setDocked(true)` 停靠、`setDocked(false)` 取消停靠；返回实际停靠状态，取消停靠成功返回 false。创建新窗口返回窗口 ID，其余窗口控制针对当前调用页，不接收 ID。尺寸是包含边框的原生桌面窗口尺寸，坐标是屏幕坐标，返回 `units: 'native'`；不要当作网页 CSS 像素。后端和桌面缩放可能影响它们与 CSS 像素的比例。宽高允许 100–16384，位置允许 -1000000–1000000，系统会将窗口限制到可用屏幕区域。
 
 返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。窗口支持标题、聚焦、停靠和位置保存。
 
@@ -43,7 +43,7 @@ Windows、macOS、Linux 的 WebView 原生右键菜单顶部在浮动时显示 *
 <link rel="icon" type="image/svg+xml" href="logo.svg" sizes="any">
 ```
 
-选择最后一个格式受支持且 `media` 匹配的 `rel="icon"` 声明，兼容 `rel="shortcut icon"`。声明、`<base href>` 或媒体查询变化时自动更新。移除所有有效声明后恢复默认窗口图标，不会自动探测 `/favicon.ico`。
+选择最后一个格式受支持且 `media` 匹配的 `rel="icon"` 声明，兼容 `rel="shortcut icon"`。声明、`<base href>` 或媒体查询变化时自动更新。移除所有有效声明后恢复默认窗口图标。页面初始没有声明时保留当前 Runtime 图标，不会自动探测 `/favicon.ico`。
 
 支持 PNG、ICO、SVG。URL 没有对应扩展名时需声明 `type`。相对 URL 按 `document.baseURI` 解析，包括 `<base href>` 的影响。HTTP(S)、data 和 blob URL 通过浏览器 `fetch` 加载，遵循 CSP `connect-src` 和 CORS。加载失败保留当前图标，并在 Console 中报告警告。
 
@@ -56,11 +56,19 @@ await reaper.window.setIcon('logo.svg');
 
 `setIcon(path)` 设置当前宿主窗口的图标，成功返回 `true`。支持本地 `.png`、`.ico` 和 `.svg` 文件及绝对路径。相对路径按当前 App 根目录解析，即 `reaper.app.getRootPath()`。不接受 URL。文件上限为 4 MiB，解码后的位图尺寸上限为 4096 × 4096。
 
-有效的 `setIcon()` 请求进入队列后，当前文档停止自动同步，即使随后文件加载失败也是如此。重载或导航到新文档后恢复自动同步。无效文件不替换已应用的图标。较新的请求会取代尚未完成的旧请求，旧请求以 `ICON_SUPERSEDED` 拒绝。
+有效的 `setIcon()` 请求进入队列后，当前文档停止自动同步，即使随后文件加载失败也是如此。成功设置的覆盖在当前窗口会话中持续有效，包括重载和导航。没有成功的显式覆盖时，新文档恢复自动同步。无效文件不替换已应用的图标。较新的请求会取代尚未完成的旧请求，旧请求以 `ICON_SUPERSEDED` 拒绝。
 
-两种方式共用相同的大小限制和原生渲染流程。Runtime 在后台线程解码，根据当前显示缩放与原生图标尺寸在内存中栅格化 SVG，并保留源数据供 DPI 变化时重新渲染，不生成临时图片。SVG 应自包含，文字需转换为路径。停靠切换保留当前图标。
+两种方式共用相同的大小限制和原生渲染流程。Runtime 在窗口会话中保存源数据、渲染结果和显示状态，在 Dock/Undock、原生宿主或浮动窗口重建、页面重载后重新应用。图像在后台线程解码，SVG 按原生图标尺寸在内存中栅格化，DPI 变化时使用保留的源数据重新渲染，不生成临时图片。SVG 应自包含，文字需转换为路径。
 
-Windows 设置窗口大小图标。macOS 使用浮动窗口的文档代理图标，不更改 REAPER 的应用或 Dock 图标。Linux 设置浮动窗口图标，是否显示由桌面主题和窗口管理器决定。停靠标签的显示由 REAPER 控制。`setIcon()` 不修改 HTML 中的 favicon 声明。
+```js
+await reaper.window.setIconVisible(false);
+await reaper.window.setIconVisible(true);
+const { iconVisible } = await reaper.window.getState();
+```
+
+`setIconVisible(boolean)` 默认为 `true`，成功返回 `true`。隐藏时移除标题栏图标及其占位，保留当前图标数据。隐藏期间仍可更新图标，重新显示时恢复当前图标。显示设置在同一窗口会话的停靠切换、原生窗口重建和重载后保留。
+
+Windows 设置窗口大小图标。macOS 使用浮动窗口的文档代理图标，不更改 REAPER 的应用或 Dock 图标。Linux 设置浮动窗口图标，通过窗口装饰提示请求移除标题栏图标，图标及占位是否移除取决于桌面主题和窗口管理器。停靠标签的显示由 REAPER 控制。这些 API 不修改 HTML 中的 favicon 声明。
 
 ## Lifecycle
 

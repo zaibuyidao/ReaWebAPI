@@ -121,9 +121,14 @@ test('failed and oversized fetches preserve the native icon and allow later chan
   response = () => new Response(svg); f.links[0].href = 'valid.svg'; f.mutate();
   await until(() => f.commits().length === 1);
 });
-test('a page without a declared favicon clears the previous document icon without guessing a URL', async t => {
+test('an initial page without a favicon retains the Runtime icon and still observes later declarations', async t => {
   const f = fixture(t, 'webkit', []);
-  await until(() => f.commits().length === 1);
-  assert.equal(f.commits()[0].args[0].icon, null);
+  await f.window.reaper.lifecycle.ready; await delay();
+  assert.equal(f.commits().length, 0);
   assert.equal(f.requests.length, 0);
+  f.links.push(link('logo.svg')); f.mutate();
+  await until(() => f.commits().length === 1);
+  f.links.length = 0; f.mutate();
+  await until(() => f.commits().length === 2);
+  assert.equal(f.commits()[1].args[0].icon, null);
 });

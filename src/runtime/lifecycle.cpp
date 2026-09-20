@@ -6,7 +6,8 @@ void Runtime::navigate(Session& session) {
   if (undo_owner_ == session.id) finish_undo();
   ++session.generation;
   ++session.icon_sequence; session.icon_pending = false;
-  session.icon_explicit = false; session.favicon_revision = 0;
+  session.icon_explicit = session.icon_explicit_source; session.favicon_revision = 0;
+  session.icon_dirty = true;
   session.ready = false;
   session.document.clear();
   session.queue.clear();

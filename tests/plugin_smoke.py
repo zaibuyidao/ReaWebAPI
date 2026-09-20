@@ -332,6 +332,8 @@ def dock_add(window, title, identifier, show):
         user32.SetParent(window, docker_window)
         user32.SetWindowLongPtrW(window, -16, 0x52000000)
         user32.SetWindowPos(window, None, 0, 0, 620, 580, 0x24)
+        user32.SendMessageW(window, 0x80, 0, 0)
+        user32.SendMessageW(window, 0x80, 1, 0)
 
 @api('DockWindowRemove', None, C.c_void_p)
 def dock_remove(window):
@@ -339,6 +341,8 @@ def dock_remove(window):
     docked.discard(window)
     if args.webview:
         user32.SetParent(window, None)
+        user32.SendMessageW(window, 0x80, 0, 0)
+        user32.SendMessageW(window, 0x80, 1, 0)
 
 @api('DockIsChildOfDock', C.c_int, C.c_void_p, C.POINTER(C.c_bool))
 def dock_index(window, floating):
@@ -562,6 +566,22 @@ try:
   const el = id => document.getElementById(id);
   const click = id => { if (el(id).disabled) throw new Error('Disabled: ' + id); el(id).click(); };
   await until(() => el('project-name').textContent === 'API 工程.rpp' && (EMPTY_PROJECT || !el('apply-color').disabled));
+  const iconStep = async step => {
+    await reaper.window.setTitle('FAVICON:' + step);
+    const deadline = Date.now() + 5000;
+    while (!(await reaper.fs.stat('favicon-' + step + '.ok')).exists) {
+      if (Date.now() > deadline) throw new Error('Native favicon timeout: ' + step);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+  };
+  if (sessionStorage.getItem('icon-reload')) {
+    if ((await reaper.window.getState()).iconVisible !== false) throw new Error('Icon visibility lost after reload');
+    await iconStep(10);
+    await reaper.window.setIconVisible(true); await iconStep(11);
+    await reaper.window.setDocked(true);
+    await reaper.window.setTitle('DEMO PASS');
+    await reaper.window.close(); return;
+  }
   const cspViolations = [];
   const recordCsp = event => cspViolations.push(event.blockedURI);
   document.addEventListener('securitypolicyviolation', recordCsp);
@@ -635,14 +655,6 @@ try:
   if (el('dock')) throw new Error('Demo should use the native docking menu');
   const favicon = document.querySelector('link[rel="icon"]');
   if (!favicon) throw new Error('Demo favicon declaration is missing');
-  const iconStep = async step => {
-    await reaper.window.setTitle('FAVICON:' + step);
-    const deadline = Date.now() + 5000;
-    while (!(await reaper.fs.stat('favicon-' + step + '.ok')).exists) {
-      if (Date.now() > deadline) throw new Error('Native favicon timeout: ' + step);
-      await new Promise(resolve => setTimeout(resolve, 20));
-    }
-  };
   await iconStep(1);
   await reaper.fs.writeText('alternate.svg', '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="blue"/></svg>', {overwrite:true});
   favicon.href = 'alternate.svg'; await iconStep(2);
@@ -661,8 +673,13 @@ try:
     }
     if (document.documentElement.scrollWidth > innerWidth) throw new Error('Docking horizontal overflow');
   }
-  await reaper.window.setTitle('DEMO PASS');
-  await reaper.window.close();
+  await reaper.window.setIconVisible(false);
+  await reaper.window.setDocked(false); await iconStep(7);
+  await reaper.window.setIcon('logo.svg'); await iconStep(8);
+  await reaper.window.setIconVisible(true); await iconStep(9);
+  await reaper.window.setIconVisible(false);
+  sessionStorage.setItem('icon-reload', 'true');
+  await reaper.window.reload();
 })().catch(async error => { await reaper.window.setTitle('DEMO FAIL: ' + error.message.slice(0, 160)); });
 '''
             with (folder / 'app.js').open('a', encoding='utf-8') as stream:
@@ -797,7 +814,7 @@ try:
         user32.DispatchMessageW.argtypes = [C.POINTER(W.MSG)]
         native_steps = set()
         favicon_icons = {}
-        for step in range(1, 7):
+        for step in range(1, 12):
             (folder / f'favicon-{step}.ok').unlink(missing_ok=True)
         user32.GetWindowTextW.argtypes = [W.HWND, W.LPWSTR, C.c_int]
         user32.GetDlgItem.argtypes = [W.HWND, C.c_int]
@@ -834,12 +851,16 @@ try:
                 for handle in set(handles) | docked.copy():
                     title = C.create_unicode_buffer(256)
                     user32.GetWindowTextW(handle, title, 256)
-                    if args.demo and title.value.startswith('FAVICON:'):
+                    if args.demo and title.value.startswith('FAVICON:') and int(title.value.split(':')[1]) not in favicon_icons:
                         step = int(title.value.split(':')[1])
                         small = user32.SendMessageW(handle, 0x7F, 0, 0)
                         large = user32.SendMessageW(handle, 0x7F, 1, 0)
                         previous = favicon_icons.get(step - 1)
-                        correct = (not small and not large) if step == 3 else bool(small and large)
+                        hidden = step in (7, 8, 10)
+                        correct = (not small and not large) if step == 3 or hidden else bool(small and large)
+                        if hidden or step in (9, 11):
+                            correct = correct and bool(user32.GetWindowLongPtrW(handle, -20) & 1) == hidden
+                            assert user32.GetWindowLongPtrW(handle, -16) & 0x80000, 'System menu was removed'
                         if step in (2, 5):
                             correct = correct and small != previous
                         elif step == 6:
@@ -868,8 +889,8 @@ try:
         assert (name_calls == 0 if args.empty or args.modern else name_calls > 0 if args.demo or args.starter or args.studio else name_calls == 4) and not any(is_open(window) for window in ids), (name_calls, messages, [diagnostics(id) for id in ids])
         if args.demo:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'DEMO PASS'
-            assert set(favicon_icons) == set(range(1, 7)), favicon_icons
-            print('HTML favicon: initial native icon, replacement, removal, restoration and explicit override passed')
+            assert set(favicon_icons) == set(range(1, 12)), favicon_icons
+            print('Window icons: favicon sync, explicit override, hidden replacement, docking restoration and reload persistence passed')
             assert any('[READ]' in message and '[ReaWebAPI]' in message for message in messages), 'Native console mirror missing'
             print('Demo debug log: explicit track snapshot, REAPER console mirror and clear passed' + ('' if args.empty else ', including confirmed Pan changes'))
             print('Shipped demo: DevTools opened, project settings returned 200 and no CSP violations')
@@ -890,7 +911,7 @@ try:
         else:
             assert extra_calls == ({'project', 'cursor', 'beats', 'markers'} if args.empty else ({'project', 'cursor', 'beats', 'markers', 'color', 'fx'} | ({'binary-resize','array-write','accessor-release'} if args.demo else set()))), extra_calls
         timer()
-        assert not docked and not dock_failures and dock_events.count('dock') == window_count * 2, (docked, dock_events, dock_failures)
+        assert not docked and not dock_failures and dock_events.count('dock') == window_count * (3 if args.demo else 2), (docked, dock_events, dock_failures)
         if not (args.demo or args.starter or args.modern or args.studio):
             assert sorted(messages) == [f'[ReaWebAPI] [App {id}] [info] Runtime log smoke\n' for id in ids], messages
             assert get_error() == saved_error, 'Runtime logs overwrote the last host error'

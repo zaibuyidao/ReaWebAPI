@@ -118,6 +118,13 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   if (method == "ReaWeb_GetDiagnostics") return diagnostics(id);
   if (method == "ReaWeb_GetWindowState") return window_state(s);
   if (method == "ReaWeb_Focus") return focus(id);
+  if (method == "ReaWeb_SetIconVisible") {
+    if (!args[0].is_boolean()) throw Error("INVALID_ARGUMENT", "Expected an icon visibility boolean");
+    const auto visible = args[0].get<bool>();
+    s.window->set_icon_visible(visible);
+    s.icon_visible = visible;
+    return true;
+  }
   if (method == "ReaWeb_SetTitle") {
     if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected a window title");
     auto title = args[0].get<std::string>();
@@ -183,7 +190,9 @@ bool Runtime::start_async(Session& session, const Work& request) {
     if (value["icon"].is_null()) {
       ++session.icon_sequence; session.icon_pending = false;
       if (session.icon_source) session.window->clear_icon();
-      session.icon_source.reset(); session.icon_sizes.clear();
+      session.icon_source.reset(); session.icon_sizes.clear(); session.icon_bitmaps.clear();
+      session.icon_initialized = true; session.icon_explicit_source = false;
+      session.icon_target = session.window->icon_target(); session.icon_dirty = false;
       finish(true); return true;
     }
     Work icon = request; icon.kind = Work::Icon; icon.text.clear(); icon.icon_from_page = true;
@@ -311,8 +320,12 @@ void Runtime::tick() {
         s.icon_pending = false;
         if (!s.closing && work.icon_error.is_null()) {
           try {
+            s.window->set_icon_visible(s.icon_visible);
             s.window->set_icon(work.icon_bitmaps);
             s.icon_source = work.icon_source; s.icon_sizes = work.icon_sizes;
+            s.icon_bitmaps = std::move(work.icon_bitmaps);
+            s.icon_target = s.window->icon_target(); s.icon_dirty = false; s.icon_initialized = true;
+            if (work.reply) s.icon_explicit_source = !work.icon_from_page;
           } catch (const Error& error) { work.icon_error = {{"code", error.code}, {"message", error.what()}}; }
           catch (const std::exception& error) { work.icon_error = {{"code", "ICON_APPLY_FAILED"}, {"message", error.what()}}; }
         }

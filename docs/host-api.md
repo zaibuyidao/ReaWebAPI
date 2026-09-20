@@ -34,11 +34,12 @@ Both capabilities and diagnostics include `webRuntime`: `contract` (1), `mode` (
 | `reaper.window.focus()` | `boolean` | Focuses the current window |
 | `reaper.debug.openDevTools()` | `boolean` | Requests showing DevTools (idempotent). macOS shows a Safari guide and rejects with `INSPECTOR_MENU`. See [DevTools](devtools.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 1–256 UTF-8 bytes, no NUL |
-| `reaper.window.setIcon(path)` | `boolean` | Override the HTML favicon for this document. PNG, ICO or SVG from a local path relative to the App root. See [window icons](runtime-api.md#window-icons) |
+| `reaper.window.setIcon(path)` | `boolean` | Override the HTML favicon for this window session, including reloads. Local PNG, ICO or SVG, relative to the App root or absolute. See [window icons](runtime-api.md#window-icons) |
+| `reaper.window.setIconVisible(visible)` | `boolean` | Show/hide the title-bar icon and its space, retaining the icon. Defaults to `true`, survives reloads. Linux decoration support depends on the window manager |
 | `reaper.window.setDocked(docked)` | `boolean` | Returns the actual docked state, preserving the page |
 | `reaper.window.isDocked()` | `boolean` | Reads docked state |
 | `reaper.window.setKeyboardCapture(capture)` | `boolean` | Default `true`. Setting `false` allows REAPER's normal global shortcut policy |
-| `reaper.window.getState()` | `ReaWebWindowState` | `id`, `title`, `docked`, `visible`, `focused`, `keyboardCapture` |
+| `reaper.window.getState()` | `ReaWebWindowState` | `id`, `title`, `docked`, `visible`, `focused`, `keyboardCapture`, `iconVisible` |
 
 Window placement and docking are persisted by entry file and instance slot. At most 32 ReaWebAPI windows can be open. Handles, subscriptions and pending requests remain document-local while browser storage is shared only within the same App directory.
 

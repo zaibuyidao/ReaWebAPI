@@ -3,6 +3,7 @@
 ## Changes
 
 - Synchronize HTML PNG, ICO and SVG favicons to the native window, with in-memory rendering at the current DPI. Keep `reaper.window.setIcon(path)` as an explicit override. The Demo declares `logo.svg` in HTML.
+- Retain window icons and visibility in Runtime state across docking, native window recreation and reloads. Add `reaper.window.setIconVisible(boolean)` to hide the title-bar icon and its space without clearing the icon. Linux decoration support depends on the window manager.
 - Move Dock/Undock to the top of the WebView context menu on all platforms and remove the host toolbar. Preserve page context-menu handling, the Windows title-bar entry and the existing docking implementation.
 - Add Ctrl+Shift+I to show/hide DevTools on Windows/Linux and a Safari Inspector guide on macOS.
 - Handle Ctrl+Shift+I inside Windows DevTools without opening additional inspectors, and preserve the latest visibility request during asynchronous opening on Linux.
@@ -24,6 +25,7 @@
 ## 更新
 
 - HTML favicon 自动同步到原生窗口，支持 PNG、ICO、SVG，按当前 DPI 在内存中渲染。保留 `reaper.window.setIcon(path)` 显式覆盖，Demo 在 HTML 中声明 `logo.svg`。
+- Runtime 保存窗口图标和显示状态，在停靠切换、原生窗口重建和重载后恢复。新增 `reaper.window.setIconVisible(boolean)`，隐藏标题栏图标及占位并保留图标数据。Linux 装饰支持取决于窗口管理器。
 - 各平台将 Dock/Undock 移至 WebView 右键菜单顶部，移除宿主工具栏。保留网页上下文菜单行为、Windows 标题栏入口及现有停靠实现。
 - Windows/Linux 支持 Ctrl+Shift+I 显示或隐藏 DevTools，macOS 使用该快捷键切换 Safari 检查器指引。
 - 修复 Windows DevTools 内按 Ctrl+Shift+I 重复打开检查器，以及 Linux 异步打开过程中取消显示后仍弹出的问题。

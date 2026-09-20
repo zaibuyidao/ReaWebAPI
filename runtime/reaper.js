@@ -187,7 +187,9 @@
       }
       const key = icon ? `${icon.format}:${icon.url}` : '';
       if (key === selected) return;
+      const initial = selected === undefined;
       selected = key;
+      if (initial && !icon) return;
       controller?.abort();
       controller = new window.AbortController();
       void sync(icon, ++revision, controller.signal);
@@ -315,7 +317,8 @@
     getPosition: async () => { const b = await call('ReaWeb_GetBounds', []); return { x: b.x, y: b.y, mode: b.mode, units: b.units }; },
     setPosition: (x, y) => call('ReaWeb_SetBounds', [{ x, y }]),
     show: () => call('ReaWeb_SetVisible', [true]), hide: () => call('ReaWeb_SetVisible', [false]),
-    getState: host('ReaWeb_GetWindowState'), setTitle: host('ReaWeb_SetTitle'), setIcon: host('ReaWeb_SetIcon'), focus: host('ReaWeb_Focus'),
+    getState: host('ReaWeb_GetWindowState'), setTitle: host('ReaWeb_SetTitle'), setIcon: host('ReaWeb_SetIcon'),
+    setIconVisible: host('ReaWeb_SetIconVisible'), focus: host('ReaWeb_Focus'),
     setDocked: host('ReaWeb_SetDocked'), isDocked: host('ReaWeb_IsDocked'),
     setKeyboardCapture: host('ReaWeb_SetKeyboardCapture'),
     close: host('ReaWeb_Close'), reload: host('ReaWeb_Reload')

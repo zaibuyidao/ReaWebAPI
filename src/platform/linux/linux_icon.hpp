@@ -12,17 +12,21 @@ class LinuxIcon {
   using Create = void* (*)(const unsigned char*, int, int, int, int, int, int, void (*)(unsigned char*, void*), void*);
   using Set = void (*)(void*, List*);
   using Unref = void (*)(void*);
+  using GetDecorations = int (*)(void*, unsigned*);
+  using SetDecorations = void (*)(void*, unsigned);
   Create create_ = reinterpret_cast<Create>(dlsym(RTLD_DEFAULT, "gdk_pixbuf_new_from_data"));
   Set set_ = reinterpret_cast<Set>(dlsym(RTLD_DEFAULT, "gdk_window_set_icon_list"));
   Unref unref_ = reinterpret_cast<Unref>(dlsym(RTLD_DEFAULT, "g_object_unref"));
+  GetDecorations get_decorations_ = reinterpret_cast<GetDecorations>(dlsym(RTLD_DEFAULT, "gdk_window_get_decorations"));
+  SetDecorations set_decorations_ = reinterpret_cast<SetDecorations>(dlsym(RTLD_DEFAULT, "gdk_window_set_decorations"));
   void* applied_ = nullptr;
   std::vector<IconBitmap> images_;
+  bool visible_ = true, initialized_ = false;
 public:
   std::string last_error;
   void clear(void* window) {
     if (window && !set_) throw Error("HOST_UNAVAILABLE", "REAPER's GTK backend does not expose window icons");
-    if (window) set_(window, nullptr);
-    images_.clear(); applied_ = nullptr; last_error.clear();
+    images_.clear(); initialized_ = true; applied_ = nullptr; apply(window); last_error.clear();
   }
   static int scale(void* window) {
     using Scale = int (*)(void*);
@@ -31,7 +35,19 @@ public:
   }
   void apply(void* window) {
     if (!window) { applied_ = nullptr; return; }
-    if (window == applied_ || images_.empty()) return;
+    if (!initialized_ && visible_) return;
+    if (get_decorations_ && set_decorations_) {
+      constexpr unsigned all = 1, menu = 16;
+      unsigned decorations = all;
+      get_decorations_(window, &decorations);
+      const auto next = (visible_ == bool(decorations & all)) ? decorations & ~menu : decorations | menu;
+      if (next != decorations) set_decorations_(window, next);
+    }
+    if (window == applied_) return;
+    if (!visible_ || images_.empty()) {
+      if (!set_) throw Error("HOST_UNAVAILABLE", "REAPER's GTK backend does not expose window icons");
+      set_(window, nullptr); applied_ = window; last_error.clear(); return;
+    }
     if (!create_ || !set_ || !unref_) throw Error("HOST_UNAVAILABLE", "REAPER's GTK backend does not expose window icons");
     std::vector<List> list(images_.size());
     struct Release { std::vector<List>& list; Unref unref; ~Release() { for (auto& item : list) if (item.data) unref(item.data); } } release{list, unref_};
@@ -49,9 +65,17 @@ public:
   }
   void set(void* window, const std::vector<IconBitmap>& images) {
     if (!create_ || !set_ || !unref_) throw Error("HOST_UNAVAILABLE", "REAPER's GTK backend does not expose window icons");
-    auto previous = images_; auto previous_window = applied_;
-    images_ = images; applied_ = nullptr;
-    try { apply(window); last_error.clear(); } catch (...) { images_ = std::move(previous); applied_ = previous_window; throw; }
+    auto previous = images_; auto previous_window = applied_; const auto initialized = initialized_;
+    images_ = images; initialized_ = true; applied_ = nullptr;
+    try { apply(window); last_error.clear(); }
+    catch (...) { images_ = std::move(previous); applied_ = previous_window; initialized_ = initialized; throw; }
+  }
+  void set_visible(void* window, bool visible) {
+    if (!get_decorations_ || !set_decorations_) throw Error("HOST_UNAVAILABLE", "REAPER's GTK backend does not expose window decorations");
+    const auto previous = visible_, initialized = initialized_; auto previous_window = applied_;
+    if (visible_ != visible) { visible_ = visible; initialized_ = true; applied_ = nullptr; }
+    try { apply(window); }
+    catch (...) { visible_ = previous; initialized_ = initialized; applied_ = previous_window; throw; }
   }
   void refresh(void* window) {
     try { apply(window); }

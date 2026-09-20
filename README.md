@@ -7,7 +7,7 @@ ReaWebAPI is a native REAPER extension for building tools with HTML, CSS and Jav
 - 730 standard REAPER 7.80 API bindings with TypeScript declarations.
 - 13 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
 - Native WebView support for modules, local resources, Workers and persistent App storage.
-- Dock/Undock from the WebView context menu and PNG, ICO or SVG window icons from HTML favicons, with explicit overrides through `reaper.window.setIcon(path)`.
+- Dock/Undock from the WebView context menu. PNG, ICO and SVG window icons from HTML favicons or `reaper.window.setIcon(path)` survive docking and reloads, with visibility controlled by `reaper.window.setIconVisible(boolean)`.
 - JavaScript and TypeScript templates, Runtime Studio and bilingual documentation.
 
 ## Download and install

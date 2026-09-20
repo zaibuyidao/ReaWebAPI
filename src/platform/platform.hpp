@@ -45,8 +45,10 @@ public:
   virtual void focus() {}
   virtual void set_title(const std::string&) {}
   virtual std::vector<int> icon_sizes() const { return {16, 32}; }
+  virtual void* icon_target() const { return native_handle(); }
   virtual void set_icon(const std::vector<IconBitmap>&) { throw Error("HOST_UNAVAILABLE", "Native window icons unavailable"); }
   virtual void clear_icon() { throw Error("HOST_UNAVAILABLE", "Native window icons unavailable"); }
+  virtual void set_icon_visible(bool) {}
   virtual bool visible() const { return !closed(); }
   virtual bool focused() const { return false; }
   virtual Json placement() const { return nullptr; }

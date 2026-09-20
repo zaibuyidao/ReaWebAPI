@@ -145,13 +145,17 @@ class MacWindow final : public Window {
   bool maximized_ = false;
   NSImage* icon_ = nil;
   __weak NSWindow* icon_window_ = nil;
-  bool icon_clear_pending_ = false;
+  bool icon_visible_ = true;
+  bool icon_initialized_ = false;
   void apply_icon() {
-    auto native = webview_.window;
-    if (!native || (delegate_->options.is_docked && delegate_->options.is_docked())) { icon_window_ = nil; return; }
-    if (icon_clear_pending_) { native.representedURL = nil; icon_clear_pending_ = false; }
+    auto native = (__bridge NSWindow*)icon_target();
+    if (!native) { icon_window_ = nil; return; }
+    if (!icon_visible_ || (icon_initialized_ && !icon_)) {
+      if (native.representedURL) native.representedURL = nil;
+      icon_window_ = native; return;
+    }
     if (!icon_) return;
-    if (native == icon_window_) return;
+    if (native == icon_window_ && native.representedURL && [native standardWindowButton:NSWindowDocumentIconButton].image == icon_) return;
     native.representedURL = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
     auto button = [native standardWindowButton:NSWindowDocumentIconButton];
     button.image = icon_;
@@ -289,6 +293,9 @@ public:
   void restore_devtools(const Json& value) override { devtools_prefs_.restore(value); devtools_prefs_.floating = true; }
   bool closed() const override { return delegate_->isClosed || window_->closed(); }
   void* native_handle() const override { return window_->handle(); }
+  void* icon_target() const override {
+    return delegate_->options.is_docked && delegate_->options.is_docked() ? nullptr : (__bridge void*)webview_.window;
+  }
   void prepare_dock() override {
     icon_window_ = nil;
     maximized_ = webview_.window.zoomed;
@@ -317,9 +324,10 @@ public:
       std::memcpy(rep.bitmapData, image.rgba.data(), image.rgba.size());
       rep.size = NSMakeSize(16, 16); [icon addRepresentation:rep];
     }
-    icon_ = icon; icon_window_ = nil; apply_icon();
+    icon_ = icon; icon_initialized_ = true; icon_window_ = nil; apply_icon();
   }
-  void clear_icon() override { icon_ = nil; icon_window_ = nil; icon_clear_pending_ = true; apply_icon(); }
+  void clear_icon() override { icon_ = nil; icon_initialized_ = true; icon_window_ = nil; apply_icon(); }
+  void set_icon_visible(bool visible) override { icon_visible_ = visible; apply_icon(); }
   void set_visible(bool visible) override { window_->set_visible(visible); }
   Json bounds() const override { return window_->placement(); }
   void reload() override { [webview_ reload]; }

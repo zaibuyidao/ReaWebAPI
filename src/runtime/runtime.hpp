@@ -52,10 +52,14 @@ private:
     bool closing = false;
     std::optional<bool> native_dock_request;
     std::shared_ptr<const IconSource> icon_source;
+    std::vector<IconBitmap> icon_bitmaps;
     std::vector<int> icon_sizes;
+    void* icon_target = nullptr;
     uint64_t icon_sequence = 0;
     bool icon_pending = false;
     bool icon_explicit = false;
+    bool icon_explicit_source = false;
+    bool icon_visible = true, icon_dirty = false, icon_initialized = false;
     uint64_t favicon_revision = 0;
     bool failed = false;
     bool lifecycle_enabled = false, allow_reload = false;
