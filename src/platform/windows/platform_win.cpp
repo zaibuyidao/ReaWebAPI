@@ -8,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include "platform/windows/win_devtools.hpp"
 
 namespace reaweb {
 using Microsoft::WRL::ComPtr;
@@ -76,7 +77,9 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   HWND hwnd_ = nullptr;
   ComPtr<ICoreWebView2Controller> controller_;
   ComPtr<ICoreWebView2> webview_;
-  bool closed_ = false, want_devtools_ = false;
+  bool closed_ = false;
+  std::unique_ptr<WinDevTools> devtools_;
+  static constexpr UINT toggle_devtools_message = WM_APP + 73;
   RECT floating_rect_{};
   bool maximized_ = false;
   std::string browser_version_;
@@ -91,7 +94,12 @@ public:
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     }
     if (self) {
-      if (msg == WM_SIZE && self->controller_) {
+      if (msg == toggle_devtools_message) {
+        if (self->devtools_) self->devtools_->toggle(); return 0;
+      } else if (msg == WM_KEYDOWN && wp == 'I' && (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000)) {
+        if (!(lp & (1LL << 30))) PostMessageW(hwnd, toggle_devtools_message, 0, 0);
+        return 0;
+      } else if (msg == WM_SIZE && self->controller_) {
         RECT rect{}; GetClientRect(hwnd, &rect); self->controller_->put_Bounds(rect);
       } else if (msg == WM_MOVE && self->controller_) {
         self->controller_->NotifyParentWindowPositionChanged();
@@ -111,12 +119,14 @@ public:
     hwnd_ = CreateWindowExW(0, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
       CW_USEDEFAULT, CW_USEDEFAULT, 860, 640, static_cast<HWND>(options_.parent), nullptr, instance, this);
     if (!hwnd_) throw std::runtime_error("CreateWindowEx failed");
+    devtools_ = std::make_unique<WinDevTools>(hwnd_);
     // A REAPER-owned floating window stays above its owner when focus returns to REAPER.
     SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(options_.parent));
     ShowWindow(hwnd_, SW_SHOW);
   }
   ~WinWindow() override {
     closed_ = true;
+    devtools_.reset();
     if (controller_) controller_->Close();
     webview_.Reset(); controller_.Reset();
     if (hwnd_) DestroyWindow(hwnd_);
@@ -154,6 +164,17 @@ public:
     if (SUCCEEDED(settings.As(&settings3))) settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
     EventRegistrationToken token{};
     auto weak = weak_from_this();
+    check(controller_->add_AcceleratorKeyPressed(Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
+      [weak](ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
+        UINT key = 0; COREWEBVIEW2_KEY_EVENT_KIND kind{}; COREWEBVIEW2_PHYSICAL_KEY_STATUS status{};
+        args->get_VirtualKey(&key); args->get_KeyEventKind(&kind); args->get_PhysicalKeyStatus(&status);
+        if (key == 'I' && (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000)) {
+          args->put_Handled(TRUE);
+          if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN && !status.WasKeyDown)
+            if (auto self = weak.lock(); self && !self->closed_) PostMessageW(self->hwnd_, toggle_devtools_message, 0, 0);
+        }
+        return S_OK;
+      }).Get(), &token), "add_AcceleratorKeyPressed");
     check(webview_->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>(
       [weak](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
         if (auto self = weak.lock(); self && !self->closed_) {
@@ -212,7 +233,6 @@ public:
             else {
               auto hr = self->webview_->Navigate(wide(self->uri_).c_str());
               if (FAILED(hr)) self->fail("Could not navigate to the HTML entry point");
-              if (self->want_devtools_) self->devtools();
             }
           }
           return S_OK;
@@ -222,9 +242,10 @@ public:
     if (webview_ && !closed_) webview_->ExecuteScript(wide(script).c_str(), nullptr);
   }
   void devtools() override {
-    want_devtools_ = true;
-    if (webview_) webview_->OpenDevToolsWindow();
+    if (devtools_) devtools_->open();
   }
+  Json devtools_state() const override { return devtools_->state(); }
+  void restore_devtools(const Json& value) override { devtools_->restore(value); }
   bool closed() const override { return closed_; }
   bool visible() const override {
     auto root = hwnd_ ? GetAncestor(hwnd_, GA_ROOT) : nullptr;
@@ -235,6 +256,7 @@ public:
     return hwnd_ && (focus == hwnd_ || IsChild(hwnd_, focus));
   }
   void tick() override {
+    if (!closed_ && devtools_) devtools_->tick(webview_.Get());
     const bool next = visible();
     if (controller_ && next != visible_) { controller_->put_IsVisible(next); visible_ = next; }
   }
@@ -313,7 +335,7 @@ public:
   }
   Json diagnostics() const override {
     return {{"backend", "WebView2"}, {"browserVersion", browser_version_}, {"controllerReady", controller_ != nullptr},
-      {"controllerVisible", visible_}};
+      {"controllerVisible", visible_}, {"devtools", devtools_->diagnostics()}};
   }
   Json placement() const override {
     if (!hwnd_) return nullptr;

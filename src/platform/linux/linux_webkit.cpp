@@ -7,6 +7,7 @@
 #include <cstring>
 #include <memory>
 #include "platform/linux/gtk_drag.hpp"
+#include "platform/linux/gtk_devtools.hpp"
 
 namespace reaweb {
 namespace {
@@ -22,6 +23,7 @@ class Page {
   bool loaded_ = false, allow_reload_ = false, intercept_reload_ = false;
   std::string navigation_uri_;
   std::unique_ptr<GtkNativeDrag> drag_;
+  std::unique_ptr<GtkDevTools> devtools_;
   void fail(const std::string& error) {
     if (!failed_) {
       failed_ = true;
@@ -116,18 +118,20 @@ public:
     g_object_ref_sink(plug_);
     // GtkPlug emits delete-event when parked on the X11 root. The native host owns closing.
     g_signal_connect(plug_, "delete-event", G_CALLBACK(+[](GtkWidget*, GdkEvent*, gpointer) -> gboolean { return TRUE; }), nullptr);
-    gtk_container_add(GTK_CONTAINER(plug_), GTK_WIDGET(view_));
+    devtools_ = std::make_unique<GtkDevTools>(view_, plug_, [this](Json state) {
+      channel_.send({{"id", id_}, {"op", "devtools-state"}, {"state", std::move(state)}});
+    });
     gtk_widget_realize(plug_);
     webkit_web_view_load_uri(view_, uri_.c_str());
   }
   ~Page() {
     failed_ = true;
     drag_.reset();
+    devtools_.reset();
     webkit_user_content_manager_unregister_script_message_handler(manager_, "reaweb");
     g_signal_handlers_disconnect_by_data(manager_, this);
     g_signal_handlers_disconnect_by_data(view_, this);
     webkit_web_view_stop_loading(view_);
-    webkit_web_inspector_close(webkit_web_view_get_inspector(view_));
     gtk_widget_destroy(plug_);
     g_object_unref(view_); g_object_unref(manager_); g_object_unref(plug_);
   }
@@ -141,7 +145,9 @@ public:
     } else if (op == "reload") {
       allow_reload_ = true; webkit_web_view_reload(view_);
     } else if (op == "devtools") {
-      webkit_web_inspector_show(webkit_web_view_get_inspector(view_));
+      devtools_->open();
+    } else if (op == "devtools-restore") {
+      devtools_->restore(request.at("state"));
     } else if (op == "park") {
       // SWELL destroys its old X11 top-level when docking. Move out before that happens.
       gtk_widget_hide(plug_);
@@ -149,6 +155,7 @@ public:
       XReparentWindow(display, gdk_x11_window_get_xid(gtk_widget_get_window(plug_)), DefaultRootWindow(display), 0, 0);
       XSync(display, False);
       parent_ = 0;
+      devtools_->owner(0);
       channel_.send({{"id", id_}, {"op", "parked"}});
     } else if (op == "geometry") {
       const auto parent = request.at("parent").get<unsigned long>();
@@ -158,6 +165,7 @@ public:
       auto xid = gdk_x11_window_get_xid(gtk_widget_get_window(plug_));
       gdk_x11_display_error_trap_push(gtk_widget_get_display(plug_));
       if (parent != parent_) { XReparentWindow(display, xid, parent, x, y); parent_ = parent; }
+      devtools_->owner(parent);
       gtk_window_resize(GTK_WINDOW(plug_), width, height);
       // A foreign REAPER/X11 parent is not a GtkSocket, so allocate the client
       // viewport explicitly instead of relying on GTK socket size negotiation.

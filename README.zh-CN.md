@@ -39,7 +39,7 @@ Lua 通过 `reaper.ReaWeb_Open(path)` 打开应用。JavaScript 等待 `reaper.l
 
 基础模板位于 `SDK/starter/`，Vite 与 TypeScript 模板位于 `SDK/modern/`。运行 `SDK/runtime-demo/Open.lua` 可打开 Runtime Studio。
 
-[SDK](runtime/README.zh-CN.md) · [开发指南](docs/development.zh-CN.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.zh-CN.md) · [Lua 宿主 API](docs/host-api.zh-CN.md) · [Web 运行环境](docs/frontend.zh-CN.md)
+[SDK](runtime/README.zh-CN.md) · [开发指南](docs/development.zh-CN.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.zh-CN.md) · [Lua 宿主 API](docs/host-api.zh-CN.md) · [Web 运行环境](docs/frontend.zh-CN.md) · [DevTools](docs/devtools.zh-CN.md)
 
 ## 构建
 

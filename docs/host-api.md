@@ -32,7 +32,7 @@ Both capabilities and diagnostics include `webRuntime`: `contract` (1), `mode` (
 | `reaper.window.open(path)` | Window ID, `number` | Opens a local HTML file. Relative paths are based on the calling HTML directory |
 | `reaper.window.close()` | `boolean` | Requests close. Document teardown can reject outstanding Promises, including an unsettled close call |
 | `reaper.window.focus()` | `boolean` | Focuses the current window |
-| `reaper.debug.openDevTools()` | `boolean` | Requests inspector UI. On macOS use Safari Develop to attach |
+| `reaper.debug.openDevTools()` | `boolean` | Requests showing DevTools (idempotent). macOS shows a Safari guide and rejects with `INSPECTOR_MENU`. See [DevTools](devtools.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 1–256 UTF-8 bytes, no NUL |
 | `reaper.window.setDocked(docked)` | `boolean` | Returns the actual docked state, preserving the page |
 | `reaper.window.isDocked()` | `boolean` | Reads docked state |

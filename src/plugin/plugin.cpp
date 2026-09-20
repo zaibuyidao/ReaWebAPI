@@ -267,7 +267,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     add_api("ReaWeb_IsOpen", reinterpret_cast<void*>(ReaWeb_IsOpen), reinterpret_cast<void*>(id_vararg<ReaWeb_IsOpen>),
       "bool\0int\0windowId\0Return whether the window is open or initializing.\0");
     add_api("ReaWeb_DevTools", reinterpret_cast<void*>(ReaWeb_DevTools), reinterpret_cast<void*>(id_vararg<ReaWeb_DevTools>),
-      "bool\0int\0windowId\0Open Developer Tools (macOS: use Safari's Develop menu).\0");
+      "bool\0int\0windowId\0Request showing DevTools. On macOS, show a Safari setup guide and return false with INSPECTOR_MENU.\0");
     add_api("ReaWeb_GetLastError", reinterpret_cast<void*>(ReaWeb_GetLastError), reinterpret_cast<void*>(error_vararg),
       "const char*\0\0\0Return the last runtime error. Async initialization errors are also printed to the REAPER console.\0");
     add_api("ReaWeb_SetDocked", reinterpret_cast<void*>(ReaWeb_SetDocked), reinterpret_cast<void*>(dock_vararg),

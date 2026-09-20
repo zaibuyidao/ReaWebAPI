@@ -19,4 +19,4 @@ Copy the SDK to your workspace and run `starter/Open.lua` from REAPER's Action L
 
 The extension injects the browser runtime. Lua opens the page with `reaper.ReaWeb_Open(path)`. JavaScript uses the Mirror and Runtime APIs after `reaper.lifecycle.ready` resolves.
 
-[Developer guide](../docs/development.md) · [REAPER API](../docs/api-reference.md) · [Runtime API](../docs/runtime-api.md) · [API inventory](../docs/runtime-api-inventory.md)
+[Developer guide](../docs/development.md) · [REAPER API](../docs/api-reference.md) · [Runtime API](../docs/runtime-api.md) · [API inventory](../docs/runtime-api-inventory.md) · [DevTools](../docs/devtools.md)

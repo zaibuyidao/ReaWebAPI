@@ -97,7 +97,9 @@ button { border-color:var(--reaper-highlight); }
 
 `reaper.debug.log/warn/error(...values)` 写入 REAPER 控制台及本窗口日志，`inspect(object)` 记录有长度限制的对象快照，可处理循环引用。`getLogs()` 返回最近 200 项；`getDiagnostics()` 包含原生错误、请求 ID、文档代次、当前清理阶段和音频任务数。自动记录页面未捕获异常和未处理的 Promise 拒绝，不替换 `console`。
 
-`openDevTools()` 使用原生浏览器检查器，macOS 通过 Safari Develop 连接。日志不上传到任何服务，也不默认记录全部 API 参数或音频数据。
+日志不上传到任何服务，也不默认记录全部 API 参数或音频数据。
+
+`reaper.debug.openDevTools()` 在 Windows/Linux 上请求显示检查器。在 macOS 上显示 Safari 指引，并以 `INSPECTOR_MENU` 错误拒绝 Promise。快捷键、布局及 `getDiagnostics()` 的 `devtools` 字段见 [DevTools](devtools.zh-CN.md)。
 
 ## Audio
 

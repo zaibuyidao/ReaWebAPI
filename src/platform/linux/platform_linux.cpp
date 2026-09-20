@@ -1,5 +1,6 @@
 #include "platform/shared/swell_window.hpp"
 #include "platform/linux/linux_channel.hpp"
+#include "platform/shared/devtools.hpp"
 #include <chrono>
 #include <cstring>
 #include <dlfcn.h>
@@ -37,6 +38,7 @@ public:
   std::string error;
   std::string version;
   std::map<int, WindowOptions> listeners;
+  std::map<int, Json> inspectors;
   explicit LinuxProcess(const fs::path& data) {
     if (!getenv("DISPLAY")) throw std::runtime_error("ReaWebAPI requires an X11 or XWayland display on Linux");
     auto executable = helper_path().string();
@@ -98,6 +100,7 @@ public:
         if (op == "parked") { parked_.insert(message.at("id").get<int>()); return; }
         auto it = listeners.find(message.at("id").get<int>());
         if (it == listeners.end()) return;
+        if (op == "devtools-state") { inspectors[it->first] = message.at("state"); return; }
         if (op == "message") it->second.on_message(message.at("message").get<std::string>());
         else if (op == "drop" && it->second.on_drop) it->second.on_drop(message.at("payload"));
         else if (op == "error") it->second.on_error(message.at("error").get<std::string>());
@@ -161,6 +164,7 @@ public:
   }
   ~LinuxWindow() override {
     process_->listeners.erase(id_);
+    process_->inspectors.erase(id_);
     try { process_->send({{"id", id_}, {"op", "close"}}); } catch (...) {}
   }
   void sync() {
@@ -192,6 +196,17 @@ public:
   }
   void evaluate(const std::string& script) override { process_->send({{"id", id_}, {"op", "eval"}, {"script", script}}); }
   void devtools() override { process_->send({{"id", id_}, {"op", "devtools"}}); }
+  Json devtools_state() const override {
+    DevToolsPreferences prefs;
+    auto it = process_->inspectors.find(id_);
+    if (it != process_->inspectors.end()) prefs.restore(it->second);
+    return prefs.state();
+  }
+  void restore_devtools(const Json& value) override {
+    DevToolsPreferences prefs; prefs.restore(value);
+    process_->inspectors[id_] = prefs.state();
+    process_->send({{"id", id_}, {"op", "devtools-restore"}, {"state", prefs.state()}});
+  }
   bool closed() const override { return window_->closed() || !process_->error.empty(); }
   void* native_handle() const override { return window_->handle(); }
   void prepare_dock() override {
@@ -234,7 +249,11 @@ public:
     if (maximized_) ShowWindow(static_cast<HWND>(window_->handle()), SW_SHOWMAXIMIZED);
   }
   Json diagnostics() const override {
-    return {{"backend", "WebKitGTK"}, {"browserVersion", process_->version}, {"helperProtocol", 1}};
+    auto inspector = devtools_state();
+    auto it = process_->inspectors.find(id_);
+    if (it != process_->inspectors.end()) inspector.update(it->second);
+    inspector["embeddedSupported"] = true;
+    return {{"backend", "WebKitGTK"}, {"browserVersion", process_->version}, {"helperProtocol", 1}, {"devtools", inspector}};
   }
 };
 class LinuxPlatform final : public Platform {

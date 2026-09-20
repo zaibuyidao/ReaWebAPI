@@ -105,6 +105,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     session->saved_state = cached != state_cache_.end() ? cached->second : read_state(session->state_path, entry.generic_u8string());
     if (!session->saved_state.is_null()) {
       session->window->restore_placement(session->saved_state["placement"]);
+      session->window->restore_devtools(session->saved_state.value("devtools", Json()));
       const auto dock_id = session->saved_state.value("dockId", -1);
       if (dock_.remember && dock_id >= 0) dock_.remember(session->ident, dock_id);
       if (session->saved_state.value("docked", false)) set_docked(id, true);
@@ -220,6 +221,8 @@ void Runtime::persist(Session& s, bool force) {
     if (index < 0 && s.pending_state.is_object()) index = s.pending_state.value("dockId", -1);
     if (index < 0 && s.saved_state.is_object()) index = s.saved_state.value("dockId", -1);
     state = {{"schema", 1}, {"entry", s.entry.generic_u8string()}, {"placement", placement}, {"docked", docked}, {"dockId", index}};
+    const auto devtools = s.window->devtools_state();
+    if (!devtools.is_null()) state["devtools"] = devtools;
   } else if (!force || state.is_null()) return;
   if (state != s.pending_state) { s.pending_state = state; s.state_changed = Clock::now(); }
   if (state == s.saved_state || (!force && Clock::now() - s.state_changed < std::chrono::milliseconds(500))) return;

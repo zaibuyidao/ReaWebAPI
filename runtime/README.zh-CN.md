@@ -19,4 +19,4 @@
 
 扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path)` 打开页面，JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Mirror 和 Runtime API。
 
-[开发指南](../docs/development.zh-CN.md) · [REAPER API](../docs/api-reference.md) · [Runtime API](../docs/runtime-api.zh-CN.md) · [接口清单](../docs/runtime-api-inventory.md)
+[开发指南](../docs/development.zh-CN.md) · [REAPER API](../docs/api-reference.md) · [Runtime API](../docs/runtime-api.zh-CN.md) · [接口清单](../docs/runtime-api-inventory.md) · [DevTools](../docs/devtools.zh-CN.md)

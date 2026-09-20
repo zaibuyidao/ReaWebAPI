@@ -2,6 +2,7 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #include "platform/shared/swell_window.hpp"
+#include "platform/shared/devtools.hpp"
 #include <fstream>
 
 @interface ReaWebDelegate : NSObject <WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate> {
@@ -120,6 +121,9 @@ class MacWindow final : public Window {
   std::unique_ptr<SwellWindow> window_;
   ReaWebNativeView* webview_;
   id mouse_monitor_;
+  id key_monitor_;
+  NSPanel* inspector_help_ = nil;
+  DevToolsPreferences devtools_prefs_;
   ReaWebDelegate* delegate_;
   mutable Json normal_;
   bool maximized_ = false;
@@ -158,6 +162,21 @@ public:
     auto content = (__bridge NSView*)GetDlgItem(static_cast<HWND>(window_->handle()), 0);
     webview_.frame = content.bounds;
     [content addSubview:webview_];
+    devtools_prefs_.floating = true;
+    key_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
+      const auto flags = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+      const auto modifiers = flags & (NSEventModifierFlagControl | NSEventModifierFlagShift | NSEventModifierFlagCommand | NSEventModifierFlagOption);
+      auto responder = webview_.window.firstResponder;
+      const bool page_focused = event.window == webview_.window && [responder isKindOfClass:[NSView class]] &&
+        [(NSView*)responder isDescendantOf:webview_];
+      if ((page_focused || event.window == inspector_help_) &&
+          [event.charactersIgnoringModifiers.lowercaseString isEqualToString:@"i"] &&
+          modifiers == (NSEventModifierFlagControl | NSEventModifierFlagShift)) {
+        if (!event.isARepeat) show_inspector_help(true);
+        return nil;
+      }
+      return event;
+    }];
     if (delegate_->options.url.empty()) {
       auto url = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
       [webview_ loadFileURL:url allowingReadAccessToURL:[url URLByDeletingLastPathComponent]];
@@ -165,6 +184,9 @@ public:
   }
   ~MacWindow() override {
     if (mouse_monitor_) [NSEvent removeMonitor:mouse_monitor_];
+    if (key_monitor_) [NSEvent removeMonitor:key_monitor_];
+    [inspector_help_.parentWindow removeChildWindow:inspector_help_];
+    [inspector_help_ close];
     webview_->sourceClosed = true; webview_->dropEnabled = false; webview_->receiveDrop = {};
     auto drag_reply = std::move(webview_->dragReply);
     if (drag_reply) try { drag_reply({{"result", false}}); } catch (...) {}
@@ -209,8 +231,29 @@ public:
     }
   }
   void devtools() override {
+    show_inspector_help();
     throw Error("INSPECTOR_MENU", "macOS: enable Safari Settings > Advanced > Show features for web developers, then choose Develop > this Mac > REAPER > the tool page.");
   }
+  void show_inspector_help(bool toggle = false) {
+    if (toggle && inspector_help_.visible) { [inspector_help_ orderOut:nil]; return; }
+    if (!inspector_help_) {
+      inspector_help_ = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 560, 240)
+        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
+      inspector_help_.title = @"ReaWebAPI — Safari Web Inspector Setup";
+      inspector_help_.releasedWhenClosed = NO;
+      auto text = [NSTextField wrappingLabelWithString:@"Inspect this page with Safari Web Inspector.\n\n1. In Safari, enable Settings > Advanced > Show features for web developers.\n2. Select Develop > this Mac > REAPER > the tool page.\n\nCtrl+Shift+I toggles this guide. Open and close the inspector in Safari."];
+      text.frame = NSMakeRect(20, 20, 520, 200);
+      [inspector_help_.contentView addSubview:text];
+      [inspector_help_ center];
+    }
+    if (inspector_help_.parentWindow != webview_.window) {
+      [inspector_help_.parentWindow removeChildWindow:inspector_help_];
+      [webview_.window addChildWindow:inspector_help_ ordered:NSWindowAbove];
+    }
+    [inspector_help_ makeKeyAndOrderFront:nil];
+  }
+  Json devtools_state() const override { return devtools_prefs_.state(); }
+  void restore_devtools(const Json& value) override { devtools_prefs_.restore(value); devtools_prefs_.floating = true; }
   bool closed() const override { return delegate_->isClosed || window_->closed(); }
   void* native_handle() const override { return window_->handle(); }
   void prepare_dock() override {
@@ -245,7 +288,9 @@ public:
     if (value.value("maximized", false) && !webview_.window.zoomed) [webview_.window zoom:nil];
   }
   Json diagnostics() const override {
-    return {{"backend", "WKWebView"}, {"browserVersion", [[[NSBundle bundleForClass:[WKWebView class]] objectForInfoDictionaryKey:@"CFBundleVersion"] UTF8String] ?: "system"}};
+    auto inspector = devtools_prefs_.state();
+    inspector.update({{"embeddedSupported", false}, {"nativeToggleSupported", false}, {"fallbackReason", "Use Safari Develop > this Mac > REAPER > the tool page. Ctrl+Shift+I toggles the setup guide"}});
+    return {{"backend", "WKWebView"}, {"browserVersion", [[[NSBundle bundleForClass:[WKWebView class]] objectForInfoDictionaryKey:@"CFBundleVersion"] UTF8String] ?: "system"}, {"devtools", inspector}};
   }
 };
 class MacPlatform final : public Platform {

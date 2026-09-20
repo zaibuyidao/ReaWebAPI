@@ -2,6 +2,8 @@
 
 ## Changes
 
+- Add Ctrl+Shift+I to show/hide DevTools on Windows/Linux and a Safari Inspector guide on macOS.
+- Add a resizable right-hand DevTools panel on Linux with session-preserving float/dock switching and saved mode/width preferences. Windows uses native floating DevTools.
 - Reduce small API round-trip and state-notification latency, and start Demo/Starter track reads before window setup.
 - Include the complete `web/` Demo folder beside `extension/` in the ReaPack ZIP, with matching download paths, generated installation entries and Action List registration for the launcher.
 - Add a visible Demo debug log with track snapshots, confirmed Pan changes, Copy/Clear and optional REAPER console output.
@@ -18,6 +20,8 @@
 
 ## 更新
 
+- Windows/Linux 支持 Ctrl+Shift+I 显示或隐藏 DevTools，macOS 使用该快捷键切换 Safari 检查器指引。
+- Linux 新增可调整宽度的右侧 DevTools 面板，嵌入与浮动切换保留会话，并保存模式和宽度偏好。Windows 使用原生浮动 DevTools。
 - 缩短小型 API 调用和状态通知的等待时间，Demo 与 Starter 优先读取轨道信息。
 - ReaPack ZIP 收录完整 `web/` 示例文件夹，与 `extension/` 同级，统一下载路径，自动生成资源安装条目并将启动器注册到 Action List。
 - Demo 增加调试日志，显示轨道快照和 Pan 实际变化，支持复制、清空及同步输出到 REAPER 控制台。

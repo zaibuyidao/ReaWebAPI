@@ -32,7 +32,7 @@
 | `reaper.window.open(path)` | 数字窗口 ID | 打开本地 HTML，相对路径从调用页面所在目录解析 |
 | `reaper.window.close()` | `boolean` | 请求关闭，文档销毁可能使尚未完成的 Promise 被拒绝，包括关闭请求本身 |
 | `reaper.window.focus()` | `boolean` | 聚焦当前窗口 |
-| `reaper.debug.openDevTools()` | `boolean` | 请求检查器，macOS 通过 Safari Develop 连接 |
+| `reaper.debug.openDevTools()` | `boolean` | 幂等请求显示 DevTools。macOS 显示 Safari 指引，并以 `INSPECTOR_MENU` 错误拒绝 Promise。详见 [DevTools](devtools.zh-CN.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 标题为 1–256 UTF-8 字节，不含 NUL |
 | `reaper.window.setDocked(docked)` | `boolean` | 返回实际停靠状态，保留页面 |
 | `reaper.window.isDocked()` | `boolean` | 获取停靠状态 |

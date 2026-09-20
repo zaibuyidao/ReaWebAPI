@@ -1,6 +1,7 @@
 #include "runtime/runtime.hpp"
 #include "host_adapter.hpp"
 #include "runtime/services.hpp"
+#include "platform/shared/devtools.hpp"
 #include <fstream>
 #include <algorithm>
 #include <iostream>
@@ -19,6 +20,9 @@ struct FakeWindow : Window {
   bool defer_drag = false;
   Reply drag_reply;
   Json dragged;
+  DevToolsPreferences inspector;
+  Json devtools_state() const override { return inspector.state(); }
+  void restore_devtools(const Json& value) override { inspector.restore(value); }
   void set_drop_enabled(bool value) override { drop_enabled = value; }
   void start_drag(const Json& payload, Reply reply) override { dragged = payload; if (defer_drag) drag_reply = std::move(reply); else reply({{"result", drag_result}}); }
   int reloads = 0;
@@ -236,12 +240,14 @@ int main() {
       until(runtime, [&] { return runtime.diagnostics(id)["pendingCalls"] == 0 && runtime.diagnostics(second_id)["pendingCalls"] == 0; });
       CHECK(errors.empty());
       first->bounds["x"] = 123; first->bounds["width"] = 777;
+      first->inspector.restore({{"mode", "floating"}, {"widthRatio", 0.63}});
       runtime.tick(); runtime.set_docked(id, true);
       CHECK(runtime.close(id)); runtime.tick(); CHECK(!runtime.is_open(id));
       CHECK(runtime.close(second_id)); runtime.tick();
       auto reopened_id = runtime.open("Tool/index.html");
       auto reopened = windows.back().lock();
       CHECK(reopened->bounds["x"] == 123 && reopened->bounds["width"] == 777 && runtime.is_docked(reopened_id));
+      CHECK(reopened->inspector.floating && reopened->inspector.width_ratio == 0.63);
       runtime.close(reopened_id); runtime.tick();
     }
     CHECK(docked.empty());
@@ -249,6 +255,7 @@ int main() {
       Runtime runtime(host, root, [&](const std::string& error) { errors.push_back(error); }, docks);
       auto id = runtime.open("Tool/index.html"); auto window = windows.back().lock();
       CHECK(window->bounds["x"] == 123 && window->bounds["width"] == 777 && runtime.is_docked(id));
+      CHECK(window->inspector.floating && window->inspector.width_ratio == 0.63);
       result(runtime, *window, window->send("__reawebHello", {1}));
       for (int n = 0; n < 257; ++n) window->send("CountTracks", {0});
       runtime.tick(); CHECK(!runtime.is_open(id));
@@ -427,6 +434,14 @@ int main() {
       CHECK(window->response(stale).is_null() && latency_calls == before + 1);
     }
     const auto metadata_root = root / "MetadataApp";
+    DevToolsPreferences inspector;
+    CHECK(!inspector.floating && inspector.width_ratio == 0.4);
+    for (const auto& invalid : {Json(), Json::array(), Json{{"mode", 12}, {"widthRatio", "wide"}}, Json{{"mode", "invalid"}, {"widthRatio", nullptr}}}) inspector.restore(invalid);
+    CHECK(!inspector.floating && inspector.width_ratio == 0.4);
+    inspector.restore({{"mode", "floating"}, {"widthRatio", 5}});
+    CHECK(inspector.floating && inspector.width_ratio == 0.8);
+    inspector.restore({{"mode", "embedded"}, {"widthRatio", -5}});
+    CHECK(!inspector.floating && inspector.width_ratio == 0.2);
     fs::create_directories(metadata_root);
     std::ofstream(metadata_root / "app.json") << R"({"name":"SendFlow","version":"1.2.3-beta.1"})";
     const auto metadata = app_info(metadata_root, root / "MetadataData", "stable-id");

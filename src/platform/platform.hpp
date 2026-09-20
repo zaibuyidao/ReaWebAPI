@@ -31,6 +31,8 @@ public:
   virtual ~Window() = default;
   virtual void evaluate(const std::string& script) = 0;
   virtual void devtools() = 0;
+  virtual Json devtools_state() const { return nullptr; }
+  virtual void restore_devtools(const Json&) {}
   virtual bool closed() const = 0;
   virtual void* native_handle() const { return nullptr; }
   virtual void prepare_dock() {}

@@ -49,8 +49,20 @@ if(NOT WIN32)
   target_compile_definitions(audio_tests PRIVATE SWELL_PROVIDED_BY_APP)
 endif()
 
-# Interactive native integration test: opt in explicitly; never manipulate a CI desktop from ctest.
+# Native UI integration tests are opt-in and excluded from ctest.
+if(UNIX AND NOT APPLE AND REAWEB_BUILD_EXTENSION)
+  add_executable(linux_devtools EXCLUDE_FROM_ALL linux_devtools.cpp)
+  target_link_libraries(linux_devtools PRIVATE reaweb_core PkgConfig::WEBKIT X11::X11)
+endif()
 if(WIN32 AND REAWEB_BUILD_EXTENSION)
+  add_executable(windows_devtools EXCLUDE_FROM_ALL windows_devtools.cpp
+    "${PROJECT_SOURCE_DIR}/src/platform/windows/platform_win.cpp")
+  target_link_libraries(windows_devtools PRIVATE reaweb_core
+    "${webview2_SOURCE_DIR}/build/native/x64/WebView2LoaderStatic.lib"
+    ole32 oleaut32 user32 shlwapi shell32 version advapi32 uuid)
+  target_include_directories(windows_devtools PRIVATE "${webview2_SOURCE_DIR}/build/native/include")
+  target_compile_definitions(windows_devtools PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_compile_options(windows_devtools PRIVATE /utf-8)
   add_executable(windows_native_drag EXCLUDE_FROM_ALL windows_native_drag.cpp
     "${PROJECT_SOURCE_DIR}/src/platform/windows/platform_win.cpp")
   target_link_libraries(windows_native_drag PRIVATE reaweb_runtime

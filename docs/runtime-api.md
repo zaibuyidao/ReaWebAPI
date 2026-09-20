@@ -56,7 +56,9 @@ Host callbacks only update thread-safe counters. REAPER queries and JS dispatch 
 
 `reaper.theme.getColors()` returns `{available,colors,cssVariables}` for background, text, highlight, panel and border. `reaper.theme.apply(element?)` applies and follows `--reaper-*` variables; its disposer restores prior inline values. `reaper.events.on('theme-changed', callback)` subscribes without applying styles. Missing theme APIs return documented fallback colors and `available:false`; REAPER's theme is never modified.
 
-`reaper.debug.log/warn/error` write bounded previews to REAPER's console and a 200-entry per-window log. `inspect` handles circular values. `getLogs` and `getDiagnostics` expose JS/native errors, request IDs, document generations, cleanup state and audio job counts. Uncaught JS errors and unhandled rejections are recorded without replacing console. Nothing is uploaded. `openDevTools` uses the native browser debugging tools, including Safari Develop on macOS.
+`reaper.debug.log/warn/error` write bounded previews to REAPER's console and a 200-entry per-window log. `inspect` handles circular values. `getLogs` and `getDiagnostics` expose JS/native errors, request IDs, document generations, cleanup state and audio job counts. Uncaught JS errors and unhandled rejections are recorded without replacing console. Nothing is uploaded.
+
+`reaper.debug.openDevTools()` requests showing the inspector on Windows/Linux. On macOS it shows a Safari guide and rejects with `INSPECTOR_MENU`. See [DevTools](devtools.md) for shortcuts, layouts and the `getDiagnostics()` field `devtools`.
 
 ## Audio
 

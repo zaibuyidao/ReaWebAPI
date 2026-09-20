@@ -8,14 +8,14 @@ Run against a disposable REAPER project on each target architecture. CI core tes
 - Open three windows while transport plays. Move/resize, type into an HTML input, and use REAPER controls. Closing any window must not stop transport or close REAPER.
 - From Inspector, retain a track handle, delete that track, then call `GetTrackName` with the old handle. Expect `STALE_HANDLE`. Repeat after switching project tabs.
 - Reload the page with requests pending. Old responses must not settle new-page requests.
-- Open Inspector and verify `console.log`. On macOS use Safari Develop; Windows/Linux support the demo button.
+- Open Inspector and verify `console.log`. Follow the [DevTools checks](#devtools-acceptance) for platform-specific behavior.
 - In the Demo, click **Log selected track** and check the printed name and Pan, including no selection. Change selection, rename a track, and adjust Pan from both REAPER and the Demo. Confirm readback logs, final drag values, Copy/Clear, and optional REAPER console output. Scroll through the log while new entries arrive and verify that it remains bounded to 200 entries.
 - Open another HTML tool with `reaper.window.open`. Verify that windows in one App directory share persistent storage and different directories have isolated localStorage, cookies and IndexedDB profiles.
 - Close a window immediately during browser initialization, reopen it, then exit REAPER with several windows open. Check for crashes and surviving application windows.
 - On Windows test a machine without WebView2 Runtime. Lua receives an error/console diagnostic without crashing REAPER; retry after installing the runtime.
 - Test a missing entry file, remote URL, unknown API, forged handle and oversized message. No arbitrary native function or external navigation should execute.
 
-macOS filesystem placement and programmatic Inspector differences are documented in the README. Linux binaries built on Ubuntu 24.04 should also be checked on the intended distribution and display server.
+Inspector behavior is documented in [DevTools](devtools.md). Linux binaries built on Ubuntu 24.04 should also be checked on the intended distribution and display server.
 
 - Run SDK/web-runtime/Open.lua without building: modules, local JSON fetch, Canvas, timers, file objects and browser storage must pass. Reopen and restart REAPER to check persistence; copy the App to a different directory to check isolation.
 - Drag text and real OS files into its drop area. Confirm the browser handles them without navigating away from the App.
@@ -23,6 +23,24 @@ macOS filesystem placement and programmatic Inspector differences are documented
 - Exercise item/take selection, transport and FX events; large MIDI payloads; batched/managed Undo cleanup on errors, close and project switch; file/clipboard/external-link helpers; production and Vite HMR. Confirm Undo/redo on a disposable real project.
 - On macOS verify the localhost entry against the actual REAPER bundle's ATS policy. On Linux verify the default renderer and consult the Web Runtime document if WSLg/DMA-BUF stalls frames.
 
+
+## DevTools acceptance
+
+- Windows/Linux: press Ctrl+Shift+I in the WebView to show, hide and reopen DevTools. Check held keys, native close and two WebViews in the same profile. Repeated API open calls must keep DevTools visible. Page timers and REAPER calls must continue while the inspector has focus.
+- Linux: test the shortcut inside the inspector, **Hide DevTools**, and floating-window close. Drag the divider, resize, and switch **Float DevTools** / **Dock right**. Console entries, the selected DOM node and page JS state must survive mode changes. Hidden DevTools must stay hidden when resizing or docking the host. Reopen the tool and restart REAPER to check saved mode/width. Test a small viewport and a second display.
+- Windows: verify diagnostics report floating mode. Check stacking when REAPER or another REAPER dialog gains focus and after docking/undocking the WebView. A window opened through native **Inspect** may require its own close button. Check `devtools.lastError` when ReaWebAPI cannot identify it.
+- macOS: Ctrl+Shift+I must toggle only the non-modal Safari guide. The API must show the guide and report `INSPECTOR_MENU`. Follow the guide to inspect the page. Check docking/undocking and closing the tool with the guide open.
+
+Optional native DevTools tests create UI windows and are excluded from CTest:
+
+```sh
+# Linux, under X11/XWayland (or xvfb-run)
+cmake --build build --target linux_devtools
+GDK_BACKEND=x11 build/tests/linux_devtools
+# Windows, on an interactive desktop
+cmake --build build --config Release --target windows_devtools
+build/tests/Release/windows_devtools.exe
+```
 
 ## Runtime and audio acceptance
 

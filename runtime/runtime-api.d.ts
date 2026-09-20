@@ -64,7 +64,19 @@ interface ReaWebRuntimeCapabilities {
   audio: { maxChannels: number; maxWaveformPoints: number; maxPendingJobs: number };
 }
 interface ReaWebCapabilities { runtime: ReaWebRuntimeCapabilities; }
-interface ReaWebDiagnostics { lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; }
+interface ReaWebDevToolsState {
+  mode: 'embedded' | 'floating';
+  /** Embedded panel share of available width: 0.2–0.8, default 0.4. */
+  widthRatio: number;
+  embeddedSupported: boolean;
+  /** Visibility of the inspector managed by this backend. Omitted for Safari. */
+  visible?: boolean;
+  pending?: boolean;
+  nativeToggleSupported?: boolean;
+  fallbackReason?: string;
+  lastError?: string;
+}
+interface ReaWebDiagnostics { lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; devtools: ReaWebDevToolsState; }
 interface ReaWebEvents {
   /** Discrete native drops; no initial snapshot or replay. */
   'native-drop': ReaWebDropPayload;

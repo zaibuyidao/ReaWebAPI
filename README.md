@@ -39,7 +39,7 @@ Lua opens an App with `reaper.ReaWeb_Open(path)`. In JavaScript, await `reaper.l
 
 Start with `SDK/starter/Open.lua` or use `SDK/modern/` for Vite and TypeScript. `SDK/runtime-demo/Open.lua` opens Runtime Studio.
 
-[SDK](runtime/README.md) · [Developer guide](docs/development.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md)
+[SDK](runtime/README.md) · [Developer guide](docs/development.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md) · [DevTools](docs/devtools.md)
 
 ## Build
 
