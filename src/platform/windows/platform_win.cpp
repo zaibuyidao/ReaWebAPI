@@ -10,6 +10,7 @@
 #include <cstring>
 #include "platform/windows/win_devtools.hpp"
 #include "platform/windows/win_icon.hpp"
+#include "platform/windows/win_context_menu.hpp"
 
 namespace reaweb {
 using Microsoft::WRL::ComPtr;
@@ -87,13 +88,9 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   bool visible_ = true;
   bool drop_enabled_ = false, dragging_ = false;
   WinIcon icon_;
-  HWND dock_button_ = nullptr;
-  bool last_docked_ = false;
   static constexpr UINT dock_command = 0x1800;
-  int content_top() const { return dock_button_ ? MulDiv(30, GetDpiForWindow(hwnd_), 96) : 0; }
   void layout() {
-    if (dock_button_) SetWindowPos(dock_button_, nullptr, 4, 2, MulDiv(90, GetDpiForWindow(hwnd_), 96), content_top() - 4, SWP_NOZORDER | SWP_NOACTIVATE);
-    if (controller_) { RECT rect{}; GetClientRect(hwnd_, &rect); rect.top = std::min(rect.bottom, LONG(content_top())); controller_->put_Bounds(rect); }
+    if (controller_) { RECT rect{}; GetClientRect(hwnd_, &rect); controller_->put_Bounds(rect); }
   }
 public:
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -104,7 +101,7 @@ public:
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     }
     if (self) {
-      if ((msg == WM_SYSCOMMAND && (wp & 0xfff0) == dock_command) || (msg == WM_COMMAND && LOWORD(wp) == dock_command)) {
+      if (msg == WM_SYSCOMMAND && (wp & 0xfff0) == dock_command) {
         if (self->options_.on_dock_toggle) self->options_.on_dock_toggle();
         return 0;
       } else if (msg == WM_INITMENU && reinterpret_cast<HMENU>(wp) == GetSystemMenu(hwnd, FALSE)) {
@@ -142,12 +139,8 @@ public:
       CW_USEDEFAULT, CW_USEDEFAULT, 860, 640, static_cast<HWND>(options_.parent), nullptr, instance, this);
     if (!hwnd_) throw std::runtime_error("CreateWindowEx failed");
     if (options_.on_dock_toggle) {
-      dock_button_ = CreateWindowExW(0, L"BUTTON", L"Dock", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        4, 2, 90, 26, hwnd_, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(dock_command)), instance, nullptr);
-      SendMessageW(dock_button_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
       auto menu = GetSystemMenu(hwnd_, FALSE);
       AppendMenuW(menu, MF_SEPARATOR, 0, nullptr); AppendMenuW(menu, MF_STRING, dock_command, L"Dock in REAPER");
-      layout();
     }
     devtools_ = std::make_unique<WinDevTools>(hwnd_);
     // A REAPER-owned floating window stays above its owner when focus returns to REAPER.
@@ -194,6 +187,12 @@ public:
     if (SUCCEEDED(settings.As(&settings3))) settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
     EventRegistrationToken token{};
     auto weak = weak_from_this();
+    if (options_.on_dock_toggle) check(install_dock_menu(webview_.Get(), [weak] {
+      if (auto self = weak.lock(); self && !self->closed_) self->options_.on_dock_toggle();
+    }, [weak] {
+      auto self = weak.lock();
+      return self && !self->closed_ && self->options_.is_docked && self->options_.is_docked();
+    }), "Install docking context menu");
     check(controller_->add_AcceleratorKeyPressed(Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
       [weak](ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
         UINT key = 0; COREWEBVIEW2_KEY_EVENT_KIND kind{}; COREWEBVIEW2_PHYSICAL_KEY_STATUS status{};
@@ -286,10 +285,6 @@ public:
     return hwnd_ && (focus == hwnd_ || IsChild(hwnd_, focus));
   }
   void tick() override {
-    if (!closed_ && dock_button_) {
-      const bool docked = options_.is_docked && options_.is_docked();
-      if (docked != last_docked_) { SetWindowTextW(dock_button_, docked ? L"Undock" : L"Dock"); last_docked_ = docked; }
-    }
     if (!closed_ && devtools_) devtools_->tick(webview_.Get());
     const bool next = visible();
     if (controller_ && next != visible_) { controller_->put_IsVisible(next); visible_ = next; }

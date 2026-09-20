@@ -33,7 +33,7 @@ await reaper.window.hide();
 
 返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。窗口支持标题、聚焦、停靠和位置保存。
 
-用户可直接使用原生宿主栏的 **Dock/Undock** 操作，无需页面代码。Windows 标题栏系统菜单还提供 **Dock in REAPER**。这些入口与 `setDocked()` 使用相同的 REAPER Docker 接口，切换时保留当前 WebView 文档。
+Windows、macOS、Linux 的 WebView 原生右键菜单顶部在浮动时显示 **Dock in REAPER**，停靠时显示 **Undock from REAPER**。原有菜单项保持不变，页面的 `contextmenu` 处理及 `preventDefault()` 仍然有效，不再保留占用页面空间的宿主工具栏。Windows 标题栏系统菜单保留 **Dock in REAPER**。两个菜单入口与 `setDocked()` 使用相同的 REAPER Docker 接口，切换时保留当前 WebView 文档。
 
 ### 窗口图标
 

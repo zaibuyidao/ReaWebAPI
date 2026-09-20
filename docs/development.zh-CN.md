@@ -4,7 +4,7 @@
 
 ## 开始一个工具
 
-安装与 REAPER 架构对应的扩展，将整个 SDK 复制到可写的开发目录。在 Action List 加载并运行其中的 `starter/Open.lua`，它会打开同目录的 `index.html`。模板展示当前选中轨道，通过原生宿主栏的 Dock/Undock 操作切换停靠状态。
+安装与 REAPER 架构对应的扩展，将整个 SDK 复制到可写的开发目录。在 Action List 加载并运行其中的 `starter/Open.lua`，它会打开同目录的 `index.html`。模板展示当前选中轨道，在页面右键菜单中选择 **Dock in REAPER** 或 **Undock from REAPER** 切换停靠状态。
 
 ```text
 SDK/

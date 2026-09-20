@@ -63,10 +63,25 @@
   NSEvent* lastDragEvent;
   std::function<void(reaweb::Json)> receiveDrop;
   std::function<void(reaweb::Json)> dragReply;
+  std::function<void()> toggleDock;
+  std::function<bool()> isDocked;
 }
 @end
 
 @implementation ReaWebNativeView
+- (void)willOpenMenu:(NSMenu*)menu withEvent:(NSEvent*)event {
+  [super willOpenMenu:menu withEvent:event];
+  if (sourceClosed || !toggleDock || !menu.numberOfItems) return;
+  auto item = [[NSMenuItem alloc] initWithTitle:isDocked && isDocked() ? @"Undock from REAPER" : @"Dock in REAPER"
+    action:@selector(toggleDockFromMenu:) keyEquivalent:@""];
+  item.target = self;
+  [menu insertItem:[NSMenuItem separatorItem] atIndex:0];
+  [menu insertItem:item atIndex:0];
+}
+- (void)toggleDockFromMenu:(id)sender {
+  (void)sender;
+  if (!sourceClosed && toggleDock) toggleDock();
+}
 - (NSDragOperation)draggingSession:(NSDraggingSession*)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
   (void)session; (void)context; return sourceClosed ? NSDragOperationNone : NSDragOperationCopy;
 }
@@ -159,6 +174,8 @@ public:
     webview_ = [[ReaWebNativeView alloc] initWithFrame:NSMakeRect(0, 0, 860, 640) configuration:config];
     webview_->dropEnabled = false; webview_->sourceClosed = false;
     webview_->receiveDrop = delegate_->options.on_drop;
+    webview_->toggleDock = delegate_->options.on_dock_toggle;
+    webview_->isDocked = delegate_->options.is_docked;
     [webview_ registerForDraggedTypes:@[NSPasteboardTypeFileURL, NSPasteboardTypeString]];
     __weak ReaWebNativeView* weak_view = webview_;
     mouse_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskLeftMouseDragged handler:^NSEvent*(NSEvent* event) {
@@ -173,13 +190,9 @@ public:
     webview_.UIDelegate = delegate_;
     webview_.inspectable = YES;
     webview_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent, std::function<void()>{}, delegate_->options.on_close,
-      delegate_->options.on_dock_toggle, delegate_->options.is_docked);
+    window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent, std::function<void()>{}, delegate_->options.on_close);
     auto content = (__bridge NSView*)GetDlgItem(static_cast<HWND>(window_->handle()), 0);
-    auto frame = content.bounds;
-    frame.size.height = std::max(0.0, frame.size.height - window_->content_top());
-    if (content.flipped) frame.origin.y += window_->content_top();
-    webview_.frame = frame;
+    webview_.frame = content.bounds;
     [content addSubview:webview_];
     devtools_prefs_.floating = true;
     key_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
@@ -207,6 +220,7 @@ public:
     [inspector_help_.parentWindow removeChildWindow:inspector_help_];
     [inspector_help_ close];
     webview_->sourceClosed = true; webview_->dropEnabled = false; webview_->receiveDrop = {};
+    webview_->toggleDock = {}; webview_->isDocked = {};
     auto drag_reply = std::move(webview_->dragReply);
     if (drag_reply) try { drag_reply({{"result", false}}); } catch (...) {}
     delegate_->isClosed = true;
@@ -287,7 +301,7 @@ public:
     if (maximized_ && !webview_.window.zoomed) [webview_.window zoom:nil];
   }
   void focus() override { window_->focus(); [webview_.window makeFirstResponder:webview_]; }
-  void tick() override { if (!closed()) { window_->tick(); apply_icon(); } }
+  void tick() override { if (!closed()) apply_icon(); }
   void set_title(const std::string& title) override { window_->set_title(title); icon_window_ = nil; apply_icon(); }
   std::vector<int> icon_sizes() const override {
     const auto scale = std::clamp(webview_.window ? webview_.window.backingScaleFactor : NSScreen.mainScreen.backingScaleFactor, 1.0, 8.0);

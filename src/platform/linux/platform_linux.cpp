@@ -103,6 +103,7 @@ public:
         if (it == listeners.end()) return;
         if (op == "devtools-state") { inspectors[it->first] = message.at("state"); return; }
         if (op == "message") it->second.on_message(message.at("message").get<std::string>());
+        else if (op == "dock-toggle" && it->second.on_dock_toggle) it->second.on_dock_toggle();
         else if (op == "drop" && it->second.on_drop) it->second.on_drop(message.at("payload"));
         else if (op == "error") it->second.on_error(message.at("error").get<std::string>());
         else if (op == "navigating" && it->second.on_navigation) it->second.on_navigation();
@@ -159,9 +160,9 @@ public:
   LinuxWindow(std::shared_ptr<LinuxProcess> process, int id, WindowOptions options) : process_(std::move(process)), id_(id) {
     window_ = std::make_unique<SwellWindow>(options.title, options.parent, [this] {
       try { process_->send({{"id", id_}, {"op", "focus"}}); } catch (...) {}
-    }, options.on_close, options.on_dock_toggle, options.is_docked);
+    }, options.on_close);
     process_->send({{"id", id_}, {"op", "open"}, {"uri", options.url.empty() ? file_uri(options.entry) : options.url},
-      {"script", options.script}, {"lifecycleReload", static_cast<bool>(options.on_reload)}});
+      {"script", options.script}, {"lifecycleReload", static_cast<bool>(options.on_reload)}, {"dockEnabled", static_cast<bool>(options.on_dock_toggle)}});
     process_->listeners.emplace(id_, std::move(options));
   }
   ~LinuxWindow() override {
@@ -171,7 +172,6 @@ public:
   }
   void sync() {
     if (closed()) return;
-    window_->tick();
     icon_.refresh(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow"));
     using GetXid = unsigned long (*)(void*);
     static auto get_xid = reinterpret_cast<GetXid>(dlsym(RTLD_DEFAULT, "gdk_x11_window_get_xid"));
@@ -191,11 +191,13 @@ public:
     }
     RECT rect{};
     GetClientRect(handle, &rect);
-    POINT origin{0, window_->content_top()};
+    POINT origin{0, 0};
     ClientToScreen(handle, &origin);
     ScreenToClient(ancestor, &origin);
+    const auto& options = process_->listeners.at(id_);
     Json next = {{"id", id_}, {"op", "geometry"}, {"parent", get_xid(native)}, {"x", origin.x}, {"y", origin.y},
-      {"width", rect.right - rect.left}, {"height", std::max(1, int(rect.bottom - rect.top) - window_->content_top())}, {"visible", visible()}};
+      {"width", rect.right - rect.left}, {"height", std::max(1, int(rect.bottom - rect.top))}, {"visible", visible()},
+      {"docked", options.is_docked && options.is_docked()}};
     if (geometry_ != next) { process_->send(next); geometry_ = std::move(next); }
   }
   void evaluate(const std::string& script) override { process_->send({{"id", id_}, {"op", "eval"}, {"script", script}}); }

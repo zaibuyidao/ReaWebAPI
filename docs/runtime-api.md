@@ -32,7 +32,7 @@ Lifecycle events are `before-close`, `before-reload` and `cleanup`; all run befo
 
 Native close buttons, bridge close requests and same-document reloads participate. The bridge remains usable during cleanup. Reload invalidates old requests, handles, subscriptions and audio jobs. Forced unload/process exit/crash cannot guarantee asynchronous persistence; pagehide only attempts synchronous cleanup with reason `unload` and timeout 0. Persist important state during normal operation.
 
-Users can dock or undock through the native host’s **Dock/Undock** control without page code. On Windows, **Dock in REAPER** is also available in the title-bar system menu. These controls and `setDocked()` use the same REAPER Docker integration and preserve the current WebView document.
+On Windows, macOS and Linux, the WebView’s native context menu starts with **Dock in REAPER** when floating or **Undock from REAPER** when docked. It preserves the default menu items and respects page `contextmenu` handlers, including `preventDefault()`. No host toolbar reserves page space. Windows retains **Dock in REAPER** in the title-bar system menu. Both menu entries and `setDocked()` use the same REAPER Docker integration and preserve the current WebView document.
 
 ### Window icons
 

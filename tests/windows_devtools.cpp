@@ -108,11 +108,10 @@ int main() {
     auto visible = [](const auto& window) { return window->diagnostics()["devtools"]["visible"].template get<bool>(); };
     pump(windows, [&] { return messages > 0; });
     auto native = static_cast<HWND>(first->native_handle());
-    CHECK(GetDlgItem(native, 0x1800));
+    CHECK(!GetDlgItem(native, 0x1800));
     CHECK(GetMenuState(GetSystemMenu(native, FALSE), 0x1800, MF_BYCOMMAND) != UINT(-1));
     SendMessageW(native, WM_SYSCOMMAND, 0x1800, 0); first->tick(); CHECK(docked);
-    wchar_t caption[16]{}; GetWindowTextW(GetDlgItem(native, 0x1800), caption, 16); CHECK(!wcscmp(caption, L"Undock"));
-    SendMessageW(GetDlgItem(native, 0x1800), BM_CLICK, 0, 0); first->tick(); CHECK(!docked);
+    SendMessageW(native, WM_SYSCOMMAND, 0x1800, 0); first->tick(); CHECK(!docked);
     CHECK(navigations == 1);
     shortcut(first);
     pump(windows, [&] { return first->diagnostics()["devtools"]["pending"].get<bool>(); }, "Pending open");

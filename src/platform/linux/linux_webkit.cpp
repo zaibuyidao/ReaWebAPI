@@ -8,6 +8,7 @@
 #include <memory>
 #include "platform/linux/gtk_drag.hpp"
 #include "platform/linux/gtk_devtools.hpp"
+#include "platform/linux/gtk_context_menu.hpp"
 
 namespace reaweb {
 namespace {
@@ -24,6 +25,7 @@ class Page {
   std::string navigation_uri_;
   std::unique_ptr<GtkNativeDrag> drag_;
   std::unique_ptr<GtkDevTools> devtools_;
+  std::unique_ptr<GtkDockMenu> dock_menu_;
   void fail(const std::string& error) {
     if (!failed_) {
       failed_ = true;
@@ -61,6 +63,10 @@ public:
     webkit_user_script_unref(script);
     view_ = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", context, "user-content-manager", manager_, nullptr));
     g_object_ref_sink(view_);
+    if (request.value("dockEnabled", false)) dock_menu_ = std::make_unique<GtkDockMenu>(view_, [this] {
+      try { channel_.send({{"id", id_}, {"op", "dock-toggle"}}); }
+      catch (const std::exception& error) { fail(error.what()); }
+    });
     auto settings = webkit_web_view_get_settings(view_);
     webkit_settings_set_enable_developer_extras(settings, TRUE);
     webkit_settings_set_enable_javascript(settings, TRUE);
@@ -126,6 +132,7 @@ public:
   }
   ~Page() {
     failed_ = true;
+    dock_menu_.reset();
     drag_.reset();
     devtools_.reset();
     webkit_user_content_manager_unregister_script_message_handler(manager_, "reaweb");
@@ -158,6 +165,7 @@ public:
       devtools_->owner(0);
       channel_.send({{"id", id_}, {"op", "parked"}});
     } else if (op == "geometry") {
+      if (dock_menu_) dock_menu_->set_docked(request.value("docked", false));
       const auto parent = request.at("parent").get<unsigned long>();
       const int x = request.at("x"), y = request.at("y");
       const int width = std::max(1, request.at("width").get<int>()), height = std::max(1, request.at("height").get<int>());

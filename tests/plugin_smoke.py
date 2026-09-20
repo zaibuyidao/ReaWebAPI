@@ -632,7 +632,7 @@ try:
   if (el('cursor-position').textContent !== '7.250 s') throw new Error('Move cursor display');
   if (!el('error').hidden) throw new Error(el('error').textContent);
   if (document.documentElement.scrollWidth > innerWidth) throw new Error('Horizontal overflow');
-  if (el('dock')) throw new Error('Demo should use native docking controls');
+  if (el('dock')) throw new Error('Demo should use the native docking menu');
   const favicon = document.querySelector('link[rel="icon"]');
   if (!favicon) throw new Error('Demo favicon declaration is missing');
   const iconStep = async step => {
@@ -651,6 +651,8 @@ try:
   await reaper.window.setIcon('alternate.svg'); await iconStep(5);
   favicon.remove(); await new Promise(resolve => setTimeout(resolve, 200)); await iconStep(6);
   for (const step of [1, 2, 3]) {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await reaper.fs.writeText('viewport-' + step + '.json', JSON.stringify({width:innerWidth,height:innerHeight,scale:devicePixelRatio}), {overwrite:true});
     await reaper.window.setTitle('NATIVE DOCK:' + step);
     const deadline = Date.now() + 5000;
     while (await reaper.window.isDocked() !== (step !== 2)) {
@@ -684,8 +686,10 @@ try:
   el('refresh').click();
   await until(() => el('track-name').textContent === EXPECTED);
   const state = window.starterState = 'preserved';
-  if (el('dock')) throw new Error('Starter should use native docking controls');
+  if (el('dock')) throw new Error('Starter should use the native docking menu');
   for (const step of [1, 2, 3]) {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await reaper.fs.writeText('viewport-' + step + '.json', JSON.stringify({width:innerWidth,height:innerHeight,scale:devicePixelRatio}), {overwrite:true});
     await reaper.window.setTitle('NATIVE DOCK:' + step);
     const deadline = Date.now() + 5000;
     while (await reaper.window.isDocked() !== (step !== 2)) {
@@ -798,6 +802,7 @@ try:
         user32.GetWindowTextW.argtypes = [W.HWND, W.LPWSTR, C.c_int]
         user32.GetDlgItem.argtypes = [W.HWND, C.c_int]
         user32.GetDlgItem.restype = W.HWND
+        user32.GetClientRect.argtypes = [W.HWND, C.POINTER(W.RECT)]
         user32.SendMessageW.argtypes = [W.HWND, W.UINT, W.WPARAM, W.LPARAM]
         user32.SendMessageW.restype = C.c_ssize_t
         deadline = time.monotonic() + 35
@@ -845,15 +850,16 @@ try:
                     if not title.value.startswith('NATIVE DOCK:') or (handle, title.value) in native_steps:
                         continue
                     native_steps.add((handle, title.value))
-                    button = user32.GetDlgItem(handle, 0x1800)
-                    assert button, 'Native docking control is missing'
+                    assert not user32.GetDlgItem(handle, 0x1800), 'Removed docking toolbar is still present'
+                    viewport = json.loads((folder / ('viewport-' + title.value.split(':')[1] + '.json')).read_text())
+                    client = W.RECT()
+                    assert user32.GetClientRect(handle, C.byref(client))
+                    assert abs(viewport['width'] * viewport['scale'] - client.right) <= 1, (viewport, client.right)
+                    assert abs(viewport['height'] * viewport['scale'] - client.bottom) <= 1, (viewport, client.bottom)
                     if args.demo:
                         assert user32.SendMessageW(handle, 0x7F, 0, 0), 'Demo small window icon is missing'
                         assert user32.SendMessageW(handle, 0x7F, 1, 0), 'Demo large window icon is missing'
-                    if title.value.endswith(':1'):
-                        user32.SendMessageW(handle, 0x112, 0x1800, 0)  # Title-bar system menu.
-                    else:
-                        user32.SendMessageW(button, 0xF5, 0, 0)  # Native Dock/Undock button.
+                    user32.SendMessageW(handle, 0x112, 0x1800, 0)  # Title-bar system menu.
             if not any(is_open(window) for window in ids) and not docked:
                 break
             time.sleep(0.01)
@@ -867,7 +873,7 @@ try:
             assert any('[READ]' in message and '[ReaWebAPI]' in message for message in messages), 'Native console mirror missing'
             print('Demo debug log: explicit track snapshot, REAPER console mirror and clear passed' + ('' if args.empty else ', including confirmed Pan changes'))
             print('Shipped demo: DevTools opened, project settings returned 200 and no CSP violations')
-            print('Shipped demo: empty project, 7 checks passed and 3 track checks skipped, cursor and docking passed' if args.empty else 'Shipped demo: 10 checks passed (including binary resize, GUID/RECT and audio array), project/marker/FX display, color write/read/reset, cursor write, native icons and native docking controls passed')
+            print('Shipped demo: empty project, 7 checks passed and 3 track checks skipped, cursor and docking passed' if args.empty else 'Shipped demo: 10 checks passed (including binary resize, GUID/RECT and audio array), project/marker/FX display, color write/read/reset, cursor write, native icons and title-bar docking passed')
         if args.studio:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'STUDIO PASS'
             assert extra_calls == set(), extra_calls
