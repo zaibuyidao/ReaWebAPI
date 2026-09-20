@@ -566,7 +566,7 @@ try:
   const recordCsp = event => cspViolations.push(event.blockedURI);
   document.addEventListener('securitypolicyviolation', recordCsp);
   click('devtools');
-  await until(() => el('activity').textContent.includes('Developer Tools opened.'));
+  await until(() => el('activity').textContent.includes('DevTools open requested.'));
   const settings = await fetch('/.well-known/appspecific/com.chrome.devtools.json');
   if (settings.status !== 200 || JSON.stringify(await settings.json()) !== '{}') throw new Error('DevTools settings request failed');
   // Give the native inspector time to issue its own automatic workspace probe.
@@ -632,10 +632,16 @@ try:
   if (el('cursor-position').textContent !== '7.250 s') throw new Error('Move cursor display');
   if (!el('error').hidden) throw new Error(el('error').textContent);
   if (document.documentElement.scrollWidth > innerWidth) throw new Error('Horizontal overflow');
-  click('dock'); await until(() => el('dock').textContent === 'Undock' && !el('dock').disabled);
-  if (document.documentElement.scrollWidth > innerWidth) throw new Error('Docked horizontal overflow');
-  click('dock'); await until(() => el('dock').textContent === 'Dock' && !el('dock').disabled);
-  click('dock'); await until(() => el('dock').textContent === 'Undock' && !el('dock').disabled);
+  if (el('dock')) throw new Error('Demo should use native docking controls');
+  for (const step of [1, 2, 3]) {
+    await reaper.window.setTitle('NATIVE DOCK:' + step);
+    const deadline = Date.now() + 5000;
+    while (await reaper.window.isDocked() !== (step !== 2)) {
+      if (Date.now() > deadline) throw new Error('Native docking timeout');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    if (document.documentElement.scrollWidth > innerWidth) throw new Error('Docking horizontal overflow');
+  }
   await reaper.window.setTitle('DEMO PASS');
   await reaper.window.close();
 })().catch(async error => { await reaper.window.setTitle('DEMO FAIL: ' + error.message.slice(0, 160)); });
@@ -661,9 +667,14 @@ try:
   el('refresh').click();
   await until(() => el('track-name').textContent === EXPECTED);
   const state = window.starterState = 'preserved';
-  for (const caption of ['Undock', 'Dock', 'Undock']) {
-    el('dock').click();
-    await until(() => !el('dock').disabled && el('dock').textContent === caption);
+  if (el('dock')) throw new Error('Starter should use native docking controls');
+  for (const step of [1, 2, 3]) {
+    await reaper.window.setTitle('NATIVE DOCK:' + step);
+    const deadline = Date.now() + 5000;
+    while (await reaper.window.isDocked() !== (step !== 2)) {
+      if (Date.now() > deadline) throw new Error('Native docking timeout');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
     if (window.starterState !== state) throw new Error('Docking lost document state');
   }
   if (document.documentElement.scrollWidth > innerWidth) throw new Error('Horizontal overflow');
@@ -763,6 +774,12 @@ try:
         user32.PeekMessageW.argtypes = [C.POINTER(W.MSG), W.HWND, W.UINT, W.UINT, W.UINT]
         user32.TranslateMessage.argtypes = [C.POINTER(W.MSG)]
         user32.DispatchMessageW.argtypes = [C.POINTER(W.MSG)]
+        native_steps = set()
+        user32.GetWindowTextW.argtypes = [W.HWND, W.LPWSTR, C.c_int]
+        user32.GetDlgItem.argtypes = [W.HWND, C.c_int]
+        user32.GetDlgItem.restype = W.HWND
+        user32.SendMessageW.argtypes = [W.HWND, W.UINT, W.WPARAM, W.LPARAM]
+        user32.SendMessageW.restype = C.c_ssize_t
         deadline = time.monotonic() + 35
         while time.monotonic() < deadline:
             msg = W.MSG()
@@ -788,6 +805,22 @@ try:
                     captured_seen |= window_info(handle, 0) == 1 and window_info(handle, 1) == 1
                     assert user32.GetWindowLongPtrW(handle, -8) == owner_window, (handle, owner_window, user32.GetWindowLongPtrW(handle, -8))
                     assert handles.index(handle) < handles.index(owner_window), 'App fell behind REAPER after focus changed'
+            if args.demo or args.starter:
+                for handle in set(handles) | docked.copy():
+                    title = C.create_unicode_buffer(256)
+                    user32.GetWindowTextW(handle, title, 256)
+                    if not title.value.startswith('NATIVE DOCK:') or (handle, title.value) in native_steps:
+                        continue
+                    native_steps.add((handle, title.value))
+                    button = user32.GetDlgItem(handle, 0x1800)
+                    assert button, 'Native docking control is missing'
+                    if args.demo:
+                        assert user32.SendMessageW(handle, 0x7F, 0, 0), 'Demo small window icon is missing'
+                        assert user32.SendMessageW(handle, 0x7F, 1, 0), 'Demo large window icon is missing'
+                    if title.value.endswith(':1'):
+                        user32.SendMessageW(handle, 0x112, 0x1800, 0)  # Title-bar system menu.
+                    else:
+                        user32.SendMessageW(button, 0xF5, 0, 0)  # Native Dock/Undock button.
             if not any(is_open(window) for window in ids) and not docked:
                 break
             time.sleep(0.01)
@@ -799,7 +832,7 @@ try:
             assert any('[READ]' in message and '[ReaWebAPI]' in message for message in messages), 'Native console mirror missing'
             print('Demo debug log: explicit track snapshot, REAPER console mirror and clear passed' + ('' if args.empty else ', including confirmed Pan changes'))
             print('Shipped demo: DevTools opened, project settings returned 200 and no CSP violations')
-            print('Shipped demo: empty project, 7 checks passed and 3 track checks skipped, cursor and docking passed' if args.empty else 'Shipped demo: 10 checks passed (including binary resize, GUID/RECT and audio array), project/marker/FX display, color write/read/reset, cursor write and dock buttons passed')
+            print('Shipped demo: empty project, 7 checks passed and 3 track checks skipped, cursor and docking passed' if args.empty else 'Shipped demo: 10 checks passed (including binary resize, GUID/RECT and audio array), project/marker/FX display, color write/read/reset, cursor write, native icons and native docking controls passed')
         if args.studio:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'STUDIO PASS'
             assert extra_calls == set(), extra_calls

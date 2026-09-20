@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.2.3 LANGUAGES CXX)
+project(ReaWebAPI VERSION 0.2.4 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,6 +27,14 @@ set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(httplib)
+
+FetchContent_Declare(lunasvg
+  GIT_REPOSITORY https://github.com/sammycage/lunasvg.git
+  GIT_TAG 83c58df8103dc7dca423dfd824992af94d49bed6)
+set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LUNASVG_DISABLE_LOAD_SYSTEM_FONTS ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(lunasvg)
+set_property(DIRECTORY "${lunasvg_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
 FetchContent_Declare(reaper_sdk
   GIT_REPOSITORY https://github.com/justinfrankel/reaper-sdk.git
@@ -73,6 +81,7 @@ add_library(reaweb_core STATIC
   src/runtime/app.cpp
   src/runtime/audio.cpp
   src/runtime/drag_drop.cpp
+  src/runtime/icon.cpp
   src/runtime/fs.cpp
   src/runtime/system.cpp
   src/runtime/theme.cpp
@@ -80,12 +89,13 @@ add_library(reaweb_core STATIC
   "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
 target_include_directories(reaweb_core PUBLIC src)
 target_include_directories(reaweb_core SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
+target_include_directories(reaweb_core SYSTEM PRIVATE "${lunasvg_SOURCE_DIR}/plutovg/source")
 target_compile_definitions(reaweb_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 if(NOT WIN32)
   target_compile_definitions(reaweb_core PRIVATE SWELL_PROVIDED_BY_APP)
 endif()
 target_include_directories(reaweb_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(reaweb_core PUBLIC nlohmann_json::nlohmann_json Threads::Threads PRIVATE httplib::httplib)
+target_link_libraries(reaweb_core PUBLIC nlohmann_json::nlohmann_json Threads::Threads PRIVATE httplib::httplib lunasvg::lunasvg)
 target_compile_definitions(reaweb_core PUBLIC REAWEB_VERSION="${PROJECT_VERSION}")
 
 # Share the same session implementation between the plugin and native tests.
@@ -122,7 +132,7 @@ if(REAWEB_BUILD_EXTENSION)
     target_include_directories(reawebapi PRIVATE "${webview2_SOURCE_DIR}/build/native/include")
     target_link_libraries(reawebapi PRIVATE
       "${webview2_SOURCE_DIR}/build/native/x64/WebView2LoaderStatic.lib"
-      ole32 oleaut32 user32 shlwapi shell32 version advapi32 uuid)
+      ole32 oleaut32 user32 gdi32 shlwapi shell32 version advapi32 uuid)
     target_compile_definitions(reawebapi PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
     set_target_properties(reawebapi PROPERTIES OUTPUT_NAME reaper_reawebapi-x64)
   elseif(APPLE)
@@ -175,6 +185,9 @@ if(REAWEB_BUILD_EXTENSION)
   ")
   install(FILES "${httplib_SOURCE_DIR}/LICENSE" DESTINATION ReaWebAPI/licenses RENAME cpp-httplib.txt)
   install(FILES "${json_SOURCE_DIR}/LICENSE.MIT" DESTINATION ReaWebAPI/licenses RENAME nlohmann-json.txt)
+  install(FILES "${lunasvg_SOURCE_DIR}/LICENSE" DESTINATION ReaWebAPI/licenses RENAME lunasvg.txt)
+  install(FILES "${lunasvg_SOURCE_DIR}/plutovg/LICENSE" DESTINATION ReaWebAPI/licenses RENAME plutovg.txt)
+  install(FILES src/runtime/licenses/FTL.TXT src/runtime/licenses/stb.txt DESTINATION ReaWebAPI/licenses)
   install(FILES "${reaper_sdk_SOURCE_DIR}/sdk/reaper_plugin.h" DESTINATION ReaWebAPI/licenses)
   install(FILES "${wdl_SOURCE_DIR}/WDL/swell/swell.h" DESTINATION ReaWebAPI/licenses)
   if(WIN32)

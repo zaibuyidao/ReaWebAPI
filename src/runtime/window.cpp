@@ -98,7 +98,10 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
       output.data = {{"document", s->document}, {"event", "native-drop"}, {"sequence", ++s->event_sequence}, {"data", payload}};
       if (s->output_pending >= 256 || !worker_.submit(std::move(output))) { fail(*s, "Native drop queue limit exceeded"); return; }
       ++s->output_pending;
-    }});
+    }, dock_.add && dock_.remove && dock_.index && dock_.activate ? std::function<void()>([this, weak] {
+      if (auto s = weak.lock(); s && !s->closing)
+        s->native_dock_request = !s->native_dock_request.value_or(is_docked(s->id));
+    }) : std::function<void()>{}, [this, id] { return is_docked(id); }});
   sessions_.emplace(id, session);
   try {
     auto cached = state_cache_.find(session->ident);
@@ -199,6 +202,15 @@ void Runtime::detach(const Session& session) {
     auto handle = session.window->native_handle();
     if (handle && dock_.index(handle) >= 0) dock_.remove(handle);
   }
+}
+
+void Runtime::refresh_icon(Session& s) {
+  if (!s.icon_source || s.icon_pending) return;
+  auto sizes = s.window->icon_sizes();
+  if (sizes == s.icon_sizes) return;
+  Work work; work.kind = Work::Icon; work.session = s.id; work.generation = s.generation;
+  work.icon_source = s.icon_source; work.icon_sizes = std::move(sizes); work.icon_sequence = s.icon_sequence + 1;
+  if (worker_.submit(std::move(work))) { ++s.icon_sequence; s.icon_pending = true; }
 }
 
 Json Runtime::window_state(const Session& s) const {

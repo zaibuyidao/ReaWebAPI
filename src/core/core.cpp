@@ -117,7 +117,7 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
   }()); });
   for (const auto& name : {"ReaWeb_GetWindowState", "ReaWeb_GetDiagnostics", "ReaWeb_Focus"})
     add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
-  for (const auto& name : {"ReaWeb_SetTitle", "ReaWeb_SetKeyboardCapture", "ReaWeb_Subscribe", "ReaWeb_Unsubscribe"})
+  for (const auto& name : {"ReaWeb_SetTitle", "ReaWeb_SetIcon", "ReaWeb_SetKeyboardCapture", "ReaWeb_Subscribe", "ReaWeb_Unsubscribe"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
   for (const auto& name : {"ReaWeb_OpenDev", "ReaWeb_BeginUndo", "ReaWeb_EndUndo", "ReaWeb_ClipboardWriteText", "ReaWeb_OpenExternal"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });

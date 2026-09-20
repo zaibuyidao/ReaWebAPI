@@ -1,5 +1,6 @@
 #pragma once
 #include "core/core.hpp"
+#include "runtime/icon.hpp"
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -10,7 +11,7 @@ namespace reaweb {
 using Clock = std::chrono::steady_clock;
 // Only value objects cross this boundary. REAPER and WebView objects stay on the main thread.
 struct Work {
-  enum Kind { Parse, Encode, Save, File, Request, Script, Fault } kind = Parse;
+  enum Kind { Parse, Encode, Save, File, Icon, IconReady, Request, Script, Fault } kind = Parse;
   int session = 0;
   uint64_t generation = 0, project = 0;
   Clock::time_point received = Clock::now();
@@ -19,6 +20,11 @@ struct Work {
   fs::path path;
   bool reply = false;
   bool counted_output = false;
+  uint64_t icon_sequence = 0;
+  std::shared_ptr<const IconSource> icon_source;
+  std::vector<int> icon_sizes;
+  std::vector<IconBitmap> icon_bitmaps;
+  Json icon_error;
 };
 class Worker {
 public:

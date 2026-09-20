@@ -95,6 +95,9 @@ int main() {
     int messages = 0, navigations = 0;
     std::string error;
     WindowOptions options;
+    bool docked = false;
+    options.on_dock_toggle = [&] { docked = !docked; };
+    options.is_docked = [&] { return docked; };
     options.entry = entry; options.title = "ReaWebAPI DevTools test";
     options.script = "window.token='retained';setInterval(()=>chrome.webview.postMessage(window.token),50);console.log('retained console entry');";
     options.on_message = [&](std::string text) { CHECK(text == "retained"); ++messages; };
@@ -104,6 +107,13 @@ int main() {
     std::vector<std::shared_ptr<Window>> windows{first};
     auto visible = [](const auto& window) { return window->diagnostics()["devtools"]["visible"].template get<bool>(); };
     pump(windows, [&] { return messages > 0; });
+    auto native = static_cast<HWND>(first->native_handle());
+    CHECK(GetDlgItem(native, 0x1800));
+    CHECK(GetMenuState(GetSystemMenu(native, FALSE), 0x1800, MF_BYCOMMAND) != UINT(-1));
+    SendMessageW(native, WM_SYSCOMMAND, 0x1800, 0); first->tick(); CHECK(docked);
+    wchar_t caption[16]{}; GetWindowTextW(GetDlgItem(native, 0x1800), caption, 16); CHECK(!wcscmp(caption, L"Undock"));
+    SendMessageW(GetDlgItem(native, 0x1800), BM_CLICK, 0, 0); first->tick(); CHECK(!docked);
+    CHECK(navigations == 1);
     shortcut(first);
     pump(windows, [&] { return first->diagnostics()["devtools"]["pending"].get<bool>(); }, "Pending open");
     shortcut(first, true);

@@ -3,7 +3,11 @@ require 'tmpdir'
 text = File.read(ARGV.fetch(0), encoding: 'UTF-8')
 header = ReaPack::Index.parse(text)
 items = ReaPack::Index::Provides.parse_each(header[:provides]).to_a
-native, scripts = items.partition { |item| item.type == :extension }
+native = items.select { |item| item.type == :extension }
+scripts = items.select { |item| item.type == :script }
+notices = items.select { |item| item.type == :data }
+expected_notices = %w[lunasvg.txt plutovg.txt FTL.TXT stb.txt THIRD_PARTY.md].map { |name| "licenses/#{name}" }.sort
+abort 'Missing icon dependency notices' unless notices.map(&:file_pattern).sort == expected_notices
 abort 'Expected seven native files' unless native.size == 7 && native.all?(&:platform)
 demo_root = File.expand_path('../web', __dir__)
 demo_files = Dir.glob('**/*', File::FNM_DOTMATCH, base: demo_root)

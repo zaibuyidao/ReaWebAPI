@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstring>
 #include "platform/windows/win_devtools.hpp"
+#include "platform/windows/win_icon.hpp"
 
 namespace reaweb {
 using Microsoft::WRL::ComPtr;
@@ -85,6 +86,15 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   std::string browser_version_;
   bool visible_ = true;
   bool drop_enabled_ = false, dragging_ = false;
+  WinIcon icon_;
+  HWND dock_button_ = nullptr;
+  bool last_docked_ = false;
+  static constexpr UINT dock_command = 0x1800;
+  int content_top() const { return dock_button_ ? MulDiv(30, GetDpiForWindow(hwnd_), 96) : 0; }
+  void layout() {
+    if (dock_button_) SetWindowPos(dock_button_, nullptr, 4, 2, MulDiv(90, GetDpiForWindow(hwnd_), 96), content_top() - 4, SWP_NOZORDER | SWP_NOACTIVATE);
+    if (controller_) { RECT rect{}; GetClientRect(hwnd_, &rect); rect.top = std::min(rect.bottom, LONG(content_top())); controller_->put_Bounds(rect); }
+  }
 public:
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto self = reinterpret_cast<WinWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -94,13 +104,25 @@ public:
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     }
     if (self) {
-      if (msg == toggle_devtools_message) {
+      if ((msg == WM_SYSCOMMAND && (wp & 0xfff0) == dock_command) || (msg == WM_COMMAND && LOWORD(wp) == dock_command)) {
+        if (self->options_.on_dock_toggle) self->options_.on_dock_toggle();
+        return 0;
+      } else if (msg == WM_INITMENU && reinterpret_cast<HMENU>(wp) == GetSystemMenu(hwnd, FALSE)) {
+        CheckMenuItem(reinterpret_cast<HMENU>(wp), dock_command, MF_BYCOMMAND |
+          (self->options_.is_docked && self->options_.is_docked() ? MF_CHECKED : MF_UNCHECKED));
+      } else if (msg == WM_DPICHANGED) {
+        if (!(GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CHILD)) {
+          const auto& rect = *reinterpret_cast<RECT*>(lp);
+          SetWindowPos(hwnd, nullptr, rect.left, rect.top, rect.right-rect.left, rect.bottom-rect.top, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        self->layout(); return 0;
+      } else if (msg == toggle_devtools_message) {
         if (self->devtools_ && !self->devtools_->toggle()) self->focus(); return 0;
       } else if (msg == WM_KEYDOWN && wp == 'I' && (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000)) {
         if (!(lp & (1LL << 30))) PostMessageW(hwnd, toggle_devtools_message, 0, 0);
         return 0;
       } else if (msg == WM_SIZE && self->controller_) {
-        RECT rect{}; GetClientRect(hwnd, &rect); self->controller_->put_Bounds(rect);
+        self->layout();
       } else if (msg == WM_MOVE && self->controller_) {
         self->controller_->NotifyParentWindowPositionChanged();
       } else if (msg == WM_SETFOCUS && self->controller_) {
@@ -119,6 +141,14 @@ public:
     hwnd_ = CreateWindowExW(0, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
       CW_USEDEFAULT, CW_USEDEFAULT, 860, 640, static_cast<HWND>(options_.parent), nullptr, instance, this);
     if (!hwnd_) throw std::runtime_error("CreateWindowEx failed");
+    if (options_.on_dock_toggle) {
+      dock_button_ = CreateWindowExW(0, L"BUTTON", L"Dock", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        4, 2, 90, 26, hwnd_, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(dock_command)), instance, nullptr);
+      SendMessageW(dock_button_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+      auto menu = GetSystemMenu(hwnd_, FALSE);
+      AppendMenuW(menu, MF_SEPARATOR, 0, nullptr); AppendMenuW(menu, MF_STRING, dock_command, L"Dock in REAPER");
+      layout();
+    }
     devtools_ = std::make_unique<WinDevTools>(hwnd_);
     // A REAPER-owned floating window stays above its owner when focus returns to REAPER.
     SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(options_.parent));
@@ -154,7 +184,7 @@ public:
     check(hr, "CreateCoreWebView2Controller");
   }
   void configure() {
-    RECT rect{}; GetClientRect(hwnd_, &rect); controller_->put_Bounds(rect);
+    layout();
     ComPtr<ICoreWebView2Settings> settings;
     check(webview_->get_Settings(&settings), "get_Settings");
     settings->put_AreDevToolsEnabled(TRUE);
@@ -256,6 +286,10 @@ public:
     return hwnd_ && (focus == hwnd_ || IsChild(hwnd_, focus));
   }
   void tick() override {
+    if (!closed_ && dock_button_) {
+      const bool docked = options_.is_docked && options_.is_docked();
+      if (docked != last_docked_) { SetWindowTextW(dock_button_, docked ? L"Undock" : L"Dock"); last_docked_ = docked; }
+    }
     if (!closed_ && devtools_) devtools_->tick(webview_.Get());
     const bool next = visible();
     if (controller_ && next != visible_) { controller_->put_IsVisible(next); visible_ = next; }
@@ -268,6 +302,11 @@ public:
     if (controller_) controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
   }
   void set_title(const std::string& title) override { SetWindowTextW(hwnd_, wide(title).c_str()); }
+  std::vector<int> icon_sizes() const override {
+    const auto dpi = GetDpiForWindow(hwnd_);
+    return {std::clamp(GetSystemMetricsForDpi(SM_CXSMICON, dpi), 8, 256), std::clamp(GetSystemMetricsForDpi(SM_CXICON, dpi), 8, 256)};
+  }
+  void set_icon(const std::vector<IconBitmap>& images) override { icon_.set(hwnd_, images); }
   void set_visible(bool visible) override { ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE); }
   void reload() override { if (webview_) webview_->Reload(); }
   Json bounds() const override {

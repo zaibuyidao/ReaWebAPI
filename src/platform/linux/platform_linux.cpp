@@ -1,6 +1,7 @@
 #include "platform/shared/swell_window.hpp"
 #include "platform/linux/linux_channel.hpp"
 #include "platform/shared/devtools.hpp"
+#include "platform/linux/linux_icon.hpp"
 #include <chrono>
 #include <cstring>
 #include <dlfcn.h>
@@ -146,6 +147,7 @@ class LinuxWindow final : public Window {
   Json geometry_;
   mutable Json normal_;
   bool maximized_ = false;
+  LinuxIcon icon_;
   std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
 public:
   unsigned native_state() const {
@@ -157,7 +159,7 @@ public:
   LinuxWindow(std::shared_ptr<LinuxProcess> process, int id, WindowOptions options) : process_(std::move(process)), id_(id) {
     window_ = std::make_unique<SwellWindow>(options.title, options.parent, [this] {
       try { process_->send({{"id", id_}, {"op", "focus"}}); } catch (...) {}
-    }, options.on_close);
+    }, options.on_close, options.on_dock_toggle, options.is_docked);
     process_->send({{"id", id_}, {"op", "open"}, {"uri", options.url.empty() ? file_uri(options.entry) : options.url},
       {"script", options.script}, {"lifecycleReload", static_cast<bool>(options.on_reload)}});
     process_->listeners.emplace(id_, std::move(options));
@@ -169,6 +171,8 @@ public:
   }
   void sync() {
     if (closed()) return;
+    window_->tick();
+    icon_.refresh(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow"));
     using GetXid = unsigned long (*)(void*);
     static auto get_xid = reinterpret_cast<GetXid>(dlsym(RTLD_DEFAULT, "gdk_x11_window_get_xid"));
     if (!get_xid) get_xid = reinterpret_cast<GetXid>(dlsym(RTLD_DEFAULT, "gdk_x11_drawable_get_xid"));
@@ -187,11 +191,11 @@ public:
     }
     RECT rect{};
     GetClientRect(handle, &rect);
-    POINT origin{0, 0};
+    POINT origin{0, window_->content_top()};
     ClientToScreen(handle, &origin);
     ScreenToClient(ancestor, &origin);
     Json next = {{"id", id_}, {"op", "geometry"}, {"parent", get_xid(native)}, {"x", origin.x}, {"y", origin.y},
-      {"width", rect.right - rect.left}, {"height", rect.bottom - rect.top}, {"visible", visible()}};
+      {"width", rect.right - rect.left}, {"height", std::max(1, int(rect.bottom - rect.top) - window_->content_top())}, {"visible", visible()}};
     if (geometry_ != next) { process_->send(next); geometry_ = std::move(next); }
   }
   void evaluate(const std::string& script) override { process_->send({{"id", id_}, {"op", "eval"}, {"script", script}}); }
@@ -215,6 +219,7 @@ public:
     window_->prepare_dock(); prepare_undock();
   }
   void prepare_undock() override {
+    icon_.refresh(nullptr);
     if (!geometry_.is_null()) {
       // Invalidate even on timeout so the next pump can reattach a late acknowledgement.
       geometry_ = Json();
@@ -222,12 +227,20 @@ public:
     }
   }
   void restore_floating() override {
+    icon_.refresh(nullptr);
     window_->restore_floating();
     if (!normal_.is_null()) restore_placement(normal_);
     if (maximized_) ShowWindow(static_cast<HWND>(window_->handle()), SW_SHOWMAXIMIZED);
   }
   void focus() override { window_->focus(); }
   void set_title(const std::string& title) override { window_->set_title(title); }
+  std::vector<int> icon_sizes() const override {
+    const auto scale = LinuxIcon::scale(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow"));
+    return {16 * scale, 32 * scale};
+  }
+  void set_icon(const std::vector<IconBitmap>& images) override {
+    icon_.set(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow"), images);
+  }
   void set_visible(bool visible) override { window_->set_visible(visible); }
   Json bounds() const override { return window_->placement(); }
   void reload() override { process_->send({{"id", id_}, {"op", "reload"}}); }
@@ -253,7 +266,7 @@ public:
     auto it = process_->inspectors.find(id_);
     if (it != process_->inspectors.end()) inspector.update(it->second);
     inspector["embeddedSupported"] = true;
-    return {{"backend", "WebKitGTK"}, {"browserVersion", process_->version}, {"helperProtocol", 1}, {"devtools", inspector}};
+    return {{"backend", "WebKitGTK"}, {"browserVersion", process_->version}, {"helperProtocol", 1}, {"devtools", inspector}, {"iconError", icon_.last_error}};
   }
 };
 class LinuxPlatform final : public Platform {

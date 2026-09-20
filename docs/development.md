@@ -4,7 +4,7 @@
 
 ## Start a tool
 
-Install the extension for your REAPER architecture, then copy the SDK directory to a writable development location. Load its `starter/Open.lua` in the Action List. This opens `index.html` next to the Lua file. The starter reads the selected track and provides a docking button.
+Install the extension for your REAPER architecture, then copy the SDK directory to a writable development location. Load its `starter/Open.lua` in the Action List. This opens `index.html` next to the Lua file. The starter reads the selected track. Use the native host’s Dock/Undock control to change its docking state.
 
 ```text
 SDK/

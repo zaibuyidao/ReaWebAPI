@@ -134,7 +134,7 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   }
   if (method == "ReaWeb_OpenDev") return open_dev(args[0].get<std::string>(), s.entry.parent_path());
   if (method == "ReaWeb_BeginUndo" || method == "ReaWeb_EndUndo") return transaction_call(id, method, args);
-  if (is_file_method(method) || method == "ReaWeb_ClipboardReadText" ||
+  if (is_file_method(method) || method == "ReaWeb_SetIcon" || method == "ReaWeb_ClipboardReadText" ||
       method == "ReaWeb_ClipboardWriteText" || method == "ReaWeb_OpenExternal")
     throw Error("INVALID_REQUEST", "This host operation requires asynchronous dispatch");
   if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected an event name");
@@ -162,6 +162,15 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
 bool Runtime::start_async(Session& session, const Work& request) {
   const auto method = request.data.at("method").get<std::string>();
   const auto& args = request.data.at("args");
+  if (method == "ReaWeb_SetIcon") {
+    if (args.size() != 1 || !args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected one PNG, ICO or SVG path");
+    Work icon = request; icon.kind = Work::Icon; icon.text.clear();
+    icon.path = fs::u8path(session.app->info.at("rootPath").get<std::string>());
+    icon.icon_sizes = session.window->icon_sizes(); icon.icon_sequence = session.icon_sequence + 1;
+    if (!worker_.submit(std::move(icon))) throw Error("QUEUE_LIMIT", "Icon queue is full");
+    ++session.icon_sequence; session.icon_pending = true;
+    return true;
+  }
   if (method == "ReaWeb_AudioFileInfo" || method == "ReaWeb_AudioWaveform") {
     size_t pending = 0; for (const auto& item : sessions_) pending += item.second->audio.size();
     if (pending >= 8) throw Error("QUEUE_LIMIT", "At most eight audio jobs may be pending");
@@ -265,6 +274,30 @@ void Runtime::tick() {
     if (work.generation != s.generation || s.window->closed()) continue;
     if (work.kind == Work::Request) {
       if (!s.closing) s.queue.push_back(std::move(work));
+    } else if (work.kind == Work::IconReady) {
+      if (work.icon_sequence != s.icon_sequence) {
+        work.icon_error = {{"code", "ICON_SUPERSEDED"}, {"message", "A newer icon request replaced this request"}};
+      } else {
+        s.icon_pending = false;
+        if (!s.closing && work.icon_error.is_null()) {
+          try {
+            s.window->set_icon(work.icon_bitmaps);
+            s.icon_source = work.icon_source; s.icon_sizes = work.icon_sizes;
+          } catch (const Error& error) { work.icon_error = {{"code", error.code}, {"message", error.what()}}; }
+          catch (const std::exception& error) { work.icon_error = {{"code", "ICON_APPLY_FAILED"}, {"message", error.what()}}; }
+        }
+      }
+      if (work.reply && !s.closing) {
+        Json response{{"id", work.data.at("id")}, {"document", work.data.at("document")}};
+        if (work.icon_error.is_null()) response["result"] = true;
+        else response["error"] = work.icon_error;
+        reply(s, std::move(work), std::move(response));
+      } else if (!s.closing && !work.icon_error.is_null() && work.icon_sequence == s.icon_sequence) {
+        s.last_error = work.icon_error.value("message", "Icon refresh failed");
+        // Do not repeatedly retry a failed native application at the same DPI.
+        s.icon_sizes = work.icon_sizes;
+        log_(s.last_error);
+      }
     } else if (work.kind == Work::Script) {
       try { s.window->evaluate(work.text); }
       catch (const std::exception& e) { fail(s, e.what()); }
@@ -333,7 +366,13 @@ void Runtime::tick() {
   for (auto it = sessions_.begin(); it != sessions_.end();) {
     auto& s = *it->second;
     try {
+      if (!s.closing && s.native_dock_request) {
+        const auto docked = *s.native_dock_request; s.native_dock_request.reset();
+        try { set_docked(s.id, docked); s.window->focus(); }
+        catch (const std::exception& error) { s.last_error = error.what(); log_(s.last_error); }
+      }
       s.window->tick();
+      if (!s.closing && !s.window->closed()) refresh_icon(s);
       if (!s.lifecycle_action.empty() && Clock::now() >= s.lifecycle_deadline) {
         append_log(s, {{"level", "warn"}, {"source", "runtime"}, {"message", "Lifecycle cleanup timed out after 2000 ms"}});
         complete_lifecycle(s);

@@ -1,8 +1,8 @@
 # Runtime API 完整清单 / Complete API inventory
 
-v0.1.8 的 JavaScript Runtime 只公开以下 **13 个命名空间、63 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
+JavaScript Runtime 只公开以下 **13 个命名空间、64 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
 
-The JavaScript Runtime exposes only these thirteen namespaces: 63 methods and one Promise property. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact parameter and result types, including overloads, are in [runtime-api.d.ts](../runtime/runtime-api.d.ts). Behavior and limits: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Host services](host-api.md).
+The JavaScript Runtime exposes only these thirteen namespaces: 64 methods and one Promise property. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact parameter and result types, including overloads, are in [runtime-api.d.ts](../runtime/runtime-api.d.ts). Behavior and limits: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Host services](host-api.md).
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
@@ -28,6 +28,7 @@ All thirteen namespaces have implemented members. App identity is shared with br
 | `reaper.window.hide()` | `Promise<ReaWebWindowState>` | 隐藏当前窗口 |
 | `reaper.window.getState()` | `Promise<ReaWebWindowState>` | 读取 ID、标题、停靠、可见、焦点和键盘策略 |
 | `reaper.window.setTitle(title)` | `Promise<boolean>` | 设置标题 |
+| `reaper.window.setIcon(path)` | `Promise<boolean>` | 设置当前宿主窗口图标，支持 PNG、ICO、SVG，相对路径基于 App 根目录 |
 | `reaper.window.focus()` | `Promise<boolean>` | 聚焦当前窗口 |
 | `reaper.window.setDocked(docked)` | `Promise<boolean>` | true 停靠、false 取消停靠；返回实际停靠状态，取消停靠成功返回 false |
 | `reaper.window.isDocked()` | `Promise<boolean>` | 读取停靠状态 |

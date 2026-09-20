@@ -6,19 +6,28 @@ static SWELL_DialogRegHelper reaweb_dialog(&SWELL_curmodule_dialogresource_head,
   [](HWND, int) {}, 101, SWELL_DLG_WS_RESIZABLE, "ReaWebAPI", 860, 640, 1.0, 1.0);
 
 namespace reaweb {
-INT_PTR SwellWindow::procedure(HWND window, UINT message, WPARAM, LPARAM parameter) {
+INT_PTR SwellWindow::procedure(HWND window, UINT message, WPARAM command, LPARAM parameter) {
   if (message == WM_INITDIALOG) { SetWindowLong(window, GWL_USERDATA, parameter); return TRUE; }
   auto self = reinterpret_cast<SwellWindow*>(GetWindowLong(window, GWL_USERDATA));
   if (!self) return FALSE;
+  if (message == WM_COMMAND && LOWORD(command) == 0x1800) {
+    if (self->dock_) self->dock_();
+    return TRUE;
+  }
   if (message == WM_CLOSE) { if (self->close_) self->close_(); else self->closed_ = true; return TRUE; }
   if (message == WM_DESTROY) { self->closed_ = true; self->window_ = nullptr; }
   if (message == WM_SETFOCUS && self->focus_) self->focus_();
   return FALSE;
 }
-SwellWindow::SwellWindow(const std::string& title, void* parent, std::function<void()> focus, std::function<void()> close)
-  : owner_(static_cast<HWND>(parent)), focus_(std::move(focus)), close_(std::move(close)) {
+SwellWindow::SwellWindow(const std::string& title, void* parent, std::function<void()> focus, std::function<void()> close,
+    std::function<void()> dock, std::function<bool()> is_docked)
+  : owner_(static_cast<HWND>(parent)), focus_(std::move(focus)), close_(std::move(close)), dock_(std::move(dock)), is_docked_(std::move(is_docked)) {
   window_ = CreateDialogParam(nullptr, MAKEINTRESOURCE(101), static_cast<HWND>(parent), procedure, reinterpret_cast<LPARAM>(this));
   if (!window_) throw std::runtime_error("Cannot create the REAPER WebView container");
+  if (dock_) {
+    SWELL_MakeSetCurParms(1, 1, 0, 0, window_, false, false);
+    SWELL_MakeButton(0, "Dock", 0x1800, 4, 2, 90, 26, 0);
+  }
   SetWindowText(window_, title.c_str());
   ShowWindow(window_, SW_SHOW);
 }
@@ -47,6 +56,12 @@ void SwellWindow::focus() {
   if (focus_) focus_();
 }
 void SwellWindow::set_title(const std::string& title) { SetWindowText(window_, title.c_str()); }
+void SwellWindow::tick() {
+  const bool docked = is_docked_ && is_docked_();
+  if (dock_ && docked != last_docked_) {
+    SetWindowText(GetDlgItem(window_, 0x1800), docked ? "Undock" : "Dock"); last_docked_ = docked;
+  }
+}
 void SwellWindow::set_visible(bool visible) { ShowWindow(window_, visible ? SW_SHOWNOACTIVATE : SW_HIDE); }
 bool SwellWindow::visible() const { return !closed() && IsWindowVisible(window_); }
 bool SwellWindow::focused() const {

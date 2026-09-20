@@ -22,6 +22,7 @@ TARGETS = [
     ('linux', 'x86_64', 'linux64', 'reaper_reawebapi-x86_64.so'),
     ('linux', 'aarch64', 'linux-aarch64', 'reaper_reawebapi-aarch64.so'),
 ]
+ICON_NOTICES = ('lunasvg.txt', 'plutovg.txt', 'FTL.TXT', 'stb.txt', 'THIRD_PARTY.md')
 
 
 def native_files():
@@ -78,6 +79,9 @@ def descriptor(version, demo_directory=None):
     for platform, name in native_files():
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/extension/{name}'
         lines.append(f'  [{platform} extension] {name} {url}')
+    for name in ICON_NOTICES:
+        url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/licenses/{name}'
+        lines.append(f'  [data] licenses/{name} {url}')
     for path in entries:
         if not path.is_file():
             continue
@@ -101,6 +105,7 @@ def add_demo(archive, directory):
 
 def assemble(directory, version, revision):
     assets = []
+    notices = {}
     for platform, arch, _, binary in TARGETS:
         files = [binary] + ([f'reawebapi-webview-{arch}'] if platform == 'linux' else [])
         bundle = directory / f'ReaWebAPI-{platform}-{arch}-v{version}.zip'
@@ -109,6 +114,10 @@ def assemble(directory, version, revision):
             expected = dict(version=version, platform=platform, architecture=arch, revision=revision, extension=binary)
             if metadata != expected:
                 raise ValueError(f'Build metadata mismatch: {bundle.name}')
+            if not notices:
+                for name in ICON_NOTICES:
+                    path = 'ReaWebAPI/' + (name if name == 'THIRD_PARTY.md' else 'licenses/' + name)
+                    notices[name] = archive.read(path)
             for name in files:
                 file = directory / name
                 if not file.is_file() or not file.stat().st_size or archive.read(f'UserPlugins/{name}') != file.read_bytes():
@@ -120,6 +129,8 @@ def assemble(directory, version, revision):
     reapack = directory / f'ReaWebAPI-ReaPack-v{version}.zip'
     with zipfile.ZipFile(reapack, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.write(ext, ext.name)
+        for name, data in notices.items():
+            archive.writestr('licenses/' + name, data)
         add_demo(archive, Path(__file__).resolve().parents[1] / 'web')
         for _, name in native_files():
             # Preserve executable permission even when Actions normalized downloaded files to 0644.

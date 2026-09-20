@@ -23,6 +23,9 @@ class ReleaseTests(unittest.TestCase):
             with zipfile.ZipFile(self.directory / f'ReaWebAPI-{platform}-{arch}-v{self.version}.zip', 'w') as bundle:
                 metadata = dict(version=self.version, platform=platform, architecture=arch, revision='test-sha', extension=name)
                 bundle.writestr('ReaWebAPI/BUILD.json', json.dumps(metadata))
+                for notice in release.ICON_NOTICES:
+                    path = 'ReaWebAPI/' + (notice if notice == 'THIRD_PARTY.md' else 'licenses/' + notice)
+                    bundle.writestr(path, 'NOTICE FIXTURE ' + notice)
                 for item in files:
                     data = ('TEST FIXTURE ' + item).encode()
                     (self.directory / item).write_bytes(data)
@@ -39,6 +42,7 @@ class ReleaseTests(unittest.TestCase):
                           for path in demo.rglob('*') if path.is_file()}
             files = {entry.filename for entry in bundle.infolist() if not entry.is_dir()}
             self.assertEqual(files, {'ReaWebAPI.ext'} | demo_files.keys() |
+                             {f'licenses/{name}' for name in release.ICON_NOTICES} |
                              {f'extension/{name}' for _, name in release.native_files()})
             self.assertEqual({name for name in files if '/' not in name}, {'ReaWebAPI.ext'})
             for name, data in demo_files.items():
@@ -47,6 +51,9 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(bundle.read(f'extension/{name}'), (self.directory / name).read_bytes())
                 self.assertEqual(bundle.getinfo(f'extension/{name}').external_attr >> 16, 0o100755)
             descriptor = bundle.read('ReaWebAPI.ext').decode()
+            for name in release.ICON_NOTICES:
+                self.assertEqual(bundle.read('licenses/' + name), ('NOTICE FIXTURE ' + name).encode())
+                self.assertIn(f'[data] licenses/{name} https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/licenses/{name}', descriptor)
             entries = release.re.findall(r'^  \[script (main|nomain)\] (web/.+?) (https://\S+)$',
                                          descriptor, release.re.MULTILINE)
             self.assertEqual(len(entries), len(demo_files))

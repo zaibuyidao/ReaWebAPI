@@ -34,6 +34,7 @@ Both capabilities and diagnostics include `webRuntime`: `contract` (1), `mode` (
 | `reaper.window.focus()` | `boolean` | Focuses the current window |
 | `reaper.debug.openDevTools()` | `boolean` | Requests showing DevTools (idempotent). macOS shows a Safari guide and rejects with `INSPECTOR_MENU`. See [DevTools](devtools.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 1–256 UTF-8 bytes, no NUL |
+| `reaper.window.setIcon(path)` | `boolean` | PNG, ICO or SVG from a local path relative to the App root. See [window icons](runtime-api.md#window-icons) |
 | `reaper.window.setDocked(docked)` | `boolean` | Returns the actual docked state, preserving the page |
 | `reaper.window.isDocked()` | `boolean` | Reads docked state |
 | `reaper.window.setKeyboardCapture(capture)` | `boolean` | Default `true`. Setting `false` allows REAPER's normal global shortcut policy |
@@ -132,6 +133,8 @@ Once native execution starts, its queue watchdog is cleared. Native functions ca
 | `BATCH_FAILED`, `UNDO_UNAVAILABLE` | Inspect completed results, or the host cannot provide the requested Undo grouping |
 | `UNSUPPORTED_PARAMETER`, `UNSUPPORTED_PROJECT` | An argument is outside the batch prevalidator's narrower contract |
 | `UNKNOWN_EVENT`, `DOCK_UNAVAILABLE`, `DOCK_FAILED` | Unsupported event or failed docking request |
+| `ICON_FORMAT`, `ICON_INVALID`, `ICON_LIMIT` | Unsupported format, invalid image or icon limit exceeded |
+| `ICON_APPLY_FAILED`, `ICON_SUPERSEDED` | Native icon application failed, or a newer request replaced this pending request |
 | `NATIVE_ERROR`, `WRONG_THREAD` | Native failure or entry called off REAPER's main thread |
 
 Error objects follow `ReaWebError`. Treat caught JavaScript values as unknown until checked. Native `false`/`0`/`null` returns remain ordinary results and must be interpreted using the corresponding REAPER API documentation.

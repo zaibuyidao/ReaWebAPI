@@ -4,8 +4,7 @@
   const label = document.getElementById('track-name');
   const status = document.getElementById('status');
   const refreshButton = document.getElementById('refresh');
-  const dockButton = document.getElementById('dock');
-  if (!label || !status || !(refreshButton instanceof HTMLButtonElement) || !(dockButton instanceof HTMLButtonElement)) return;
+  if (!label || !status || !(refreshButton instanceof HTMLButtonElement)) return;
 
   /** @param {unknown} error */
   const showError = error => {
@@ -53,9 +52,6 @@
     // Do not put the first visible track read behind presentation/subscriptions.
     void refresh();
     await reaper.window.setTitle('ReaWebAPI Starter');
-    await reaper.events.on('windowstatechange', state => {
-      dockButton.textContent = state.docked ? 'Undock' : 'Dock';
-    });
     // Refresh catches its own asynchronous errors. Initial snapshots also refresh.
     await reaper.events.on('selectionchange', () => { void refresh(true); });
     await reaper.events.on('projectchange', state => {
@@ -64,13 +60,7 @@
       void refresh(switched);
     });
     refreshButton.addEventListener('click', () => { void refresh(); });
-    dockButton.addEventListener('click', async () => {
-      dockButton.disabled = true;
-      try { await reaper.window.setDocked(!await reaper.window.isDocked()); }
-      catch (error) { showError(error); }
-      finally { dockButton.disabled = false; }
-    });
-    refreshButton.disabled = dockButton.disabled = false;
+    refreshButton.disabled = false;
     status.textContent = `${api.available} REAPER APIs available. Edit app.js to begin.`;
   };
   void start().catch(showError);

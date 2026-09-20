@@ -23,7 +23,12 @@ size_t json_cost(const Json& value) {
     size += (value.is_object() ? item.key().size() * 6 : 0) + json_cost(item.value());
   return size;
 }
-size_t cost(const Work& work) { return work.text.size() + json_cost(work.data) + 256; }
+size_t cost(const Work& work) {
+  size_t size = work.text.size() + json_cost(work.data) + 256;
+  if (work.icon_source) size += work.icon_source->bytes.size();
+  for (const auto& bitmap : work.icon_bitmaps) size += bitmap.rgba.size();
+  return size;
+}
 void save(const fs::path& path, const Json& data) {
   fs::create_directories(path.parent_path());
   auto temporary = path;
@@ -79,6 +84,14 @@ void Worker::run() {
     }
     try {
       if (work.kind == Work::Save) { save(work.path, work.data); continue; }
+      if (work.kind == Work::Icon) {
+        try {
+          if (!work.icon_source) work.icon_source = load_icon(work.path, work.data.at("args").at(0));
+          work.icon_bitmaps = render_icon(*work.icon_source, work.icon_sizes);
+        } catch (const Error& e) { work.icon_error = {{"code", e.code}, {"message", e.what()}}; }
+        catch (const std::exception& e) { work.icon_error = {{"code", "ICON_INVALID"}, {"message", e.what()}}; }
+        work.kind = Work::IconReady;
+      }
       if (work.kind == Work::File) {
         const auto request = work.data;
         try { work.data = {{"id", request.at("id")}, {"document", request.at("document")},

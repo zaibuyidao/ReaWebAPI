@@ -34,6 +34,7 @@
 | `reaper.window.focus()` | `boolean` | 聚焦当前窗口 |
 | `reaper.debug.openDevTools()` | `boolean` | 幂等请求显示 DevTools。macOS 显示 Safari 指引，并以 `INSPECTOR_MENU` 错误拒绝 Promise。详见 [DevTools](devtools.zh-CN.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 标题为 1–256 UTF-8 字节，不含 NUL |
+| `reaper.window.setIcon(path)` | `boolean` | 本地 PNG、ICO 或 SVG，相对路径基于 App 根目录。详见[窗口图标](runtime-api.zh-CN.md#窗口图标) |
 | `reaper.window.setDocked(docked)` | `boolean` | 返回实际停靠状态，保留页面 |
 | `reaper.window.isDocked()` | `boolean` | 获取停靠状态 |
 | `reaper.window.setKeyboardCapture(capture)` | `boolean` | 默认 `true`，设为 `false` 后遵循 REAPER 的全局快捷键规则 |
@@ -133,6 +134,8 @@ const results = await reaper.transaction.batch([
 | `UNSUPPORTED_PARAMETER`、`UNSUPPORTED_PROJECT` | 参数超出批处理预校验的较窄范围 |
 | `UNKNOWN_EVENT`、`DOCK_UNAVAILABLE`、`DOCK_FAILED` | 不支持的事件或停靠失败 |
 | `NATIVE_ERROR`、`WRONG_THREAD` | 原生失败或未从 REAPER 主线程调用入口 |
+| `ICON_FORMAT`、`ICON_INVALID`、`ICON_LIMIT` | 格式不支持、图像无效或超过图标限制 |
+| `ICON_APPLY_FAILED`、`ICON_SUPERSEDED` | 原生图标应用失败，或待处理请求被较新的请求取代 |
 
 错误结构对应 `ReaWebError`。捕获 JavaScript 异常后，先判断其类型再读取扩展字段。原生 `false` / `0` / `null` 仍是普通结果，含义按对应 REAPER API 说明判断。
 

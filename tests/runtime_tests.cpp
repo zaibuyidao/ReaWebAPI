@@ -20,6 +20,15 @@ struct FakeWindow : Window {
   bool defer_drag = false;
   Reply drag_reply;
   Json dragged;
+  std::vector<int> sizes{16, 32};
+  std::vector<IconBitmap> icons;
+  bool reject_icon = false;
+  int icon_changes = 0;
+  std::vector<int> icon_sizes() const override { return sizes; }
+  void set_icon(const std::vector<IconBitmap>& value) override {
+    if (reject_icon) throw Error("ICON_APPLY_FAILED", "Test native failure");
+    icons = value; ++icon_changes;
+  }
   DevToolsPreferences inspector;
   Json devtools_state() const override { return inspector.state(); }
   void restore_devtools(const Json& value) override { inspector.restore(value); }
@@ -169,6 +178,28 @@ int main() {
       CHECK(result(runtime, *first, first->send("CountTracks", {0}))["result"] == 3 && calls == 1);
       CHECK(runtime.set_docked(id, true) && runtime.is_docked(id));
       CHECK(!runtime.set_docked(id, false));
+      CHECK(first->options.on_dock_toggle);
+      first->options.on_dock_toggle(); runtime.tick(); CHECK(runtime.is_docked(id));
+      first->options.on_dock_toggle(); runtime.tick(); CHECK(!runtime.is_docked(id));
+      first->options.on_dock_toggle(); first->options.on_dock_toggle(); runtime.tick();
+      CHECK(!runtime.is_docked(id) && first->reloads == 0 && runtime.is_ready(id));
+      const auto icon_path = entry.parent_path() / "icon.svg";
+      std::ofstream(icon_path) << "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect width='16' height='16' fill='red'/></svg>";
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIcon", {"icon.svg"}))["result"] == true);
+      CHECK(first->icons.size() == 2 && first->icons[0].size == 16 && first->icons[1].size == 32);
+      CHECK(first->icons[0].rgba[0] == 255 && first->icons[0].rgba[3] == 255);
+      auto icon_changes = first->icon_changes;
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIcon", {"index.html"}))["error"]["code"] == "ICON_FORMAT");
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIcon", {"missing.png"}))["error"]["code"] == "FILE_NOT_FOUND");
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIcon", {false}))["error"]["code"] == "INVALID_ARGUMENT");
+      first->reject_icon = true;
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIcon", {"icon.svg"}))["error"]["code"] == "ICON_APPLY_FAILED");
+      first->reject_icon = false;
+      CHECK(first->icon_changes == icon_changes);
+      fs::remove(icon_path);
+      first->sizes = {24, 48};
+      until(runtime, [&] { return first->icon_changes > icon_changes; });
+      CHECK(first->icons[0].size == 24 && first->icons[1].size == 48 && first->icons[1].rgba[0] == 255);
       CHECK(runtime.captures_keyboard(first.get(), [](void*, void*) { return false; }));
       CHECK(result(runtime, *first, first->send("ReaWeb_SetKeyboardCapture", {false}))["result"] == false);
       CHECK(!runtime.captures_keyboard(first.get(), [](void*, void*) { return false; }));

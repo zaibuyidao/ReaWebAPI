@@ -4,6 +4,7 @@
 #include "platform/shared/swell_window.hpp"
 #include "platform/shared/devtools.hpp"
 #include <fstream>
+#include <cstring>
 
 @interface ReaWebDelegate : NSObject <WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate> {
 @public
@@ -127,6 +128,17 @@ class MacWindow final : public Window {
   ReaWebDelegate* delegate_;
   mutable Json normal_;
   bool maximized_ = false;
+  NSImage* icon_ = nil;
+  __weak NSWindow* icon_window_ = nil;
+  void apply_icon() {
+    auto native = webview_.window;
+    if (!icon_ || !native || (delegate_->options.is_docked && delegate_->options.is_docked())) { icon_window_ = nil; return; }
+    if (native == icon_window_) return;
+    native.representedURL = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
+    auto button = [native standardWindowButton:NSWindowDocumentIconButton];
+    button.image = icon_;
+    icon_window_ = native;
+  }
 public:
   MacWindow(WindowOptions options, WKWebsiteDataStore* data, WKProcessPool* pool) {
     delegate_ = [ReaWebDelegate new];
@@ -158,9 +170,13 @@ public:
     webview_.UIDelegate = delegate_;
     webview_.inspectable = YES;
     webview_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent, std::function<void()>{}, delegate_->options.on_close);
+    window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent, std::function<void()>{}, delegate_->options.on_close,
+      delegate_->options.on_dock_toggle, delegate_->options.is_docked);
     auto content = (__bridge NSView*)GetDlgItem(static_cast<HWND>(window_->handle()), 0);
-    webview_.frame = content.bounds;
+    auto frame = content.bounds;
+    frame.size.height = std::max(0.0, frame.size.height - window_->content_top());
+    if (content.flipped) frame.origin.y += window_->content_top();
+    webview_.frame = frame;
     [content addSubview:webview_];
     devtools_prefs_.floating = true;
     key_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
@@ -257,16 +273,35 @@ public:
   bool closed() const override { return delegate_->isClosed || window_->closed(); }
   void* native_handle() const override { return window_->handle(); }
   void prepare_dock() override {
+    icon_window_ = nil;
     maximized_ = webview_.window.zoomed;
     if (maximized_) [webview_.window zoom:nil];
     window_->prepare_dock();
   }
   void restore_floating() override {
+    icon_window_ = nil;
     window_->restore_floating();
     if (maximized_ && !webview_.window.zoomed) [webview_.window zoom:nil];
   }
   void focus() override { window_->focus(); [webview_.window makeFirstResponder:webview_]; }
-  void set_title(const std::string& title) override { window_->set_title(title); }
+  void tick() override { if (!closed()) { window_->tick(); apply_icon(); } }
+  void set_title(const std::string& title) override { window_->set_title(title); icon_window_ = nil; apply_icon(); }
+  std::vector<int> icon_sizes() const override {
+    const auto scale = std::clamp(webview_.window ? webview_.window.backingScaleFactor : NSScreen.mainScreen.backingScaleFactor, 1.0, 8.0);
+    return {int(std::lround(16 * scale)), int(std::lround(32 * scale))};
+  }
+  void set_icon(const std::vector<IconBitmap>& images) override {
+    auto icon = [[NSImage alloc] initWithSize:NSMakeSize(16, 16)];
+    for (const auto& image : images) {
+      auto rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr pixelsWide:image.size pixelsHigh:image.size
+        bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace
+        bitmapFormat:NSBitmapFormatAlphaNonpremultiplied bytesPerRow:image.size * 4 bitsPerPixel:32];
+      if (!rep) throw Error("ICON_APPLY_FAILED", "Cannot allocate the native window icon");
+      std::memcpy(rep.bitmapData, image.rgba.data(), image.rgba.size());
+      rep.size = NSMakeSize(16, 16); [icon addRepresentation:rep];
+    }
+    icon_ = icon; icon_window_ = nil; apply_icon();
+  }
   void set_visible(bool visible) override { window_->set_visible(visible); }
   Json bounds() const override { return window_->placement(); }
   void reload() override { [webview_ reload]; }

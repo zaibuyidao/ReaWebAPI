@@ -4,6 +4,7 @@
 #include "web/web_resources.hpp"
 #include "runtime/services.hpp"
 #include <deque>
+#include <optional>
 #include <set>
 #include <thread>
 
@@ -49,6 +50,11 @@ private:
     size_t outstanding = 0, output_pending = 0;
     bool ready = false, capture_keyboard = true;
     bool closing = false;
+    std::optional<bool> native_dock_request;
+    std::shared_ptr<const IconSource> icon_source;
+    std::vector<int> icon_sizes;
+    uint64_t icon_sequence = 0;
+    bool icon_pending = false;
     bool failed = false;
     bool lifecycle_enabled = false, allow_reload = false;
     std::string lifecycle_action, lifecycle_token;
@@ -102,6 +108,7 @@ private:
   void check_thread() const;
   int open_impl(const std::string& path, const fs::path& base, const std::string& dev_url);
   bool start_async(Session& session, const Work& request);
+  void refresh_icon(Session& session);
   void finish_undo();
   Json transaction_call(int id, const std::string& method, const Json& args);
   void detach(const Session& session);

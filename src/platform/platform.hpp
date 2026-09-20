@@ -1,5 +1,6 @@
 #pragma once
 #include "core/core.hpp"
+#include "runtime/icon.hpp"
 #include <memory>
 
 namespace reaweb {
@@ -24,6 +25,8 @@ struct WindowOptions {
   std::function<void()> on_close;
   std::function<bool()> on_reload;
   std::function<void(Json)> on_drop;
+  std::function<void()> on_dock_toggle;
+  std::function<bool()> is_docked;
 };
 class Window {
 public:
@@ -41,6 +44,8 @@ public:
   virtual void tick() {}
   virtual void focus() {}
   virtual void set_title(const std::string&) {}
+  virtual std::vector<int> icon_sizes() const { return {16, 32}; }
+  virtual void set_icon(const std::vector<IconBitmap>&) { throw Error("HOST_UNAVAILABLE", "Native window icons unavailable"); }
   virtual bool visible() const { return !closed(); }
   virtual bool focused() const { return false; }
   virtual Json placement() const { return nullptr; }

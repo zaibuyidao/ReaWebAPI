@@ -26,6 +26,7 @@ function fixture() {
   let connect;
   const reaper = {
     lifecycle: { ready: new Promise(resolve => { connect = resolve; }) },
+    window: { setIcon: async () => true },
     GetSelectedTrack: (...args) => deferred(reads, args),
     transaction: { batch: calls => deferred(batches, calls) },
     ColorFromNative: color => deferred(colors, color),
@@ -48,10 +49,13 @@ async function selected(f, id) {
 test('first track read does not wait for the version label or window setup', async () => {
   const f = fixture();
   f.reaper.GetAppVersion = () => new Promise(() => {});
+  let icon;
+  f.reaper.window.setIcon = path => { icon = path; return new Promise(() => {}); };
   f.connect({ projectEpoch: 1, methods: ['MIDI_GetAllEvts'], api: { implemented: 730 } });
   await flush();
   assert.equal(f.element('status').textContent, 'Runtime connected');
   assert.equal(f.reads.length, 1);
+  assert.equal(icon, 'logo.svg');
   const batch = await selected(f, 'first');
   batch.resolve([1, [true, 'First track'], 0.25, 0]);
   await flush();

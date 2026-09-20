@@ -1,4 +1,4 @@
-# v0.1.8 Runtime API
+# Runtime API
 
 [Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) · [TypeScript](../runtime/runtime-api.d.ts)
 
@@ -10,7 +10,7 @@ JavaScript Runtime 使用下列 13 个命名空间。730 项标准 REAPER 镜像
 
 就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
-13 个命名空间均提供具体方法，共 63 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
+13 个命名空间均提供具体方法，共 64 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
 `transaction` 管理批处理和 Undo 分组，不承诺数据库式原子性、回滚或隔离；已完成写入不会自动撤回，其他编辑仍可能交错。方法与类型见[完整清单](runtime-api-inventory.md)。
 
@@ -29,9 +29,24 @@ await reaper.window.show();
 await reaper.window.hide();
 ```
 
-另有 `open(path)`、`openDev(url)`、`getState`、`setTitle`、`focus`、`setDocked`、`isDocked`、`setKeyboardCapture`、`close`、`reload`。使用 `setDocked(true)` 停靠、`setDocked(false)` 取消停靠；返回实际停靠状态，取消停靠成功返回 false。创建新窗口返回窗口 ID，其余窗口控制针对当前调用页，不接收 ID。尺寸是包含边框的原生桌面窗口尺寸，坐标是屏幕坐标，返回 `units: 'native'`；不要当作网页 CSS 像素。后端和桌面缩放可能影响它们与 CSS 像素的比例。宽高允许 100–16384，位置允许 -1000000–1000000，系统会将窗口限制到可用屏幕区域。
+另有 `open(path)`、`openDev(url)`、`getState`、`setTitle`、`setIcon`、`focus`、`setDocked`、`isDocked`、`setKeyboardCapture`、`close`、`reload`。使用 `setDocked(true)` 停靠、`setDocked(false)` 取消停靠；返回实际停靠状态，取消停靠成功返回 false。创建新窗口返回窗口 ID，其余窗口控制针对当前调用页，不接收 ID。尺寸是包含边框的原生桌面窗口尺寸，坐标是屏幕坐标，返回 `units: 'native'`；不要当作网页 CSS 像素。后端和桌面缩放可能影响它们与 CSS 像素的比例。宽高允许 100–16384，位置允许 -1000000–1000000，系统会将窗口限制到可用屏幕区域。
 
 返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。窗口支持标题、聚焦、停靠和位置保存。
+
+用户可直接使用原生宿主栏的 **Dock/Undock** 操作，无需页面代码。Windows 标题栏系统菜单还提供 **Dock in REAPER**。这些入口与 `setDocked()` 使用相同的 REAPER Docker 接口，切换时保留当前 WebView 文档。
+
+### 窗口图标
+
+```js
+await reaper.lifecycle.ready;
+await reaper.window.setIcon('logo.svg');
+```
+
+`setIcon(path)` 设置当前宿主窗口的图标，成功返回 `true`。支持本地 `.png`、`.ico` 和 `.svg` 文件及绝对路径。相对路径按当前 App 根目录解析，即 `reaper.app.getRootPath()`。不接受 URL。文件上限为 4 MiB，解码后的位图尺寸上限为 4096 × 4096。
+
+Runtime 在后台线程解码，根据当前显示缩放与原生图标尺寸在内存中栅格化 SVG，并保留源数据供 DPI 变化时重新渲染，不生成临时图片。SVG 应自包含，文字需转换为路径。图标在窗口生命周期内保留，包括重载和停靠切换。新建窗口后需重新设置。无效文件不替换已应用的图标。较新的请求会取代尚未完成的旧请求，旧请求以 `ICON_SUPERSEDED` 拒绝。
+
+Windows 设置窗口大小图标。macOS 使用浮动窗口的文档代理图标，不更改 REAPER 的应用或 Dock 图标。Linux 设置浮动窗口图标，是否显示由桌面主题和窗口管理器决定。停靠标签的显示由 REAPER 控制。HTML 的 `<link rel="icon">` 仍用于浏览器 favicon。
 
 ## Lifecycle
 

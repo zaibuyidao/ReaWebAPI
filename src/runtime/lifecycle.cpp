@@ -5,6 +5,7 @@ void Runtime::navigate(Session& session) {
   if (session.window) session.window->set_drop_enabled(false);
   if (undo_owner_ == session.id) finish_undo();
   ++session.generation;
+  ++session.icon_sequence; session.icon_pending = false;
   session.ready = false;
   session.document.clear();
   session.queue.clear();

@@ -1,4 +1,4 @@
-# v0.1.8 Runtime API
+# Runtime API
 
 [Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) · [TypeScript](../runtime/runtime-api.d.ts)
 
@@ -8,7 +8,7 @@ JavaScript Runtime fixes thirteen namespace boundaries: `reaper.window`, `reaper
 
 Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
 
-All thirteen namespaces provide implemented members: 63 methods and one Promise property. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All thirteen namespaces provide implemented members: 64 methods and one Promise property. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
 `transaction` provides batching and Undo groups. The name does not promise atomic rollback or isolation: completed writes remain applied and other edits may interleave. See the [complete API inventory](runtime-api-inventory.md).
 
@@ -18,7 +18,7 @@ All thirteen namespaces provide implemented members: 63 methods and one Promise 
 
 ## Window and lifecycle
 
-`reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
+`reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `setIcon`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
 
 ```js
 await reaper.window.setSize(900, 700);
@@ -31,6 +31,21 @@ await reaper.lifecycle.on('cleanup', () => worker.terminate());
 Lifecycle events are `before-close`, `before-reload` and `cleanup`; all run before document destruction. Await registration. Callbacks may return Promises and receive `{reason,timeoutMs}`. The relevant before-* and cleanup callbacks start together and are awaited concurrently; place ordered save/release work in one callback. The combined deadline is 2000 ms, with native fallback cleanup regardless of callback failures. Close cannot be vetoed. Apps without listeners close directly. Do not recursively close/reload from cleanup callbacks.
 
 Native close buttons, bridge close requests and same-document reloads participate. The bridge remains usable during cleanup. Reload invalidates old requests, handles, subscriptions and audio jobs. Forced unload/process exit/crash cannot guarantee asynchronous persistence; pagehide only attempts synchronous cleanup with reason `unload` and timeout 0. Persist important state during normal operation.
+
+Users can dock or undock through the native host’s **Dock/Undock** control without page code. On Windows, **Dock in REAPER** is also available in the title-bar system menu. These controls and `setDocked()` use the same REAPER Docker integration and preserve the current WebView document.
+
+### Window icons
+
+```js
+await reaper.lifecycle.ready;
+await reaper.window.setIcon('logo.svg');
+```
+
+`setIcon(path)` sets the calling host window’s icon and resolves to `true`. It accepts local `.png`, `.ico` and `.svg` files, including absolute paths. Relative paths resolve from the current App root (`reaper.app.getRootPath()`). URLs are not accepted. Files are limited to 4 MiB and decoded raster dimensions to 4096 × 4096.
+
+The Runtime decodes images off the UI thread and renders SVG in memory at native icon sizes for the current display scale. It retains the source for DPI changes and writes no temporary images. Use self-contained SVG artwork with text converted to paths. Icons last for the window’s lifetime, including reloads and docking. Set the icon again when opening a new window. Invalid files leave the last applied icon intact. A newer request replaces an older pending request, which rejects with `ICON_SUPERSEDED`.
+
+Windows applies small and large window icons. macOS uses the floating window’s document proxy icon and does not change REAPER’s application/Dock icon. Linux sets the floating window’s icon, with visibility controlled by the desktop theme/window manager. Docked tabs use REAPER’s presentation. HTML `<link rel="icon">` remains a separate browser favicon.
 
 ## Events
 

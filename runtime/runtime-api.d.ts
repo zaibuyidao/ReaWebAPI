@@ -165,6 +165,8 @@ interface ReaWebAPI {
     setPosition(x: number, y: number): Promise<ReaWebBounds>;
     show(): Promise<ReaWebWindowState>; hide(): Promise<ReaWebWindowState>;
     getState(): Promise<ReaWebWindowState>; setTitle(title: string): Promise<boolean>;
+    /** PNG, ICO or SVG, relative to the App root or an absolute local path. SVG is rasterized in memory at the host DPI. */
+    setIcon(path: string): Promise<boolean>;
     focus(): Promise<boolean>;
     close(): Promise<boolean>; reload(): Promise<boolean>;
   };
