@@ -79,7 +79,7 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   ComPtr<ICoreWebView2> webview_;
   bool closed_ = false;
   std::unique_ptr<WinDevTools> devtools_;
-  static constexpr UINT toggle_devtools_message = WM_APP + 73;
+  static constexpr UINT toggle_devtools_message = DevToolsKeys::toggle_message;
   RECT floating_rect_{};
   bool maximized_ = false;
   std::string browser_version_;
@@ -95,7 +95,7 @@ public:
     }
     if (self) {
       if (msg == toggle_devtools_message) {
-        if (self->devtools_) self->devtools_->toggle(); return 0;
+        if (self->devtools_ && !self->devtools_->toggle()) self->focus(); return 0;
       } else if (msg == WM_KEYDOWN && wp == 'I' && (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000)) {
         if (!(lp & (1LL << 30))) PostMessageW(hwnd, toggle_devtools_message, 0, 0);
         return 0;

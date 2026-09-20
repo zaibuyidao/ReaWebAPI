@@ -26,10 +26,10 @@ Inspector behavior is documented in [DevTools](devtools.md). Linux binaries buil
 
 ## DevTools acceptance
 
-- Windows/Linux: press Ctrl+Shift+I in the WebView to show, hide and reopen DevTools. Check held keys, native close and two WebViews in the same profile. Repeated API open calls must keep DevTools visible. Page timers and REAPER calls must continue while the inspector has focus.
+- Windows/Linux: press Ctrl+Shift+I in the WebView to open DevTools, then press it again with DevTools focused to hide the same window. Reopen and verify the Console session is retained and no additional inspector appears. Check held keys across focus changes, rapid toggles during opening, native close and two WebViews in the same profile. Hiding must return focus to the corresponding page. Repeated API open calls must keep DevTools visible. Page timers and REAPER calls must continue while the inspector has focus.
 - Linux: test the shortcut inside the inspector, **Hide DevTools**, and floating-window close. Drag the divider, resize, and switch **Float DevTools** / **Dock right**. Console entries, the selected DOM node and page JS state must survive mode changes. Hidden DevTools must stay hidden when resizing or docking the host. Reopen the tool and restart REAPER to check saved mode/width. Test a small viewport and a second display.
-- Windows: verify diagnostics report floating mode. Check stacking when REAPER or another REAPER dialog gains focus and after docking/undocking the WebView. A window opened through native **Inspect** may require its own close button. Check `devtools.lastError` when ReaWebAPI cannot identify it.
-- macOS: Ctrl+Shift+I must toggle only the non-modal Safari guide. The API must show the guide and report `INSPECTOR_MENU`. Follow the guide to inspect the page. Check docking/undocking and closing the tool with the guide open.
+- Windows: verify diagnostics report floating mode. Check that shortcuts in other applications are unaffected. Check stacking when REAPER or another REAPER dialog gains focus and after docking/undocking the WebView. A window opened through native **Inspect** may require its own close button. Check `devtools.lastError` when ReaWebAPI cannot identify it or cannot handle keys inside it.
+- macOS: Ctrl+Shift+I must toggle the same non-modal Safari guide from either the page or the guide. Holding the keys must not repeat the toggle, and hiding must return focus to the page. The API must show the guide and report `INSPECTOR_MENU`. Follow the guide to inspect the page. Check docking/undocking and closing the tool with the guide open.
 
 Optional native DevTools tests create UI windows and are excluded from CTest:
 
@@ -37,7 +37,7 @@ Optional native DevTools tests create UI windows and are excluded from CTest:
 # Linux, under X11/XWayland (or xvfb-run)
 cmake --build build --target linux_devtools
 GDK_BACKEND=x11 build/tests/linux_devtools
-# Windows, on an interactive desktop
+# Windows, on an idle interactive desktop (sends keys to the test's DevTools window)
 cmake --build build --config Release --target windows_devtools
 build/tests/Release/windows_devtools.exe
 ```

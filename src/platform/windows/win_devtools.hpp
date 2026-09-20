@@ -1,5 +1,6 @@
 #pragma once
 #include "platform/shared/devtools.hpp"
+#include "platform/windows/devtools_keys.hpp"
 #include <set>
 #include <chrono>
 
@@ -15,6 +16,7 @@ class WinDevTools {
   std::chrono::steady_clock::time_point deadline_;
   DevToolsPreferences prefs_;
   std::string error_;
+  std::shared_ptr<DevToolsKeys> keys_ = DevToolsKeys::acquire();
 
   std::set<HWND> candidates() const {
     struct Search { DWORD process; std::set<HWND> windows; } search{process_, {}};
@@ -58,12 +60,14 @@ public:
       // destroying our HWND cannot also destroy Chromium's cross-process HWND.
       SetWindowLongPtrW(window_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(IsWindow(original_owner_) ? original_owner_ : nullptr));
       RemovePropW(window_, marker);
+      RemovePropW(window_, DevToolsKeys::target_property);
     }
   }
-  void toggle() {
+  bool toggle() {
     if (window_ && !valid()) { window_ = nullptr; requested_ = false; }
     if (valid()) { requested_ = !IsWindowVisible(window_); show(requested_); }
     else requested_ = !requested_;
+    return requested_;
   }
   void open() { requested_ = true; if (valid()) show(true); else if (window_) window_ = nullptr; }
   void tick(ICoreWebView2* webview) {
@@ -91,6 +95,8 @@ public:
     if (found.size() == 1 && IsWindowVisible(*found.begin()) && GetWindowTextLengthW(*found.begin()) > 0 &&
         SetPropW(*found.begin(), marker, reinterpret_cast<HANDLE>(this))) {
       window_ = *found.begin(); original_owner_ = GetWindow(window_, GW_OWNER);
+      if (!keys_->available() || !SetPropW(window_, DevToolsKeys::target_property, reinterpret_cast<HANDLE>(owner_)))
+        error_ = "DevTools shortcut is only available in the main WebView";
       pending_ = false; opening_ = nullptr; show(requested_);
     } else if (std::chrono::steady_clock::now() >= deadline_) {
       pending_ = requested_ = false; opening_ = nullptr;

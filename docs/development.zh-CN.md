@@ -149,7 +149,7 @@ try {
 }
 ```
 
-`await reaper.debug.getDiagnostics()` 可查看后端、加载阶段、队列计数和最近宿主错误。Windows/Linux 下，在 WebView 中按 Ctrl+Shift+I 显示或隐藏 DevTools，也可调用 `reaper.debug.openDevTools()` 请求打开。macOS 下快捷键切换 Safari 操作指引，API 调用显示指引。布局、偏好保存和平台限制见 [DevTools](devtools.zh-CN.md)。修改资源后重新打开页面。重载会建立新文档，旧句柄失效。
+`await reaper.debug.getDiagnostics()` 可查看后端、加载阶段、队列计数和最近宿主错误。Windows/Linux 下，在 WebView 或其受管 DevTools 窗口中按 Ctrl+Shift+I 显示或隐藏 DevTools，也可调用 `reaper.debug.openDevTools()` 请求打开。macOS 下快捷键切换 Safari 操作指引，API 调用显示指引。布局、偏好保存和平台限制见 [DevTools](devtools.zh-CN.md)。修改资源后重新打开页面。重载会建立新文档，旧句柄失效。
 
 尚未开始的原生请求在 25 秒后过期，客户端另有 30 秒等待保护。原生执行开始后停止排队计时，JavaScript 无法中断已开始的对话框或渲染。不要自动重试超时写入，应先检查状态。限制及错误码见 [宿主接口](host-api.zh-CN.md#错误与限制)。
 

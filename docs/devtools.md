@@ -2,7 +2,7 @@
 
 **English** | [简体中文](devtools.zh-CN.md)
 
-On Windows and Linux, press **Ctrl+Shift+I** while the WebView has focus to show or hide DevTools. `reaper.debug.openDevTools()` and `ReaWeb_DevTools(id)` request opening or showing DevTools. Repeated API calls do not hide it.
+On Windows and Linux, press **Ctrl+Shift+I** in the WebView or its managed DevTools window to show or hide DevTools. Holding the keys does not repeat the toggle. Hiding returns focus to the page. `reaper.debug.openDevTools()` and `ReaWeb_DevTools(id)` request opening or showing DevTools. Repeated API calls do not hide it.
 
 | Platform | Presentation | Mode switching |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ Floating DevTools is non-modal and associated with the current REAPER parent thr
 
 The Windows backend uses WebView2's [`OpenDevToolsWindow`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2#opendevtoolswindow). Embedded mode and float/dock switching are not implemented.
 
-When ReaWebAPI identifies the native window, the shortcut hides/shows it while preserving the session. The native close button ends the session. If the window cannot be identified, use its close button. This can occur when DevTools was opened through the native **Inspect** context menu. Diagnostics report the limitation in `devtools.lastError`.
+When ReaWebAPI identifies the native window, the shortcut also works while DevTools has focus and hides/shows the same window while preserving the session. The native close button ends the session. If the window cannot be identified, use its close button. This can occur when DevTools was opened through the native **Inspect** context menu. If keyboard handling in DevTools is unavailable, use the shortcut in the main WebView. Diagnostics report these limitations in `devtools.lastError`.
 
 The identified window is non-modal and owned by the current REAPER root window. It is not globally always-on-top. Moving focus to DevTools does not suspend or reload the main WebView.
 
@@ -33,7 +33,7 @@ ReaWebAPI makes the WKWebView page available to Safari Web Inspector:
 1. Enable **Safari Settings > Advanced > Show features for web developers**.
 2. Choose **Develop > this Mac > REAPER > the tool page**.
 
-Ctrl+Shift+I toggles a non-modal guide only. `reaper.debug.openDevTools()` shows the guide and rejects with `INSPECTOR_MENU`. Open and close the inspector in Safari. ReaWebAPI does not manage its layout or window stacking.
+Ctrl+Shift+I toggles the same non-modal guide from either the page or the guide. Hiding the guide returns focus to the page. `reaper.debug.openDevTools()` shows the guide and rejects with `INSPECTOR_MENU`. Open and close the inspector in Safari. ReaWebAPI does not manage its layout or window stacking.
 
 ## Saved preferences and diagnostics
 

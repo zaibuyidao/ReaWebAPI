@@ -10,6 +10,7 @@ class GtkDevTools {
   DevToolsPreferences prefs_;
   std::function<void(Json)> changed_;
   bool visible_ = false, pending_ = false, detaching_ = false, positioning_ = false;
+  bool requested_ = false;
   bool shortcut_down_ = false;
   int allocated_width_ = 0;
   ::Window owner_ = 0;
@@ -64,7 +65,10 @@ class GtkDevTools {
       move(view, panel_);
       gtk_box_set_child_packing(GTK_BOX(panel_), view, TRUE, TRUE, 0, GTK_PACK_START);
     }
-    present(detaching_ ? true : prefs_.floating);
+    const bool show = !pending_ || requested_;
+    pending_ = false;
+    if (show) present(detaching_ ? true : prefs_.floating);
+    else hide();
     detaching_ = false;
   }
   void hide() {
@@ -78,7 +82,7 @@ class GtkDevTools {
       auto self = static_cast<GtkDevTools*>(data);
       auto mods = event->state & gtk_accelerator_get_default_mod_mask();
       if (gdk_keyval_to_lower(event->keyval) != GDK_KEY_i || mods != (GDK_CONTROL_MASK | GDK_SHIFT_MASK)) {
-        self->shortcut_down_ = false; return FALSE;
+        return FALSE;
       }
       if (!self->shortcut_down_) { self->shortcut_down_ = true; self->toggle(); }
       return TRUE;
@@ -155,12 +159,14 @@ public:
     gtk_widget_destroy(panel_); g_object_unref(panel_);
   }
   void toggle() {
-    if (visible_ || pending_) {
-      if (pending_) { pending_ = false; webkit_web_inspector_close(inspector_); }
+    if (visible_ || (pending_ && requested_)) {
+      // Let an in-flight open finish, then hide its view instead of racing close/reopen.
+      requested_ = false;
       hide();
     } else open();
   }
   void open() {
+    requested_ = true;
     if (inspector_view_) present(prefs_.floating);
     else if (!pending_) { pending_ = true; webkit_web_inspector_show(inspector_); }
   }

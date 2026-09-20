@@ -169,7 +169,7 @@ public:
       auto responder = webview_.window.firstResponder;
       const bool page_focused = event.window == webview_.window && [responder isKindOfClass:[NSView class]] &&
         [(NSView*)responder isDescendantOf:webview_];
-      if ((page_focused || event.window == inspector_help_) &&
+      if (!closed() && (page_focused || (inspector_help_ && event.window == inspector_help_)) &&
           [event.charactersIgnoringModifiers.lowercaseString isEqualToString:@"i"] &&
           modifiers == (NSEventModifierFlagControl | NSEventModifierFlagShift)) {
         if (!event.isARepeat) show_inspector_help(true);
@@ -235,7 +235,7 @@ public:
     throw Error("INSPECTOR_MENU", "macOS: enable Safari Settings > Advanced > Show features for web developers, then choose Develop > this Mac > REAPER > the tool page.");
   }
   void show_inspector_help(bool toggle = false) {
-    if (toggle && inspector_help_.visible) { [inspector_help_ orderOut:nil]; return; }
+    if (toggle && inspector_help_.visible) { [inspector_help_ orderOut:nil]; focus(); return; }
     if (!inspector_help_) {
       inspector_help_ = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 560, 240)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];

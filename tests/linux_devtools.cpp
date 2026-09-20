@@ -49,11 +49,18 @@ int main(int argc, char** argv) {
       gtk_widget_show_all(window);
       webkit_web_view_load_html(view, "<!doctype html><h1>Inspector persistence test</h1><script>window.token='retained';console.log('retained console entry')</script>", "http://localhost/");
       until([&] { return navigations && !webkit_web_view_is_loading(view); });
-      tools.open();
+      tools.open(); tools.toggle(); tools.open(); tools.toggle();
+      const auto settle = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+      until([&] { return std::chrono::steady_clock::now() >= settle; });
+      CHECK(!state.value("visible", false));
+      auto retained = webkit_web_inspector_get_web_view(webkit_web_view_get_inspector(view));
+      CHECK(retained);
+      tools.open(); tools.open();
       until([&] { return state.value("visible", false); });
       auto inspector = webkit_web_view_get_inspector(view);
       auto inspector_view = GTK_WIDGET(webkit_web_inspector_get_web_view(inspector));
       CHECK(inspector_view);
+      CHECK(WEBKIT_WEB_VIEW_BASE(inspector_view) == retained);
       auto paned = gtk_bin_get_child(GTK_BIN(window)); CHECK(GTK_IS_PANED(paned));
       auto panel = gtk_paned_get_child2(GTK_PANED(paned)); CHECK(panel);
       CHECK(gtk_widget_get_parent(inspector_view) == panel && state["mode"] == "embedded");
@@ -71,6 +78,9 @@ int main(int argc, char** argv) {
       CHECK(webkit_web_inspector_get_web_view(inspector) == WEBKIT_WEB_VIEW_BASE(inspector_view));
       auto floating = gtk_widget_get_toplevel(inspector_view);
       shortcut(floating); CHECK(state["visible"] == false);
+      GdkEventKey other{}; other.type = GDK_KEY_PRESS; other.keyval = GDK_KEY_a;
+      gboolean handled = FALSE;
+      g_signal_emit_by_name(window, "key-press-event", &other, &handled);
       shortcut(window); CHECK(state["visible"] == false); // Repeat after focus change.
       shortcut(window, true); shortcut(window); CHECK(state["visible"] == true);
       shortcut(floating, true);
@@ -78,6 +88,9 @@ int main(int argc, char** argv) {
       CHECK(state["mode"] == "embedded" && gtk_widget_get_toplevel(inspector_view) == window);
       CHECK(webkit_web_inspector_get_web_view(inspector) == WEBKIT_WEB_VIEW_BASE(inspector_view));
       tools.toggle(); gtk_widget_show_all(window); CHECK(!gtk_widget_get_visible(panel));
+      webkit_web_inspector_show(inspector);
+      until([&] { return state.value("visible", false); });
+      CHECK(webkit_web_inspector_get_web_view(inspector) == WEBKIT_WEB_VIEW_BASE(inspector_view));
       tools.open(); CHECK(state["visible"] == true);
       webkit_web_inspector_close(inspector);
       until([&] { return state["visible"] == false; });
@@ -96,7 +109,7 @@ int main(int argc, char** argv) {
       until([&] { return completed; });
     }
     gtk_widget_destroy(window);
-    std::cout << "WebKitGTK DevTools: split, resize ratio, float/dock reuse, hide/show, native close and JS state passed\n";
+    std::cout << "WebKitGTK DevTools: cancelled open, shortcut repeats, split, float/dock reuse, hide/show, native close and JS state passed\n";
     return 0;
   } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }
