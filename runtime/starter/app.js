@@ -50,6 +50,8 @@
     if (!['GetSelectedTrack', 'GetTrackName'].every(name => api.availableMethods.includes(name))) {
       throw new Error('This REAPER installation is missing a required API.');
     }
+    // Do not put the first visible track read behind presentation/subscriptions.
+    void refresh();
     await reaper.window.setTitle('ReaWebAPI Starter');
     await reaper.events.on('windowstatechange', state => {
       dockButton.textContent = state.docked ? 'Undock' : 'Dock';

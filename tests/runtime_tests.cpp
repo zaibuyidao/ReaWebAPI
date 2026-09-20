@@ -43,12 +43,12 @@ struct FakeWindow : Window {
     if (options.on_reload && options.on_reload()) return;
     ++reloads; if (options.on_navigation) options.on_navigation();
   }
-  int send(const std::string& method, Json args = Json::array(), uint64_t epoch = 0, int64_t expires = 0) {
+  int send(const std::string& method, Json args = Json::array(), uint64_t epoch = 0, int64_t expires = 0, size_t padding = 0) {
     waiting_on = method + " " + args.dump();
     Json request{{"id", ++sequence}, {"document", document}, {"method", method}, {"args", args}};
     if (epoch) request["project"] = epoch;
     if (expires) request["expiresAt"] = expires;
-    options.on_message(request.dump());
+    options.on_message(request.dump() + std::string(padding, ' '));
     return sequence;
   }
   Json response(int id) {
@@ -383,6 +383,48 @@ int main() {
       CHECK(result(runtime, *reopened, reopened->send("ReaWeb_DragText", {"still busy"}))["error"]["code"] == "DRAG_BUSY");
       b->drag_reply({{"result", false}});
       CHECK(result(runtime, *reopened, reopened->send("ReaWeb_DragText", {"allowed"}))["result"] == true);
+    }
+    {
+      adapter::Host latency_host;
+      int latency_calls = 0, selection_count = 1;
+      uint64_t revision = 0;
+      latency_host.current_project = [&]() -> void* { CHECK(std::this_thread::get_id() == main_thread); return &storage; };
+      latency_host.count_tracks = [&](void*) { CHECK(std::this_thread::get_id() == main_thread); ++latency_calls; return 3; };
+      latency_host.count_selected_tracks = [&](void*) { return selection_count; };
+      latency_host.get_selected_track = [&](void*, int) -> void* { return &track; };
+      latency_host.valid_track = [&](void*, void* value) { return value == &track; };
+      latency_host.track_guid = [&](void*) { return guid; };
+      latency_host.event_revision = [&](const std::string&) { return revision; };
+      adapter::connect(latency_host);
+      Runtime runtime(latency_host, root, [](const std::string&) {}, docks);
+      const auto id = runtime.open("Tool/index.html"); auto window = windows.back().lock();
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      const auto before = latency_calls;
+      const auto request = window->send("CountTracks", {0});
+      CHECK(latency_calls == before && window->response(request).is_null()); // No native execution in the WebView callback.
+      runtime.tick();
+      CHECK(latency_calls == before + 1 && window->response(request)["result"] == 3);
+      CHECK(runtime.diagnostics(id)["pendingCalls"] == 0);
+      result(runtime, *window, window->send("ReaWeb_Subscribe", {"selectionchange"}));
+      until(runtime, [&] { return runtime.diagnostics(id)["pendingCalls"] == 0; });
+      const auto response_count = window->responses.size();
+      selection_count = 0; ++revision;
+      runtime.tick();
+      bool delivered = false;
+      for (size_t i = response_count; i < window->responses.size(); ++i)
+        if (window->responses[i].value("event", "") == "selectionchange" && window->responses[i]["data"]["count"] == 0) delivered = true;
+      CHECK(delivered); // Native selection observation and its small notification share the tick.
+      // A small request may not jump ahead of an earlier large worker parse.
+      const auto large = window->send("ReaWeb_SetTitle", {"first"}, 0, 0, 8192);
+      const auto small = window->send("ReaWeb_SetTitle", {"second"});
+      CHECK(result(runtime, *window, small)["result"] == true);
+      CHECK(window->response(large)["result"] == true);
+      CHECK(runtime.diagnostics(id)["window"]["title"] == "second");
+      // An already queued fast request is invalidated by navigation as usual.
+      const auto stale = window->send("CountTracks", {0});
+      window->options.on_navigation();
+      runtime.tick();
+      CHECK(window->response(stale).is_null() && latency_calls == before + 1);
     }
     const auto metadata_root = root / "MetadataApp";
     fs::create_directories(metadata_root);

@@ -59,7 +59,27 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
         Work work;
         work.session = s->id; work.generation = s->generation; work.project = project_epoch_;
         work.text = std::move(message); work.reply = true;
-        if (work.text.size() > message_limit || s->outstanding >= 256 || !worker_.submit(std::move(work)))
+        if (work.text.size() > message_limit || s->outstanding >= 256) {
+          fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.");
+          return;
+        }
+        // Parse a small isolated request without a worker round-trip. Execution
+        // still waits for tick(), outside the WebView callback. A pending call
+        // keeps later requests on the worker so a large parse is never overtaken.
+        if (!s->outstanding && work.text.size() <= 4096) {
+          try {
+            work.data = parse_request(work.text);
+            work.kind = Work::Request;
+            work.text.clear();
+            s->queue.push_back(std::move(work));
+            ++s->outstanding;
+            return;
+          } catch (const Error&) {
+          } catch (const Json::exception&) {
+          }
+          // Preserve the worker's existing malformed-request error handling.
+        }
+        if (!worker_.submit(std::move(work)))
           fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.");
         else ++s->outstanding;
       }

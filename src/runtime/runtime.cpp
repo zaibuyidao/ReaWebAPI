@@ -4,6 +4,29 @@
 #include <vector>
 
 namespace reaweb {
+namespace {
+// Bound both serialization work and escaped output size. Stop inspecting large
+// arrays/objects as soon as the budget is exhausted; they stay on the worker.
+bool small_message(const Json& value, size_t& budget) {
+  if (value.is_binary() || value.is_discarded()) return false;
+  if (budget < 32) return false;
+  budget -= 32;
+  if (value.is_string()) {
+    const auto size = value.get_ref<const std::string&>().size();
+    if (size > budget / 6) return false;
+    budget -= size * 6;
+  } else if (value.is_structured()) {
+    for (const auto& item : value.items()) {
+      if (value.is_object()) {
+        if (item.key().size() > budget / 6) return false;
+        budget -= item.key().size() * 6;
+      }
+      if (!small_message(item.value(), budget)) return false;
+    }
+  }
+  return true;
+}
+}
 Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock)
   : host_(std::move(host)), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), main_thread_(std::this_thread::get_id()) {
   project_ = host_.current_project();
@@ -192,12 +215,24 @@ bool Runtime::start_async(Session& session, const Work& request) {
   }
   return true;
 }
+bool Runtime::deliver_inline(Session& session, const Work& work, const Json& response) {
+  // Do not overtake an older encoded reply/event, or reply to a replaced page.
+  if (session.output_pending || work.generation != session.generation || session.window->closed()) return false;
+  size_t budget = 16 * 1024;
+  if (!small_message(response, budget)) return false;
+  try {
+    session.window->evaluate("window.__reawebReceive(" + response.dump(-1, ' ', true, Json::error_handler_t::replace) + ");");
+    if (work.reply && session.outstanding) --session.outstanding;
+  } catch (const std::exception& error) { fail(session, error.what()); }
+  return true;
+}
 void Runtime::reply(Session& session, Work work, Json response) {
   if (response.contains("error")) {
     session.last_error = response["error"].value("message", "Native error");
     append_log(session, {{"level", "error"}, {"source", "native"}, {"message", session.last_error.substr(0, 8192)},
       {"code", response["error"].value("code", "NATIVE_ERROR")}, {"method", work.data.value("method", "")}, {"requestId", response.value("id", Json())}});
   }
+  if (deliver_inline(session, work, response)) return;
   work.kind = Work::Encode;
   work.counted_output = true;
   work.data = std::move(response);
@@ -336,6 +371,7 @@ void Runtime::tick() {
           Work output; output.kind = Work::Encode; output.session = s.id; output.generation = s.generation;
           output.counted_output = true;
           output.data = {{"document", s.document}, {"event", event.first}, {"sequence", ++s.event_sequence}, {"data", event.second}};
+          if (Clock::now() < deadline && deliver_inline(s, output, output.data)) continue;
           if (worker_.submit(std::move(output))) ++s.output_pending;
           else { fail(s, "Bridge event queue limit exceeded"); break; }
         }

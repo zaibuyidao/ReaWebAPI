@@ -110,6 +110,7 @@ private:
   Json host_call(int id, const std::string& method, const Json& args);
   void navigate(Session& session);
   void reply(Session& session, Work work, Json response);
+  bool deliver_inline(Session& session, const Work& work, const Json& response);
   void emit(Session& session, const std::string& name, Json data);
   void observe(Clock::time_point deadline);
   void observe_extra(Clock::time_point deadline, int changes);

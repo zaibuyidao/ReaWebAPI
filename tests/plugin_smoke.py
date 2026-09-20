@@ -17,6 +17,7 @@ import uuid
 parser = argparse.ArgumentParser()
 parser.add_argument('--dll', type=Path, required=True)
 parser.add_argument('--webview', action='store_true')
+parser.add_argument('--latency', action='store_true', help='Measure startup and API round-trips with real WebView2 and a 30 ms mock host tick')
 parser.add_argument('--demo', action='store_true', help='Exercise the shipped demo UI in the real WebView')
 parser.add_argument('--starter', action='store_true', help='Exercise the SDK starter in the real WebView')
 parser.add_argument('--dev', action='store_true', help='Exercise Vite modules, Worker, fetch and CSS HMR through OpenDev')
@@ -407,6 +408,10 @@ try:
     assert saved_error == get_error()
     if args.webview and args.runtime:
         from web_runtime_browser import run_windows
+        run_windows(globals())
+        args.webview = False
+    if args.webview and args.latency:
+        from web_latency import run_windows
         run_windows(globals())
         args.webview = False
     if args.webview:

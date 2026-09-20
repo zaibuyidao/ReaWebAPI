@@ -8,6 +8,10 @@ These are ReaWebAPI host methods, separate from the [730 REAPER APIs](api-refere
 
 ## Startup and capabilities
 
+`reaper.lifecycle.ready` waits for one handshake per document, with no fixed startup delay. Once resolved, awaiting it again does not contact REAPER. Initial display time also includes WebView/page loading and subsequent API calls. Start visible data queries before unrelated window setup, and run independent calls concurrently.
+
+Small isolated requests and bounded replies use a fast path, while native API execution stays in the main-thread scheduler. Large messages and file I/O use the worker. Delivery still depends on REAPER's scheduling and WebView responsiveness.
+
 | Member | Resolved value | Notes |
 | --- | --- | --- |
 | `reaper.lifecycle.ready` | Capabilities plus `windowId`, `projectEpoch` | Promise property, not a function. API calls also wait for it automatically |
