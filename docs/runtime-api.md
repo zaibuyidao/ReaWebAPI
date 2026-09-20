@@ -8,7 +8,7 @@ JavaScript Runtime fixes thirteen namespace boundaries: `reaper.window`, `reaper
 
 Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
 
-All thirteen namespaces provide implemented members: 67 methods and one Promise property. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All thirteen namespaces provide implemented members: 63 methods and one Promise property. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
 `transaction` provides batching and Undo groups. The name does not promise atomic rollback or isolation: completed writes remain applied and other edits may interleave. See the [complete API inventory](runtime-api-inventory.md).
 
@@ -18,7 +18,7 @@ All thirteen namespaces provide implemented members: 67 methods and one Promise 
 
 ## Window and lifecycle
 
-`reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `focus`, `dock`, `undock`, `setDocked`, `isDocked`, `setKeyboardCapture`, `close` and `reload`. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
+`reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
 
 ```js
 await reaper.window.setSize(900, 700);
@@ -28,7 +28,7 @@ const stop = await reaper.lifecycle.on('before-close', async () => {
 await reaper.lifecycle.on('cleanup', () => worker.terminate());
 ```
 
-Lifecycle events are `before-close`, `before-reload` and `cleanup`; `destroy` aliases cleanup before destruction. Await registration. Callbacks may return Promises and receive `{reason,timeoutMs}`. The relevant before-* and cleanup callbacks start together and are awaited concurrently; place ordered save/release work in one callback. The combined deadline is 2000 ms, with native fallback cleanup regardless of callback failures. Close cannot be vetoed. Apps without listeners close directly. Do not recursively close/reload from cleanup callbacks.
+Lifecycle events are `before-close`, `before-reload` and `cleanup`; all run before document destruction. Await registration. Callbacks may return Promises and receive `{reason,timeoutMs}`. The relevant before-* and cleanup callbacks start together and are awaited concurrently; place ordered save/release work in one callback. The combined deadline is 2000 ms, with native fallback cleanup regardless of callback failures. Close cannot be vetoed. Apps without listeners close directly. Do not recursively close/reload from cleanup callbacks.
 
 Native close buttons, bridge close requests and same-document reloads participate. The bridge remains usable during cleanup. Reload invalidates old requests, handles, subscriptions and audio jobs. Forced unload/process exit/crash cannot guarantee asynchronous persistence; pagehide only attempts synchronous cleanup with reason `unload` and timeout 0. Persist important state during normal operation.
 
@@ -54,7 +54,7 @@ Host callbacks only update thread-safe counters. REAPER queries and JS dispatch 
 
 `reaper.dialog.openFile`, `saveFile` and `selectFolder` wrap the standard REAPER `GetUserFileName` native dialogs. Options: `title`, `initialPath`, `filters:[{name,extensions:['wav','flac']}]`. Cancellation returns null. Saving selects a path without writing it. REAPER interprets initial paths; prefer absolute ones. A missing host function rejects with `API_UNAVAILABLE`.
 
-`reaper.theme.getColors()` returns `{available,colors,cssVariables}` for background, text, highlight, panel and border. `reaper.theme.apply(element?)` applies and follows `--reaper-*` variables; its disposer restores prior inline values. `reaper.theme.onChange(callback)` only subscribes. Missing theme APIs return documented fallback colors and `available:false`; REAPER's theme is never modified.
+`reaper.theme.getColors()` returns `{available,colors,cssVariables}` for background, text, highlight, panel and border. `reaper.theme.apply(element?)` applies and follows `--reaper-*` variables; its disposer restores prior inline values. `reaper.events.on('theme-changed', callback)` subscribes without applying styles. Missing theme APIs return documented fallback colors and `available:false`; REAPER's theme is never modified.
 
 `reaper.debug.log/warn/error` write bounded previews to REAPER's console and a 200-entry per-window log. `inspect` handles circular values. `getLogs` and `getDiagnostics` expose JS/native errors, request IDs, document generations, cleanup state and audio job counts. Uncaught JS errors and unhandled rejections are recorded without replacing console. Nothing is uploaded. `openDevTools` uses the native browser debugging tools, including Safari Develop on macOS.
 
@@ -98,15 +98,14 @@ button.addEventListener('pointerdown', event => {
   reaper.dragDrop.startFiles([selectedAudioPath]).catch(error => reaper.debug.error(error));
 });
 const dropped = payload => console.log(payload.files, payload.text, payload.x, payload.y);
-const dispose = await reaper.dragDrop.onDrop(dropped);
-// Equivalent: await reaper.events.on('native-drop', dropped).
+const dispose = await reaper.events.on('native-drop', dropped);
 await reaper.events.off('native-drop', dropped);
 await dispose(); // Still safe after off.
 ```
 
-`onDrop` receives `{files:string[], text:string, x:number, y:number}` with absolute native file paths (incoming directories allowed), optional text as an empty-or-populated string, and viewport CSS coordinates. It reads no file contents. Native OS/REAPER sources must offer standard file or text data; proprietary REAPER object formats are not decoded. The receive side captures drops while subscribed; with no subscription, normal WebView DOM drop handling applies. Native drops have no initial snapshot/history replay and are not coalesced. Close/reload clears listeners. Windows requires WebView2 native additional-file-object support; unsupported runtimes reject subscription with `HOST_UNAVAILABLE`.
+`reaper.events.on('native-drop', callback)` returns an asynchronous disposer. The callback receives `{files:string[], text:string, x:number, y:number}` with absolute native file paths (incoming directories allowed), optional text as an empty-or-populated string, and viewport CSS coordinates. It reads no file contents. Native OS/REAPER sources must offer standard file or text data; proprietary REAPER object formats are not decoded. The receive side captures drops while subscribed; with no subscription, normal WebView DOM drop handling applies. Native drops have no initial snapshot/history replay and are not coalesced. Close/reload clears listeners. Windows requires WebView2 native additional-file-object support; unsupported runtimes reject subscription with `HOST_UNAVAILABLE`.
 
-`events.off(name, callback)` returns `Promise<void>` and removes all registrations of that exact callback for that name, including pending registration; other callbacks/names are unchanged. Missing registrations are a no-op. Callback execution already in progress is not aborted. The individual disposer returned by `on()`/`onDrop()` remains supported. `debug.log` writes entries at the `info` level.
+`events.off(name, callback)` returns `Promise<void>` and removes all registrations of that exact callback for that name, including pending registration; other callbacks/names are unchanged. Missing registrations are a no-op. Callback execution already in progress is not aborted. The disposer returned by `events.on()` cancels an individual subscription. `debug.log` writes entries at the `info` level.
 
 ## Manifest validation and example
 

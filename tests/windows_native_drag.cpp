@@ -44,7 +44,7 @@ int main() {
     std::ofstream(app / "target.html") << R"HTML(<!doctype html><meta charset="utf-8"><h1>Native drop target</h1><script>
       (async()=>{
         await reaper.lifecycle.ready; await reaper.window.setTitle('ReaWebAPI native target');
-        let count=0;await reaper.dragDrop.onDrop(payload=>reaper.fs.writeText('drop-'+count+++'.json',JSON.stringify(payload),{overwrite:true}));
+        let count=0;await reaper.events.on('native-drop',payload=>reaper.fs.writeText('drop-'+count+++'.json',JSON.stringify(payload),{overwrite:true}));
         await reaper.fs.writeText('target-ready','yes',{overwrite:true});
       })();</script>)HTML";
     Host host; int project;

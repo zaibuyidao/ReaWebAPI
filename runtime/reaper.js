@@ -226,7 +226,6 @@
     getState: host('ReaWeb_GetWindowState'), setTitle: host('ReaWeb_SetTitle'), focus: host('ReaWeb_Focus'),
     setDocked: host('ReaWeb_SetDocked'), isDocked: host('ReaWeb_IsDocked'),
     setKeyboardCapture: host('ReaWeb_SetKeyboardCapture'),
-    dock: () => call('ReaWeb_SetDocked', [true]), undock: () => call('ReaWeb_SetDocked', [false]),
     close: host('ReaWeb_Close'), reload: host('ReaWeb_Reload')
   });
   api.fs = Object.freeze({
@@ -248,8 +247,7 @@
     batch: host('ReaWeb_Batch'), beginUndo: host('ReaWeb_BeginUndo'), endUndo: host('ReaWeb_EndUndo'), withUndo
   });
   api.dragDrop = Object.freeze({
-    startFiles: host('ReaWeb_DragFiles'), startText: host('ReaWeb_DragText'),
-    onDrop: callback => onEvent('native-drop', callback)
+    startFiles: host('ReaWeb_DragFiles'), startText: host('ReaWeb_DragText')
   });
   const appValue = key => async () => (await call('ReaWeb_GetAppInfo', []))[key];
   api.app = Object.freeze({ getId: appValue('id'), getName: appValue('name'), getVersion: appValue('version'),
@@ -312,7 +310,6 @@
   window.addEventListener('unhandledrejection', event => { log('error', [event.reason || 'Unhandled promise rejection']).catch(() => {}); });
   api.theme = Object.freeze({
     getColors: () => call('ReaWeb_GetTheme', []),
-    onChange: callback => onEvent('theme-changed', callback),
     apply: async (element = window.document?.documentElement) => {
       if (!element?.style?.setProperty) throw failure('INVALID_ARGUMENT', 'Expected an element with a CSS style');
       const previous = new Map();
@@ -351,9 +348,8 @@
   api.lifecycle = Object.freeze({
     ready,
     on: async (name, callback) => {
-      if (name === 'destroy') name = 'cleanup';
       if (!['before-close', 'before-reload', 'cleanup'].includes(name) || typeof callback !== 'function')
-        throw failure('INVALID_ARGUMENT', 'Expected before-close, before-reload, cleanup or destroy and a callback');
+        throw failure('INVALID_ARGUMENT', 'Expected before-close, before-reload or cleanup and a callback');
       const wrapper = event => callback(event);
       if (!lifecycleListeners.has(name)) lifecycleListeners.set(name, new Set());
       const listeners = lifecycleListeners.get(name); listeners.add(wrapper);

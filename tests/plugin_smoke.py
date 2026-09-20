@@ -439,7 +439,7 @@ try:
   await reaper.fs.writeText(dataPath + '/test.json', '{}', {overwrite:true});
   if (await reaper.fs.readText(dataPath + '/test.json') !== '{}') throw new Error('App writable data path');
   const dropped = () => { throw new Error('Unexpected native drop'); };
-  const stopDrop = await reaper.dragDrop.onDrop(dropped);
+  const stopDrop = await reaper.events.on('native-drop', dropped);
   await reaper.events.off('native-drop', dropped); await stopDrop();
   try { await reaper.dragDrop.startText('without mouse gesture'); throw new Error('Drag should require gesture'); }
   catch (error) { if (error.code !== 'DRAG_GESTURE_REQUIRED') throw error; }

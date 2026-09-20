@@ -160,4 +160,4 @@ Lua relative HTML paths resolve from REAPER's `Scripts/` directory. The starter 
 
 JavaScript opens pages with `reaper.window.open(path)` and waits on `reaper.lifecycle.ready`. Lua bootstrap uses `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains Lua-only native functions. The 730 standard REAPER mirror names are unchanged.
 
-`reaper.events.off(name, callback)` removes all matching registrations of that callback. The new `native-drop` event is shared with `reaper.dragDrop.onDrop`, carries files/text/x/y, and has neither coalescing nor an initial snapshot. See [Runtime API](runtime-api.md).
+`reaper.events.off(name, callback)` removes all matching registrations of that callback. Subscribe to `native-drop` through `reaper.events.on('native-drop', callback)`; it carries files/text/x/y and has neither coalescing nor an initial snapshot. See [Runtime API](runtime-api.md).

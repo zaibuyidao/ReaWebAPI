@@ -51,7 +51,7 @@ action('meter', async () => {
   el('levels').textContent = track ? JSON.stringify(await reaper.audio.getTrackMeter(track), null, 2) : 'Select a track first.';
 });
 action('resize', () => reaper.window.setSize(900,760));
-action('dock', async () => (await reaper.window.getState()).docked ? reaper.window.undock() : reaper.window.dock());
+action('dock', async () => reaper.window.setDocked(!(await reaper.window.getState()).docked));
 action('reload', () => reaper.window.reload());
 action('diagnostics', async () => { el('status').textContent = JSON.stringify(await reaper.debug.getDiagnostics(),null,2); });
 action('data-folder', async () => reaper.system.revealInFileManager(await reaper.app.getDataPath()));
@@ -69,9 +69,9 @@ try {
   el('app-info').textContent = JSON.stringify({id:await reaper.app.getId(),name:appName,version:await reaper.app.getVersion(),
     rootPath:await reaper.app.getRootPath(),dataPath:await reaper.app.getDataPath(),
     platform:await reaper.system.getPlatform(),architecture:await reaper.system.getArchitecture()},null,2);
-  await reaper.dragDrop.onDrop(payload => { el('drop').textContent = JSON.stringify(payload,null,2); });
+  await reaper.events.on('native-drop', payload => { el('drop').textContent = JSON.stringify(payload,null,2); });
   await reaper.theme.apply();
-  await reaper.theme.onChange(draw);
+  await reaper.events.on('theme-changed', draw);
   await selectedTrack();
   await reaper.events.on('track-selected', async () => { await selectedTrack(); });
   for (const name of ['track-added','track-deleted','item-changed','take-changed','playback-state-changed','tempo-changed','marker-changed','fx-changed','project-loaded','project-saved'])

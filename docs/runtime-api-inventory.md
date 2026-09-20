@@ -1,8 +1,8 @@
 # Runtime API 完整清单 / Complete API inventory
 
-v0.1.8 的 JavaScript Runtime 只公开以下 **13 个命名空间、67 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
+v0.1.8 的 JavaScript Runtime 只公开以下 **13 个命名空间、63 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
 
-The JavaScript Runtime exposes only these thirteen namespaces: 67 methods and one Promise property. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact parameter and result types, including overloads, are in [runtime-api.d.ts](../runtime/runtime-api.d.ts). Behavior and limits: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Host services](host-api.md).
+The JavaScript Runtime exposes only these thirteen namespaces: 63 methods and one Promise property. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact parameter and result types, including overloads, are in [runtime-api.d.ts](../runtime/runtime-api.d.ts). Behavior and limits: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Host services](host-api.md).
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
@@ -29,9 +29,7 @@ All thirteen namespaces have implemented members. App identity is shared with br
 | `reaper.window.getState()` | `Promise<ReaWebWindowState>` | 读取 ID、标题、停靠、可见、焦点和键盘策略 |
 | `reaper.window.setTitle(title)` | `Promise<boolean>` | 设置标题 |
 | `reaper.window.focus()` | `Promise<boolean>` | 聚焦当前窗口 |
-| `reaper.window.dock()` | `Promise<boolean>` | 停靠；返回实际停靠状态 |
-| `reaper.window.undock()` | `Promise<boolean>` | 取消停靠；成功后返回 false |
-| `reaper.window.setDocked(docked)` | `Promise<boolean>` | 设置并返回实际停靠状态 |
+| `reaper.window.setDocked(docked)` | `Promise<boolean>` | true 停靠、false 取消停靠；返回实际停靠状态，取消停靠成功返回 false |
 | `reaper.window.isDocked()` | `Promise<boolean>` | 读取停靠状态 |
 | `reaper.window.setKeyboardCapture(capture)` | `Promise<boolean>` | 设置键盘捕获策略 |
 | `reaper.window.close()` | `Promise<boolean>` | 请求清理并关闭当前窗口 |
@@ -41,10 +39,11 @@ All thirteen namespaces have implemented members. App identity is shared with br
 
 REAPER 主题语义颜色、CSS 变量和跟随。REAPER theme colors and following.
 
+订阅主题变化使用 `reaper.events.on('theme-changed', callback)`。Subscribe to theme changes through this event.
+
 | API | 返回 / Result | 用途 |
 | --- | --- | --- |
 | `reaper.theme.getColors()` | `Promise<ReaWebTheme>` | 读取语义颜色及 CSS 变量 |
-| `reaper.theme.onChange(callback)` | `Promise<ReaWebDispose>` | 订阅主题变化 |
 | `reaper.theme.apply(element?)` | `Promise<ReaWebDispose>` | 应用并跟随主题；取消时恢复原有内联值 |
 
 ## reaper.dialog
@@ -73,7 +72,7 @@ REAPER 工程、对象、播放及窗口状态通知。Host state notifications;
 | API | 返回 / Result | 用途 |
 | --- | --- | --- |
 | `reaper.lifecycle.ready` | `Promise<Readonly<Capabilities>>` | 就绪属性，不能当函数调用；API 调用自动等待握手 |
-| `reaper.lifecycle.on(name, callback)` | `Promise<ReaWebDispose>` | 订阅关闭、重载或资源清理通知 |
+| `reaper.lifecycle.on(name, callback)` | `Promise<ReaWebDispose>` | 订阅 `before-close`、`before-reload` 或 `cleanup`，均在文档销毁前运行 |
 
 ## reaper.debug
 
@@ -130,11 +129,12 @@ REAPER 工程、对象、播放及窗口状态通知。Host state notifications;
 
 系统级文件／文本复制拖放。Native copy drag/drop; starting a drag requires holding the left mouse button.
 
+接收原生 Drop 使用 `reaper.events.on('native-drop', callback)`，payload 为 files/text/x/y。Receive native drops through this event.
+
 | API | 返回 / Result | 用途 |
 | --- | --- | --- |
 | `reaper.dragDrop.startFiles(paths)` | `Promise<boolean>` | 发起 1–256 个本地文件的原生复制拖拽；取消返回 false |
 | `reaper.dragDrop.startText(text)` | `Promise<boolean>` | 发起原生文本复制拖拽；取消返回 false |
-| `reaper.dragDrop.onDrop(callback)` | `Promise<ReaWebDispose>` | 接收统一的原生 Drop payload：files、text、x、y |
 
 ## reaper.app
 

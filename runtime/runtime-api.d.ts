@@ -119,8 +119,6 @@ interface ReaWebAPI {
     startFiles(paths: string[]): Promise<boolean>;
     /** Native copy drag of nonempty text (at most 16 MiB UTF-8). Requires the same mouse gesture. */
     startText(text: string): Promise<boolean>;
-    /** Captures native drops while subscribed; equivalent to events.on('native-drop', callback). */
-    onDrop(callback: (payload: ReaWebDropPayload) => void | Promise<void>): Promise<ReaWebDispose>;
   };
   readonly app: {
     /** Stable storage identity for the canonical local entry directory or development URL. */
@@ -155,7 +153,7 @@ interface ReaWebAPI {
     setPosition(x: number, y: number): Promise<ReaWebBounds>;
     show(): Promise<ReaWebWindowState>; hide(): Promise<ReaWebWindowState>;
     getState(): Promise<ReaWebWindowState>; setTitle(title: string): Promise<boolean>;
-    focus(): Promise<boolean>; dock(): Promise<boolean>; undock(): Promise<boolean>;
+    focus(): Promise<boolean>;
     close(): Promise<boolean>; reload(): Promise<boolean>;
   };
   readonly dialog: {
@@ -167,7 +165,6 @@ interface ReaWebAPI {
   };
   readonly theme: {
     getColors(): Promise<ReaWebTheme>;
-    onChange(callback: (theme: ReaWebTheme) => void | Promise<void>): Promise<ReaWebDispose>;
     /** Applies variables and follows changes; disposal restores previous inline values. */
     apply(element?: HTMLElement): Promise<ReaWebDispose>;
   };
@@ -184,9 +181,9 @@ interface ReaWebAPI {
   readonly lifecycle: {
     /** Resolves after the native protocol handshake. API calls wait for this automatically. */
     readonly ready: Promise<Readonly<ReaWebCapabilities & { windowId: number; projectEpoch: number }>>;
-    /** Cleanup callbacks may return a Promise. Native cleanup still runs after a 2000 ms deadline.
-     * destroy is an alias for cleanup, executed before document destruction. */
-    on(name: 'before-close' | 'before-reload' | 'cleanup' | 'destroy', callback: (event: ReaWebCleanupEvent) => void | Promise<void>): Promise<ReaWebDispose>;
+    /** Callbacks run before document destruction and may return a Promise.
+     * Native cleanup still runs after a 2000 ms deadline. */
+    on(name: 'before-close' | 'before-reload' | 'cleanup', callback: (event: ReaWebCleanupEvent) => void | Promise<void>): Promise<ReaWebDispose>;
   };
   readonly transaction: {
     /** 1–128 synchronous calls on the current project. Literal arguments are validated up front;

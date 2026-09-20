@@ -6,16 +6,17 @@ type RuntimeAssert<T extends true> = T;
 type RuntimeEqual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type NoFlatRuntime = RuntimeAssert<RuntimeEqual<Extract<keyof ReaWebAPI, `ReaWeb${string}` | 'ready'>, never>>;
 
-type windowSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['window'], 'open' | 'openDev' | 'getSize' | 'setSize' | 'getPosition' | 'setPosition' | 'show' | 'hide' | 'getState' | 'setTitle' | 'focus' | 'dock' | 'undock' | 'setDocked' | 'isDocked' | 'setKeyboardCapture' | 'close' | 'reload'>>;
-type themeSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['theme'], 'getColors' | 'onChange' | 'apply'>>;
+type windowSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['window'], 'open' | 'openDev' | 'getSize' | 'setSize' | 'getPosition' | 'setPosition' | 'show' | 'hide' | 'getState' | 'setTitle' | 'focus' | 'setDocked' | 'isDocked' | 'setKeyboardCapture' | 'close' | 'reload'>>;
+type themeSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['theme'], 'getColors' | 'apply'>>;
 type dialogSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dialog'], 'openFile' | 'saveFile' | 'selectFolder'>>;
 type eventsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['events'], 'on' | 'off'>>;
 type lifecycleSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['lifecycle'], 'ready' | 'on'>>;
+type lifecycleEvents = RuntimeAssert<RuntimeEqual<Parameters<ReaWebAPI['lifecycle']['on']>[0], 'before-close' | 'before-reload' | 'cleanup'>>;
 type debugSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['debug'], 'log' | 'warn' | 'error' | 'inspect' | 'getLogs' | 'getDiagnostics' | 'openDevTools' | 'setBufferSize'>>;
 type fsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['fs'], 'readText' | 'writeText' | 'readBinary' | 'writeBinary' | 'readFile' | 'writeFile' | 'stat' | 'readDirectory' | 'makeDirectory'>>;
 type audioSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['audio'], 'getFileInfo' | 'getWaveform' | 'getTrackMeter' | 'setTrackValueLatest'>>;
 type clipboardSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['clipboard'], 'readText' | 'writeText'>>;
-type dragDropSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dragDrop'], 'startFiles' | 'startText' | 'onDrop'>>;
+type dragDropSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dragDrop'], 'startFiles' | 'startText'>>;
 type appSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['app'], 'getId' | 'getName' | 'getVersion' | 'getRootPath' | 'getDataPath'>>;
 type systemSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['system'], 'getPlatform' | 'getArchitecture' | 'revealInFileManager' | 'openExternal' | 'getCapabilities'>>;
 type transactionSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['transaction'], 'batch' | 'beginUndo' | 'endUndo' | 'withUndo'>>;
@@ -111,7 +112,7 @@ async function appContract() {
   const copied: boolean = await reaper.dragDrop.startFiles([root + '/sample.wav']);
   const text: boolean = await reaper.dragDrop.startText('hello');
   const callback = (drop: ReaWebDropPayload) => { const path: string | undefined = drop.files[0]; };
-  const dispose: ReaWebDispose = await reaper.dragDrop.onDrop(callback);
+  const dispose: ReaWebDispose = await reaper.events.on('native-drop', callback);
   await reaper.events.off('native-drop', callback);
   await dispose();
   // @ts-expect-error Removed duplicate logging API.

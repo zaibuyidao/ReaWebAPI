@@ -10,7 +10,7 @@ JavaScript Runtime 使用下列 13 个命名空间。730 项标准 REAPER 镜像
 
 就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
-13 个命名空间均提供具体方法，共 67 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
+13 个命名空间均提供具体方法，共 63 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
 `transaction` 管理批处理和 Undo 分组，不承诺数据库式原子性、回滚或隔离；已完成写入不会自动撤回，其他编辑仍可能交错。方法与类型见[完整清单](runtime-api-inventory.md)。
 
@@ -29,7 +29,7 @@ await reaper.window.show();
 await reaper.window.hide();
 ```
 
-另有 `open(path)`、`openDev(url)`、`getState`、`setTitle`、`focus`、`dock`、`undock`、`setDocked`、`isDocked`、`setKeyboardCapture`、`close`、`reload`。创建新窗口返回窗口 ID，其余窗口控制针对当前调用页，不接收 ID。尺寸是包含边框的原生桌面窗口尺寸，坐标是屏幕坐标，返回 `units: 'native'`；不要当作网页 CSS 像素。后端和桌面缩放可能影响它们与 CSS 像素的比例。宽高允许 100–16384，位置允许 -1000000–1000000，系统会将窗口限制到可用屏幕区域。
+另有 `open(path)`、`openDev(url)`、`getState`、`setTitle`、`focus`、`setDocked`、`isDocked`、`setKeyboardCapture`、`close`、`reload`。使用 `setDocked(true)` 停靠、`setDocked(false)` 取消停靠；返回实际停靠状态，取消停靠成功返回 false。创建新窗口返回窗口 ID，其余窗口控制针对当前调用页，不接收 ID。尺寸是包含边框的原生桌面窗口尺寸，坐标是屏幕坐标，返回 `units: 'native'`；不要当作网页 CSS 像素。后端和桌面缩放可能影响它们与 CSS 像素的比例。宽高允许 100–16384，位置允许 -1000000–1000000，系统会将窗口限制到可用屏幕区域。
 
 返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。窗口支持标题、聚焦、停靠和位置保存。
 
@@ -43,7 +43,7 @@ await reaper.lifecycle.on('cleanup', () => worker.terminate());
 // 不再需要时：await stop();
 ```
 
-支持 `before-close`、`before-reload`、`cleanup`，`destroy` 是 `cleanup` 的别名，均在文档销毁前运行。回调收到 `{reason, timeoutMs}`，可以返回 Promise；相关 before-* 和 cleanup 回调会一起调用并并发等待，总等待上限 2000 ms；需要顺序执行的保存与释放应放在同一回调内。异常或超时不阻止宿主原有关闭/重载及原生资源清理。未注册生命周期监听器的应用直接关闭。
+支持 `before-close`、`before-reload`、`cleanup`，均在文档销毁前运行。回调收到 `{reason, timeoutMs}`，可以返回 Promise；相关 before-* 和 cleanup 回调会一起调用并并发等待，总等待上限 2000 ms；需要顺序执行的保存与释放应放在同一回调内。异常或超时不阻止宿主原有关闭/重载及原生资源清理。未注册生命周期监听器的应用直接关闭。
 
 扩展关闭 API、窗口关闭按钮、同页原生导航/重载均接入通知。清理期间桥接仍可用于保存设置；完成或超时后，旧文档的请求、句柄、事件和音频任务失效。普通关闭和重载不能被应用否决。不要在清理回调内再次调用关闭或重载。
 
@@ -86,7 +86,7 @@ const restoreTheme = await reaper.theme.apply();
 
 对话框复用标准镜像 `GetUserFileName`，使用 REAPER 提供的原生对话框。取消返回 `null`，错误拒绝 Promise；保存对话框只选择路径，不写文件。`initialPath` 交由 REAPER 对话框解释，建议使用绝对路径。筛选扩展名不带点，`*` 表示所有文件。旧宿主缺少该 API 时返回 `API_UNAVAILABLE`。
 
-`reaper.theme.getColors()` 返回 `{available, colors, cssVariables}`，包括 background/text/highlight/panel/border。`reaper.theme.apply(element?)` 默认作用于根元素，跟随主题变化，取消函数恢复先前的内联 CSS 值。`reaper.theme.onChange(callback)` 仅订阅；缺少主题 API 时提供可用的默认配色并标记 `available:false`。不会修改 REAPER 主题。
+`reaper.theme.getColors()` 返回 `{available, colors, cssVariables}`，包括 background/text/highlight/panel/border。`reaper.theme.apply(element?)` 默认作用于根元素，跟随主题变化，取消函数恢复先前的内联 CSS 值。`reaper.events.on('theme-changed', callback)` 仅订阅，不应用样式；缺少主题 API 时提供可用的默认配色并标记 `available:false`。不会修改 REAPER 主题。
 
 ```css
 body { background:var(--reaper-background); color:var(--reaper-text); }
@@ -143,14 +143,14 @@ button.addEventListener('pointerdown', event => {
   reaper.dragDrop.startFiles([selectedAudioPath]).catch(error => reaper.debug.error(error));
 });
 const dropped = payload => console.log(payload.files, payload.text, payload.x, payload.y);
-const dispose = await reaper.dragDrop.onDrop(dropped);
+const dispose = await reaper.events.on('native-drop', dropped);
 await reaper.events.off('native-drop', dropped);
 await dispose(); // off 后仍可安全调用
 ```
 
-`onDrop(callback)` 等同于 `events.on('native-drop', callback)`，返回异步 disposer。统一 payload 为 `{files:string[], text:string, x:number, y:number}`；files 是绝对本机路径，接收时允许目录；text 无文本时为空字符串；x/y 是视口 CSS 坐标。不读取文件内容。系统／REAPER 拖拽源必须提供标准文件或文本数据，不解析 REAPER 专有对象格式。有订阅时捕获原生 Drop，无订阅时保留普通 WebView DOM 拖放。Drop 不合并、不提供初始快照、不回放；关闭／重载清理订阅。Windows 需要支持原生附加文件对象的 WebView2，旧版不支持时订阅报 `HOST_UNAVAILABLE`。
+`reaper.events.on('native-drop', callback)` 返回异步 disposer。统一 payload 为 `{files:string[], text:string, x:number, y:number}`；files 是绝对本机路径，接收时允许目录；text 无文本时为空字符串；x/y 是视口 CSS 坐标。不读取文件内容。系统／REAPER 拖拽源必须提供标准文件或文本数据，不解析 REAPER 专有对象格式。有订阅时捕获原生 Drop，无订阅时保留普通 WebView DOM 拖放。Drop 不合并、不提供初始快照、不回放；关闭／重载清理订阅。Windows 需要支持原生附加文件对象的 WebView2，旧版不支持时订阅报 `HOST_UNAVAILABLE`。
 
-`events.off(name, callback)` 返回 `Promise<void>`，移除该事件名下原回调引用的全部匹配订阅，包括尚未注册完成的订阅；其他回调不受影响。未订阅时无操作，已在执行的回调不会被中断。`on()` 和 `onDrop()` 返回的 disposer 可单独取消订阅。`debug.log` 使用 info 日志级别。
+`events.off(name, callback)` 返回 `Promise<void>`，移除该事件名下原回调引用的全部匹配订阅，包括尚未注册完成的订阅；其他回调不受影响。未订阅时无操作，已在执行的回调不会被中断。`events.on()` 返回的 disposer 可单独取消订阅。`debug.log` 使用 info 日志级别。
 
 ## Manifest 校验与示例
 

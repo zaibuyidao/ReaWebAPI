@@ -24,8 +24,6 @@ test('The public SDK has exactly 730 unchanged Mirror methods and thirteen froze
     "getState",
     "setTitle",
     "focus",
-    "dock",
-    "undock",
     "setDocked",
     "isDocked",
     "setKeyboardCapture",
@@ -34,7 +32,6 @@ test('The public SDK has exactly 730 unchanged Mirror methods and thirteen froze
   ],
   "theme": [
     "getColors",
-    "onChange",
     "apply"
   ],
   "dialog": [
@@ -81,7 +78,7 @@ test('The public SDK has exactly 730 unchanged Mirror methods and thirteen froze
     "readText",
     "writeText"
   ],
-  "dragDrop": ["startFiles", "startText", "onDrop"],
+  "dragDrop": ["startFiles", "startText"],
   "app": ["getId", "getName", "getVersion", "getRootPath", "getDataPath"],
   "system": ["getPlatform", "getArchitecture", "revealInFileManager",
     "openExternal",
@@ -209,11 +206,11 @@ test('off before the only subscription finishes suppresses its initial callback;
   assert.deepEqual(t.messages.slice(1).map(m=>m.method),['ReaWeb_Subscribe','ReaWeb_Unsubscribe']);
   t.reply(1,{result:{guids:[]}}); t.reply(2,{result:true}); await registration; await off;
   assert.equal(calls,0);
-  const first = api.dragDrop.onDrop(callback);
+  const first = api.events.on('native-drop',callback);
   await answer(t,'ReaWeb_Subscribe',['native-drop'],{files:['should-not-replay']},first);
   assert.equal(calls,0);
   t.event('native-drop',1,{files:['sample.wav'],text:'',x:10,y:20}); assert.equal(calls,1);
-  const second = await api.dragDrop.onDrop(callback); assert.equal(calls,1);
+  const second = await api.events.on('native-drop',callback); assert.equal(calls,1);
   t.event('native-drop',2,{files:[],text:'text',x:0,y:0}); assert.equal(calls,3);
   await answer(t,'ReaWeb_Unsubscribe',['native-drop'],true,api.events.off('native-drop',callback));
   await second(); t.event('native-drop',3,{files:[],text:'ignored',x:0,y:0}); assert.equal(calls,3);
@@ -430,12 +427,13 @@ test('Runtime namespaces preserve bridge arguments and cancellation', async () =
 
 test('Lifecycle waits for async cleanup, handles duplicate notifications and releases listeners', async () => {
   const t = await connected();
+  await assert.rejects(t.window.reaper.lifecycle.on('destroy', () => {}), {code:'INVALID_ARGUMENT'});
   let release, cleanups = 0;
   const gate = new Promise(resolve => { release = resolve; });
   const stop = await answer(t, 'ReaWeb_LifecycleSubscribe', [true], true,
     t.window.reaper.lifecycle.on('before-close', async event => { assert.equal(event.reason, 'close'); await gate; }));
   await answer(t, 'ReaWeb_LifecycleSubscribe', [true], true,
-    t.window.reaper.lifecycle.on('destroy', () => { ++cleanups; }));
+    t.window.reaper.lifecycle.on('cleanup', () => { ++cleanups; }));
   const message = {document:t.messages[0].document,lifecycle:{event:'before-close',reason:'close',token:'one',timeoutMs:2000}};
   t.window.__reawebReceive(message); t.window.__reawebReceive(message);
   await flush(); assert.equal(cleanups,1); assert.equal(t.messages.length,3);
