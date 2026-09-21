@@ -24,7 +24,13 @@ class DevToolsKeys {
         } else if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
           const bool repeat = down; down = true;
           if (consumed) return 1;
-          auto target = reinterpret_cast<HWND>(GetPropW(GetForegroundWindow(), target_property));
+          GUITHREADINFO gui{sizeof(gui)};
+          auto focus = GetGUIThreadInfo(0, &gui) ? gui.hwndFocus : nullptr;
+          HWND target = nullptr;
+          // Embedded Chromium is a child of the host, including inside REAPER's docker.
+          for (auto window = focus; window && !target; window = GetAncestor(window, GA_PARENT))
+            target = reinterpret_cast<HWND>(GetPropW(window, target_property));
+          if (!target) target = reinterpret_cast<HWND>(GetPropW(GetForegroundWindow(), target_property));
           DWORD process = 0;
           if (target) GetWindowThreadProcessId(target, &process);
           if (process == GetCurrentProcessId() &&

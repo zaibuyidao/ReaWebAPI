@@ -28,7 +28,8 @@ Inspector behavior is documented in [DevTools](devtools.md). Linux binaries buil
 
 - Windows/Linux: press Ctrl+Shift+I in the WebView to open DevTools, then press it again with DevTools focused to hide the same window. Reopen and verify the Console session is retained and no additional inspector appears. Check held keys across focus changes, rapid toggles during opening, native close and two WebViews in the same profile. Hiding must return focus to the corresponding page. Repeated API open calls must keep DevTools visible. Page timers and REAPER calls must continue while the inspector has focus.
 - Linux: test the shortcut inside the inspector, **Hide DevTools**, and floating-window close. Drag the divider, resize, and switch **Float DevTools** / **Dock right**. Console entries, the selected DOM node and page JS state must survive mode changes. Hidden DevTools must stay hidden when resizing or docking the host. Reopen the tool and restart REAPER to check saved mode/width. Test a small viewport and a second display.
-- Windows: verify diagnostics report floating mode. Check that shortcuts in other applications are unaffected. Check stacking when REAPER or another REAPER dialog gains focus and after docking/undocking the WebView. A window opened through native **Inspect** may require its own close button. Check `devtools.lastError` when ReaWebAPI cannot identify it or cannot handle keys inside it.
+- Windows 11 / WebView2: with no saved preferences, verify a right-hand Embedded panel and a 40% width ratio. Drag the divider, resize the host, and switch **Float DevTools** / **Embed DevTools** from the page context menu. Verify only the other mode and **Open DevTools** or **Hide DevTools** appear. Mode changes while hidden must not show the inspector. Check full-height inspector content without a host toolbar or Demo DevTools button. Console entries, the selected DOM node and page JS state must survive. Test shortcuts in both views, menu hide/show and floating-host close. Hidden panels must remain hidden on resize and host dock/undock. Reopen the tool and restart REAPER to verify both saved modes and width. Old floating preferences must remain floating.
+- Windows: check other applications' shortcuts, two WebViews, REAPER window stacking and focus after host dock/undock. Test small windows, mixed-DPI displays and minimize/restore. Floating DevTools must not steal focus or remain globally topmost. When native hosting is unavailable, check floating fallback, disabled **Embed DevTools**, `devtools.fallbackReason` and unchanged saved preferences. Identification/keyboard failures must appear in `devtools.lastError`.
 - macOS: Ctrl+Shift+I must toggle the same non-modal Safari guide from either the page or the guide. Holding the keys must not repeat the toggle, and hiding must return focus to the page. The API must show the guide and report `INSPECTOR_MENU`. Follow the guide to inspect the page. Check docking/undocking and closing the tool with the guide open.
 
 Optional native DevTools tests create UI windows and are excluded from CTest:
@@ -38,8 +39,10 @@ Optional native DevTools tests create UI windows and are excluded from CTest:
 cmake --build build --target linux_devtools
 GDK_BACKEND=x11 build/tests/linux_devtools
 # Windows, on an idle interactive desktop (sends keys to the test's DevTools window)
-cmake --build build --config Release --target windows_devtools
+cmake --build build --config Release --target windows_devtools windows_context_menu
 build/tests/Release/windows_devtools.exe
+build/tests/Release/windows_devtools.exe --dpi-v1
+build/tests/Release/windows_context_menu.exe
 ```
 
 ## Runtime and audio acceptance

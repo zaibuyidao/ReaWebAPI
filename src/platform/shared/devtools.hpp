@@ -4,6 +4,10 @@
 #include <cmath>
 
 namespace reaweb {
+enum class DevToolsAction { Open, Hide, Float, Embed };
+struct DevToolsMenuState {
+  bool shown = false, floating = false, embedded_supported = true;
+};
 // Persist preferences, never visibility or a live debugging session.
 struct DevToolsPreferences {
   bool floating = false;

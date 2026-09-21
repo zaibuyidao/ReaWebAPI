@@ -585,12 +585,20 @@ try:
   const cspViolations = [];
   const recordCsp = event => cspViolations.push(event.blockedURI);
   document.addEventListener('securitypolicyviolation', recordCsp);
-  click('devtools');
-  await until(() => el('activity').textContent.includes('DevTools open requested.'));
+  await reaper.debug.openDevTools();
   const settings = await fetch('/.well-known/appspecific/com.chrome.devtools.json');
   if (settings.status !== 200 || JSON.stringify(await settings.json()) !== '{}') throw new Error('DevTools settings request failed');
   // Give the native inspector time to issue its own automatic workspace probe.
   await new Promise(resolve => setTimeout(resolve, 1500));
+  let inspector;
+  const inspectorDeadline = Date.now() + 10000;
+  do {
+    inspector = (await reaper.debug.getDiagnostics()).devtools;
+    if (inspector.visible && !inspector.pending) break;
+    await new Promise(resolve => setTimeout(resolve, 30));
+  } while (Date.now() < inspectorDeadline);
+  if (!inspector.visible || inspector.pending || inspector.mode !== (inspector.embeddedSupported ? 'embedded' : 'floating'))
+    throw new Error('DevTools layout did not open: ' + JSON.stringify(inspector));
   document.removeEventListener('securitypolicyviolation', recordCsp);
   if (cspViolations.length) throw new Error('DevTools CSP violation: ' + cspViolations.join(', '));
   click('clear-log');
@@ -820,6 +828,11 @@ try:
         user32.GetDlgItem.argtypes = [W.HWND, C.c_int]
         user32.GetDlgItem.restype = W.HWND
         user32.GetClientRect.argtypes = [W.HWND, C.POINTER(W.RECT)]
+        user32.GetWindowRect.argtypes = [W.HWND, C.POINTER(W.RECT)]
+        user32.ScreenToClient.argtypes = [W.HWND, C.POINTER(W.POINT)]
+        user32.FindWindowExW.argtypes = [W.HWND, W.HWND, W.LPCWSTR, W.LPCWSTR]
+        user32.FindWindowExW.restype = W.HWND
+        user32.IsWindowVisible.argtypes = [W.HWND]
         user32.SendMessageW.argtypes = [W.HWND, W.UINT, W.WPARAM, W.LPARAM]
         user32.SendMessageW.restype = C.c_ssize_t
         deadline = time.monotonic() + 35
@@ -875,7 +888,16 @@ try:
                     viewport = json.loads((folder / ('viewport-' + title.value.split(':')[1] + '.json')).read_text())
                     client = W.RECT()
                     assert user32.GetClientRect(handle, C.byref(client))
-                    assert abs(viewport['width'] * viewport['scale'] - client.right) <= 1, (viewport, client.right)
+                    page_width = client.right
+                    divider = user32.FindWindowExW(handle, None, 'ReaWebAPI.DevTools.Splitter', None)
+                    if divider and user32.IsWindowVisible(divider):
+                        split = W.RECT()
+                        assert user32.GetWindowRect(divider, C.byref(split))
+                        origin = W.POINT(split.left, split.top)
+                        assert user32.ScreenToClient(handle, C.byref(origin))
+                        page_width = origin.x
+                        assert 0 < page_width < client.right
+                    assert abs(viewport['width'] * viewport['scale'] - page_width) <= 1, (viewport, page_width)
                     assert abs(viewport['height'] * viewport['scale'] - client.bottom) <= 1, (viewport, client.bottom)
                     if args.demo:
                         assert user32.SendMessageW(handle, 0x7F, 0, 0), 'Demo small window icon is missing'
@@ -893,7 +915,7 @@ try:
             print('Window icons: favicon sync, explicit override, hidden replacement, docking restoration and reload persistence passed')
             assert any('[READ]' in message and '[ReaWebAPI]' in message for message in messages), 'Native console mirror missing'
             print('Demo debug log: explicit track snapshot, REAPER console mirror and clear passed' + ('' if args.empty else ', including confirmed Pan changes'))
-            print('Shipped demo: DevTools opened, project settings returned 200 and no CSP violations')
+            print('Shipped demo: managed DevTools layout opened, project settings returned 200 and no CSP violations')
             print('Shipped demo: empty project, 7 checks passed and 3 track checks skipped, cursor and docking passed' if args.empty else 'Shipped demo: 10 checks passed (including binary resize, GUID/RECT and audio array), project/marker/FX display, color write/read/reset, cursor write, native icons and title-bar docking passed')
         if args.studio:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'STUDIO PASS'

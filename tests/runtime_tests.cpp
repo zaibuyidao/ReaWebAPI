@@ -344,6 +344,7 @@ int main() {
       auto reopened = windows.back().lock();
       CHECK(reopened->bounds["x"] == 123 && reopened->bounds["width"] == 777 && runtime.is_docked(reopened_id));
       CHECK(reopened->inspector.floating && reopened->inspector.width_ratio == 0.63);
+      reopened->inspector.restore({{"mode", "embedded"}, {"widthRatio", 0.57}});
       runtime.close(reopened_id); runtime.tick();
     }
     CHECK(docked.empty());
@@ -351,7 +352,7 @@ int main() {
       Runtime runtime(host, root, [&](const std::string& error) { errors.push_back(error); }, docks);
       auto id = runtime.open("Tool/index.html"); auto window = windows.back().lock();
       CHECK(window->bounds["x"] == 123 && window->bounds["width"] == 777 && runtime.is_docked(id));
-      CHECK(window->inspector.floating && window->inspector.width_ratio == 0.63);
+      CHECK(!window->inspector.floating && window->inspector.width_ratio == 0.57);
       result(runtime, *window, window->send("__reawebHello", {1}));
       for (int n = 0; n < 257; ++n) window->send("CountTracks", {0});
       runtime.tick(); CHECK(!runtime.is_open(id));

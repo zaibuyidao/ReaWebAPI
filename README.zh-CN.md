@@ -8,6 +8,7 @@ ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩�
 - Mirror-aware Batch Builder，支持 173 项已审核 API、延迟引用、多返回值解构和结果类型推导。
 - 13 个 Runtime 命名空间，涵盖窗口、事件、文件、原生对话框、拖放、音频、Undo 和应用服务。
 - 原生 WebView，支持模块、本地资源、Worker 和应用存储持久化。
+- Windows/Linux [DevTools](docs/devtools.zh-CN.md) 支持可调宽度的右侧面板、浮动模式和布局偏好保存，Ctrl+Shift+I 切换显示。Windows 也可通过页面右键菜单控制显示状态和模式。
 - WebView 右键菜单提供 Dock/Undock 操作。HTML favicon 或 `reaper.window.setIcon(path)` 设置的 PNG、ICO、SVG 窗口图标在停靠切换和重载后保留，通过 `reaper.window.setIconVisible(boolean)` 控制显示。
 - JavaScript、TypeScript 模板，Runtime Studio 示例和中英文文档。
 

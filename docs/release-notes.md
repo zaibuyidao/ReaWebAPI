@@ -2,8 +2,12 @@
 
 ## Changes
 
-- Add `reaper.transaction.batch(callback)` with Mirror signatures, automatic result references, tuple destructuring and typed result selection for the 173 reviewed batch APIs. Preserve call-array batches, native errors and ordinary Mirror calls. Update the Demo and TypeScript example.
+- Add Windows/WebView2 Embedded DevTools with a draggable right-hand divider and Floating mode. Mode switches and hide/show reuse the inspector session without reloading the page. Save mode and panel width through the existing window preferences.
+- Move Windows DevTools controls into the WebView context menu alongside Dock/Undock. Show Open/Hide and Float/Embed actions according to current state. Remove the inspector host toolbar and the Demo DevTools button.
+- Share state between the context menu, Ctrl+Shift+I and APIs. Improve focus and floating-window stacking, support Per-Monitor V1/V2 DPI hosts, and retain native floating fallback when hosting is unavailable.
 
 ## 更新
 
-- 新增 `reaper.transaction.batch(callback)`，沿用 Mirror 签名，支持 173 项已审核批处理 API、自动结果引用、多返回值解构和结果类型推导。保留调用数组、原生错误及普通 Mirror 调用，同步更新 Demo 和 TypeScript 示例。
+- Windows/WebView2 新增 Embedded DevTools、可拖动的右侧分隔条和 Floating 模式。模式切换及隐藏、显示复用检查器会话，不重载页面，通过现有窗口偏好保存模式与面板宽度。
+- Windows DevTools 控制入口移至 WebView 右键菜单，与 Dock/Undock 并列，按当前状态显示打开、隐藏及浮动、嵌入操作。移除检查器宿主工具栏和 Demo DevTools 按钮。
+- 右键菜单、Ctrl+Shift+I 和 API 共用状态管理。改善焦点及浮动窗口层级，支持 Per-Monitor V1/V2 DPI 宿主，无法托管时保留原生浮动回退。

@@ -69,6 +69,7 @@ if(UNIX AND NOT APPLE AND REAWEB_BUILD_EXTENSION)
 endif()
 if(WIN32 AND REAWEB_BUILD_EXTENSION)
   add_executable(windows_context_menu EXCLUDE_FROM_ALL windows_context_menu.cpp)
+  target_link_libraries(windows_context_menu PRIVATE reaweb_core gdi32)
   target_include_directories(windows_context_menu PRIVATE "${PROJECT_SOURCE_DIR}/src" "${webview2_SOURCE_DIR}/build/native/include")
   target_link_libraries(windows_context_menu PRIVATE "${webview2_SOURCE_DIR}/build/native/x64/WebView2LoaderStatic.lib"
     ole32 oleaut32 user32 shlwapi version advapi32)

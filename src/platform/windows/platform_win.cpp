@@ -90,7 +90,9 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   WinIcon icon_;
   static constexpr UINT dock_command = 0x1800;
   void layout() {
-    if (controller_) { RECT rect{}; GetClientRect(hwnd_, &rect); controller_->put_Bounds(rect); }
+    RECT rect{}; GetClientRect(hwnd_, &rect);
+    if (devtools_) rect = devtools_->layout(rect);
+    if (controller_) controller_->put_Bounds(rect);
   }
 public:
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -114,7 +116,7 @@ public:
         }
         self->layout(); return 0;
       } else if (msg == toggle_devtools_message) {
-        if (self->devtools_ && !self->devtools_->toggle()) self->focus(); return 0;
+        if (self->devtools_) self->devtools_->toggle(); return 0;
       } else if (msg == WM_KEYDOWN && wp == 'I' && (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000)) {
         if (!(lp & (1LL << 30))) PostMessageW(hwnd, toggle_devtools_message, 0, 0);
         return 0;
@@ -142,15 +144,17 @@ public:
       auto menu = GetSystemMenu(hwnd_, FALSE);
       AppendMenuW(menu, MF_SEPARATOR, 0, nullptr); AppendMenuW(menu, MF_STRING, dock_command, L"Dock in REAPER");
     }
-    devtools_ = std::make_unique<WinDevTools>(hwnd_);
+    try { devtools_ = std::make_unique<WinDevTools>(hwnd_, [this] { layout(); }, [this] { focus(); }); }
+    catch (...) { DestroyWindow(hwnd_); throw; }
     // A REAPER-owned floating window stays above its owner when focus returns to REAPER.
     SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(options_.parent));
     ShowWindow(hwnd_, SW_SHOW);
   }
   ~WinWindow() override {
     closed_ = true;
-    devtools_.reset();
+    if (devtools_) devtools_->detach();
     if (controller_) controller_->Close();
+    devtools_.reset();
     webview_.Reset(); controller_.Reset();
     if (hwnd_) DestroyWindow(hwnd_);
   }
@@ -187,12 +191,17 @@ public:
     if (SUCCEEDED(settings.As(&settings3))) settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
     EventRegistrationToken token{};
     auto weak = weak_from_this();
-    if (options_.on_dock_toggle) check(install_dock_menu(webview_.Get(), [weak] {
+    check(install_window_menu(webview_.Get(), options_.on_dock_toggle ? std::function<void()>([weak] {
       if (auto self = weak.lock(); self && !self->closed_) self->options_.on_dock_toggle();
-    }, [weak] {
+    }) : std::function<void()>(), [weak] {
       auto self = weak.lock();
       return self && !self->closed_ && self->options_.is_docked && self->options_.is_docked();
-    }), "Install docking context menu");
+    }, [weak](DevToolsAction action) {
+      if (auto self = weak.lock(); self && !self->closed_) self->devtools_->perform(action);
+    }, [weak] {
+      auto self = weak.lock();
+      return self && !self->closed_ ? self->devtools_->menu_state() : DevToolsMenuState{};
+    }), "Install window context menu");
     check(controller_->add_AcceleratorKeyPressed(Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
       [weak](ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
         UINT key = 0; COREWEBVIEW2_KEY_EVENT_KIND kind{}; COREWEBVIEW2_PHYSICAL_KEY_STATUS status{};

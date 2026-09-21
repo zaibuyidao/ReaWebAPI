@@ -7,7 +7,7 @@ On Windows and Linux, press **Ctrl+Shift+I** in the WebView or its managed DevTo
 | Platform | Presentation | Mode switching |
 | --- | --- | --- |
 | Linux / WebKitGTK | Right-hand panel by default, with a draggable divider | **Float DevTools** / **Dock right** in the panel toolbar |
-| Windows / WebView2 | Native floating DevTools window | The current implementation supports floating mode only |
+| Windows / WebView2 | Right-hand panel by default, with a draggable divider | **Float DevTools** / **Embed DevTools** in the page context menu |
 | macOS / WKWebView | Safari Web Inspector | Ctrl+Shift+I toggles the setup guide. Control the inspector in Safari |
 
 ## Linux
@@ -20,11 +20,13 @@ Floating DevTools is non-modal and associated with the current REAPER parent thr
 
 ## Windows
 
-The Windows backend uses WebView2's [`OpenDevToolsWindow`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2#opendevtoolswindow). Embedded mode and float/dock switching are not implemented.
+**Embedded** hosts the native WebView2 inspector on the right of the current ReaWebAPI window. The panel defaults to 40% of the available width, adjustable between 20% and 80% with the divider. Resizing preserves the ratio. **Floating** uses an independent host window. Both modes reuse the same inspector window, retaining Console and Inspector state without reloading the page.
 
-When ReaWebAPI identifies the native window, the shortcut also works while DevTools has focus and hides/shows the same window while preserving the session. The native close button ends the session. If the window cannot be identified, use its close button. This can occur when DevTools was opened through the native **Inspect** context menu. If keyboard handling in DevTools is unavailable, use the shortcut in the main WebView. Diagnostics report these limitations in `devtools.lastError`.
+Right-click the WebView page to access DevTools alongside **Dock in REAPER** / **Undock from REAPER**. The menu shows **Open DevTools** or **Hide DevTools** according to visibility, and **Float DevTools** when embedded or **Embed DevTools** when floating. Changing mode while hidden saves the preference without opening the inspector. The inspector fills its container without a host toolbar, and the Demo has no separate DevTools button.
 
-The identified window is non-modal and owned by the current REAPER root window. It is not globally always-on-top. Moving focus to DevTools does not suspend or reload the main WebView.
+The menu, shortcut and APIs share one state manager. Ctrl+Shift+I, **Hide DevTools** and the floating host's close button hide the inspector and retain its session. Closing the inspector itself can end the session. Floating DevTools follows the current REAPER root owner and is raised without taking focus when another REAPER window becomes active. It is not globally always-on-top. Focusing DevTools does not suspend or reload the page.
+
+WebView2 exposes no public embedded-inspector controller. ReaWebAPI uses [`OpenDevToolsWindow`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2#opendevtoolswindow) to create the inspector, identifies its native window, and hosts it with Win32 containers. Per-Monitor V1 and V2 hosts use a compatible DPI container without changing REAPER or Chromium's process DPI mode. Unsupported DPI combinations or hosting failures retain the native floating window and disable **Embed DevTools**. `devtools.fallbackReason` explains the fallback. If identification or inspector keyboard handling fails, `devtools.lastError` reports the limitation. An unidentified window must be closed with its own close button. This integration depends on the WebView2 native window implementation.
 
 ## macOS
 
@@ -37,6 +39,6 @@ Ctrl+Shift+I toggles the same non-modal guide from either the page or the guide.
 
 ## Saved preferences and diagnostics
 
-`ReaWebAPI/WindowState/*.json` saves `devtools.mode` (`embedded` or `floating`) and `devtools.widthRatio` per page and window slot. Preferences survive reopening the tool and restarting REAPER. DevTools starts closed. Debugging sessions are not persisted. Windows and macOS restore floating mode and retain the width preference.
+`ReaWebAPI/WindowState/*.json` saves `devtools.mode` (`embedded` or `floating`) and `devtools.widthRatio` per page and window slot. Preferences survive reopening the tool and restarting REAPER. DevTools starts closed. Debugging sessions are not persisted. Windows/Linux restore the saved mode, including floating preferences from earlier versions. A Windows hosting fallback does not overwrite the saved preference. macOS uses floating mode and retains the width preference.
 
 `(await reaper.debug.getDiagnostics()).devtools` reports the effective mode, width ratio, embedding support and backend-specific status. Safari inspector visibility is unavailable. On Windows, visibility refers to the native window identified by ReaWebAPI. See [manual verification](SMOKE_TEST.md#devtools-acceptance).
