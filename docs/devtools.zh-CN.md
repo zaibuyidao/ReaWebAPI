@@ -2,13 +2,13 @@
 
 [English](devtools.md) | **简体中文**
 
-Windows/Linux 下，在 WebView 或其受管 DevTools 窗口中按 **Ctrl+Shift+I** 可显示或隐藏 DevTools。长按不会重复切换，隐藏后焦点返回页面。`reaper.debug.openDevTools()` 和 `ReaWeb_DevTools(id)` 请求打开或显示 DevTools，重复调用不会隐藏检查器。
+在 WebView 或其受管 DevTools 窗口中，Windows/Linux 按 **Ctrl+Shift+I**，macOS 按 **Option+Command+I** 显示或隐藏 DevTools。长按不会重复切换，隐藏后焦点返回页面。`reaper.debug.openDevTools()` 和 `ReaWeb_DevTools(id)` 请求打开或显示 DevTools，重复调用不会隐藏检查器。
 
 | 平台 | 显示方式 | 模式切换 |
 | --- | --- | --- |
 | Linux / WebKitGTK | 默认嵌入右侧，提供可拖动分隔条 | 面板工具栏的 **Float DevTools** / **Dock right** |
 | Windows / WebView2 | 默认嵌入右侧，提供可拖动分隔条 | 页面右键菜单的 **Float DevTools** / **Embed DevTools** |
-| macOS / WKWebView | Safari Web Inspector | Ctrl+Shift+I 切换操作指引，实际检查器由 Safari 控制 |
+| macOS / WKWebView | 默认嵌入右侧，提供可拖动分隔条 | 页面右键菜单的 **Float DevTools** / **Embed DevTools** |
 
 ## Linux
 
@@ -30,15 +30,16 @@ WebView2 没有公开的嵌入式检查器控制器。ReaWebAPI 通过 [`OpenDev
 
 ## macOS
 
-ReaWebAPI 允许通过 Safari Web Inspector 检查 WKWebView 页面：
+**Embedded** 使用 WebKit 原生右侧检查器视图，不显示独立窗口标题栏、窗口按钮、外层边框，也不预留装饰空间。**Floating** 使用 WebKit 自身的检查器窗口，不额外创建 ReaWebAPI 窗口或工具栏。
 
-1. 在 **Safari Settings > Advanced** 开启 **Show features for web developers**。
-2. 选择 **Develop > this Mac > REAPER > 对应页面**。
+页面右键菜单根据当前状态显示 **Open DevTools** / **Hide DevTools** 和 **Float DevTools** / **Embed DevTools**。在页面或检查器中按 **Option+Command+I** 切换显示，隐藏时切换模式不会打开检查器。快捷键、菜单、`reaper.debug.openDevTools()` 和 `ReaWeb_DevTools(id)` 共用控制器。隐藏和切换模式保留检查器视图及连接，包括 Console 日志和当前选中的标签。原生关闭控件会结束会话。
 
-在页面或指引中按 Ctrl+Shift+I 均会切换同一个非模态指引窗口，隐藏后焦点返回页面。`reaper.debug.openDevTools()` 显示指引，并以 `INSPECTOR_MENU` 错误拒绝 Promise。实际检查器由 Safari 打开和关闭，ReaWebAPI 不管理其布局或窗口层级。
+面板宽度偏好默认为 40%，随宿主尺寸变化保持比例，拖动 WebKit 分隔线会更新保存的比例。WebKit 限制面板最小尺寸，实际宽度可能超过偏好值。宿主内容区域小于 820 × 334 点时使用 Floating，不覆盖保存的模式。宿主显示时增大窗口，会按原偏好恢复 Embedded。
+
+公开的 `WKWebView.inspectable` 保持启用。公开 API 没有对应控制器，程序化控制与停靠使用经过运行时能力检查的 WebKit 私有接口，兼容性取决于系统 WebKit 版本。停靠不可用时保留原生浮动窗口，`embeddedSupported` 返回 `false`。原生控制不可用时禁用菜单操作，`nativeToggleSupported` 返回 `false`，`openDevTools()` 以 `DEVTOOLS_UNAVAILABLE` 错误拒绝。仍可通过 Safari 的开发菜单手动检查页面。`fallbackReason` 和 `lastError` 提供能力限制或打开失败的原因。
 
 ## 状态保存与诊断
 
-`ReaWebAPI/WindowState/*.json` 按页面及窗口槽位保存 `devtools.mode`（`embedded` / `floating`）和 `devtools.widthRatio`。重新打开工具或重启 REAPER 后恢复偏好。DevTools 初始关闭，不持久化调试会话。Windows/Linux 恢复已保存模式，包括旧版本保存的浮动偏好。Windows 托管降级不会覆盖已保存偏好。macOS 使用浮动模式并保留宽度偏好。
+`ReaWebAPI/WindowState/*.json` 按页面及窗口槽位保存 `devtools.mode`（`embedded` / `floating`）和 `devtools.widthRatio`。重新打开工具或重启 REAPER 后恢复偏好。DevTools 初始关闭，不持久化调试会话。各平台恢复已保存模式，包括旧版本保存的浮动偏好。Windows/macOS 托管降级不会覆盖已保存偏好。
 
-`(await reaper.debug.getDiagnostics()).devtools` 返回实际模式、宽度比例、嵌入支持情况及后端状态。Safari 检查器不提供可见状态，Windows 的可见状态仅反映 ReaWebAPI 已识别的原生窗口。验证步骤见[手动检查清单](SMOKE_TEST.md#devtools-acceptance)。
+`(await reaper.debug.getDiagnostics()).devtools` 返回实际模式、宽度比例、嵌入支持情况及后端状态。macOS 的 `visible` 反映本地 WebKit 检查器状态，Windows 的可见状态仅反映 ReaWebAPI 已识别的原生窗口。验证步骤见[手动检查清单](SMOKE_TEST.md#devtools-acceptance)。

@@ -32,7 +32,7 @@ Both capabilities and diagnostics include `webRuntime`: `contract` (1), `mode` (
 | `reaper.window.open(path)` | Window ID, `number` | Opens a local HTML file. Relative paths are based on the calling HTML directory |
 | `reaper.window.close()` | `boolean` | Requests close. Document teardown can reject outstanding Promises, including an unsettled close call |
 | `reaper.window.focus()` | `boolean` | Focuses the current window |
-| `reaper.debug.openDevTools()` | `boolean` | Requests showing DevTools (idempotent). macOS shows a Safari guide and rejects with `INSPECTOR_MENU`. See [DevTools](devtools.md) |
+| `reaper.debug.openDevTools()` | `boolean` | Requests showing DevTools (idempotent). On macOS, unavailable native controls reject with `DEVTOOLS_UNAVAILABLE`. See [DevTools](devtools.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 1–256 UTF-8 bytes, no NUL |
 | `reaper.window.setIcon(path)` | `boolean` | Override the HTML favicon for this window session, including reloads. Local PNG, ICO or SVG, relative to the App root or absolute. See [window icons](runtime-api.md#window-icons) |
 | `reaper.window.setIconVisible(visible)` | `boolean` | Show/hide the title-bar icon and its space, retaining the icon. Defaults to `true`, survives reloads. Linux decoration support depends on the window manager |

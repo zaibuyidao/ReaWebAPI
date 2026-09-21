@@ -149,7 +149,7 @@ try {
 }
 ```
 
-Use `await reaper.debug.getDiagnostics()` to inspect backend, stage, queue counts and the last host error. On Windows/Linux, press Ctrl+Shift+I in the WebView or its managed DevTools window to show or hide DevTools, or call `reaper.debug.openDevTools()` to request opening it. On macOS, the shortcut toggles a Safari setup guide and the API shows it. See [DevTools](devtools.md) for layouts, saved preferences and platform limits. Reopen the page after changing assets. Reloading creates a new document and invalidates its old handles.
+Use `await reaper.debug.getDiagnostics()` to inspect backend, stage, queue counts and the last host error. Press Ctrl+Shift+I on Windows/Linux or Option+Command+I on macOS in the WebView or Inspector to show or hide DevTools. Call `reaper.debug.openDevTools()` to request opening it. Windows/macOS page context menus also control visibility and Embedded/Floating mode. See [DevTools](devtools.md) for layouts, saved preferences and platform limits. Reopen the page after changing assets. Reloading creates a new document and invalidates its old handles.
 
 An unstarted native request expires after 25 seconds, with a 30-second client watchdog. Once execution starts, the queue timer stops. A native dialog or render cannot be interrupted by JavaScript. Never retry a timed-out write automatically. Check state first. Limits and error codes are listed in the [host reference](host-api.md#errors-and-limits).
 

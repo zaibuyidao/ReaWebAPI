@@ -32,7 +32,7 @@ Lifecycle events are `before-close`, `before-reload` and `cleanup`; all run befo
 
 Native close buttons, bridge close requests and same-document reloads participate. The bridge remains usable during cleanup. Reload invalidates old requests, handles, subscriptions and audio jobs. Forced unload/process exit/crash cannot guarantee asynchronous persistence; pagehide only attempts synchronous cleanup with reason `unload` and timeout 0. Persist important state during normal operation.
 
-On Windows, macOS and Linux, the WebView’s native context menu starts with **Dock in REAPER** when floating or **Undock from REAPER** when docked. Windows also provides state-dependent **Open DevTools** / **Hide DevTools** and **Float DevTools** / **Embed DevTools** actions, replacing **Inspect** while preserving other default items. Page `contextmenu` handlers, including `preventDefault()`, remain effective. Windows retains **Dock in REAPER** in the title-bar system menu. Both docking menu entries and `setDocked()` use the same REAPER Docker integration and preserve the current WebView document.
+On Windows, macOS and Linux, the WebView’s native context menu starts with **Dock in REAPER** when floating or **Undock from REAPER** when docked. Windows/macOS also provide state-dependent **Open DevTools** / **Hide DevTools** and **Float DevTools** / **Embed DevTools** actions. Windows replaces **Inspect**, while macOS retains WebKit's **Inspect Element** action. Other default items are preserved. Page `contextmenu` handlers, including `preventDefault()`, remain effective. Windows retains **Dock in REAPER** in the title-bar system menu. Both docking menu entries and `setDocked()` use the same REAPER Docker integration and preserve the current WebView document.
 
 ### Window icons
 
@@ -95,7 +95,7 @@ Host callbacks only update thread-safe counters. REAPER queries and JS dispatch 
 
 `reaper.debug.log/warn/error` write bounded previews to REAPER's console and a 200-entry per-window log. `inspect` handles circular values. `getLogs` and `getDiagnostics` expose JS/native errors, request IDs, document generations, cleanup state and audio job counts. Uncaught JS errors and unhandled rejections are recorded without replacing console. Nothing is uploaded.
 
-`reaper.debug.openDevTools()` requests showing the inspector on Windows/Linux. On macOS it shows a Safari guide and rejects with `INSPECTOR_MENU`. See [DevTools](devtools.md) for shortcuts, layouts and the `getDiagnostics()` field `devtools`.
+`reaper.debug.openDevTools()` requests showing the inspector on Windows, macOS and Linux. On macOS, unavailable native Inspector controls reject with `DEVTOOLS_UNAVAILABLE`. See [DevTools](devtools.md) for shortcuts, layouts and the `getDiagnostics()` field `devtools`.
 
 ## Audio
 

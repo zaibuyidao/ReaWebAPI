@@ -59,6 +59,9 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
       - name: Build
         run: cmake --build build --config Release --parallel 3
+      - name: Compile macOS DevTools integration test
+        if: matrix.platform == 'macos'
+        run: cmake --build build --config Release --target macos_devtools
       - name: Run regression tests
         run: ctest --test-dir build -C Release --output-on-failure
         env:

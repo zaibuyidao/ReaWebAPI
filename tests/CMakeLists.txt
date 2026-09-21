@@ -65,6 +65,12 @@ if(NOT WIN32)
 endif()
 
 # Native UI integration tests are opt-in and excluded from ctest.
+if(APPLE AND REAWEB_BUILD_EXTENSION)
+  add_executable(macos_devtools EXCLUDE_FROM_ALL macos_devtools.mm)
+  set_target_properties(macos_devtools PROPERTIES OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED ON)
+  target_compile_options(macos_devtools PRIVATE -fobjc-arc)
+  target_link_libraries(macos_devtools PRIVATE reaweb_core "-framework Cocoa" "-framework WebKit")
+endif()
 if(UNIX AND NOT APPLE AND REAWEB_BUILD_EXTENSION)
   add_executable(linux_context_menu EXCLUDE_FROM_ALL linux_context_menu.cpp)
   target_link_libraries(linux_context_menu PRIVATE reaweb_core PkgConfig::WEBKIT)

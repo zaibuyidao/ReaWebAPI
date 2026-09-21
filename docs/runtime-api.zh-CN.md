@@ -33,7 +33,7 @@ await reaper.window.hide();
 
 返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。窗口支持标题、聚焦、停靠和位置保存。
 
-Windows、macOS、Linux 的 WebView 原生右键菜单顶部在浮动时显示 **Dock in REAPER**，停靠时显示 **Undock from REAPER**。Windows 另提供随状态变化的 **Open DevTools** / **Hide DevTools** 和 **Float DevTools** / **Embed DevTools**，替换 **Inspect** 并保留其他原有菜单项。页面的 `contextmenu` 处理及 `preventDefault()` 仍然有效。Windows 标题栏系统菜单保留 **Dock in REAPER**。两个停靠菜单入口与 `setDocked()` 使用相同的 REAPER Docker 接口，切换时保留当前 WebView 文档。
+Windows、macOS、Linux 的 WebView 原生右键菜单顶部在浮动时显示 **Dock in REAPER**，停靠时显示 **Undock from REAPER**。Windows/macOS 另提供随状态变化的 **Open DevTools** / **Hide DevTools** 和 **Float DevTools** / **Embed DevTools**。Windows 替换 **Inspect**，macOS 保留 WebKit 的 **Inspect Element**，其他原有菜单项保持不变。页面的 `contextmenu` 处理及 `preventDefault()` 仍然有效。Windows 标题栏系统菜单保留 **Dock in REAPER**。两个停靠菜单入口与 `setDocked()` 使用相同的 REAPER Docker 接口，切换时保留当前 WebView 文档。
 
 ### 窗口图标
 
@@ -136,7 +136,7 @@ button { border-color:var(--reaper-highlight); }
 
 日志不上传到任何服务，也不默认记录全部 API 参数或音频数据。
 
-`reaper.debug.openDevTools()` 在 Windows/Linux 上请求显示检查器。在 macOS 上显示 Safari 指引，并以 `INSPECTOR_MENU` 错误拒绝 Promise。快捷键、布局及 `getDiagnostics()` 的 `devtools` 字段见 [DevTools](devtools.zh-CN.md)。
+`reaper.debug.openDevTools()` 在 Windows、macOS 和 Linux 上请求显示检查器。macOS 原生检查器控制不可用时以 `DEVTOOLS_UNAVAILABLE` 错误拒绝 Promise。快捷键、布局及 `getDiagnostics()` 的 `devtools` 字段见 [DevTools](devtools.zh-CN.md)。
 
 ## Audio
 

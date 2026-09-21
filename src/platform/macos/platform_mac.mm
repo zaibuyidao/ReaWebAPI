@@ -2,7 +2,7 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #include "platform/shared/swell_window.hpp"
-#include "platform/shared/devtools.hpp"
+#include "platform/macos/mac_devtools.hpp"
 #include <fstream>
 #include <cstring>
 
@@ -65,18 +65,23 @@
   std::function<void(reaweb::Json)> dragReply;
   std::function<void()> toggleDock;
   std::function<bool()> isDocked;
+  std::function<NSInteger(NSMenu*, NSInteger)> devtoolsMenu;
 }
 @end
 
 @implementation ReaWebNativeView
 - (void)willOpenMenu:(NSMenu*)menu withEvent:(NSEvent*)event {
   [super willOpenMenu:menu withEvent:event];
-  if (sourceClosed || !toggleDock || !menu.numberOfItems) return;
-  auto item = [[NSMenuItem alloc] initWithTitle:isDocked && isDocked() ? @"Undock from REAPER" : @"Dock in REAPER"
-    action:@selector(toggleDockFromMenu:) keyEquivalent:@""];
-  item.target = self;
-  [menu insertItem:[NSMenuItem separatorItem] atIndex:0];
-  [menu insertItem:item atIndex:0];
+  if (sourceClosed || !menu.numberOfItems) return;
+  NSInteger index = 0;
+  if (toggleDock) {
+    auto item = [[NSMenuItem alloc] initWithTitle:isDocked && isDocked() ? @"Undock from REAPER" : @"Dock in REAPER"
+      action:@selector(toggleDockFromMenu:) keyEquivalent:@""];
+    item.target = self;
+    [menu insertItem:item atIndex:index++];
+  }
+  if (devtoolsMenu) index = devtoolsMenu(menu, index);
+  if (index) [menu insertItem:[NSMenuItem separatorItem] atIndex:index];
 }
 - (void)toggleDockFromMenu:(id)sender {
   (void)sender;
@@ -137,9 +142,7 @@ class MacWindow final : public Window {
   std::unique_ptr<SwellWindow> window_;
   ReaWebNativeView* webview_;
   id mouse_monitor_;
-  id key_monitor_;
-  NSPanel* inspector_help_ = nil;
-  DevToolsPreferences devtools_prefs_;
+  std::unique_ptr<MacDevTools> devtools_;
   ReaWebDelegate* delegate_;
   mutable Json normal_;
   bool maximized_ = false;
@@ -192,27 +195,13 @@ public:
     }];
     webview_.navigationDelegate = delegate_;
     webview_.UIDelegate = delegate_;
-    webview_.inspectable = YES;
     webview_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent, std::function<void()>{}, delegate_->options.on_close);
     auto content = (__bridge NSView*)GetDlgItem(static_cast<HWND>(window_->handle()), 0);
     webview_.frame = content.bounds;
     [content addSubview:webview_];
-    devtools_prefs_.floating = true;
-    key_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
-      const auto flags = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
-      const auto modifiers = flags & (NSEventModifierFlagControl | NSEventModifierFlagShift | NSEventModifierFlagCommand | NSEventModifierFlagOption);
-      auto responder = webview_.window.firstResponder;
-      const bool page_focused = event.window == webview_.window && [responder isKindOfClass:[NSView class]] &&
-        [(NSView*)responder isDescendantOf:webview_];
-      if (!closed() && (page_focused || (inspector_help_ && event.window == inspector_help_)) &&
-          [event.charactersIgnoringModifiers.lowercaseString isEqualToString:@"i"] &&
-          modifiers == (NSEventModifierFlagControl | NSEventModifierFlagShift)) {
-        if (!event.isARepeat) show_inspector_help(true);
-        return nil;
-      }
-      return event;
-    }];
+    devtools_ = std::make_unique<MacDevTools>(webview_, [this] { if (!closed()) focus(); });
+    webview_->devtoolsMenu = [this](NSMenu* menu, NSInteger index) { return devtools_->insert_menu(menu, index); };
     if (delegate_->options.url.empty()) {
       auto url = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
       [webview_ loadFileURL:url allowingReadAccessToURL:[url URLByDeletingLastPathComponent]];
@@ -220,9 +209,8 @@ public:
   }
   ~MacWindow() override {
     if (mouse_monitor_) [NSEvent removeMonitor:mouse_monitor_];
-    if (key_monitor_) [NSEvent removeMonitor:key_monitor_];
-    [inspector_help_.parentWindow removeChildWindow:inspector_help_];
-    [inspector_help_ close];
+    webview_->devtoolsMenu = {};
+    devtools_.reset();
     webview_->sourceClosed = true; webview_->dropEnabled = false; webview_->receiveDrop = {};
     webview_->toggleDock = {}; webview_->isDocked = {};
     auto drag_reply = std::move(webview_->dragReply);
@@ -267,30 +255,9 @@ public:
       webview_->dragReply = {}; throw Error("DRAG_FAILED", error.reason.UTF8String ?: "AppKit drag failed");
     }
   }
-  void devtools() override {
-    show_inspector_help();
-    throw Error("INSPECTOR_MENU", "macOS: enable Safari Settings > Advanced > Show features for web developers, then choose Develop > this Mac > REAPER > the tool page.");
-  }
-  void show_inspector_help(bool toggle = false) {
-    if (toggle && inspector_help_.visible) { [inspector_help_ orderOut:nil]; focus(); return; }
-    if (!inspector_help_) {
-      inspector_help_ = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 560, 240)
-        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
-      inspector_help_.title = @"ReaWebAPI — Safari Web Inspector Setup";
-      inspector_help_.releasedWhenClosed = NO;
-      auto text = [NSTextField wrappingLabelWithString:@"Inspect this page with Safari Web Inspector.\n\n1. In Safari, enable Settings > Advanced > Show features for web developers.\n2. Select Develop > this Mac > REAPER > the tool page.\n\nCtrl+Shift+I toggles this guide. Open and close the inspector in Safari."];
-      text.frame = NSMakeRect(20, 20, 520, 200);
-      [inspector_help_.contentView addSubview:text];
-      [inspector_help_ center];
-    }
-    if (inspector_help_.parentWindow != webview_.window) {
-      [inspector_help_.parentWindow removeChildWindow:inspector_help_];
-      [webview_.window addChildWindow:inspector_help_ ordered:NSWindowAbove];
-    }
-    [inspector_help_ makeKeyAndOrderFront:nil];
-  }
-  Json devtools_state() const override { return devtools_prefs_.state(); }
-  void restore_devtools(const Json& value) override { devtools_prefs_.restore(value); devtools_prefs_.floating = true; }
+  void devtools() override { devtools_->open(); }
+  Json devtools_state() const override { return devtools_->state(); }
+  void restore_devtools(const Json& value) override { devtools_->restore(value); }
   bool closed() const override { return delegate_->isClosed || window_->closed(); }
   void* native_handle() const override { return window_->handle(); }
   void* icon_target() const override {
@@ -308,7 +275,7 @@ public:
     if (maximized_ && !webview_.window.zoomed) [webview_.window zoom:nil];
   }
   void focus() override { window_->focus(); [webview_.window makeFirstResponder:webview_]; }
-  void tick() override { if (!closed()) apply_icon(); }
+  void tick() override { if (!closed()) { devtools_->tick(); apply_icon(); } }
   void set_title(const std::string& title) override { window_->set_title(title); icon_window_ = nil; apply_icon(); }
   std::vector<int> icon_sizes() const override {
     const auto scale = std::clamp(webview_.window ? webview_.window.backingScaleFactor : NSScreen.mainScreen.backingScaleFactor, 1.0, 8.0);
@@ -349,9 +316,7 @@ public:
     if (value.value("maximized", false) && !webview_.window.zoomed) [webview_.window zoom:nil];
   }
   Json diagnostics() const override {
-    auto inspector = devtools_prefs_.state();
-    inspector.update({{"embeddedSupported", false}, {"nativeToggleSupported", false}, {"fallbackReason", "Use Safari Develop > this Mac > REAPER > the tool page. Ctrl+Shift+I toggles the setup guide"}});
-    return {{"backend", "WKWebView"}, {"browserVersion", [[[NSBundle bundleForClass:[WKWebView class]] objectForInfoDictionaryKey:@"CFBundleVersion"] UTF8String] ?: "system"}, {"devtools", inspector}};
+    return {{"backend", "WKWebView"}, {"browserVersion", [[[NSBundle bundleForClass:[WKWebView class]] objectForInfoDictionaryKey:@"CFBundleVersion"] UTF8String] ?: "system"}, {"devtools", devtools_->diagnostics()}};
   }
 };
 class MacPlatform final : public Platform {

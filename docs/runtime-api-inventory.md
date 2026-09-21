@@ -88,7 +88,7 @@ REAPER 工程、对象、播放及窗口状态通知。Host state notifications;
 | `reaper.debug.inspect(value)` | `Promise<boolean>` | 记录支持循环引用的调试预览 |
 | `reaper.debug.getLogs()` | `Promise<ReaWebLogEntry[]>` | 读取当前窗口最近日志 |
 | `reaper.debug.getDiagnostics()` | `Promise<ReaWebDiagnostics>` | 读取后端、状态、错误和队列诊断 |
-| `reaper.debug.openDevTools()` | `Promise<boolean>` | 请求显示 [DevTools](devtools.zh-CN.md)，macOS 显示指引并返回 `INSPECTOR_MENU` 错误 |
+| `reaper.debug.openDevTools()` | `Promise<boolean>` | 请求显示 [DevTools](devtools.zh-CN.md)，macOS 原生控制不可用时返回 `DEVTOOLS_UNAVAILABLE` 错误 |
 | `reaper.debug.setBufferSize(bytes)` | `Promise<number>` | 设置当前文档固定原生输出缓冲区容量 |
 
 ## reaper.fs

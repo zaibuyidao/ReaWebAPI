@@ -32,7 +32,7 @@
 | `reaper.window.open(path)` | 数字窗口 ID | 打开本地 HTML，相对路径从调用页面所在目录解析 |
 | `reaper.window.close()` | `boolean` | 请求关闭，文档销毁可能使尚未完成的 Promise 被拒绝，包括关闭请求本身 |
 | `reaper.window.focus()` | `boolean` | 聚焦当前窗口 |
-| `reaper.debug.openDevTools()` | `boolean` | 幂等请求显示 DevTools。macOS 显示 Safari 指引，并以 `INSPECTOR_MENU` 错误拒绝 Promise。详见 [DevTools](devtools.zh-CN.md) |
+| `reaper.debug.openDevTools()` | `boolean` | 幂等请求显示 DevTools。macOS 原生控制不可用时以 `DEVTOOLS_UNAVAILABLE` 错误拒绝 Promise。详见 [DevTools](devtools.zh-CN.md) |
 | `reaper.window.setTitle(title)` | `boolean` | 标题为 1–256 UTF-8 字节，不含 NUL |
 | `reaper.window.setIcon(path)` | `boolean` | 在当前窗口会话中覆盖 HTML favicon，重载后保留。本地 PNG、ICO 或 SVG，相对路径基于 App 根目录，也支持绝对路径。详见[窗口图标](runtime-api.zh-CN.md#窗口图标) |
 | `reaper.window.setIconVisible(visible)` | `boolean` | 显示或隐藏标题栏图标及占位，保留图标数据。默认 `true`，重载后保留。Linux 装饰支持取决于窗口管理器 |

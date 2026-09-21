@@ -1,13 +1,13 @@
 # ReaWebAPI
 
-## Changes
+## English
 
-- Remove the Windows Embedded DevTools caption, window controls and frame from the panel, and expand the inspector content to eliminate surrounding gaps.
-- Restore the native DevTools window in Floating mode without an additional host frame. Mode switches retain the same Console and Inspector session.
-- Reduce the Windows DevTools divider to 1px in the system window-frame color while retaining width adjustment.
+- Add native macOS WKWebView Web Inspector with right-hand Embedded and native Floating modes, without an additional window frame.
+- Add state-aware Open/Hide/Float/Embed context-menu actions and Option+Command+I. Reuse the existing Runtime API and saved layout preferences, retaining the Inspector session across hiding and mode switches.
+- Detect WebKit Inspector capabilities at runtime and report native floating fallback when embedding is unavailable.
 
-## 更新
+## 简体中文
 
-- 隐藏 Windows Embedded DevTools 面板内的标题栏、窗口控制按钮及边框，扩展检查器内容以消除四周空白。
-- Floating 模式恢复 DevTools 原生窗口，不叠加宿主外框。模式切换保留同一个 Console / Inspector 会话。
-- Windows DevTools 分割线缩至 1px，使用系统窗口边框颜色，保留宽度拖动调整。
+- macOS WKWebView 新增原生 Web Inspector，支持右侧 Embedded 和原生 Floating 模式，不增加外层窗口边框。
+- 新增随状态变化的 Open/Hide/Float/Embed 右键菜单和 Option+Command+I，复用现有 Runtime API 与布局偏好，隐藏及切换模式时保留检查器会话。
+- 运行时检查 WebKit Inspector 能力，嵌入不可用时回退到原生浮动窗口并提供诊断。

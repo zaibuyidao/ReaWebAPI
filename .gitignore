@@ -71,6 +71,7 @@ Thumbs.db
 !/tests/
 /tests/*
 !/tests/*.cpp
+!/tests/*.mm
 !/tests/*.hpp
 !/tests/*.py
 !/tests/*.cjs

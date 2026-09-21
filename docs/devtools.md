@@ -2,13 +2,13 @@
 
 **English** | [简体中文](devtools.zh-CN.md)
 
-On Windows and Linux, press **Ctrl+Shift+I** in the WebView or its managed DevTools window to show or hide DevTools. Holding the keys does not repeat the toggle. Hiding returns focus to the page. `reaper.debug.openDevTools()` and `ReaWeb_DevTools(id)` request opening or showing DevTools. Repeated API calls do not hide it.
+Press **Ctrl+Shift+I** on Windows/Linux or **Option+Command+I** on macOS in the WebView or its managed DevTools window to show or hide DevTools. Holding the keys does not repeat the toggle. Hiding returns focus to the page. `reaper.debug.openDevTools()` and `ReaWeb_DevTools(id)` request opening or showing DevTools. Repeated API calls do not hide it.
 
 | Platform | Presentation | Mode switching |
 | --- | --- | --- |
 | Linux / WebKitGTK | Right-hand panel by default, with a draggable divider | **Float DevTools** / **Dock right** in the panel toolbar |
 | Windows / WebView2 | Right-hand panel by default, with a draggable divider | **Float DevTools** / **Embed DevTools** in the page context menu |
-| macOS / WKWebView | Safari Web Inspector | Ctrl+Shift+I toggles the setup guide. Control the inspector in Safari |
+| macOS / WKWebView | Right-hand panel by default, with a draggable divider | **Float DevTools** / **Embed DevTools** in the page context menu |
 
 ## Linux
 
@@ -30,15 +30,16 @@ WebView2 exposes no public embedded-inspector controller. ReaWebAPI uses [`OpenD
 
 ## macOS
 
-ReaWebAPI makes the WKWebView page available to Safari Web Inspector:
+**Embedded** uses WebKit's native right-hand Inspector view without a window title bar, window buttons, wrapper frame or reserved decoration space. **Floating** uses WebKit's own Inspector window. No additional ReaWebAPI window or toolbar is created.
 
-1. Enable **Safari Settings > Advanced > Show features for web developers**.
-2. Choose **Develop > this Mac > REAPER > the tool page**.
+The page context menu shows **Open DevTools** / **Hide DevTools** and **Float DevTools** / **Embed DevTools** according to the current state. **Option+Command+I** toggles visibility from the page or Inspector. Changing mode while hidden does not open it. The shortcut, menu, `reaper.debug.openDevTools()` and `ReaWeb_DevTools(id)` use the same controller. Hiding and switching modes retain the live Inspector view and connection, including Console entries and the selected tab. Native close controls end the session.
 
-Ctrl+Shift+I toggles the same non-modal guide from either the page or the guide. Hiding the guide returns focus to the page. `reaper.debug.openDevTools()` shows the guide and rejects with `INSPECTOR_MENU`. Open and close the inspector in Safari. ReaWebAPI does not manage its layout or window stacking.
+The preferred panel width defaults to 40% and follows host resizing. Dragging WebKit's divider updates the saved ratio. WebKit enforces minimum pane sizes, so the actual width may exceed the preference. A host content area smaller than 820 × 334 points uses Floating without overwriting the saved mode. Growing the visible host restores Embedded when requested.
+
+Public `WKWebView.inspectable` remains enabled. Programmatic Inspector control and docking use runtime-checked WebKit private interfaces because the public API has no equivalent controller. This integration depends on the system WebKit version. If docking is unavailable, the native floating window remains usable and `embeddedSupported` is `false`. If native control is unavailable, menu actions are disabled, `nativeToggleSupported` is `false`, and `openDevTools()` rejects with `DEVTOOLS_UNAVAILABLE`. Safari's Develop menu remains available for manual inspection. `fallbackReason` and `lastError` describe capability or opening failures.
 
 ## Saved preferences and diagnostics
 
-`ReaWebAPI/WindowState/*.json` saves `devtools.mode` (`embedded` or `floating`) and `devtools.widthRatio` per page and window slot. Preferences survive reopening the tool and restarting REAPER. DevTools starts closed. Debugging sessions are not persisted. Windows/Linux restore the saved mode, including floating preferences from earlier versions. A Windows hosting fallback does not overwrite the saved preference. macOS uses floating mode and retains the width preference.
+`ReaWebAPI/WindowState/*.json` saves `devtools.mode` (`embedded` or `floating`) and `devtools.widthRatio` per page and window slot. Preferences survive reopening the tool and restarting REAPER. DevTools starts closed. Debugging sessions are not persisted. All platforms restore the saved mode, including floating preferences from earlier versions. Windows/macOS hosting fallbacks do not overwrite the saved preference.
 
-`(await reaper.debug.getDiagnostics()).devtools` reports the effective mode, width ratio, embedding support and backend-specific status. Safari inspector visibility is unavailable. On Windows, visibility refers to the native window identified by ReaWebAPI. See [manual verification](SMOKE_TEST.md#devtools-acceptance).
+`(await reaper.debug.getDiagnostics()).devtools` reports the effective mode, width ratio, embedding support and backend-specific status. On macOS, `visible` reports the local WebKit Inspector state. On Windows, it refers to the native window identified by ReaWebAPI. See [manual verification](SMOKE_TEST.md#devtools-acceptance).

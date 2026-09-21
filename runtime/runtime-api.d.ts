@@ -69,9 +69,10 @@ interface ReaWebDevToolsState {
   /** Embedded panel share of available width: 0.2–0.8, default 0.4. */
   widthRatio: number;
   embeddedSupported: boolean;
-  /** Visibility of the inspector managed by this backend. Omitted for Safari. */
+  /** Visibility of the inspector managed by this backend. */
   visible?: boolean;
   pending?: boolean;
+  /** Whether this backend can open/hide the native inspector programmatically. */
   nativeToggleSupported?: boolean;
   fallbackReason?: string;
   lastError?: string;
