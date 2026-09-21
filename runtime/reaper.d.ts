@@ -275,6 +275,21 @@ type ReaWebBatchMethod =
   | 'UpdateItemInProject';
 type ReaWebBatchArgs<T extends unknown[]> = { [I in keyof T]: T[I] | ReaWebBatchReference };
 type ReaWebBatchCall = { [M in ReaWebBatchMethod]: { method: M; args: ReaWebBatchArgs<Parameters<ReaWebAPI[M]>> } }[ReaWebBatchMethod];
+declare const reawebBatchValue: unique symbol;
+/** Opaque deferred result, owned by one synchronous batch callback. */
+interface ReaWebBatchDeferred<T> { readonly [reawebBatchValue]: T; }
+type ReaWebBatchValue<T> = ReaWebBatchDeferred<T> &
+  (T extends readonly unknown[] ? { readonly [I in keyof T]: ReaWebBatchValue<T[I]> } : unknown);
+type ReaWebBatchBuilderArgs<T extends unknown[]> = { [I in keyof T]: T[I] | ReaWebBatchDeferred<T[I] | null> };
+type ReaWebBatchNativeResult<T> = [T] extends [void] ? null : T;
+/** Mirror signatures restricted to the native batch whitelist. Nullable deferred handles are validated by the host. */
+type ReaWebBatchBuilder = {
+  readonly [M in ReaWebBatchMethod]: (...args: ReaWebBatchBuilderArgs<Parameters<ReaWebAPI[M]>>) =>
+    ReaWebBatchValue<ReaWebBatchNativeResult<Awaited<ReturnType<ReaWebAPI[M]>>>>;
+};
+type ReaWebBatchResolved<T> = T extends ReaWebBatchDeferred<infer R> ? R
+  : T extends Uint8Array ? T : T extends object ? { [K in keyof T]: ReaWebBatchResolved<T[K]> } : T;
+type ReaWebBatchResult<T> = T extends void ? unknown[] : ReaWebBatchResolved<T>;
 interface ReaWebFileInfo { path: string; exists: boolean; type: 'file' | 'directory' | 'other'; size: number | null; }
 interface ReaWebDirectoryEntry extends ReaWebFileInfo { name: string; }
 declare const reaper: Readonly<ReaWebAPI>;

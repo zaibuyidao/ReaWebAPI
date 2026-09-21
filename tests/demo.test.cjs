@@ -23,12 +23,31 @@ function fixture() {
     return elements.get(id);
   };
   const deferred = (queue, args) => new Promise((resolve, reject) => queue.push({ args, resolve, reject }));
+  const batchWindow = { addEventListener() {} };
+  batchWindow.top = batchWindow;
+  batchWindow.chrome = { webview: { postMessage: message => {
+    const request = JSON.parse(message);
+    const reply = payload => batchWindow.__reawebReceive({ id: request.id, document: request.document, ...payload });
+    if (request.method === '__reawebHello') {
+      const methods = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '../api/bindings.json'), 'utf8')).functions);
+      const batchMethods = [...fs.readFileSync(path.join(__dirname, '../src/core/batch.hpp'), 'utf8').matchAll(/"([A-Za-z][A-Za-z0-9_]+)"/g)].map(match => match[1]);
+      queueMicrotask(() => reply({ result: { protocol: 1, projectEpoch: 1, methods, batchMethods } }));
+    } else {
+      assert.equal(request.method, 'ReaWeb_Batch');
+      deferred(batches, request.args[0]).then(result => reply({ result }), error => reply({ error }));
+    }
+  } } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../runtime/reaper-api.generated.js'), 'utf8') +
+    fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8'), {
+    window: batchWindow, crypto: require('node:crypto').webcrypto, TextEncoder, console, Uint8Array, Float64Array,
+    DataView, btoa, atob, setTimeout: () => 0, clearTimeout() {}
+  });
   let connect;
   const reaper = {
     lifecycle: { ready: new Promise(resolve => { connect = resolve; }) },
     window: { setIcon: async () => true },
     GetSelectedTrack: (...args) => deferred(reads, args),
-    transaction: { batch: calls => deferred(batches, calls) },
+    transaction: batchWindow.reaper.transaction,
     ColorFromNative: color => deferred(colors, color),
     audio: { setTrackValueLatest: (...args) => deferred(writes, args) },
     clipboard: { writeText: async text => { copies.push(text); } },

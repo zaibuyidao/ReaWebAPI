@@ -12,7 +12,7 @@ JavaScript Runtime 使用下列 13 个命名空间。730 项标准 REAPER 镜像
 
 13 个命名空间均提供具体方法，共 64 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
-`transaction` 管理批处理和 Undo 分组，不承诺数据库式原子性、回滚或隔离；已完成写入不会自动撤回，其他编辑仍可能交错。方法与类型见[完整清单](runtime-api-inventory.md)。
+`transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
 
 ## FS
 

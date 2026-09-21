@@ -63,7 +63,22 @@ FX events observe focus, last-touched parameters and project changeCount to inva
 
 ## Batches and continuous controls
 
-`reaper.transaction.batch(calls, { undoLabel? })` accepts 1–128 calls and returns results in order. `capabilities.batchMethods` and `ReaWebBatchMethod` list 173 reviewed APIs for tracks, items, takes, MIDI, FX, envelopes, sends, markers and tempo. Project switching, action dispatch, modal dialogs, file I/O, manual Undo/refresh scopes and audio sample buffers are excluded. All 730 standard APIs remain callable individually.
+`reaper.transaction.batch(callsOrBuilder, { undoLabel? })` accepts 1–128 calls, supplied as a call array or collected by a synchronous Builder callback. `capabilities.batchMethods` and `ReaWebBatchMethod` list 173 reviewed APIs for tracks, items, takes, MIDI, FX, envelopes, sends, markers and tempo. Project switching, action dispatch, modal dialogs, file I/O, lifecycle services, manual Undo/refresh scopes and audio sample buffers are excluded. All 730 standard APIs remain callable individually.
+
+```javascript
+const data = await reaper.transaction.batch(b => {
+  const track = b.GetTrack(0, 0);
+  const [, name] = b.GetTrackName(track);
+  const volume = b.GetMediaTrackInfo_Value(track, 'D_VOL');
+  return { name, volume };
+});
+```
+
+`b` preserves Mirror names, argument order and optional slots. Its methods return deferred references, with tuple indexing and destructuring in Lua result order. Return a reference or a nested plain object/array containing references and literals to select the resolved result. Omit the return value to receive the ordered native result array, as with `batch(calls)`. Void results remain `null` in both forms. `ReaWebBatchBuilder` derives method signatures from the Mirror, and `ReaWebBatchResult<T>` resolves the callback's result type.
+
+The callback runs after the handshake and must be synchronous. References belong to that callback and can be passed as complete API arguments or returned, but cannot be awaited, used for arithmetic or inspected as real handles. They are always truthy objects, so do not branch on them or compare them to `null`. Read outside the batch when control flow depends on a native result. For example, check selection with `await reaper.GetSelectedTrack(0, 0)` before collecting calls that require a selected track. Unknown methods, async callbacks, cross-builder references and invalid structures reject with `INVALID_ARGUMENT` before dispatch. Callback exceptions propagate unchanged.
+
+The Builder lowers calls to the existing `ReaWeb_Batch` request, with no additional RPC or Native layer. Native validation and `BATCH_FAILED` details remain unchanged.
 
 Batches operate on the **current project only**. Foreign project handles and objects are rejected before any write, including a foreign handle later in the batch. Methods, availability and arguments of calls without references are prevalidated. Arguments depending on earlier results are validated just before their call. Reference indices start at zero; optional paths select array elements or object properties, with at most eight segments. References must be complete top-level arguments and cannot point forward.
 

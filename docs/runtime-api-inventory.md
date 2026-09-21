@@ -169,7 +169,7 @@ REAPER 工程、对象、播放及窗口状态通知。Host state notifications;
 
 | API | 返回 / Result | 用途 |
 | --- | --- | --- |
-| `reaper.transaction.batch(calls, options?)` | `Promise<unknown[]>` | 顺序执行 1–128 项已审核调用，可设置 undoLabel |
+| `reaper.transaction.batch(callsOrBuilder, options?)` | `Promise<unknown[]>` / `Promise<ReaWebBatchResult<T>>` | 数组或同步 Mirror Builder，1–128 项已审核调用，支持引用、解构和 undoLabel |
 | `reaper.transaction.beginUndo(label)` | `Promise<string>` | 开始托管编辑手势，返回本页 token |
 | `reaper.transaction.endUndo(token)` | `Promise<boolean>` | 结束托管编辑手势 |
 | `reaper.transaction.withUndo(label, callback)` | `Promise<T>` | 执行回调并在 finally 结束 Undo，保留回调返回值 |

@@ -24,8 +24,11 @@ async function main() {
   action('gain', async () => {
     const track = await r.GetSelectedTrack(0, 0);
     if (!track) throw new Error('Select a track first.');
-    return r.transaction.batch([{ method: 'SetMediaTrackInfo_Value', args: [track, 'D_VOL', Math.pow(10, -6 / 20)] }],
-      { undoLabel: 'Set track to −6 dB' });
+    return r.transaction.batch(b => {
+      b.SetMediaTrackInfo_Value(track, 'D_VOL', Math.pow(10, -6 / 20));
+      const [, name] = b.GetTrackName(track);
+      return { name, volume: b.GetMediaTrackInfo_Value(track, 'D_VOL') };
+    }, { undoLabel: 'Set track to −6 dB' });
   });
   action('save', () => r.fs.writeFile('snapshot.json', JSON.stringify({ projectName, saved: new Date().toISOString() }, null, 2), { overwrite: true }));
   action('read', async () => JSON.parse(await r.fs.readFile('snapshot.json')));

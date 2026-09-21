@@ -5,6 +5,7 @@
 ReaWebAPI is a native REAPER extension for building tools with HTML, CSS and JavaScript. It provides dockable WebView windows and asynchronous access to REAPER through the `reaper` object.
 
 - 730 standard REAPER 7.80 API bindings with TypeScript declarations.
+- Mirror-aware Batch Builder for 173 reviewed APIs, with deferred references, tuple destructuring and typed results.
 - 13 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
 - Native WebView support for modules, local resources, Workers and persistent App storage.
 - Dock/Undock from the WebView context menu. PNG, ICO and SVG window icons from HTML favicons or `reaper.window.setIcon(path)` survive docking and reloads, with visibility controlled by `reaper.window.setIconVisible(boolean)`.

@@ -63,7 +63,22 @@ FX 事件追踪焦点、最后触碰参数及工程 changeCount，用于使 FX �
 
 ## 批处理与连续参数
 
-`reaper.transaction.batch(calls, { undoLabel? })` 接受 1–128 个调用，按顺序返回结果。`capabilities.batchMethods` 与 `ReaWebBatchMethod` 列出 173 个已审核接口，覆盖轨道、Item、Take、MIDI、FX、包络、发送、标记和速度。工程切换、Action 调用、模态对话框、文件读写、手动 Undo/刷新作用区间及音频样本数组不进入批处理。全部 730 项标准 API 仍可单独调用。
+`reaper.transaction.batch(callsOrBuilder, { undoLabel? })` 接受 1–128 个调用，可传入调用数组或同步 Builder 回调。`capabilities.batchMethods` 与 `ReaWebBatchMethod` 列出 173 个已审核接口，覆盖轨道、Item、Take、MIDI、FX、包络、发送、标记和速度。工程切换、Action 调用、模态对话框、文件读写、生命周期服务、手动 Undo/刷新作用区间及音频样本数组不进入批处理。全部 730 项标准 API 仍可单独调用。
+
+```javascript
+const data = await reaper.transaction.batch(b => {
+  const track = b.GetTrack(0, 0);
+  const [, name] = b.GetTrackName(track);
+  const volume = b.GetMediaTrackInfo_Value(track, 'D_VOL');
+  return { name, volume };
+});
+```
+
+`b` 保留 Mirror 方法名、参数顺序和可选参数位置。方法返回延迟引用，多返回值按 Lua 顺序支持索引和解构。回调可返回引用，或包含引用及字面量的嵌套普通对象、数组，执行后还原为对应结果。不返回值时，与 `batch(calls)` 一样返回按调用顺序排列的原生结果数组。两种形式的无返回值结果均为 `null`。`ReaWebBatchBuilder` 从 Mirror 推导方法签名，`ReaWebBatchResult<T>` 推导回调结果类型。
+
+回调在握手完成后同步执行。引用只属于当前回调，可作为完整 API 参数传递或返回，不能 await、参与算术运算或当作真实句柄读取。引用对象始终为真，不能据此判断条件或与 `null` 比较。依赖原生结果的分支应先在批处理外读取，例如先用 `await reaper.GetSelectedTrack(0, 0)` 检查选择，再收集需要轨道的调用。未知方法、异步回调、跨 Builder 引用和无效结构在发送前以 `INVALID_ARGUMENT` 拒绝。回调自身的异常原样传播。
+
+Builder 将调用转换为现有 `ReaWeb_Batch` 请求，不新增 RPC 或 Native 层。原生校验和 `BATCH_FAILED` 详情保持不变。
 
 批处理仅作用于**当前工程**。任何外部工程句柄或对象都会在写入前被拒绝，包括后面条目中的外部句柄。方法、可用性和不含引用的条目参数会预先校验；依赖前面结果的参数在该条执行前校验。引用序号从零开始，可通过最多八段 `path` 选取数组元素或对象属性。引用必须作为完整的顶层参数，不能向后引用。
 

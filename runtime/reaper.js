@@ -4,6 +4,7 @@
   const pending = new Map();
   const subscriptions = new Map();
   const latest = new Map();
+  const batchReferences = new WeakMap();
   const eventNames = ['projectchange', 'selectionchange', 'itemselectionchange', 'takeselectionchange',
     'transportchange', 'fxchange', 'windowstatechange', 'track-added', 'track-deleted', 'track-selected',
     'item-changed', 'take-changed', 'playback-state-changed', 'tempo-changed', 'marker-changed',
@@ -24,6 +25,8 @@
     return btoa(binary);
   };
   const encodeValue = (_, value) => {
+    if (batchReferences.has(value))
+      throw failure('INVALID_ARGUMENT', 'Batch references can only be used inside their builder');
     if (value instanceof Uint8Array) return { __reawebBytes: byteString(value) };
     if (value instanceof Float64Array) {
       const data = new Uint8Array(value.length * 8), view = new DataView(data.buffer);
@@ -277,6 +280,88 @@
       catch (error) { if (!failed) throw error; }
     }
   };
+  const batch = async (input, ...options) => {
+    if (typeof input !== 'function') return call('ReaWeb_Batch', [input, ...options]);
+    const capabilities = await ready;
+    if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
+    if (!Array.isArray(capabilities.batchMethods))
+      throw failure('SCHEMA_MISMATCH', 'The native host does not advertise batch methods');
+    const allowed = new Set(capabilities.batchMethods.filter(name => reawebApiMethods.includes(name)));
+    const owner = {}, calls = [];
+    let active = true;
+    const invalid = message => { throw failure('INVALID_ARGUMENT', message); };
+    const reference = (index, tupleSize = 0, path) => {
+      const value = tupleSize ? Array.from({ length: tupleSize }, (_, i) => reference(index, 0, [i])) : {};
+      batchReferences.set(value, { owner, wire: path ? { $ref: index, path } : { $ref: index } });
+      Object.defineProperties(value, {
+        then: { get: () => invalid('Batch references cannot be awaited; use a synchronous callback') },
+        [Symbol.toPrimitive]: { value: () => invalid('Batch references are not resolved values') }
+      });
+      return Object.freeze(value);
+    };
+    const ownedReference = value => {
+      const ref = batchReferences.get(value);
+      if (ref && ref.owner !== owner) invalid('Batch references cannot cross builders');
+      return ref;
+    };
+    // Snapshot literals and return structures before dispatch. Only top-level
+    // native arguments support references in the existing batch protocol.
+    const visit = (value, onReference, ancestors = new Set()) => {
+      const ref = ownedReference(value);
+      if (ref) return onReference(ref.wire, value);
+      if (value === null || value === undefined || ['string', 'boolean'].includes(typeof value)) return value;
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value !== 'object') return invalid('Expected a batch literal, array, object or reference');
+      if (typeof value.then === 'function') {
+        Promise.resolve(value).catch(() => {});
+        invalid('Batch callbacks and return values must be synchronous');
+      }
+      if (value instanceof Uint8Array) return value.slice();
+      const prototype = Object.getPrototypeOf(value);
+      if (!Array.isArray(value) && prototype !== null && Object.getPrototypeOf(prototype) !== null)
+        invalid('Batch structures must contain plain objects or arrays');
+      if (ancestors.has(value)) invalid('Batch structures cannot contain cycles');
+      ancestors.add(value);
+      try {
+        return Array.isArray(value) ? value.map(child => visit(child, onReference, ancestors))
+          : Object.fromEntries(Object.entries(value).map(([key, child]) => [key, visit(child, onReference, ancestors)]));
+      } finally { ancestors.delete(value); }
+    };
+    const methods = Object.create(null);
+    for (const name of allowed) methods[name] = (...args) => {
+      if (!active) invalid('The batch builder callback has finished');
+      if (calls.length >= 128) invalid('A batch must contain 1 to 128 calls');
+      const encoded = args.map(value => {
+        const ref = ownedReference(value);
+        if (ref) return ref.wire;
+        const literal = visit(value, () => invalid('Batch argument references must be top-level'));
+        if (literal && typeof literal === 'object' && Object.hasOwn(literal, '$ref'))
+          invalid('Use builder references instead of literal $ref objects');
+        return literal;
+      });
+      const index = calls.length;
+      calls.push({ method: name, args: encoded });
+      return reference(index, reawebApiTupleSizes[name] || 0);
+    };
+    const builder = new Proxy(Object.freeze(methods), {
+      get: (target, name) => {
+        if (Object.hasOwn(target, name)) return target[name];
+        return invalid(`This API is not batchable: ${String(name)}`);
+      }
+    });
+    let returned;
+    try { returned = input(builder); }
+    finally { active = false; }
+    const projection = visit(returned, (_, value) => value);
+    if (!calls.length) invalid('A batch must contain 1 to 128 calls');
+    const results = await call('ReaWeb_Batch', [calls, ...options]);
+    if (returned === undefined) return results;
+    return visit(projection, wire => {
+      let value = results[wire.$ref];
+      for (const key of wire.path || []) value = value[key];
+      return value;
+    });
+  };
   const setTrackValueLatest = (track, key, value) => new Promise((resolve, reject) => {
     if (closed) return reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));
     if (!track || track.type !== 'MediaTrack' || typeof track.id !== 'string' ||
@@ -339,7 +424,7 @@
     getPlatform: host('ReaWeb_GetPlatform'), getArchitecture: host('ReaWeb_GetArchitecture'), revealInFileManager: host('ReaWeb_RevealPath')
   });
   api.transaction = Object.freeze({
-    batch: host('ReaWeb_Batch'), beginUndo: host('ReaWeb_BeginUndo'), endUndo: host('ReaWeb_EndUndo'), withUndo
+    batch, beginUndo: host('ReaWeb_BeginUndo'), endUndo: host('ReaWeb_EndUndo'), withUndo
   });
   api.dragDrop = Object.freeze({
     startFiles: host('ReaWeb_DragFiles'), startText: host('ReaWeb_DragText')

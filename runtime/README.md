@@ -19,4 +19,6 @@ Copy the SDK to your workspace and run `starter/Open.lua` from REAPER's Action L
 
 The extension injects the browser runtime. Lua opens the page with `reaper.ReaWeb_Open(path)`. JavaScript uses the Mirror and Runtime APIs after `reaper.lifecycle.ready` resolves.
 
+`reaper.transaction.batch(b => { ... })` collects reviewed Mirror calls with automatic result references and tuple destructuring. Return a reference, object or array to select typed results. The callback is synchronous. The [batch contract](../docs/host-api.md#batches-and-continuous-controls) also documents the existing call-array form.
+
 [Developer guide](../docs/development.md) · [REAPER API](../docs/api-reference.md) · [Runtime API](../docs/runtime-api.md) · [API inventory](../docs/runtime-api-inventory.md) · [DevTools](../docs/devtools.md)

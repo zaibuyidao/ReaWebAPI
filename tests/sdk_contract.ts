@@ -127,3 +127,44 @@ async function appContract() {
   // @ts-expect-error Namespace remains camelCase, without a lowercase alias.
   reaper.dragdrop.startText('hello');
 }
+
+type builderSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebBatchBuilder, ReaWebBatchMethod>>;
+async function batchBuilderContract(track: MediaTrackHandle, take: MediaItem_TakeHandle) {
+  const data = await reaper.transaction.batch(b => {
+    const track = b.GetTrack(0, 0);
+    const [, name] = b.GetTrackName(track);
+    const volume = b.GetMediaTrackInfo_Value(track, 'D_VOL');
+    b.SetMediaTrackInfo_Value(track, 'D_VOL', volume);
+    b.GetSetMediaTrackInfo_String(track, 'P_NAME', name, true);
+    const [, bytes] = b.MIDI_GetAllEvts(take);
+    b.MIDI_SetAllEvts(take, bytes);
+    b.MIDI_SetNote(take, 0, null, undefined, null, null, null, 60);
+    return { name, volume, track, bytes, nested: [volume, name] as const };
+  }, { undoLabel: 'Edit' });
+  const name: string = data.name;
+  const volume: number = data.volume;
+  const handle: MediaTrackHandle | null = data.track;
+  const bytes: Uint8Array = data.bytes;
+  const nested: readonly [number, string] = data.nested;
+  const tuple: [boolean, string] = await reaper.transaction.batch(b => b.GetTrackName(track));
+  const voidResult: null = await reaper.transaction.batch(b => b.UpdateArrange());
+  const raw: unknown[] = await reaper.transaction.batch(b => { b.UpdateArrange(); });
+  // @ts-expect-error Builder callbacks cannot return Promises.
+  await reaper.transaction.batch(async b => b.CountTracks(0));
+  await reaper.transaction.batch(b => {
+    // @ts-expect-error Action dispatch is outside the reviewed batch set.
+    b.Main_OnCommand(40004, 0);
+    // @ts-expect-error Runtime services are not Mirror builder methods.
+    b.window.close();
+    // @ts-expect-error Mirror argument requirements are preserved.
+    b.CountTracks();
+    // @ts-expect-error Deferred track and take handles remain distinct.
+    b.GetTrackName(b.GetActiveTake(b.GetMediaItem(0, 0)));
+    // @ts-expect-error A string reference cannot supply a numeric argument.
+    b.SetMediaTrackInfo_Value(track, 'D_VOL', b.GetTrackName(track)[1]);
+    // @ts-expect-error Deferred numbers are not usable before execution.
+    const count: number = b.CountTracks(0);
+    // @ts-expect-error Ordinary Mirror calls do not accept builder references.
+    reaper.GetTrackName(b.GetTrack(0, 0));
+  });
+}

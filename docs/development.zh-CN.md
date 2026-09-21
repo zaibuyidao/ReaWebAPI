@@ -77,14 +77,14 @@ if (project) console.log(await reaper.CountTracks(project));
 ```javascript
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) {
-  await reaper.transaction.batch([
-    { method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] },
-    { method: 'SetMediaTrackInfo_Value', args: [track, 'B_MUTE', 0] }
-  ], { undoLabel: '居中并取消轨道静音' });
+  await reaper.transaction.batch(b => {
+    b.SetMediaTrackInfo_Value(track, 'D_PAN', 0);
+    b.SetMediaTrackInfo_Value(track, 'B_MUTE', 0);
+  }, { undoLabel: '居中并取消轨道静音' });
 }
 ```
 
-[批处理契约](host-api.zh-CN.md#批处理与连续参数) 覆盖 173 个已审核标准 API，支持结果引用和 128 项上限，全部 730 项仍可普通调用。批处理不是事务，中途失败不会撤销已经完成的写入，错误中会报告已完成结果。
+[批处理契约](host-api.zh-CN.md#批处理与连续参数) 覆盖 173 个已审核标准 API，每组最多 128 项。Builder 回调同步执行，支持延迟结果引用和多返回值解构。返回对象或数组可选择结果并推导类型，不返回值则取得按调用顺序排列的原生结果数组。显式调用数组及全部 730 项普通 Mirror 调用保持可用。批处理不是事务，中途失败不会撤销已经完成的写入，错误中会报告已完成结果。
 
 跨 await 的连续操作可使用 `reaper.transaction.withUndo` 或 `reaper.transaction.beginUndo` / `reaper.transaction.endUndo`；宿主负责重载、关闭、工程变化和 30 秒超时清理，方法范围与批处理相同。原生 Undo 方法仍可单独调用，但调用者须负责配对，不能依赖页面关闭后的 finally 请求。
 

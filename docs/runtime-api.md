@@ -10,7 +10,7 @@ Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo b
 
 All thirteen namespaces provide implemented members: 64 methods and one Promise property. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
-`transaction` provides batching and Undo groups. The name does not promise atomic rollback or isolation: completed writes remain applied and other edits may interleave. See the [complete API inventory](runtime-api-inventory.md).
+`transaction.batch` accepts call arrays or synchronous Mirror Builder callbacks, with automatic references, tuple destructuring and typed result selection. Both forms use the existing native batch implementation. `transaction` also provides Undo groups, without atomic rollback or isolation: completed writes remain applied and other edits may interleave. See the [batch contract](host-api.md#batches-and-continuous-controls).
 
 ## Files and clipboard
 

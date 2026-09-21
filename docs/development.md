@@ -77,14 +77,14 @@ Use a batch for supported operations that should form one synchronous Undo step:
 ```javascript
 const track = await reaper.GetSelectedTrack(0, 0);
 if (track) {
-  await reaper.transaction.batch([
-    { method: 'SetMediaTrackInfo_Value', args: [track, 'D_PAN', 0] },
-    { method: 'SetMediaTrackInfo_Value', args: [track, 'B_MUTE', 0] }
-  ], { undoLabel: 'Center and unmute track' });
+  await reaper.transaction.batch(b => {
+    b.SetMediaTrackInfo_Value(track, 'D_PAN', 0);
+    b.SetMediaTrackInfo_Value(track, 'B_MUTE', 0);
+  }, { undoLabel: 'Center and unmute track' });
 }
 ```
 
-The [batch contract](host-api.md#batches-and-continuous-controls) covers 173 reviewed standard APIs, result references and up to 128 calls. All 730 methods remain available through ordinary calls. A batch is not a transaction: completed writes remain if a later call fails, and its error reports completed results.
+The [batch contract](host-api.md#batches-and-continuous-controls) covers 173 reviewed standard APIs and up to 128 calls. Builder callbacks are synchronous, with deferred result references and tuple destructuring. Return an object or array to select typed results, or omit the return value for the ordered native result array. The explicit call-array form and all 730 ordinary Mirror calls remain available. A batch is not a transaction: completed writes remain if a later call fails, and its error reports completed results.
 
 For continuous controls across awaits, use managed Undo as described in the [host reference](host-api.md#batches-and-continuous-controls). It uses the reviewed batch API set and closes on reload, close, project change or after 30 seconds. Raw REAPER Undo scopes remain available outside this set, but callers must pair them and cannot rely on cleanup requests after a page closes.
 

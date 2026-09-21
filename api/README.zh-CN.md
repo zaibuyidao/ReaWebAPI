@@ -68,7 +68,7 @@ python -m tools.api_sync verify
 
 `NeedBig` 通过 REAPER 的 `realloc_cmd_register_buf` 动态扩容并在复制结果后释放。普通固定缓冲区默认 64 KiB，可用 `reaper.debug.setBufferSize(bytes)` 调整，范围 4 KiB 到 16 MiB。MIDI 事件读取可按宿主报告的长度扩容重读。单个字符串/二进制结果上限 16 MiB，音频数组上限 1,048,576 个 double，JSON 消息上限 64 MiB。超限明确报错，不静默截断。
 
-`reaper.transaction.batch` 支持 `ReaWebBatchMethod` 列出的 173 个已审核同步接口。其他 API 使用独立异步调用。排队超时只约束尚未开始的请求，不会打断等待用户输入的对话框或长时间渲染。跨多个异步调用自行打开 Undo 或 UI refresh 保护时，应使用 `try/finally` 配对关闭。
+`reaper.transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持 `ReaWebBatchMethod` 列出的 173 个已审核接口。Builder 签名从 Mirror 声明推导，生成的多返回值数量用于解构。其他 API 使用独立异步调用。排队超时只约束尚未开始的请求，不会打断等待用户输入的对话框或长时间渲染。跨多个异步调用自行打开 Undo 或 UI refresh 保护时，应使用 `try/finally` 配对关闭。
 
 ## 运行时可用性与验证
 

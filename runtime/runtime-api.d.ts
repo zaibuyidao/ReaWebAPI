@@ -207,6 +207,12 @@ interface ReaWebAPI {
      * BATCH_FAILED includes completed/results/cause; completed writes are not rolled back.
      */
     batch(calls: ReaWebBatchCall[], options?: { undoLabel?: string }): Promise<unknown[]>;
+    /** Collect Mirror calls synchronously. Tuple results support indexing and destructuring.
+     * Return a reference or nested plain object/array to select results; no return yields the ordered result array.
+     * References are not Promises or values for branching/arithmetic. Native void results remain null.
+     */
+    batch<T>(callback: (builder: ReaWebBatchBuilder) => T & (T extends PromiseLike<unknown> ? never : unknown),
+      options?: { undoLabel?: string }): Promise<ReaWebBatchResult<T>>;
     /** One managed gesture at a time. Ends on close, reload, project change or after 30 seconds.
      * Does not hold PreventUIRefresh across browser events. Uses the reviewed batch API set. End before batching. */
     beginUndo(label: string): Promise<string>;

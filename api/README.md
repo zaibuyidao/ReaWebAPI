@@ -68,7 +68,7 @@ Every C argument and Lua input/output needs exactly one mapping. Types, lengths,
 
 `NeedBig` buffers grow through REAPER's `realloc_cmd_register_buf` and are released after copying the results. Fixed buffers default to 64 KiB. `reaper.debug.setBufferSize(bytes)` adjusts them from 4 KiB to 16 MiB. MIDI event readers can grow and retry using the size reported by REAPER. Individual strings/binary results are capped at 16 MiB, sample arrays at 1,048,576 doubles, and JSON messages at 64 MiB. Oversized results fail explicitly instead of silently truncating.
 
-`reaper.transaction.batch` supports the 173 reviewed synchronous APIs listed in `ReaWebBatchMethod`. Other APIs use individual async calls. The queue deadline applies until native execution starts, not while waiting for a dialog or render to finish. If manually opening Undo/UI refresh scopes across asynchronous calls, pair their end calls in `try/finally`.
+`reaper.transaction.batch` accepts call arrays or synchronous Mirror Builder callbacks for the 173 reviewed APIs listed in `ReaWebBatchMethod`. Builder signatures derive from the Mirror declarations, and generated tuple sizes preserve result destructuring. Other APIs use individual async calls. The queue deadline applies until native execution starts, not while waiting for a dialog or render to finish. If manually opening Undo/UI refresh scopes across asynchronous calls, pair their end calls in `try/finally`.
 
 ## Availability and verification
 

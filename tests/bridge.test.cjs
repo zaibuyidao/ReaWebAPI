@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { webcrypto } = require('node:crypto');
 const methods = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '../api/bindings.json'), 'utf8')).functions);
+const batchMethods = [...fs.readFileSync(path.join(__dirname, '../src/core/batch.hpp'), 'utf8').matchAll(/"([A-Za-z][A-Za-z0-9_]+)"/g)].map(match => match[1]);
 const script = '(() => {\n' + fs.readFileSync(path.join(__dirname, '../runtime/reaper-api.generated.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8') + '\n})();';
 const flush = () => new Promise(setImmediate);
 
@@ -237,10 +238,146 @@ function setup(engine = 'windows') {
 }
 async function connected(engine) {
   const t = setup(engine);
-  t.reply(0, { result: { protocol: 1, projectEpoch: 1, methods } });
+  t.reply(0, { result: { protocol: 1, projectEpoch: 1, methods, batchMethods } });
   await t.window.reaper.lifecycle.ready;
   return t;
 }
+for (const engine of ['windows', 'webkit']) {
+  test(`${engine}: builder preserves Mirror names and sends one batch with automatic result paths`, async () => {
+    const t = await connected(engine);
+    const pending = t.window.reaper.transaction.batch(b => {
+      assert.deepEqual(Object.keys(b).sort(), batchMethods.slice().sort());
+      const track = b.GetTrack(0, 0);
+      const tuple = b.GetTrackName(track);
+      const [, name] = tuple;
+      const volume = b.GetMediaTrackInfo_Value(track, 'D_VOL');
+      b.GetSetMediaTrackInfo_String(track, 'P_NAME', name, true);
+      const changed = b.SetMediaTrackInfo_Value(track, 'D_VOL', volume);
+      return { name, volume, nested: [tuple, { track, changed }], literal: 'snapshot' };
+    }, { undoLabel: 'Track snapshot' });
+    await flush();
+    assert.equal(t.messages.length, 2);
+    assert.equal(t.messages[1].method, 'ReaWeb_Batch');
+    assert.deepEqual(t.messages[1].args, [[
+      { method: 'GetTrack', args: [0, 0] },
+      { method: 'GetTrackName', args: [{ $ref: 0 }] },
+      { method: 'GetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL'] },
+      { method: 'GetSetMediaTrackInfo_String', args: [{ $ref: 0 }, 'P_NAME', { $ref: 1, path: [1] }, true] },
+      { method: 'SetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL', { $ref: 2 }] }
+    ], { undoLabel: 'Track snapshot' }]);
+    const track = { type: 'MediaTrack', id: 'track' };
+    t.reply(1, { result: [track, [false, ''], 0, [true, ''], true] });
+    assert.deepEqual(JSON.parse(JSON.stringify(await pending)), {
+      name: '', volume: 0, nested: [[false, ''], { track, changed: true }], literal: 'snapshot'
+    });
+  });
+}
+
+test('builder gates collection on the handshake and returns raw, scalar, tuple and null results', async () => {
+  const t = setup();
+  let ran = false;
+  const raw = t.window.reaper.transaction.batch(b => { ran = true; b.CountTracks(0); b.UpdateArrange(); });
+  assert.equal(ran, false);
+  t.reply(0, { result: { protocol: 1, projectEpoch: 1, methods, batchMethods } });
+  await flush(); t.reply(1, { result: [2, null] });
+  assert.deepEqual(Array.from(await raw), [2, null]);
+  for (const [callback, result] of [
+    [b => b.CountTracks(0), 0], [b => b.GetTrack(0, 99), null], [b => b.UpdateArrange(), null],
+    [b => b.CountProjectMarkers(0), [3, 1, 2]], [b => { b.CountTracks(0); return false; }, false]
+  ]) {
+    const pending = t.window.reaper.transaction.batch(callback);
+    await flush(); t.reply(t.messages.length - 1, { result: [result] });
+    assert.deepEqual(JSON.parse(JSON.stringify(await pending)), result);
+  }
+});
+
+test('builder preserves optional argument holes and binary tuple references', async () => {
+  const t = await connected(), take = { type: 'MediaItem_Take', id: 'take' };
+  const pending = t.window.reaper.transaction.batch(b => {
+    const [ok, bytes] = b.MIDI_GetAllEvts(take);
+    b.MIDI_SetAllEvts(take, bytes);
+    b.MIDI_SetNote(take, 0, null, undefined, null, null, null, 60);
+    return { ok, bytes };
+  });
+  await flush();
+  assert.deepEqual(t.messages[1].args[0][1].args, [take, { $ref: 0, path: [1] }]);
+  assert.deepEqual(t.messages[1].args[0][2].args, [take, 0, null, null, null, null, null, 60]);
+  t.reply(1, { result: [[true, { __reawebBytes: 'AID/' }], true, true] });
+  const result = await pending;
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.bytes, new Uint8Array([0, 128, 255]));
+});
+
+test('builder rejects unsupported APIs, async callbacks, coercion and invalid structures before dispatch', async () => {
+  const t = await connected(), batch = t.window.reaper.transaction.batch;
+  for (const callback of [
+    b => b.Main_OnCommand(40004, 0), b => b.GetUserInputs('title', 1, 'value', ''),
+    b => b.window.close(), b => b.Typo(), () => {},
+    async b => { await b.CountTracks(0); },
+    async b => { b.CountTracks(0); }, b => { b.CountTracks(0); return Promise.resolve(1); },
+    b => { b.CountTracks(0); return { pending: Promise.reject(new Error('not synchronous')) }; },
+    b => +b.CountTracks(0), b => `${b.CountTracks(0)}`,
+    b => b.GetTrackName({ wrapped: b.GetTrack(0, 0) }), b => b.GetTrackName({ $ref: 0 }),
+    b => { b.CountTracks(0); const cycle = {}; cycle.self = cycle; return cycle; },
+    b => { b.CountTracks(0); return new Date(); },
+    b => { for (let i = 0; i < 129; i++) b.CountTracks(0); }
+  ]) await assert.rejects(batch(callback), { code: 'INVALID_ARGUMENT' });
+  const original = new Error('callback failed');
+  await assert.rejects(batch(b => { b.CountTracks(0); throw original; }), error => error === original);
+  await flush();
+  assert.equal(t.messages.length, 1);
+  assert.equal(t.timers.size, 0);
+  const maximum = batch(b => { for (let i = 0; i < 128; i++) b.CountTracks(0); });
+  await flush(); assert.equal(t.messages[1].args[0].length, 128);
+  t.reply(1, { result: Array(128).fill(1) });
+  assert.equal((await maximum).length, 128);
+});
+
+test('builder snapshots return structures and refuses escaped or cross-builder references', async () => {
+  const t = await connected(), batch = t.window.reaper.transaction.batch;
+  let ref, saved, output, method;
+  const first = batch(b => {
+    saved = b; method = b.CountTracks; ref = b.CountTracks(0);
+    output = { nested: [ref] }; return output;
+  });
+  await flush(); output.nested[0] = 'changed';
+  assert.throws(() => saved.CountTracks(0), { code: 'INVALID_ARGUMENT' });
+  assert.throws(() => method(0), { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(batch(b => b.GetTrack(0, ref)), { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(batch(b => { b.CountTracks(0); return { ref }; }), { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(t.window.reaper.GetTrack(0, ref), { code: 'INVALID_ARGUMENT' });
+  t.reply(1, { result: [7] });
+  assert.deepEqual(JSON.parse(JSON.stringify(await first)), { nested: [7] });
+  assert.equal(t.messages.length, 2);
+});
+
+test('builder preserves native error codes and partial results without projecting them', async () => {
+  const t = await connected();
+  for (const code of ['BATCH_FAILED', 'API_UNAVAILABLE', 'UNDO_BUSY', 'PROJECT_CHANGED']) {
+    const details = { completed: 1, results: [null], rolledBack: false, cause: 'STALE_HANDLE' };
+    const rejected = assert.rejects(t.window.reaper.transaction.batch(b => {
+      b.UpdateArrange(); return { count: b.CountTracks(0) };
+    }), error => error.code === code && JSON.stringify(error.details) === JSON.stringify(details));
+    await flush();
+    t.reply(t.messages.length - 1, { error: { code, message: 'Native failure', details } });
+    await rejected;
+  }
+});
+
+test('builder uses the advertised whitelist and reports missing capabilities or a closed document', async () => {
+  for (const advertised of [undefined, ['CountTracks']]) {
+    const t = setup();
+    t.reply(0, { result: { protocol: 1, projectEpoch: 1, methods, batchMethods: advertised } });
+    await assert.rejects(t.window.reaper.transaction.batch(b => b.GetTrack(0, 0)),
+      { code: advertised ? 'INVALID_ARGUMENT' : 'SCHEMA_MISMATCH' });
+    assert.equal(t.messages.length, 1);
+  }
+  const t = await connected();
+  t.listeners.pagehide();
+  let ran = false;
+  await assert.rejects(t.window.reaper.transaction.batch(() => { ran = true; }), { code: 'WINDOW_CLOSED' });
+  assert.equal(ran, false);
+});
 for (const engine of ['windows', 'webkit']) {
   test(`${engine}: handshake gates calls, out-of-order replies preserve promises`, async () => {
     const t = setup(engine);
