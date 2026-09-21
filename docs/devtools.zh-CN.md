@@ -30,13 +30,13 @@ WebView2 没有公开的嵌入式检查器控制器。ReaWebAPI 通过 [`OpenDev
 
 ## macOS
 
-**Embedded** 使用 WebKit 原生右侧检查器视图，不显示独立窗口标题栏、窗口按钮、外层边框，也不预留装饰空间。**Floating** 使用 WebKit 自身的检查器窗口，不额外创建 ReaWebAPI 窗口或工具栏。
+**Embedded** 将原生检查器内容视图放在页面右侧，不显示独立窗口标题栏、窗口按钮、外层边框，也不预留装饰空间。**Floating** 将同一视图放回 WebKit 自身的检查器窗口，不额外创建 ReaWebAPI 窗口或工具栏。
 
 页面右键菜单根据当前状态显示 **Open DevTools** / **Hide DevTools** 和 **Float DevTools** / **Embed DevTools**。在页面或检查器中按 **Option+Command+I** 切换显示，隐藏时切换模式不会打开检查器。快捷键、菜单、`reaper.debug.openDevTools()` 和 `ReaWeb_DevTools(id)` 共用控制器。隐藏和切换模式保留检查器视图及连接，包括 Console 日志和当前选中的标签。原生关闭控件会结束会话。
 
-面板宽度偏好默认为 40%，随宿主尺寸变化保持比例，拖动 WebKit 分隔线会更新保存的比例。WebKit 限制面板最小尺寸，实际宽度可能超过偏好值。宿主内容区域小于 820 × 334 点时使用 Floating，不覆盖保存的模式。宿主显示时增大窗口，会按原偏好恢复 Embedded。
+面板默认占可用宽度的 40%，拖动检查器分隔线可调整至 20%–80% 并保存比例。调整窗口大小时保留比例，窄窗口同样支持嵌入，不会因宿主尺寸禁用 **Embed DevTools** 或强制切换为 Floating。
 
-公开的 `WKWebView.inspectable` 保持启用。公开 API 没有对应控制器，程序化控制与停靠使用经过运行时能力检查的 WebKit 私有接口，兼容性取决于系统 WebKit 版本。停靠不可用时保留原生浮动窗口，`embeddedSupported` 返回 `false`。原生控制不可用时禁用菜单操作，`nativeToggleSupported` 返回 `false`，`openDevTools()` 以 `DEVTOOLS_UNAVAILABLE` 错误拒绝。仍可通过 Safari 的开发菜单手动检查页面。`fallbackReason` 和 `lastError` 提供能力限制或打开失败的原因。
+公开的 `WKWebView.inspectable` 保持启用。公开 API 没有对应控制器，程序化控制与显示使用经过运行时能力检查的 WebKit 私有接口。AppKit 负责内容视图布局，检查器的停靠控件复用现有模式和宽度偏好。兼容性取决于系统 WebKit 版本，嵌入控制不可用时保留原生浮动窗口，`embeddedSupported` 返回 `false`。原生控制不可用时禁用菜单操作，`nativeToggleSupported` 返回 `false`，`openDevTools()` 以 `DEVTOOLS_UNAVAILABLE` 错误拒绝。仍可通过 Safari 的开发菜单手动检查页面。`fallbackReason` 和 `lastError` 提供能力限制或打开失败的原因。
 
 ## 状态保存与诊断
 

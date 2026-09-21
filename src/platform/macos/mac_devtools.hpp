@@ -21,9 +21,10 @@
 - (void)_setDeveloperExtrasEnabled:(BOOL)enabled;
 @end
 
-@interface ReaWebInspectorMenuTarget : NSObject <NSMenuItemValidation> {
+@interface ReaWebInspectorMenuTarget : NSObject <NSMenuItemValidation, WKScriptMessageHandler> {
 @public
   std::function<void(reaweb::DevToolsAction)> perform;
+  std::function<void(WKScriptMessage*)> receive;
 }
 - (void)devtoolsAction:(NSMenuItem*)sender;
 @end
@@ -32,6 +33,10 @@
   if (perform) perform(static_cast<reaweb::DevToolsAction>(sender.tag));
 }
 - (BOOL)validateMenuItem:(NSMenuItem*)item { return perform && item.enabled; }
+- (void)userContentController:(WKUserContentController*)controller didReceiveScriptMessage:(WKScriptMessage*)message {
+  (void)controller;
+  if (receive) receive(message);
+}
 @end
 
 namespace reaweb {
@@ -40,77 +45,110 @@ class MacDevTools {
   struct Lifetime { MacDevTools* owner; };
   WKWebView* view_;
   id<ReaWebInspectorSPI> inspector_ = nil;
+  WKWebView* frontend_ = nil;
+  NSWindow* native_window_ = nil;
+  NSView* native_parent_ = nil;
   ReaWebInspectorMenuTarget* menu_target_;
   id key_monitor_ = nil;
   DevToolsPreferences prefs_;
   std::function<void()> focus_page_;
   std::shared_ptr<Lifetime> lifetime_ = std::make_shared<Lifetime>(Lifetime{this});
-  bool supported_ = false, frontend_access_ = false, embedding_ = false, requested_ = false, pending_ = false;
-  bool seen_visible_ = false, layout_needed_ = false, layout_busy_ = false, settling_ = false;
-  bool expected_floating_ = false, observed_floating_ = false;
-  NSSize host_size_ = NSZeroSize;
-  NSRect inspector_frame_ = NSZeroRect;
-  Clock::time_point deadline_{}, settle_after_{}, settle_deadline_{};
+  bool supported_ = false, frontend_access_ = false, embedding_ = false;
+  bool requested_ = false, pending_ = false, preparing_ = false, prepared_ = false;
+  bool hosted_ = false, present_needed_ = false, seen_native_ = false;
+  Clock::time_point deadline_{};
   std::string fallback_, error_;
 
   WKWebView* frontend() const { return frontend_access_ ? [inspector_ extensionHostWebView] : nil; }
-  bool floating() const {
-    if (!frontend_access_) return true;
-    auto front = frontend();
-    return front.window && front.window != view_.window;
+  bool native_visible() const { return supported_ && [inspector_ isVisible]; }
+  static void frame(NSView* view, NSRect rect) {
+    if (view && !NSEqualRects(view.frame, rect)) view.frame = rect;
   }
-  bool fits() const {
-    const auto size = view_.superview.bounds.size;
-    return size.width >= 820 && size.height >= 334;
-  }
-  std::string fallback_reason() const {
-    if (!supported_ || !embedding_) return fallback_;
-    if (!prefs_.floating && !fits()) return "The WebView is too small for WebKit's native Inspector layout (820 x 334 points required)";
-    return {};
-  }
-  bool on_right() const {
-    auto front = frontend();
+  void layout() {
     const auto bounds = view_.superview.bounds;
-    return front && front.superview == view_.superview && front.window == view_.window &&
-      std::abs(NSMinX(front.frame) - NSMaxX(view_.frame)) <= 1 &&
-      std::abs(NSMaxX(front.frame) - NSMaxX(bounds)) <= 1 &&
-      std::abs(NSHeight(front.frame) - NSHeight(bounds)) <= 1;
+    if (hosted_ && requested_ && native_visible()) {
+      const auto scale = std::max(1.0, view_.window.backingScaleFactor);
+      const auto width = std::round(bounds.size.width * prefs_.width_ratio * scale) / scale;
+      const auto left = bounds.size.width - width;
+      frame(view_, NSMakeRect(bounds.origin.x, bounds.origin.y, left, bounds.size.height));
+      frame(frontend_, NSMakeRect(bounds.origin.x + left, bounds.origin.y, width, bounds.size.height));
+    } else frame(view_, bounds);
   }
-  void remember_layout() {
-    host_size_ = view_.superview.bounds.size;
-    inspector_frame_ = frontend().frame;
-    observed_floating_ = floating();
+  void return_to_native() {
+    if (!hosted_) return;
+    [frontend_ removeFromSuperview];
+    [native_parent_ addSubview:frontend_];
+    frontend_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    frame(frontend_, native_parent_.bounds);
+    frontend_.hidden = NO;
+    hosted_ = false;
+    layout();
   }
-  void apply_layout() {
-    if (!embedding_) {
-      [inspector_ detach]; layout_needed_ = false; remember_layout(); return;
-    }
+  void forget_frontend() {
+    return_to_native();
+    [frontend_.configuration.userContentController removeScriptMessageHandlerForName:@"reawebInspector"];
+    frontend_ = nil; native_window_ = nil; native_parent_ = nil;
+    prepared_ = preparing_ = false;
+  }
+  void prepare_frontend() {
     auto front = frontend();
-    if (!front || !visible()) return;
-    expected_floating_ = prefs_.floating || !fallback_reason().empty();
-    const auto width = std::lround(view_.superview.bounds.size.width * prefs_.width_ratio);
-    auto script = [NSString stringWithFormat:
-      @"(() => { const h = globalThis.InspectorFrontendHost; "
-       "if (!h || typeof h.requestSetDockSide !== 'function' || typeof h.setAttachedWindowWidth !== 'function') return false; "
-       "h.requestSetDockSide('%@'); %@ return true; })()",
-      expected_floating_ ? @"undocked" : @"right",
-      expected_floating_ ? @"" : [NSString stringWithFormat:@"h.setAttachedWindowWidth(%ld);", width]];
-    layout_needed_ = false; layout_busy_ = true; settling_ = true;
-    settle_deadline_ = Clock::now() + std::chrono::seconds(3);
+    if (!front || !front.window) return;
+    // Keep WebKit's native window as the floating owner. AppKit manages compact panel geometry.
+    if (front.window == view_.window) { [inspector_ detach]; return; }
+    frontend_ = front; native_window_ = front.window; native_parent_ = front.superview;
+    if (!requested_) [native_window_ orderOut:nil];
+    auto controller = front.configuration.userContentController;
+    [controller removeScriptMessageHandlerForName:@"reawebInspector"];
+    [controller addScriptMessageHandler:menu_target_ name:@"reawebInspector"];
+    preparing_ = true;
     auto life = lifetime_;
-    [front evaluateJavaScript:script completionHandler:^(id value, NSError* error) {
-      auto self = life->owner;
-      if (!self) return;
-      self->layout_busy_ = false;
-      if (error || ![value isKindOfClass:[NSNumber class]] || ![value boolValue]) {
-        self->embedding_ = false;
-        self->fallback_ = "WebKit Inspector docking controls are unavailable; using the native floating window";
-        self->expected_floating_ = true;
-        [self->inspector_ detach];
+    [front evaluateJavaScript:@"(() => { "
+      "const h = globalThis.InspectorFrontendHost, ui = globalThis.WI; "
+      "if (!h || typeof h.requestSetDockSide !== 'function' || typeof h.setAttachedWindowWidth !== 'function' || "
+        "!ui || typeof ui.updateDockedState !== 'function' || typeof ui.updateDockingAvailability !== 'function') return false; "
+      "if (!globalThis.__reawebInspector) { "
+        "const send = body => { webkit.messageHandlers.reawebInspector.postMessage(body); }; "
+        "globalThis.__reawebInspector = {dock: h.requestSetDockSide, width: h.setAttachedWindowWidth, availability: ui.updateDockingAvailability}; "
+        "h.requestSetDockSide = side => send({mode: side === 'undocked' ? 'floating' : 'embedded'}); "
+        "h.setAttachedWindowWidth = width => send({width}); "
+        "ui.updateDockingAvailability = () => __reawebInspector.availability(true); "
+      "} ui.updateDockingAvailability(true); return true; })()"
+      completionHandler:^(id value, NSError* error) {
+        auto self = life->owner;
+        if (!self || self->frontend_ != front) return;
+        self->preparing_ = false; self->prepared_ = true;
+        if (error || ![value isKindOfClass:[NSNumber class]] || ![value boolValue]) {
+          self->embedding_ = false;
+          self->fallback_ = "WebKit Inspector presentation controls are unavailable; using the native floating window";
+          [front.configuration.userContentController removeScriptMessageHandlerForName:@"reawebInspector"];
+        }
+        self->present_needed_ = true;
+      }];
+  }
+  void present() {
+    present_needed_ = false;
+    if (!frontend_access_) {
+      if (requested_) { [inspector_ detach]; [inspector_ show]; } else [inspector_ hide];
+      return;
+    }
+    if (!prepared_ || !frontend_) return;
+    const bool embed = embedding_ && !prefs_.floating;
+    if (embed) {
+      [native_window_ orderOut:nil];
+      if (!hosted_) {
+        [frontend_ removeFromSuperview];
+        [view_.superview addSubview:frontend_];
+        frontend_.autoresizingMask = NSViewNotSizable;
+        hosted_ = true;
       }
-      self->settle_after_ = Clock::now() + std::chrono::milliseconds(100);
-      if (!self->requested_) [self->inspector_ hide];
-    }];
+      frontend_.hidden = !requested_;
+    } else {
+      return_to_native();
+      if (requested_) [native_window_ makeKeyAndOrderFront:nil]; else [native_window_ orderOut:nil];
+    }
+    layout();
+    if (embedding_) [frontend_ evaluateJavaScript:embed ? @"WI.updateDockedState('right')" : @"WI.updateDockedState('undocked')" completionHandler:nil];
+    if (requested_) [frontend_.window makeFirstResponder:frontend_];
   }
   void safely_perform(DevToolsAction action) {
     try { perform(action); }
@@ -136,6 +174,17 @@ public:
     else if (!embedding_) fallback_ = "This WebKit version does not expose the Inspector view; using the native floating window";
     menu_target_ = [ReaWebInspectorMenuTarget new];
     menu_target_->perform = [this](DevToolsAction action) { safely_perform(action); };
+    menu_target_->receive = [this](WKScriptMessage* message) {
+      if (message.webView != frontend_ || !message.frameInfo.mainFrame || ![message.body isKindOfClass:[NSDictionary class]]) return;
+      id mode = message.body[@"mode"];
+      if ([mode isEqual:@"floating"]) safely_perform(DevToolsAction::Float);
+      else if ([mode isEqual:@"embedded"]) safely_perform(DevToolsAction::Embed);
+      id width = message.body[@"width"];
+      const auto available = view_.superview.bounds.size.width;
+      if (hosted_ && requested_ && [width isKindOfClass:[NSNumber class]] && available > 0 && std::isfinite([width doubleValue])) {
+        prefs_.width_ratio = std::clamp([width doubleValue] / available, 0.2, 0.8); layout();
+      }
+    };
     key_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
       auto front = frontend();
       auto responder = event.window.firstResponder;
@@ -157,13 +206,16 @@ public:
   ~MacDevTools() {
     lifetime_->owner = nullptr;
     if (key_monitor_) [NSEvent removeMonitor:key_monitor_];
-    menu_target_->perform = {};
+    menu_target_->perform = {}; menu_target_->receive = {};
+    forget_frontend();
     if (supported_) [inspector_ close];
   }
-  bool visible() const { return supported_ && [inspector_ isVisible]; }
+  bool visible() const { return requested_ && native_visible(); }
   void open() {
     if (!supported_) throw Error("DEVTOOLS_UNAVAILABLE", fallback_);
     requested_ = true; error_.clear();
+    if (prepared_ && native_visible()) { present(); return; }
+    if (prepared_) forget_frontend();
     if (!pending_) {
       pending_ = true;
       deadline_ = Clock::now() + std::chrono::seconds(10);
@@ -172,8 +224,10 @@ public:
   }
   void hide() {
     requested_ = false;
-    if (supported_) [inspector_ hide];
-    seen_visible_ = false;
+    if (frontend_access_) {
+      if (hosted_) frontend_.hidden = YES;
+      [native_window_ orderOut:nil]; layout();
+    } else if (supported_) [inspector_ hide];
     focus_page_();
   }
   void perform(DevToolsAction action) {
@@ -181,55 +235,37 @@ public:
     else if (action == DevToolsAction::Hide) hide();
     else {
       prefs_.floating = action == DevToolsAction::Float;
-      if (visible() || pending_) layout_needed_ = true;
+      present_needed_ = true;
     }
   }
   void tick() {
     if (!supported_) return;
-    auto shown = visible();
-    if (pending_) {
-      if (shown) {
-        pending_ = false;
-        if (!requested_) { [inspector_ hide]; shown = false; }
-        else layout_needed_ = true;
-      } else if (Clock::now() >= deadline_) {
+    const bool native_shown = native_visible();
+    if (!native_shown && seen_native_) {
+      requested_ = false; forget_frontend(); layout();
+    }
+    if (native_shown && !seen_native_ && !pending_) requested_ = true;
+    seen_native_ = native_shown;
+    if (!native_shown) {
+      if (pending_ && Clock::now() >= deadline_) {
         pending_ = requested_ = false;
         error_ = "WebKit did not open Web Inspector within 10 seconds";
         [inspector_ close];
       }
-    } else if (shown && !seen_visible_) {
-      requested_ = true; layout_needed_ = true;
-    } else if (!shown && seen_visible_) requested_ = false;
-    seen_visible_ = shown;
-    if (!shown || layout_busy_) return;
-    if (settling_) {
-      const bool placed = expected_floating_ ? floating() : on_right();
-      if (Clock::now() < settle_after_ || (!placed && Clock::now() < settle_deadline_)) return;
-      settling_ = false;
-      if (!placed) {
-        embedding_ = false;
-        fallback_ = "WebKit could not attach the Inspector on the right; using the native floating window";
-        [inspector_ detach];
+      return;
+    }
+    if (pending_) { pending_ = false; present_needed_ = true; }
+    if (frontend_access_) {
+      if (!prepared_) { if (!preparing_) prepare_frontend(); return; }
+      if (native_window_.visible && (hosted_ || !requested_)) {
+        requested_ = true; present_needed_ = true;
       }
-      remember_layout();
-    }
-    if (!layout_needed_) {
-      auto size = view_.superview.bounds.size;
-      if (floating() != observed_floating_) {
-        prefs_.floating = floating();
-        layout_needed_ = !prefs_.floating;
-      } else if (!NSEqualSizes(size, host_size_)) {
-        layout_needed_ = !prefs_.floating;
-      } else if (!floating() && !on_right()) layout_needed_ = true;
-      else if (!floating() && size.width > 0 && !NSEqualRects(frontend().frame, inspector_frame_))
-        prefs_.width_ratio = std::clamp(frontend().frame.size.width / size.width, 0.2, 0.8);
-    }
-    if (layout_needed_) apply_layout();
-    else remember_layout();
+      if (present_needed_) present();
+      layout();
+    } else if (present_needed_) present();
   }
   DevToolsMenuState menu_state() const {
-    return {pending_ ? requested_ : visible(), visible() && !layout_needed_ && !settling_ ? floating() :
-      (prefs_.floating || !fallback_reason().empty()), embedding_ && fits()};
+    return {pending_ ? requested_ : visible(), prefs_.floating || !embedding_, embedding_};
   }
   NSInteger insert_menu(NSMenu* menu, NSInteger index) const {
     auto state = menu_state();
@@ -245,16 +281,12 @@ public:
     return index;
   }
   Json state() const { return prefs_.state(); }
-  void restore(const Json& value) {
-    prefs_.restore(value);
-    if (visible() || pending_) layout_needed_ = true;
-  }
+  void restore(const Json& value) { prefs_.restore(value); present_needed_ = true; }
   Json diagnostics() const {
     auto value = prefs_.state();
     value.update({{"mode", menu_state().floating ? "floating" : "embedded"}, {"visible", visible()},
-      {"pending", pending_}, {"embeddedSupported", embedding_ && fits()}, {"nativeToggleSupported", supported_}});
-    const auto reason = fallback_reason();
-    if (!reason.empty()) value["fallbackReason"] = reason;
+      {"pending", pending_ || preparing_}, {"embeddedSupported", embedding_}, {"nativeToggleSupported", supported_}});
+    if (!fallback_.empty()) value["fallbackReason"] = fallback_;
     if (!error_.empty()) value["lastError"] = error_;
     return value;
   }

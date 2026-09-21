@@ -30,13 +30,13 @@ WebView2 exposes no public embedded-inspector controller. ReaWebAPI uses [`OpenD
 
 ## macOS
 
-**Embedded** uses WebKit's native right-hand Inspector view without a window title bar, window buttons, wrapper frame or reserved decoration space. **Floating** uses WebKit's own Inspector window. No additional ReaWebAPI window or toolbar is created.
+**Embedded** places the native Inspector content view beside the page without a window title bar, window buttons, wrapper frame or reserved decoration space. **Floating** returns the same view to WebKit's own Inspector window. No additional ReaWebAPI window or toolbar is created.
 
 The page context menu shows **Open DevTools** / **Hide DevTools** and **Float DevTools** / **Embed DevTools** according to the current state. **Option+Command+I** toggles visibility from the page or Inspector. Changing mode while hidden does not open it. The shortcut, menu, `reaper.debug.openDevTools()` and `ReaWeb_DevTools(id)` use the same controller. Hiding and switching modes retain the live Inspector view and connection, including Console entries and the selected tab. Native close controls end the session.
 
-The preferred panel width defaults to 40% and follows host resizing. Dragging WebKit's divider updates the saved ratio. WebKit enforces minimum pane sizes, so the actual width may exceed the preference. A host content area smaller than 820 × 334 points uses Floating without overwriting the saved mode. Growing the visible host restores Embedded when requested.
+The panel defaults to 40% of the available width. Dragging the Inspector divider adjusts the saved ratio between 20% and 80%. Resizing preserves the ratio, including in compact windows. Host dimensions do not disable **Embed DevTools** or force Floating.
 
-Public `WKWebView.inspectable` remains enabled. Programmatic Inspector control and docking use runtime-checked WebKit private interfaces because the public API has no equivalent controller. This integration depends on the system WebKit version. If docking is unavailable, the native floating window remains usable and `embeddedSupported` is `false`. If native control is unavailable, menu actions are disabled, `nativeToggleSupported` is `false`, and `openDevTools()` rejects with `DEVTOOLS_UNAVAILABLE`. Safari's Develop menu remains available for manual inspection. `fallbackReason` and `lastError` describe capability or opening failures.
+Public `WKWebView.inspectable` remains enabled. Programmatic Inspector control and presentation use runtime-checked WebKit private interfaces because the public API has no equivalent controller. AppKit lays out the content view, and Inspector dock controls share the existing mode and width preferences. This integration depends on the system WebKit version. If embedding controls are unavailable, the native floating window remains usable and `embeddedSupported` is `false`. If native control is unavailable, menu actions are disabled, `nativeToggleSupported` is `false`, and `openDevTools()` rejects with `DEVTOOLS_UNAVAILABLE`. Safari's Develop menu remains available for manual inspection. `fallbackReason` and `lastError` describe capability or opening failures.
 
 ## Saved preferences and diagnostics
 

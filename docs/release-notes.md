@@ -2,12 +2,10 @@
 
 ## English
 
-- Add native macOS WKWebView Web Inspector with right-hand Embedded and native Floating modes, without an additional window frame.
-- Add state-aware Open/Hide/Float/Embed context-menu actions and Option+Command+I. Reuse the existing Runtime API and saved layout preferences, retaining the Inspector session across hiding and mode switches.
-- Detect WebKit Inspector capabilities at runtime and report native floating fallback when embedding is unavailable.
+- Fix macOS **Embed DevTools** being disabled in compact windows. The Inspector now fills the right-hand panel at the saved width ratio without native docking size restrictions or extra window decorations.
+- Reuse the same Inspector content view and native floating window across Embedded, Floating and Hidden states, retaining Console entries and the selected tab.
 
 ## 简体中文
 
-- macOS WKWebView 新增原生 Web Inspector，支持右侧 Embedded 和原生 Floating 模式，不增加外层窗口边框。
-- 新增随状态变化的 Open/Hide/Float/Embed 右键菜单和 Option+Command+I，复用现有 Runtime API 与布局偏好，隐藏及切换模式时保留检查器会话。
-- 运行时检查 WebKit Inspector 能力，嵌入不可用时回退到原生浮动窗口并提供诊断。
+- 修复 macOS 窄窗口中 **Embed DevTools** 灰色不可用的问题。检查器按保存的宽度比例填满右侧面板，不再受原生停靠尺寸限制，不增加窗口装饰。
+- Embedded、Floating 和 Hidden 状态复用同一检查器内容视图及原生浮动窗口，保留 Console 日志和当前选中的标签。

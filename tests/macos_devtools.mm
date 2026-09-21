@@ -35,7 +35,7 @@ id evaluate(WKWebView* view, NSString* script) {
     result->value = value; result->error = error; result->done = true;
   }];
   pump([&] { return result->done; });
-  if (result->error) throw std::runtime_error(result->error.description.UTF8String);
+  if (result->error) throw std::runtime_error(std::string(script.UTF8String) + ": " + result->error.description.UTF8String);
   return result->value;
 }
 void shortcut(NSWindow* window, NSEventModifierFlags modifiers, bool repeat = false) {
@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
       [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
       [NSApp finishLaunching];
       [NSApp activateIgnoringOtherApps:YES];
-      auto window = [[NSWindow alloc] initWithContentRect:NSMakeRect(80, 80, 1200, 760)
+      auto window = [[NSWindow alloc] initWithContentRect:NSMakeRect(80, 80, 552, 760)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
       window.releasedWhenClosed = NO;
       auto config = [WKWebViewConfiguration new];
@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
         };
         pump(embedded); settle();
         auto front = [inspector extensionHostWebView];
-        CHECK(std::abs(front.frame.size.width - 600) < 1);
+        CHECK(std::abs(front.frame.size.width - 276) < 1);
         CHECK(tools.diagnostics()["mode"] == "embedded" && !tools.diagnostics().contains("fallbackReason"));
         evaluate(front, @"WI.showConsoleTab(); globalThis.reawebTestToken = 'inspector retained'; 'ok'");
         evaluate(view, @"setTimeout(() => console.log('ReaWeb retained console marker'), 50); 'ok'"); settle();
@@ -125,6 +125,7 @@ int main(int argc, char** argv) {
         CHECK(tools.diagnostics()["mode"] == "floating" && tools.state()["mode"] == "floating");
         CHECK((front.window.styleMask & (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)) == (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable));
         CHECK([NSStringFromClass(front.window.class) containsString:@"Inspector"]);
+        auto floating_window = front.window;
         CHECK(NSEqualRects(view.frame, view.superview.bounds)); check_session();
         if (argc > 1) snapshot(front, [[NSString stringWithUTF8String:argv[1]] stringByAppendingPathComponent:@"floating-inspector.png"]);
         const auto keys = NSEventModifierFlagOption | NSEventModifierFlagCommand;
@@ -147,9 +148,20 @@ int main(int argc, char** argv) {
         tools.perform(DevToolsAction::Float); tools.perform(DevToolsAction::Embed); tools.hide(); settle();
         CHECK(!tools.visible() && [inspector isConnected]);
         tools.open(); pump(embedded); settle(); check_session();
-        [window setContentSize:NSMakeSize(760, 600)]; settle();
-        pump([&] { return front.window != window && tools.visible(); }); settle();
-        CHECK(tools.diagnostics()["embeddedSupported"] == false && tools.state()["mode"] == "embedded");
+        for (auto size : {NSMakeSize(552, 600), NSMakeSize(440, 300), NSMakeSize(320, 220)}) {
+          [window setContentSize:size]; settle(); pump(embedded);
+          CHECK(tools.diagnostics()["embeddedSupported"] == true && tools.state()["mode"] == "embedded");
+          CHECK(std::abs(front.frame.size.width / size.width - tools.state()["widthRatio"].get<double>()) < 0.005);
+          CHECK(view.frame.size.width > 0 && front.frame.size.width > 0);
+          check_session();
+          tools.perform(DevToolsAction::Float); settle();
+          CHECK(front.window == floating_window && front.window.visible);
+          CHECK([menu(tools, @"Hide DevTools", @"Embed DevTools") itemAtIndex:1].enabled);
+          [menu(tools, @"Hide DevTools", @"Embed DevTools") performActionForItemAtIndex:1];
+          settle(); pump(embedded); check_session();
+          tools.hide(); settle(); CHECK(NSEqualRects(view.frame, view.superview.bounds));
+          tools.open(); settle(); pump(embedded); check_session();
+        }
         [window setContentSize:NSMakeSize(1200, 760)]; pump(embedded); settle(); check_session();
         tools.perform(DevToolsAction::Float);
         pump([&] { return front.window != window && front.window.visible; }); settle();
@@ -193,13 +205,25 @@ int main(int argc, char** argv) {
         settle(); CHECK(![other_inspector isVisible]);
         [second close];
         CHECK([evaluate(front, @"reawebTestToken === 'elements retained' && WI.tabBrowser.selectedTabContentView instanceof WI.ElementsTabContentView") boolValue]);
+        tick = {};
+      }
+      {
+        MacDevTools tools(view, [] {});
+        id<ReaWebInspectorSPI> inspector = [(id<ReaWebInspectableSPI>)view _inspector];
+        [inspector show];
+        pump([&] { return [inspector isConnected] && [inspector extensionHostWebView].window; });
+        auto front = [inspector extensionHostWebView];
         evaluate(front, @"InspectorFrontendHost.requestSetDockSide = undefined; 'ok'");
-        tools.perform(DevToolsAction::Float); settle();
-        pump([&] { return front.window != window && tools.visible(); });
-        CHECK(tools.diagnostics()["embeddedSupported"] == false && tools.diagnostics()["nativeToggleSupported"] == true);
+        tick = [&] { tools.tick(); };
+        tools.open();
+        pump([&] { return tools.diagnostics()["embeddedSupported"] == false && !tools.diagnostics()["pending"].get<bool>(); });
+        settle();
+        CHECK(tools.visible() && front.window != window && front.window.visible);
+        CHECK(tools.state()["mode"] == "embedded" && tools.diagnostics()["mode"] == "floating");
         CHECK(![menu(tools, @"Hide DevTools", @"Embed DevTools") itemAtIndex:1].enabled);
-        tools.hide(); tools.open(); pump([&] { return tools.visible(); }); settle();
-        CHECK(front.window != window && [inspector isConnected]);
+        CHECK(tools.diagnostics().contains("fallbackReason"));
+        tools.hide(); settle(); CHECK(!tools.visible() && !front.window.visible);
+        tools.open(); settle(); CHECK(tools.visible() && front.window.visible && [inspector isConnected]);
         tick = {};
       }
       auto unavailable = [[UnavailableInspectorView alloc] initWithFrame:window.contentView.bounds configuration:config];
