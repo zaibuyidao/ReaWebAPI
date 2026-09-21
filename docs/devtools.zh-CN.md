@@ -20,13 +20,13 @@ Ctrl+Shift+I 在检查器内同样有效。快捷键、工具栏 **Hide DevTools
 
 ## Windows
 
-**Embedded** 将 WebView2 原生检查器嵌入当前 ReaWebAPI 窗口右侧。面板默认占可用宽度的 40%，拖动分隔条可调整至 20%–80%，调整窗口大小时保留比例。**Floating** 使用独立宿主窗口。两种模式复用同一个检查器窗口，保留 Console / Inspector 状态，不重载页面。
+**Embedded** 以 WebView2 检查器内容填满右侧面板，隐藏标题栏、窗口控制按钮及边框，不保留装饰占位或可拖动标题栏。面板默认占可用宽度的 40%，拖动 1px 分割线可调整至 20%–80%，调整窗口大小时保留比例。分割线使用系统窗口边框颜色。**Floating** 恢复检查器原生标题栏、窗口控制按钮和边框，不再叠加宿主窗口。模式切换复用同一个检查器窗口，保留 Console / Inspector 状态，不重载页面。
 
 在 WebView 页面上右键，DevTools 操作与 **Dock in REAPER** / **Undock from REAPER** 位于同一菜单。隐藏时显示 **Open DevTools**，显示时提供 **Hide DevTools**。嵌入模式提供 **Float DevTools**，浮动模式提供 **Embed DevTools**。隐藏时切换模式只保存偏好，不打开检查器。检查器填满容器，不附加宿主工具栏，Demo 也不再单独提供 DevTools 按钮。
 
-右键菜单、快捷键和 API 共用状态管理。Ctrl+Shift+I、**Hide DevTools** 和浮动宿主窗口关闭按钮只隐藏检查器并保留会话，检查器自身的关闭操作可能结束会话。浮动窗口跟随当前 REAPER 根窗口，其他 REAPER 窗口激活时不抢焦点地提升层级，不设置全局置顶。焦点移至 DevTools 不会暂停或重载页面。
+右键菜单、快捷键和 API 共用状态管理。Ctrl+Shift+I 和 **Hide DevTools** 只隐藏检查器并保留会话。浮动窗口的原生关闭按钮会结束检查器会话。浮动窗口跟随当前 REAPER 根窗口，其他 REAPER 窗口激活时不抢焦点地提升层级，不设置全局置顶。焦点移至 DevTools 不会暂停或重载页面。
 
-WebView2 没有公开的嵌入式检查器控制器。ReaWebAPI 通过 [`OpenDevToolsWindow`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2#opendevtoolswindow) 创建检查器，识别原生窗口后由 Win32 容器托管。Per-Monitor V1/V2 宿主通过兼容的 DPI 容器托管，不修改 REAPER 或 Chromium 的进程 DPI 模式。不支持的 DPI 组合或托管失败时保留原生浮动窗口，并禁用 **Embed DevTools**，`devtools.fallbackReason` 返回降级原因。窗口识别或检查器内按键处理失败时，`devtools.lastError` 返回对应限制。无法识别的窗口需使用自身关闭按钮。此集成依赖 WebView2 原生窗口实现。
+WebView2 没有公开的嵌入式检查器控制器。ReaWebAPI 通过 [`OpenDevToolsWindow`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2#opendevtoolswindow) 创建并识别原生检查器窗口，在 Embedded 模式下依据实际渲染起点和客户区边界裁去 Chromium 自绘标题栏及边框。Per-Monitor V1/V2 宿主通过兼容的 DPI 容器托管，不修改 REAPER 或 Chromium 的进程 DPI 模式。内容边界不可用、不支持的 DPI 组合或托管失败时保留原生浮动窗口，并禁用 **Embed DevTools**，`devtools.fallbackReason` 返回降级原因。窗口识别或检查器内按键处理失败时，`devtools.lastError` 返回对应限制。无法识别的窗口需使用自身关闭按钮。此集成依赖 WebView2 原生窗口实现。
 
 ## macOS
 

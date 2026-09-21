@@ -44,12 +44,20 @@ HWND inspector_for(const std::shared_ptr<Window>& window) {
   }, reinterpret_cast<LPARAM>(&search));
   return search.result;
 }
-void fills_panel(HWND panel, HWND inspector) {
+bool fills_panel(HWND panel, HWND inspector) {
   CHECK(!FindWindowExW(panel, nullptr, L"BUTTON", nullptr));
+  auto renderer = FindWindowExW(inspector, nullptr, L"Chrome_RenderWidgetHostHWND", nullptr);
+  if (!renderer) return false;
   RECT content{}, bounds{}; GetClientRect(panel, &content);
   MapWindowPoints(panel, nullptr, reinterpret_cast<POINT*>(&content), 2);
-  GetWindowRect(inspector, &bounds);
-  CHECK(EqualRect(&content, &bounds));
+  GetWindowRect(renderer, &bounds);
+  return EqualRect(&content, &bounds);
+}
+void embedded_decorations(HWND panel, HWND inspector) {
+  CHECK(!(GetWindowLongPtrW(inspector, GWL_STYLE) & (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)));
+  CHECK(!(GetWindowLongPtrW(inspector, GWL_EXSTYLE) & (WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE)));
+  RECT rect{}; GetWindowRect(panel, &rect);
+  CHECK(SendMessageW(inspector, WM_NCHITTEST, 0, MAKELPARAM((rect.left + rect.right) / 2, rect.top + 1)) == HTCLIENT);
 }
 int browser_windows(HWND inspector) {
   struct Search { DWORD process = 0; int count = 0; } search;
@@ -150,9 +158,13 @@ int main(int argc, char** argv) {
     auto panel = FindWindowExW(native, nullptr, L"ReaWebAPI.DevTools.Panel", L"Developer Tools");
     CHECK(panel);
     CHECK(AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(inspector), GetWindowDpiAwarenessContext(GetParent(inspector))));
-    fills_panel(panel, inspector);
+    pump(windows, [&] { return fills_panel(panel, inspector); }, "Embedded renderer fills panel");
+    embedded_decorations(panel, inspector);
     auto divider = FindWindowExW(native, nullptr, L"ReaWebAPI.DevTools.Splitter", nullptr);
     CHECK(divider && IsWindowVisible(divider));
+    RECT divider_rect{}; GetWindowRect(divider, &divider_rect);
+    CHECK(divider_rect.right - divider_rect.left == 1);
+    CHECK(reinterpret_cast<HBRUSH>(GetClassLongPtrW(divider, GCLP_HBRBACKGROUND)) == GetSysColorBrush(COLOR_WINDOWFRAME));
     RECT client{}, panel_rect{}; GetClientRect(native, &client); GetWindowRect(panel, &panel_rect);
     CHECK(std::abs(static_cast<double>(panel_rect.right - panel_rect.left) / client.right - 0.4) < 0.02);
     SendMessageW(divider, WM_LBUTTONDOWN, MK_LBUTTON, 0);
@@ -161,28 +173,57 @@ int main(int argc, char** argv) {
     const auto ratio = first->devtools_state()["widthRatio"].get<double>();
     CHECK(ratio > 0.4 && ratio < 0.8);
     SetWindowPos(native, nullptr, 0, 0, 1000, 700, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    pump(windows, [&] { return fills_panel(panel, inspector); }, "Resized renderer fills panel");
     CHECK(first->devtools_state()["widthRatio"] == ratio);
     auto measure_page = [&] {
       page_width = 0; first->evaluate("chrome.webview.postMessage('width:'+innerWidth)");
       pump(windows, [&] { return page_width > 0; }); return page_width;
     };
     const auto embedded_width = measure_page();
+    RECT floating_bounds{};
     for (int i = 0; i < 3; ++i) {
       first->restore_devtools({{"mode", "floating"}});
       CHECK(first->diagnostics()["devtools"]["mode"] == "floating");
       auto floating = GetAncestor(inspector, GA_ROOT);
-      CHECK(floating != native && GetWindow(floating, GW_OWNER) == native);
-      fills_panel(panel, inspector);
+      CHECK(floating == inspector && GetWindow(floating, GW_OWNER) == native);
+      CHECK(!(GetWindowLongPtrW(inspector, GWL_STYLE) & WS_CHILD));
+      CHECK((GetWindowLongPtrW(inspector, GWL_STYLE) & WS_OVERLAPPEDWINDOW) == WS_OVERLAPPEDWINDOW);
+      CHECK(!IsWindowVisible(panel));
+      if (!i) {
+        SetWindowPos(inspector, nullptr, 180, 120, 700, 500, SWP_NOZORDER | SWP_NOACTIVATE);
+        GetWindowRect(inspector, &floating_bounds);
+      } else {
+        RECT rect{}; GetWindowRect(inspector, &rect); CHECK(EqualRect(&rect, &floating_bounds));
+      }
       CHECK(!IsWindowVisible(divider) && inspector_for(first) == inspector);
       CHECK(measure_page() > embedded_width * 1.5);
-      PostMessageW(floating, WM_CLOSE, 0, 0);
+      shortcut(first);
       pump(windows, [&] { return !visible(first); });
       CHECK(IsWindow(inspector));
       first->devtools(); pump(windows, [&] { return visible(first); });
       first->restore_devtools({{"mode", "embedded"}});
       CHECK(first->diagnostics()["devtools"]["mode"] == "embedded");
       CHECK(IsChild(native, inspector) && IsWindowVisible(divider) && inspector_for(first) == inspector);
+      pump(windows, [&] { return fills_panel(panel, inspector); }, "Reembedded renderer fills panel");
+      embedded_decorations(panel, inspector);
       CHECK(first->devtools_state()["widthRatio"] == ratio);
+    }
+    first->restore_devtools({{"mode", "floating"}});
+    ShowWindow(inspector, SW_MAXIMIZE);
+    first->restore_devtools({{"mode", "embedded"}});
+    pump(windows, [&] { return fills_panel(panel, inspector); }, "Embed maximized inspector");
+    shortcut(first); pump(windows, [&] { return !visible(first); });
+    first->restore_devtools({{"mode", "floating"}});
+    CHECK(!visible(first) && GetAncestor(inspector, GA_ROOT) == inspector);
+    first->devtools(); pump(windows, [&] { return visible(first); });
+    CHECK(IsZoomed(inspector));
+    ShowWindow(inspector, SW_RESTORE);
+    first->restore_devtools({{"mode", "embedded"}});
+    pump(windows, [&] { return fills_panel(panel, inspector); });
+    for (const auto width : {520, 360, 1000}) {
+      SetWindowPos(native, nullptr, 0, 0, width, 500, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+      pump(windows, [&] { return fills_panel(panel, inspector); }, "Small embedded viewport");
+      embedded_decorations(panel, inspector);
     }
     shortcut(first); pump(windows, [&] { return !visible(first); });
     CHECK(!visible(first) && first->focused() && IsWindow(inspector));
@@ -238,8 +279,10 @@ int main(int argc, char** argv) {
     CHECK(visible(first) && browser_windows(inspector) == count);
     DestroyWindow(probe);
     UnregisterClassW(probe_class.lpszClassName, probe_class.hInstance);
+    first->restore_devtools({{"mode", "floating"}});
     PostMessageW(inspector, WM_CLOSE, 0, 0);
     pump(windows, [&] { return !IsWindow(inspector); });
+    first->restore_devtools({{"mode", "embedded"}});
     shortcut(first); pump(windows, [&] { return visible(first); });
     auto independent_options = options; independent_options.on_dock_toggle = {}; independent_options.is_docked = {};
     auto second = platform->open(independent_options); windows.push_back(second);
@@ -267,7 +310,7 @@ int main(int argc, char** argv) {
     CHECK(reopened->diagnostics()["devtools"]["mode"] == "floating");
     CHECK(GetAncestor(inspector_for(reopened), GA_ROOT) != reopened->native_handle());
     inspector_shortcut(inspector_for(reopened), windows); pump(windows, [&] { return !visible(reopened); });
-    std::cout << "WebView2 DevTools: split/viewport, float/dock reuse, saved preferences, shortcuts, cancelled open, hide/close, host docking/focus and multi-window isolation passed\n";
+    std::cout << "WebView2 DevTools: borderless renderer bounds, 1px divider, native floating controls/placement, session reuse, saved preferences, shortcuts, hide/close and multi-window isolation passed\n";
     return 0;
   } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

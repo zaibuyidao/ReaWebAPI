@@ -8,7 +8,7 @@ ReaWebAPI is a native REAPER extension for building tools with HTML, CSS and Jav
 - Mirror-aware Batch Builder for 173 reviewed APIs, with deferred references, tuple destructuring and typed results.
 - 13 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
 - Native WebView support for modules, local resources, Workers and persistent App storage.
-- Windows/Linux [DevTools](docs/devtools.md) with a resizable right-hand panel, floating mode and saved layout preferences. Ctrl+Shift+I toggles visibility. Windows also provides visibility and mode controls in the page context menu.
+- Windows/Linux [DevTools](docs/devtools.md) with a resizable right-hand panel, floating mode and saved layout preferences. Ctrl+Shift+I toggles visibility. Windows offers a borderless embedded panel, native floating window and page context-menu controls.
 - Dock/Undock from the WebView context menu. PNG, ICO and SVG window icons from HTML favicons or `reaper.window.setIcon(path)` survive docking and reloads, with visibility controlled by `reaper.window.setIconVisible(boolean)`.
 - JavaScript and TypeScript templates, Runtime Studio and bilingual documentation.
 
