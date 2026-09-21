@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from urllib.parse import quote
 import zipfile
 
@@ -139,17 +140,20 @@ def gh(*args):
     return subprocess.run(['gh', *args], text=True, capture_output=True, encoding='utf-8', check=True).stdout
 
 
-def publish(repo, version, revision, assets):
-    tag = f'v{version}'
-    ref = os.environ.get('GITHUB_REF', '')
-    if ref.startswith('refs/tags/') and ref != f'refs/tags/{tag}':
-        raise ValueError(f'Tag {ref} does not match CMake version {tag}')
+def find_release(repo, tag):
     try:
-        release = json.loads(gh('api', f'repos/{repo}/releases/tags/{tag}'))
+        return json.loads(gh('api', f'repos/{repo}/releases/tags/{tag}'))
     except subprocess.CalledProcessError as error:
-        if 'HTTP 404' not in error.stderr:
+        if 'HTTP 404' not in (error.stderr or ''):
             raise
-        release = None
+    # The by-tag endpoint can omit drafts. Reuse a draft left by an interrupted upload.
+    pages = json.loads(gh('api', f'repos/{repo}/releases?per_page=100', '--paginate', '--slurp'))
+    return next((item for page in pages for item in page if item['tag_name'] == tag), None)
+
+
+def publish_once(repo, version, revision, assets):
+    tag = f'v{version}'
+    release = find_release(repo, tag)
     if release and not release['draft']:
         print(f'{tag} is already published. Increment the version for new binaries.')
         return
@@ -157,7 +161,7 @@ def publish(repo, version, revision, assets):
     try:
         tagged = json.loads(gh('api', f'repos/{repo}/commits/{tag}'))['sha']
     except subprocess.CalledProcessError as error:
-        if 'HTTP 404' not in error.stderr and 'HTTP 422' not in error.stderr:
+        if 'HTTP 404' not in (error.stderr or '') and 'HTTP 422' not in (error.stderr or ''):
             raise
         tagged = revision
     if tagged != revision or (release and release['target_commitish'] != revision):
@@ -167,10 +171,33 @@ def publish(repo, version, revision, assets):
     if not release:
         gh('release', 'create', tag, '--repo', repo, '--target', revision, '--draft',
            '--title', f'ReaWebAPI {tag}', '--notes-file', str(notes))
+    else:
+        gh('release', 'edit', tag, '--repo', repo, '--title', f'ReaWebAPI {tag}', '--notes-file', str(notes))
     gh('release', 'upload', tag, '--repo', repo, '--clobber', *(str(file) for file in assets))
     # Publish only after every expected asset has been uploaded successfully.
     gh('release', 'edit', tag, '--repo', repo, '--draft=false', '--latest')
     print(f'Published https://github.com/{repo}/releases/tag/{tag}')
+
+
+def publish(repo, version, revision, assets):
+    tag = f'v{version}'
+    ref = os.environ.get('GITHUB_REF', '')
+    if ref.startswith('refs/tags/') and ref != f'refs/tags/{tag}':
+        raise ValueError(f'Tag {ref} does not match CMake version {tag}')
+    for attempt in range(3):
+        try:
+            return publish_once(repo, version, revision, assets)
+        except subprocess.CalledProcessError as error:
+            detail = (error.stderr or error.stdout or str(error)).strip()
+            print(f'GitHub release attempt {attempt + 1} failed: {detail}', file=sys.stderr, flush=True)
+            transient = re.search(r'HTTP (?:429|5\d\d)\b|timed? out|timeout|connection reset|'
+                                  r'connection refused|unexpected EOF|TLS handshake|temporary failure', detail, re.I)
+            # Re-read release state before retrying: the server may have accepted a failed request.
+            if attempt == 2 or not transient:
+                raise
+            delay = 5 * (attempt + 1)
+            print(f'Retrying release publication in {delay}s.', file=sys.stderr, flush=True)
+            time.sleep(delay)
 
 
 def main():
@@ -182,7 +209,7 @@ def main():
     args = parser.parse_args()
     version = source_version()
     assets = assemble(args.assets, version, args.revision)
-    print(f'Prepared v{version}: {len(assets)} release assets')
+    print(f'Prepared v{version}: {len(assets)} release assets', flush=True)
     if args.publish:
         if not args.repo:
             parser.error('--repo is required when publishing')

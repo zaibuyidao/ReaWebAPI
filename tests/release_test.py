@@ -1,5 +1,6 @@
 """Local release regression tests. Fixtures are synthetic and never distributed."""
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -130,20 +131,94 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError): release.assemble(self.directory, self.version, 'other-sha')
     def test_draft_uploaded_before_publish(self):
         calls = []
-        original = release.gh
         def mock(*args):
             calls.append(args)
             if args[0] == 'api':
+                if '--slurp' in args:
+                    return '[[]]'
                 raise subprocess.CalledProcessError(1, args, stderr='HTTP 404')
             return ''
-        release.gh = mock
-        try:
+        with patch.object(release, 'gh', side_effect=mock):
             release.publish('test/repo', self.version, 'test-sha', [self.directory / 'reaper_reawebapi-x64.dll'])
-        finally:
-            release.gh = original
-        self.assertEqual([c[:2] for c in calls[2:]], [('release', 'create'), ('release', 'upload'), ('release', 'edit')])
-        self.assertIn('--draft', calls[2])
+        self.assertEqual([c[:2] for c in calls[3:]], [('release', 'create'), ('release', 'upload'), ('release', 'edit')])
+        self.assertIn('--draft', calls[3])
         self.assertIn('--draft=false', calls[-1])
-        self.assertEqual(calls[2][2], f'v{self.version}')
+        self.assertEqual(calls[3][2], f'v{self.version}')
+
+    def test_resume_draft_missing_from_tag_lookup(self):
+        draft = dict(tag_name=f'v{self.version}', draft=True, target_commitish='test-sha')
+        responses = [subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 404'),
+                     json.dumps([[dict(tag_name='v0.0.0')], [draft]]),
+                     json.dumps(dict(sha='test-sha')), '', '', '']
+        with patch.object(release, 'gh', side_effect=responses) as gh:
+            release.publish('test/repo', self.version, 'test-sha', [self.directory / 'reaper_reawebapi-x64.dll'])
+        commands = [call.args for call in gh.call_args_list]
+        self.assertIn('--paginate', commands[1])
+        self.assertNotIn(('release', 'create'), [cmd[:2] for cmd in commands])
+        self.assertIn('--notes-file', commands[3])
+        self.assertIn('--clobber', commands[4])
+        self.assertIn('--draft=false', commands[5])
+
+    def test_create_timeout_resumes_accepted_draft(self):
+        draft = dict(tag_name=f'v{self.version}', draft=True, target_commitish='test-sha')
+        missing = subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 404')
+        responses = [missing, '[[]]', missing,
+                     subprocess.CalledProcessError(1, ['gh', 'release', 'create'], stderr='HTTP 502: Bad Gateway'),
+                     missing, json.dumps([[draft]]), json.dumps(dict(sha='test-sha')), '', '', '']
+        with patch.object(release, 'gh', side_effect=responses) as gh, \
+             patch.object(release.time, 'sleep') as sleep, patch('sys.stderr', new_callable=io.StringIO) as output:
+            release.publish('test/repo', self.version, 'test-sha', [self.directory / 'reaper_reawebapi-x64.dll'])
+        self.assertEqual(sum(call.args[:2] == ('release', 'create') for call in gh.call_args_list), 1)
+        sleep.assert_called_once_with(5)
+        self.assertIn('HTTP 502: Bad Gateway', output.getvalue())
+        self.assertIn('--draft=false', gh.call_args_list[-1].args)
+
+    def test_failed_upload_is_retried_before_publishing(self):
+        draft = json.dumps(dict(tag_name=f'v{self.version}', draft=True, target_commitish='test-sha'))
+        commit = json.dumps(dict(sha='test-sha'))
+        responses = [draft, commit, '',
+                     subprocess.CalledProcessError(1, ['gh', 'release', 'upload'], stderr='connection reset by peer'),
+                     draft, commit, '', '', '']
+        with patch.object(release, 'gh', side_effect=responses) as gh, \
+             patch.object(release.time, 'sleep'), patch('sys.stderr', new_callable=io.StringIO):
+            release.publish('test/repo', self.version, 'test-sha', [self.directory / 'reaper_reawebapi-x64.dll'])
+        commands = [call.args for call in gh.call_args_list]
+        self.assertEqual(sum(cmd[:2] == ('release', 'upload') for cmd in commands), 2)
+        self.assertEqual(sum('--draft=false' in cmd for cmd in commands), 1)
+        self.assertIn('--draft=false', commands[-1])
+
+    def test_published_release_is_not_overwritten(self):
+        with patch.object(release, 'gh', return_value=json.dumps(dict(draft=False))) as gh:
+            release.publish('test/repo', self.version, 'test-sha', [self.directory / 'reaper_reawebapi-x64.dll'])
+        gh.assert_called_once()
+
+    def test_existing_tag_or_draft_at_different_commit_is_rejected(self):
+        for tagged, target in [('other-sha', 'test-sha'), ('test-sha', 'other-sha')]:
+            with self.subTest(tagged=tagged, target=target):
+                responses = [json.dumps(dict(draft=True, target_commitish=target)), json.dumps(dict(sha=tagged))]
+                with patch.object(release, 'gh', side_effect=responses) as gh:
+                    with self.assertRaisesRegex(ValueError, 'different commit'):
+                        release.publish('test/repo', self.version, 'test-sha', [self.directory / 'reaper_reawebapi-x64.dll'])
+                self.assertEqual(gh.call_count, 2)
+
+    def test_permission_error_is_reported_without_retry(self):
+        error = subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 403: Resource not accessible by integration')
+        with patch.object(release, 'gh', side_effect=error) as gh, \
+             patch.object(release.time, 'sleep') as sleep, patch('sys.stderr', new_callable=io.StringIO) as output:
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.publish('test/repo', self.version, 'test-sha', [self.directory / 'reaper_reawebapi-x64.dll'])
+        gh.assert_called_once()
+        sleep.assert_not_called()
+        self.assertIn(error.stderr, output.getvalue())
+
+    def test_transient_errors_have_bounded_retries(self):
+        error = subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 503: Service Unavailable')
+        with patch.object(release, 'gh', side_effect=error) as gh, \
+             patch.object(release.time, 'sleep') as sleep, patch('sys.stderr', new_callable=io.StringIO) as output:
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.publish('test/repo', self.version, 'test-sha', [self.directory / 'reaper_reawebapi-x64.dll'])
+        self.assertEqual(gh.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [5, 10])
+        self.assertIn('attempt 3 failed: HTTP 503', output.getvalue())
 
 if __name__ == '__main__': unittest.main()
