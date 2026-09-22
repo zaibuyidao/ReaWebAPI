@@ -62,11 +62,11 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('-- @noindex', bundle.read('web/ReaWebAPI_Demo.lua').decode())
             self.assertEqual((self.directory / 'ReaWebAPI.ext').read_text(encoding='utf-8'), descriptor)
             changelog = descriptor.split('@changelog\n', 1)[1]
-            self.assertIn('rerunning bundled Lua launchers', changelog)
-            self.assertNotIn('Add Lua ↔ WebView', changelog)
-            self.assertNotIn('Embed DevTools', changelog)
-            self.assertIn('Docker close', changelog)
-            self.assertEqual(len(changelog.strip().splitlines()), 2)
+            # Follow this checkout's notes instead of hard-coding one release's prose or bullet count.
+            english_notes = release.version_notes(self.version).split('## 简体中文', 1)[0].split('## 更新', 1)[0]
+            expected_changes = ['  ' + line[2:] for line in english_notes.splitlines() if line.startswith('- ')]
+            self.assertTrue(expected_changes)
+            self.assertEqual(changelog.splitlines(), expected_changes)
             self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 7)
             self.assertIn(f'@version {self.version}\n', bundle.read('ReaWebAPI.ext').decode())
         body = release.release_body('test/repo', self.version)
@@ -110,6 +110,18 @@ class ReleaseTests(unittest.TestCase):
         (demo / 'index.html').write_text('<html>Demo</html>', encoding='utf-8')
         with self.assertRaisesRegex(ValueError, 'Missing Demo launcher'):
             release.descriptor(self.version, demo)
+    def test_descriptor_changelog_uses_only_selected_english_notes(self):
+        for english_heading, chinese_heading in [('English', '简体中文'), ('Changes', '更新')]:
+            for changes in [('First change.',), ('First change.', 'Second change.', 'Third change.')]:
+                with self.subTest(english_heading=english_heading, changes=changes):
+                    bullets = '\n'.join('- ' + change for change in changes)
+                    notes = (f'# ReaWebAPI v{self.version}\n\n## {english_heading}\n\n{bullets}\n\n'
+                             f'## {chinese_heading}\n\n- 中文更新。\n\n'
+                             '# ReaWebAPI v0.0.0\n\n## English\n\n- Previous release.\n')
+                    with patch.object(release.Path, 'read_text', return_value=notes):
+                        descriptor = release.descriptor(self.version)
+                    self.assertEqual(descriptor.split('@changelog\n', 1)[1],
+                                     ''.join('  ' + change + '\n' for change in changes))
     def test_release_notes_select_exact_version(self):
         text = '# ReaWebAPI v1.2.3\n\n## Changes\n\n- Current release.\n\n# ReaWebAPI v1.2.2\n\n- Previous release.\n'
         with patch.object(release.Path, 'read_text', return_value=text):
