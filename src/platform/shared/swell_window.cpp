@@ -6,11 +6,14 @@ static SWELL_DialogRegHelper reaweb_dialog(&SWELL_curmodule_dialogresource_head,
   [](HWND, int) {}, 101, SWELL_DLG_WS_RESIZABLE, "ReaWebAPI", 860, 640, 1.0, 1.0);
 
 namespace reaweb {
-INT_PTR SwellWindow::procedure(HWND window, UINT message, WPARAM, LPARAM parameter) {
+INT_PTR SwellWindow::procedure(HWND window, UINT message, WPARAM command, LPARAM parameter) {
   if (message == WM_INITDIALOG) { SetWindowLong(window, GWL_USERDATA, parameter); return TRUE; }
   auto self = reinterpret_cast<SwellWindow*>(GetWindowLong(window, GWL_USERDATA));
   if (!self) return FALSE;
-  if (message == WM_CLOSE) { if (self->close_) self->close_(); else self->closed_ = true; return TRUE; }
+  if (message == WM_CLOSE || (message == WM_COMMAND && LOWORD(command) == IDCANCEL && !HIWORD(command) && !parameter)) {
+    if (self->close_) self->close_(); else self->closed_ = true;
+    return TRUE;
+  }
   if (message == WM_DESTROY) { self->closed_ = true; self->window_ = nullptr; }
   if (message == WM_SETFOCUS && self->focus_) self->focus_();
   return FALSE;

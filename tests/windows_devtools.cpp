@@ -121,6 +121,8 @@ int main(int argc, char** argv) {
     int messages = 0, navigations = 0, page_width = 0;
     std::string error;
     WindowOptions options;
+    int close_requests = 0;
+    options.on_close = [&] { ++close_requests; };
     bool docked = false;
     options.on_dock_toggle = [&] { docked = !docked; };
     options.is_docked = [&] { return docked; };
@@ -137,6 +139,10 @@ int main(int argc, char** argv) {
     auto visible = [](const auto& window) { return window->diagnostics()["devtools"]["visible"].template get<bool>(); };
     pump(windows, [&] { return messages > 0; }, "Initial page heartbeat");
     auto native = static_cast<HWND>(first->native_handle());
+    SendMessageW(native, WM_COMMAND, IDCANCEL, 0);
+    CHECK(close_requests == 1 && !first->closed());
+    SendMessageW(native, WM_CLOSE, 0, 0);
+    CHECK(close_requests == 2 && !first->closed());
     CHECK(!GetDlgItem(native, 0x1800));
     CHECK(GetMenuState(GetSystemMenu(native, FALSE), 0x1800, MF_BYCOMMAND) != UINT(-1));
     SendMessageW(native, WM_SYSCOMMAND, 0x1800, 0); first->tick(); CHECK(docked);

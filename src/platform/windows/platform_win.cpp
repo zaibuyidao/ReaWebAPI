@@ -126,7 +126,7 @@ public:
         self->controller_->NotifyParentWindowPositionChanged();
       } else if (msg == WM_SETFOCUS && self->controller_) {
         self->controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
-      } else if (msg == WM_CLOSE) {
+      } else if (msg == WM_CLOSE || (msg == WM_COMMAND && LOWORD(wp) == IDCANCEL && !HIWORD(wp) && !lp)) {
         if (self->options_.on_close) self->options_.on_close(); else self->closed_ = true;
         return 0;
       } else if (msg == WM_NCDESTROY) {

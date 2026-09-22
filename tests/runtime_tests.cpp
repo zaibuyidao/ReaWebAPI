@@ -616,6 +616,24 @@ int main() {
       CHECK(runtime.receive(next_id).empty());
       CHECK(runtime.is_open(other_id));
     }
+    {
+      Runtime runtime(host, root, [](const std::string&) {}, docks);
+      const auto id = runtime.open("Tool/index.html");
+      auto window = windows.back().lock();
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      runtime.set_docked(id, true);
+      runtime.send(id, "pending Lua message");
+      CHECK(result(runtime, *window, window->send("ReaWeb_HostSend", {"pending UI message"}))["result"] == true);
+      auto close = window->options.on_close;
+      std::weak_ptr<Window> released = window;
+      window.reset();
+      close(); close();
+      CHECK(!runtime.is_open(id));
+      until(runtime, [&] { return released.expired(); });
+      CHECK(runtime.diagnostics(id)["stage"] == "closed");
+      const auto reopened = runtime.open("Tool/index.html");
+      CHECK(reopened != id && runtime.receive(reopened).empty());
+    }
     const auto metadata_root = root / "MetadataApp";
     DevToolsPreferences inspector;
     CHECK(!inspector.floating && inspector.width_ratio == 0.4);
