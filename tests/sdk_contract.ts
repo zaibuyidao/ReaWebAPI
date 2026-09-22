@@ -1,4 +1,14 @@
 /// <reference path="../runtime/reaper.d.ts" />
+
+async function hostMessages() {
+  const accepted: boolean = await reaper.host.send({type: 'setVolume', value: 0.5, nested: [null, true]});
+  await reaper.host.send('text');
+  await reaper.events.on('message', text => { const original: string = text; });
+  // @ts-expect-error Host messages require JSON values.
+  await reaper.host.send({callback: () => {}});
+  // @ts-expect-error Message events carry strings.
+  await reaper.events.on('message', (data: number) => {});
+}
 export {};
 
 // Public Runtime names must match the reviewed inventory; no flat aliases may leak through.

@@ -378,7 +378,7 @@ entry.restype = C.c_int
 info = Info(0x20E, owner_window, register, get_func)
 assert entry(None, C.byref(info)) == 1
 try:
-    assert len(registrations) == 37, list(registrations)
+    assert len(registrations) == 43, list(registrations)
     assert b'csurf_inst' in registrations
     open_window = C.CFUNCTYPE(C.c_int, C.c_char_p)(registrations[b'API_ReaWeb_Open'])
     for prefix in (b'API_', b'APIvararg_', b'APIdef_'):
@@ -410,6 +410,14 @@ try:
     assert not vararg(arguments, 1)
     assert not is_open(999)
     assert saved_error == get_error()
+    host_send = C.CFUNCTYPE(C.c_bool, C.c_int, C.c_char_p)(registrations[b'API_ReaWeb_Send'])
+    host_receive = C.CFUNCTYPE(C.c_char_p, C.c_int)(registrations[b'API_ReaWeb_Receive'])
+    assert not host_send(999, b'closed') and b'closed or unknown' in get_error()
+    assert host_receive(999) == b'' and b'closed or unknown' in get_error()
+    send_args = (C.c_void_p * 2)(999, C.addressof(missing))
+    send_vararg = C.CFUNCTYPE(C.c_void_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Send'])
+    receive_vararg = C.CFUNCTYPE(C.c_char_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Receive'])
+    assert not send_vararg(send_args, 2) and receive_vararg(send_args, 1) == b''
     if args.webview and args.runtime:
         from web_runtime_browser import run_windows
         run_windows(globals())

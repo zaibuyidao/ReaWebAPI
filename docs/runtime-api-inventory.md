@@ -1,16 +1,24 @@
 # Runtime API 完整清单 / Complete API inventory
 
-JavaScript Runtime 只公开以下 **13 个命名空间、64 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
+JavaScript Runtime 只公开以下 **14 个命名空间、65 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
 
-The JavaScript Runtime exposes only these thirteen namespaces: 64 methods and one Promise property. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact parameter and result types, including overloads, are in [runtime-api.d.ts](../runtime/runtime-api.d.ts). Behavior and limits: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Host services](host-api.md).
+The JavaScript Runtime exposes only these fourteen namespaces: 65 methods and one Promise property. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact parameter and result types, including overloads, are in [runtime-api.d.ts](../runtime/runtime-api.d.ts). Behavior and limits: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Host services](host-api.md).
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
 Lua 通过原生函数 `reaper.ReaWeb_Open(path)` 启动页面。JavaScript 使用本清单中的 Runtime 命名空间。内部通信命令是桥接协议的一部分。
 
-全部 13 个命名空间已有具体能力；`capabilities.runtime.reservedNamespaces` 现在为空数组。`app` 提供当前应用信息，`dragDrop` 提供原生文件／文本拖放；大小写统一为 `dragDrop`，没有 `dragdrop` 别名。
+全部 14 个命名空间已有具体能力；`capabilities.runtime.reservedNamespaces` 现在为空数组。`app` 提供当前应用信息，`dragDrop` 提供原生文件／文本拖放；大小写统一为 `dragDrop`，没有 `dragdrop` 别名。
 
-All thirteen namespaces have implemented members. App identity is shared with browser storage. Manifest metadata is read at App creation, and the validator checks complete manifests.
+All fourteen namespaces have implemented members. App identity is shared with browser storage. Manifest metadata is read at App creation, and the validator checks complete manifests.
+
+## reaper.host
+
+Lua 后端与 WebView UI 之间的消息。Text messages between a Lua backend and the current WebView document.
+
+| API | 返回 / Result | 用途 |
+| --- | --- | --- |
+| `reaper.host.send(message)` | `Promise<boolean>` | Queue a string or JSON-serialized value for Lua `ReaWeb_Receive`. Receive Lua text through `events.on('message', callback)` |
 
 ## reaper.window
 

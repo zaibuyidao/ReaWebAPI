@@ -24,6 +24,10 @@ Inspector behavior is documented in [DevTools](devtools.md). Linux binaries buil
 - On macOS verify the localhost entry against the actual REAPER bundle's ATS policy. On Linux verify the default renderer and consult the Web Runtime document if WSLg/DMA-BUF stalls frames.
 
 
+## Lua message bridge
+
+For the message bridge, run `web/lua-backend/Open.lua`, select a track with quotes, control characters and Unicode in its name, and verify exact UI text and volume readback. Reload the page and confirm it requests fresh state. Open a second instance and confirm independent queues. Closing either window must stop only its Lua backend. Automated real-host checks: `python tests/message_bridge_smoke.py --reaper <executable> --extension <binary> --output <new-directory>` uses an isolated resource directory.
+
 ## DevTools acceptance
 
 - Windows/Linux: press Ctrl+Shift+I in the WebView to open DevTools, then press it again with DevTools focused to hide the same window. Reopen and verify the Console session is retained and no additional inspector appears. Check held keys across focus changes, rapid toggles during opening, native close and two WebViews in the same profile. Hiding must return focus to the corresponding page. Repeated API open calls must keep DevTools visible. Page timers and REAPER calls must continue while the inspector has focus.

@@ -9,10 +9,11 @@ const batchMethods = [...fs.readFileSync(path.join(__dirname, '../src/core/batch
 const script = '(() => {\n' + fs.readFileSync(path.join(__dirname, '../runtime/reaper-api.generated.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8') + '\n})();';
 const flush = () => new Promise(setImmediate);
 
-test('The public SDK has exactly 730 unchanged Mirror methods and thirteen frozen Runtime namespaces', async () => {
+test('The public SDK has exactly 730 unchanged Mirror methods and fourteen frozen Runtime namespaces', async () => {
   const t = await connected();
   const api = t.window.reaper;
   const expected = {
+  "host": ["send"],
   "window": [
     "open",
     "openDev",
@@ -426,6 +427,37 @@ test('old document replies are ignored, project errors retain details and update
   assert.equal(t.messages[2].project, 2);
   t.reply(2, { result: 4 }); assert.equal(await next, 4);
 });
+test('host messages serialize explicitly and reject invalid values before dispatch', async () => {
+  const t = await connected();
+  for (const value of ['鼓组 🎛️', '{"text":true}', '', {type:'setVolume',value:0.5}, [1,null,true], false, 0, null]) {
+    const text = typeof value === 'string' ? value : JSON.stringify(value);
+    assert.equal(await answer(t, 'ReaWeb_HostSend', [text], true, t.window.reaper.host.send(value)), true);
+  }
+  const circular = {}; circular.self = circular;
+  for (const value of [undefined, () => {}, Symbol(), 1n, NaN, Infinity, {bad:undefined}, [undefined], circular, 'a\0b'])
+    await assert.rejects(t.window.reaper.host.send(value), {code:'INVALID_ARGUMENT'});
+  await assert.rejects(t.window.reaper.host.send('鼓'.repeat(350000)), {code:'MESSAGE_LIMIT'});
+  const error = assert.rejects(t.window.reaper.host.send('full'), {code:'QUEUE_LIMIT'});
+  await flush(); t.reply(t.messages.length - 1, {error:{code:'QUEUE_LIMIT',message:'Full'}}); await error;
+});
+
+test('message events preserve text and FIFO without snapshot replay or cross-document delivery', async () => {
+  const t = await connected(), other = await connected(), seen = [], late = [];
+  const pending = t.window.reaper.events.on('message', text => seen.push(text));
+  await flush();
+  t.event('message', 1, 'before subscription reply');
+  t.reply(1, {result:null}); await pending;
+  assert.deepEqual(seen, ['before subscription reply']);
+  await t.window.reaper.events.on('message', text => late.push(text));
+  assert.deepEqual(late, []);
+  const values = ['A', '{"a":1}', '鼓 🎚', '', 'C'];
+  values.forEach((text, i) => t.event('message', i + 2, text));
+  assert.deepEqual(seen.slice(1), values); assert.deepEqual(late, values);
+  const old = {document:'old',event:'message',sequence:100,data:'stale'};
+  t.window.__reawebReceive(old); other.window.__reawebReceive({...old,document:t.messages[0].document});
+  assert.deepEqual(seen.slice(1), values);
+});
+
 test('subscriptions share native registration, order events and dispose independently', async () => {
   const t = await connected(), states = [], more = [];
   const off1 = t.window.reaper.events.on('windowstatechange', s => states.push(s.docked));

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.3.1 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.4 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -103,6 +103,7 @@ add_library(reaweb_runtime STATIC
   src/runtime/runtime.cpp
   src/runtime/window.cpp
   src/runtime/events.cpp
+  src/runtime/messages.cpp
   src/runtime/lifecycle.cpp
   src/runtime/debug.cpp
   src/runtime/transaction.cpp)

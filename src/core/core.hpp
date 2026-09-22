@@ -17,6 +17,9 @@ namespace fs = std::filesystem;
 inline constexpr size_t message_limit = 64 * 1024 * 1024;
 inline constexpr size_t value_limit = 16 * 1024 * 1024;
 inline constexpr size_t batch_limit = 128;
+inline constexpr size_t host_message_limit = 1024 * 1024;
+inline constexpr size_t host_queue_limit = 256;
+inline constexpr size_t host_queue_bytes = value_limit;
 
 struct Error : std::runtime_error {
   std::string code;

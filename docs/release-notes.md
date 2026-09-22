@@ -2,10 +2,10 @@
 
 ## English
 
-- Fix macOS **Embed DevTools** being disabled in compact windows. The Inspector now fills the right-hand panel at the saved width ratio without native docking size restrictions or extra window decorations.
-- Reuse the same Inspector content view and native floating window across Embedded, Floating and Hidden states, retaining Console entries and the selected tab.
+- Add Lua ↔ WebView messaging with `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and the `message` event, with bounded FIFO queues and document lifecycle isolation.
+- Add a Lua backend / WebView track-volume example, TypeScript declarations and message bridge documentation.
 
 ## 简体中文
 
-- 修复 macOS 窄窗口中 **Embed DevTools** 灰色不可用的问题。检查器按保存的宽度比例填满右侧面板，不再受原生停靠尺寸限制，不增加窗口装饰。
-- Embedded、Floating 和 Hidden 状态复用同一检查器内容视图及原生浮动窗口，保留 Console 日志和当前选中的标签。
+- 新增 Lua ↔ WebView 消息桥接，提供 `ReaWeb_Send`、`ReaWeb_Receive`、`reaper.host.send` 和 `message` 事件，支持有界 FIFO 队列及文档生命周期隔离。
+- 新增 Lua 后端 / WebView 轨道音量示例、TypeScript 声明及消息桥接文档。

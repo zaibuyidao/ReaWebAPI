@@ -45,7 +45,7 @@ Window placement and docking are persisted by entry file and instance slot. At m
 
 ## Events
 
-`reaper.events.on(name, callback)` resolves to an asynchronous unsubscribe function. The callback receives an initial snapshot, then coalesced updates. The returned unsubscribe function can be called repeatedly. Catch errors from asynchronous callbacks yourself.
+`reaper.events.on(name, callback)` resolves to an asynchronous unsubscribe function. State callbacks receive an initial snapshot, then coalesced updates. The `message` event delivers discrete Lua strings in FIFO order without snapshots or replay. The returned unsubscribe function can be called repeatedly. Catch errors from asynchronous callbacks yourself.
 
 | Event | Callback payload |
 | --- | --- |
@@ -166,6 +166,8 @@ These native extension functions are called synchronously from Lua. First use `r
 | `reaper.ReaWeb_Close(id)` | Boolean |
 | `reaper.ReaWeb_IsOpen(id)` | Boolean |
 | `reaper.ReaWeb_IsReady(id)` | Boolean, true after document handshake |
+| `reaper.ReaWeb_Send(id, message)` | `true` when queued for the ready document, otherwise `false` |
+| `reaper.ReaWeb_Receive(id)` | Next UTF-8 text without blocking, or `""` for empty queue/error |
 | `reaper.ReaWeb_Focus(id)` | Boolean |
 | `reaper.ReaWeb_DevTools(id)` | Boolean |
 | `reaper.ReaWeb_SetDocked(id, docked)` | Actual docked state |
@@ -180,3 +182,30 @@ Lua relative HTML paths resolve from REAPER's `Scripts/` directory. The starter 
 JavaScript opens pages with `reaper.window.open(path)` and waits on `reaper.lifecycle.ready`. Lua bootstrap uses `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains Lua-only native functions. The 730 standard REAPER mirror names are unchanged.
 
 `reaper.events.off(name, callback)` removes all matching registrations of that callback. Subscribe to `native-drop` through `reaper.events.on('native-drop', callback)`; it carries files/text/x/y and has neither coalescing nor an initial snapshot. See [Runtime API](runtime-api.md).
+
+## Lua message bridge
+
+Two workflows coexist: pure JavaScript uses the REAPER Mirror and Runtime APIs. A Lua backend uses normal REAPER/ReaScript APIs and exchanges text with a WebView UI. See the [example](../web/lua-backend/README.md).
+
+`ReaWeb_Send(id, message)` accepts UTF-8 text after `ReaWeb_IsReady(id)` is true. It does not serialize Lua tables or inspect JSON. The original string reaches `reaper.events.on("message", callback)`. Messages wait for a subscription in that document. Each subscribed callback sees subsequent messages without coalescing or replay.
+
+`await reaper.host.send(message)` queues a string unchanged. Other JSON values are serialized with `JSON.stringify` before native dispatch. Unsupported values, cyclic objects, non-finite numbers and raw NUL text reject with `INVALID_ARGUMENT`. Success resolves to `true` when accepted, not when Lua processes it. Lua receives the serialized text with `ReaWeb_Receive(id)`.
+
+Each window preserves FIFO independently in each direction. Limits are 1 MiB of UTF-8 per message, 256 pending messages per direction, and 16 MiB of queued payload across both directions, including native output awaiting dispatch. Oversized messages fail with `MESSAGE_LIMIT`, full queues with `QUEUE_LIMIT`. Native transport limits also apply. Limits are reported in `capabilities.runtime.host`.
+
+Lua calls follow the existing `ReaWeb_GetLastError()` convention. Send fails before readiness (`NOT_READY`) or for a closed/unknown window (`WINDOW_CLOSED`). Receive returns `""` on empty queue or error. An empty string message is allowed and consumes its queue entry, but is indistinguishable from an empty queue in Lua. Use JSON text such as `null` when that distinction matters. Raw NUL is outside the text ABI. Successful calls do not clear previous errors.
+
+Close and document navigation discard queued messages in both directions. No old-generation message is delivered to a replacement page. All Host API calls run on REAPER's main thread without waiting for a message. A Lua `defer` loop is needed only to poll continuously, not to keep a window open:
+
+```lua
+local function loop()
+  if not reaper.ReaWeb_IsOpen(id) then return end
+  for _ = 1, 32 do
+    local text = reaper.ReaWeb_Receive(id)
+    if text == "" then break end
+    handle_message(text)
+  end
+  reaper.defer(loop)
+end
+loop()
+```

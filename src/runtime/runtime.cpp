@@ -51,6 +51,11 @@ Json Runtime::web_runtime(const Session& session) const {
 }
 Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   auto& s = *sessions_.at(id);
+  if (method == "ReaWeb_HostSend") {
+    if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected a host message string");
+    enqueue_message(s, args[0].get_ref<const std::string&>(), false);
+    return true;
+  }
   if (method == "ReaWeb_GetAppInfo") return s.app->info;
   if (method == "ReaWeb_GetPlatform") return runtime_platform();
   if (method == "ReaWeb_GetArchitecture") return runtime_architecture();
@@ -342,8 +347,12 @@ void Runtime::tick() {
         log_(s.last_error);
       }
     } else if (work.kind == Work::Script) {
-      try { s.window->evaluate(work.text); }
+      try { if (!work.host_message || !s.closing) s.window->evaluate(work.text); }
       catch (const std::exception& e) { fail(s, e.what()); }
+      if (work.host_message && !s.closing) {
+        s.message_bytes -= work.message_bytes;
+        --s.web_messages;
+      }
       if (work.reply && s.outstanding) --s.outstanding;
       if (work.counted_output && s.output_pending) --s.output_pending;
     }
@@ -431,6 +440,7 @@ void Runtime::tick() {
         if (response) { auto request = std::move(audio.request); s.audio.pop_front(); reply(s, std::move(request), *response); }
       }
       if (s.closing || s.window->closed()) {
+        clear_messages(s);
         // Close requests get a bounded chance to flush their reply before destroying the page.
         if (s.closing && !s.window->closed() && s.output_pending && Clock::now() - s.closing_since < std::chrono::milliseconds(250)) { ++it; continue; }
         if (undo_owner_ == s.id) finish_undo();
@@ -448,6 +458,7 @@ void Runtime::tick() {
       auto state = window_state(s);
       if (state != s.last_state) { s.last_state = state; emit(s, "windowstatechange", std::move(state)); }
       persist(s);
+      flush_messages(s, deadline);
       if (s.output_pending < 16) {
         for (auto& event : s.events) {
           Work output; output.kind = Work::Encode; output.session = s.id; output.generation = s.generation;

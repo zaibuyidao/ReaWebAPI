@@ -8,7 +8,7 @@
   const eventNames = ['projectchange', 'selectionchange', 'itemselectionchange', 'takeselectionchange',
     'transportchange', 'fxchange', 'windowstatechange', 'track-added', 'track-deleted', 'track-selected',
     'item-changed', 'take-changed', 'playback-state-changed', 'tempo-changed', 'marker-changed',
-    'fx-changed', 'project-loaded', 'project-saved', 'theme-changed', 'native-drop'];
+    'fx-changed', 'project-loaded', 'project-saved', 'theme-changed', 'native-drop', 'message'];
   const lifecycleListeners = new Map();
   let cleanupToken = null;
   const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('-');
@@ -60,7 +60,7 @@
       if (message.event === 'projectchange') projectEpoch = message.data.projectEpoch;
       const entry = subscriptions.get(message.event);
       if (entry) {
-        if (message.event !== 'native-drop') entry.last = message.data;
+        if (message.event !== 'native-drop' && message.event !== 'message') entry.last = message.data;
         for (const callback of [...entry.listeners]) notify(callback, message.data);
       }
       return;
@@ -254,7 +254,7 @@
     try {
       const initial = await entry.initial;
       if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
-      if (!disposed && name !== 'native-drop' && (entry.last ?? initial)) notify(listener, entry.last ?? initial);
+      if (!disposed && name !== 'native-drop' && name !== 'message' && (entry.last ?? initial)) notify(listener, entry.last ?? initial);
     } catch (error) {
       disposed = true;
       entry.listeners.delete(listener);
@@ -395,6 +395,22 @@
   // Runtime namespaces share the existing bridge; the 730 REAPER methods retain
   // their names, argument order, typed handles and asynchronous results.
   api.events = Object.freeze({ on: onEvent, off: offEvent });
+  api.host = Object.freeze({ send: async message => {
+    let text;
+    try {
+      text = typeof message === 'string' ? message : JSON.stringify(message, (_, value) => {
+        if (['undefined', 'function', 'symbol', 'bigint'].includes(typeof value) ||
+            (typeof value === 'number' && !Number.isFinite(value)))
+          throw new TypeError('Expected a JSON-serializable value');
+        return value;
+      });
+    } catch (error) { throw failure('INVALID_ARGUMENT', error.message); }
+    if (typeof text !== 'string' || text.includes('\0'))
+      throw failure('INVALID_ARGUMENT', 'Host messages must be text without NUL or a JSON-serializable value');
+    if (new TextEncoder().encode(text).length > 1024 * 1024)
+      throw failure('MESSAGE_LIMIT', 'Host message exceeds 1 MiB of UTF-8 text');
+    return call('ReaWeb_HostSend', [text]);
+  } });
   api.window = Object.freeze({
     open: host('ReaWeb_Open'), openDev: host('ReaWeb_OpenDev'),
     getSize: async () => { const b = await call('ReaWeb_GetBounds', []); return { width: b.width, height: b.height, mode: b.mode, units: b.units }; },

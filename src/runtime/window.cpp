@@ -139,6 +139,7 @@ bool Runtime::close(int id) {
   if (!it->second->closing && lifecycle(*it->second, "close")) return true;
   if (!it->second->closing) it->second->closing_since = Clock::now();
   it->second->closing = true;
+  clear_messages(*it->second);
   return true;
 }
 

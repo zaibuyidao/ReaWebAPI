@@ -11,6 +11,7 @@ void Runtime::navigate(Session& session) {
   session.ready = false;
   session.document.clear();
   session.queue.clear();
+  clear_messages(session);
   session.events.clear();
   session.subscriptions.clear();
   session.outstanding = session.output_pending = 0;
@@ -48,6 +49,7 @@ void Runtime::complete_lifecycle(Session& s) {
     if (undo_owner_ == s.id) finish_undo();
     s.audio.clear();
     s.closing = true; s.closing_since = Clock::now();
+    clear_messages(s);
   } else {
     s.allow_reload = true;
     s.window->reload();

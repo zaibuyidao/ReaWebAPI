@@ -53,14 +53,18 @@ class ReleaseTests(unittest.TestCase):
                                          descriptor, release.re.MULTILINE)
             self.assertEqual(len(entries), len(demo_files))
             self.assertEqual({target for _, target, _ in entries}, set(demo_files))
-            self.assertEqual([target for mode, target, _ in entries if mode == 'main'],
-                             ['web/ReaWebAPI_Demo.lua'])
+            self.assertCountEqual([target for mode, target, _ in entries if mode == 'main'],
+                             ['web/ReaWebAPI_Demo.lua', 'web/lua-backend/Open.lua'])
             for _, target, url in entries:
                 self.assertEqual(unquote(url),
                                  'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/' + target)
                 self.assertEqual(bundle.read(target), demo_files[target])
             self.assertIn('-- @noindex', bundle.read('web/ReaWebAPI_Demo.lua').decode())
             self.assertEqual((self.directory / 'ReaWebAPI.ext').read_text(encoding='utf-8'), descriptor)
+            changelog = descriptor.split('@changelog\n', 1)[1]
+            self.assertIn('Lua ↔ WebView', changelog)
+            self.assertNotIn('Embed DevTools', changelog)
+            self.assertEqual(len(changelog.strip().splitlines()), 2)
             self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 7)
             self.assertIn(f'@version {self.version}\n', bundle.read('ReaWebAPI.ext').decode())
         body = release.release_body('test/repo', self.version)

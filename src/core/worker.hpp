@@ -20,6 +20,8 @@ struct Work {
   fs::path path;
   bool reply = false;
   bool counted_output = false;
+  bool host_message = false;
+  size_t message_bytes = 0;
   bool icon_from_page = false;
   uint64_t icon_sequence = 0;
   std::shared_ptr<const IconSource> icon_source;

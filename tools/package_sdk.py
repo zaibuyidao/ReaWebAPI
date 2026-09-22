@@ -22,6 +22,8 @@ def payload(root, version, revision):
     paths = {f'ReaWebAPI/SDK/{name}': root / 'runtime' / name for name in (
         'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'README.md', 'README.zh-CN.md')}
     paths['ReaWebAPI/SDK/tools/validate_app.py'] = root / 'tools/validate_app.py'
+    for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'README.md'):
+        paths[f'ReaWebAPI/SDK/lua-backend/{name}'] = root / 'web/lua-backend' / name
     for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'app.json'):
         paths[f'ReaWebAPI/SDK/runtime-demo/{name}'] = root / 'runtime/runtime-demo' / name
     for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'jsconfig.json'):
@@ -49,6 +51,7 @@ def payload(root, version, revision):
         if path.suffix == '.md':
             text = content.decode('utf-8-sig')
             text = text.replace('](../runtime/', '](../SDK/').replace('](runtime/', '](SDK/')
+            text = text.replace('](../web/lua-backend/', '](../SDK/lua-backend/').replace('](web/lua-backend/', '](SDK/lua-backend/')
             if name == 'ReaWebAPI/docs/release-notes.md':
                 text = re.sub(r'\A# ReaWebAPI[ \t]*\r?\n', f'# ReaWebAPI v{version}\n', text, count=1)
             content = text.encode('utf-8')

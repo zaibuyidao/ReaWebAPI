@@ -4,13 +4,13 @@
 
 [English](runtime-api.md) | **简体中文**
 
-JavaScript Runtime 使用下列 13 个命名空间。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
+JavaScript Runtime 使用下列 14 个命名空间。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
 
 `capabilities.runtime.contract` 为 2，描述宿主 SDK；`capabilities.webRuntime.contract` 仍为 1，描述 Web 资源和存储约定。能力信息列出命名空间、事件、清理超时和音频上限；底层标准 API 是否存在仍应查询 `api.availableMethods`。
 
 就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
-13 个命名空间均提供具体方法，共 64 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
+14 个命名空间均提供具体方法，共 65 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
 `transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
 
@@ -198,3 +198,17 @@ await dispose(); // off 后仍可安全调用
 本版 Manifest 不参与自动安装或启动；应用继续通过 `reaper.window.open` 打开 HTML。没有 App 管理器、自动更新、安装系统或权限执行机制，未实施的 `permissions` 字段会被校验器拒绝。可信应用仍拥有标准镜像及已有文件服务能力，不能将 Web 资源根目录限制误认为 Native API 权限沙箱。
 
 运行 [Runtime Studio](../runtime/runtime-demo/index.html) 对应目录的 `Open.lua` 可体验窗口、事件、主题、对话框、音频波形、手动电平、诊断和清理状态保存。示例不需要构建。
+
+## Host 消息
+
+`reaper.host.send(message)` 返回 `Promise<boolean>`。字符串原样发送，其他 JSON 值先序列化，再进入当前窗口的 Lua 接收队列。原生错误和队列溢出会拒绝 Promise。Lua 发来的文本通过现有事件 API 接收：
+
+```js
+await reaper.events.on('message', text => {
+  const state = JSON.parse(text);
+  render(state);
+});
+await reaper.host.send({ type: 'setVolume', value: 0.5 });
+```
+
+消息保持 FIFO，不合并、不提供初始快照、不回放。队列归当前文档所有，关闭或重载时清空。单条消息最多 1 MiB UTF-8，每方向最多 256 条，窗口双向合计最多 16 MiB。参见 [Lua 契约](host-api.zh-CN.md#lua-消息桥接)与 [Lua 后端示例](../web/lua-backend/README.md)。纯 JavaScript 的 Mirror/Runtime 开发方式保持可用。

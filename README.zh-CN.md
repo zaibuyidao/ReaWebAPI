@@ -6,7 +6,8 @@ ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩�
 
 - 730 项 REAPER 7.80 标准 API 绑定及 TypeScript 类型声明。
 - Mirror-aware Batch Builder，支持 173 项已审核 API、延迟引用、多返回值解构和结果类型推导。
-- 13 个 Runtime 命名空间，涵盖窗口、事件、文件、原生对话框、拖放、音频、Undo 和应用服务。
+- 支持 Lua 后端 + WebView UI，通过 `ReaWeb_Send`、`ReaWeb_Receive`、`reaper.host.send` 和 `message` 事件通信。
+- 14 个 Runtime 命名空间，涵盖窗口、事件、文件、原生对话框、拖放、音频、Undo 和应用服务。
 - 原生 WebView，支持模块、本地资源、Worker 和应用存储持久化。
 - Windows/Linux [DevTools](docs/devtools.zh-CN.md) 支持可调宽度的右侧面板、浮动模式和布局偏好保存，Ctrl+Shift+I 切换显示。Windows 提供无边框嵌入面板、原生浮动窗口及页面右键菜单控制。
 - macOS [Web Inspector](docs/devtools.zh-CN.md#macos) 支持右侧嵌入面板、原生浮动窗口和布局偏好保存，Option+Command+I 与页面右键菜单控制同一个检查器会话。
@@ -63,3 +64,5 @@ Windows 使用 MSVC x64，并添加 `-A x64`。macOS 使用 `-DCMAKE_OSX_ARCHITE
 [源码结构](docs/source-layout.md) · [API 维护](api/README.zh-CN.md) · [版本更新](docs/release-notes.md) · [第三方声明](THIRD_PARTY.md)
 
 采用 [LGPL-3.0-or-later](LICENSE.md) 许可。
+
+纯 JavaScript 应用使用 REAPER Mirror 和 Runtime API。需要由 Lua 管理工程逻辑时，参见 [Lua 后端 + WebView 示例](web/lua-backend/README.md)。平台安装包将其放在 `Scripts/ReaWebAPI/Example/lua-backend`，SDK 提供 `lua-backend/`。

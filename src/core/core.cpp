@@ -102,7 +102,8 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
     return Json{{"version", REAWEB_VERSION}, {"protocol", 1}, {"methods", names}, {"api", std::move(api)}, {"projectScope", "all"},
       {"events", runtime_events()},
       {"runtime", {{"contract", 2}, {"namespaces", {"window", "theme", "dialog", "events", "lifecycle", "debug", "fs", "audio",
-                                                  "clipboard", "dragDrop", "app", "system", "transaction"}},
+                                                  "clipboard", "dragDrop", "app", "system", "transaction", "host"}},
+        {"host", {{"maxMessageBytes", host_message_limit}, {"maxPendingMessages", host_queue_limit}, {"maxQueuedBytes", host_queue_bytes}}},
         {"reservedNamespaces", Json::array()},
         {"dragDrop", {{"maxFiles", 256}, {"maxTextBytes", value_limit}, {"effect", "copy"}}},
         {"cleanupTimeoutMs", 2000}, {"audio", {{"maxChannels", 32}, {"maxWaveformPoints", 8192}, {"maxPendingJobs", 8}}}}},
@@ -119,7 +120,7 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
     add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
   for (const auto& name : {"ReaWeb_SetTitle", "ReaWeb_SetIcon", "ReaWeb_SetIconVisible", "ReaWeb_SetKeyboardCapture", "ReaWeb_Subscribe", "ReaWeb_Unsubscribe"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
-  for (const auto& name : {"ReaWeb_OpenDev", "ReaWeb_BeginUndo", "ReaWeb_EndUndo", "ReaWeb_ClipboardWriteText", "ReaWeb_OpenExternal"})
+  for (const auto& name : {"ReaWeb_HostSend", "ReaWeb_OpenDev", "ReaWeb_BeginUndo", "ReaWeb_EndUndo", "ReaWeb_ClipboardWriteText", "ReaWeb_OpenExternal"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
   for (const auto& name : {"ReaWeb_ClipboardReadText"})
     add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });

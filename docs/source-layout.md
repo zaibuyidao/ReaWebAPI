@@ -57,9 +57,9 @@ These are source responsibility groups, not five independent libraries. `reaweb_
 
 ## API boundaries / API 边界
 
-The public API consists of 730 REAPER Mirror bindings, eleven Lua `ReaWeb_*` host APIs and thirteen JavaScript Runtime namespaces.
+The public API consists of 730 REAPER Mirror bindings, thirteen Lua `ReaWeb_*` host APIs and fourteen JavaScript Runtime namespaces.
 
-公开接口包含 730 项 REAPER Mirror、11 项 Lua `ReaWeb_*` 宿主 API 和 13 个 JavaScript Runtime 命名空间。
+公开接口包含 730 项 REAPER Mirror、13 项 Lua `ReaWeb_*` 宿主 API 和 14 个 JavaScript Runtime 命名空间。
 
 Namespace names do not require one C++ file each. `reaper.dialog.*` wraps the `GetUserFileName` Mirror in `runtime/reaper.js`. Clipboard operations use the common asynchronous dispatcher and the OS implementations in `platform/`.
 

@@ -6,6 +6,7 @@ void Runtime::fail(Session& session, const std::string& message) {
   session.failed = true;
   if (!session.closing) session.closing_since = Clock::now();
   session.closing = true;
+  clear_messages(session);
   log_(message);
 }
 

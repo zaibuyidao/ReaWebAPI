@@ -166,6 +166,8 @@ const results = await reaper.transaction.batch([
 | `reaper.ReaWeb_Close(id)` | 布尔值 |
 | `reaper.ReaWeb_IsOpen(id)` | 布尔值 |
 | `reaper.ReaWeb_IsReady(id)` | 文档握手完成后为 true |
+| `reaper.ReaWeb_Send(id, message)` | 接受当前已就绪文档的消息返回 `true`，失败返回 `false` |
+| `reaper.ReaWeb_Receive(id)` | 非阻塞弹出下一条 UTF-8 文本，无消息或失败返回 `""` |
 | `reaper.ReaWeb_Focus(id)` | 布尔值 |
 | `reaper.ReaWeb_DevTools(id)` | 布尔值 |
 | `reaper.ReaWeb_SetDocked(id, docked)` | 实际停靠状态 |
@@ -180,3 +182,30 @@ Lua 相对 HTML 路径从 REAPER 的 `Scripts/` 目录解析，模板使用启�
 JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`。Lua 在网页尚未启动时通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
 
 `reaper.events.off(name, callback)` 可按回调引用取消该事件的全部匹配订阅。使用 `reaper.events.on('native-drop', callback)` 订阅原生拖放事件，返回 files/text/x/y，不合并、不提供初始快照。详见 [Runtime API](runtime-api.zh-CN.md)。
+
+## Lua 消息桥接
+
+支持两种开发方式。纯 JavaScript 应用使用 REAPER Mirror 和 Runtime API。Lua 后端使用普通 REAPER/ReaScript API，通过消息与 WebView UI 通信。参见[示例](../web/lua-backend/README.md)。
+
+`ReaWeb_Send(id, message)` 在 `ReaWeb_IsReady(id)` 为真后接受 UTF-8 文本，不序列化 Lua table，也不自动识别 JSON。`reaper.events.on("message", callback)` 接收原始字符串。未订阅时，消息保留在当前文档队列中。消息不合并，不向新监听器回放已投递内容。
+
+`await reaper.host.send(message)` 原样发送字符串，其他 JSON 值先通过 `JSON.stringify` 序列化。不可序列化的值、循环对象、非有限数值和含原始 NUL 的文本以 `INVALID_ARGUMENT` 拒绝。返回 `true` 表示原生队列已接受，不代表 Lua 已处理。Lua 通过 `ReaWeb_Receive(id)` 获取文本。
+
+每个窗口的两个方向各自保持 FIFO。单条消息最多 1 MiB UTF-8，每方向最多 256 条待处理消息，窗口双向队列合计最多 16 MiB，包括等待原生输出分发的消息。单条超限返回 `MESSAGE_LIMIT`，队列满返回 `QUEUE_LIMIT`。原有传输限制仍适用，可通过 `capabilities.runtime.host` 查询消息上限。
+
+Lua 延续 `ReaWeb_GetLastError()` 错误约定。未就绪时 Send 失败，错误为 `NOT_READY`。窗口关闭或 ID 无效时为 `WINDOW_CLOSED`。Receive 在无消息或失败时返回 `""`。允许空字符串消息，但其出队结果与空队列无法区分。需要区分时可使用 `null` 等 JSON 文本。文本 ABI 不支持原始 NUL。成功调用不会清除之前的错误。
+
+关闭窗口或导航到新文档会丢弃双向队列，旧文档消息不会进入新页面。Host API 必须在 REAPER 主线程调用，不等待消息到达。只有持续接收消息才需要 Lua `defer` 循环，窗口存活不依赖该循环：
+
+```lua
+local function loop()
+  if not reaper.ReaWeb_IsOpen(id) then return end
+  for _ = 1, 32 do
+    local text = reaper.ReaWeb_Receive(id)
+    if text == "" then break end
+    handle_message(text)
+  end
+  reaper.defer(loop)
+end
+loop()
+```

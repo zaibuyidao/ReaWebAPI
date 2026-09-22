@@ -66,6 +66,16 @@ bool ReaWeb_SetDocked(int id, bool docked) { return guarded([&] { return runtime
 bool ReaWeb_IsDocked(int id) { return guarded([&] { return runtime->is_docked(id); }, false); }
 bool ReaWeb_IsReady(int id) { return guarded([&] { return runtime->is_ready(id); }, false); }
 bool ReaWeb_Focus(int id) { return guarded([&] { return runtime->focus(id); }, false); }
+bool ReaWeb_Send(int id, const char* message) {
+  return guarded([&] {
+    if (!message) throw Error("INVALID_ARGUMENT", "Expected a host message string");
+    return runtime->send(id, message);
+  }, false);
+}
+const char* ReaWeb_Receive(int id) {
+  static std::string value;
+  return guarded([&]() -> const char* { value = runtime->receive(id); return value.c_str(); }, "");
+}
 const char* ReaWeb_GetDiagnostics(int id) {
   static std::string value;
   return guarded([&]() -> const char* { value = runtime->diagnostics(id).dump(); return value.c_str(); }, "{}");
@@ -82,6 +92,14 @@ template<bool (*Fn)(int)> void* id_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(Fn(id)));
 }
 void* error_vararg(void**, int) { return const_cast<char*>(ReaWeb_GetLastError()); }
+void* send_vararg(void** args, int count) {
+  return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_Send(
+    count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0,
+    count >= 2 ? static_cast<const char*>(args[1]) : nullptr)));
+}
+void* receive_vararg(void** args, int count) {
+  return const_cast<char*>(ReaWeb_Receive(count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0));
+}
 void* diagnostics_vararg(void** args, int count) {
   return const_cast<char*>(ReaWeb_GetDiagnostics(count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0));
 }
@@ -280,6 +298,10 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       "bool\0int\0windowId\0Activate the Docker tab or floating window and focus its WebView.\0");
     add_api("ReaWeb_GetDiagnostics", reinterpret_cast<void*>(ReaWeb_GetDiagnostics), reinterpret_cast<void*>(diagnostics_vararg),
       "const char*\0int\0windowId\0Return JSON diagnostics for the window, or an empty object on error.\0");
+    add_api("ReaWeb_Send", reinterpret_cast<void*>(ReaWeb_Send), reinterpret_cast<void*>(send_vararg),
+      "bool\0int,const char*\0windowId,message\0Queue UTF-8 text for the ready document's message event. Returns true when accepted. Limit 1 MiB, no NUL.\0");
+    add_api("ReaWeb_Receive", reinterpret_cast<void*>(ReaWeb_Receive), reinterpret_cast<void*>(receive_vararg),
+      "const char*\0int\0windowId\0Pop the next WebView message without blocking. Empty queue or error returns an empty string.\0");
     add_api("ReaWeb_OpenDev", reinterpret_cast<void*>(ReaWeb_OpenDev), reinterpret_cast<void*>(dev_vararg),
       "int\0const char*\0url\0Open an explicitly trusted loopback HTTP development server.\0");
     add_registration("hwnd_info", reinterpret_cast<void*>(window_info));

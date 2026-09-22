@@ -85,10 +85,10 @@ def descriptor(version, demo_directory=None):
         name = path.relative_to(demo_directory).as_posix()
         # An .ext package defaults to extension targets, so the launcher also
         # needs an explicit script type for Action List registration.
-        options = 'script main' if name == 'ReaWebAPI_Demo.lua' else 'script nomain'
+        options = 'script main' if name in ('ReaWebAPI_Demo.lua', 'lua-backend/Open.lua') else 'script nomain'
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/web/{quote(name, safe="/")}'
         lines.append(f'  [{options}] web/{name} {url}')
-    changes = version_notes(version).split('## 更新', 1)[0]
+    changes = re.split(r'^## (?:更新|简体中文)\s*$', version_notes(version), maxsplit=1, flags=re.MULTILINE)[0]
     lines += ['@changelog'] + ['  ' + line for line in re.findall(r'^- (.+)$', changes, re.MULTILINE)]
     return '\n'.join(lines) + '\n'
 

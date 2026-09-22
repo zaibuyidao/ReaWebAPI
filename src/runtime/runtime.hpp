@@ -22,6 +22,8 @@ public:
   bool is_docked(int id) const;
   bool is_ready(int id) const;
   bool focus(int id);
+  bool send(int id, const std::string& message);
+  std::string receive(int id);
   Json diagnostics(int id) const;
   bool captures_keyboard(void* handle, const std::function<bool(void*, void*)>& is_child) const;
   void tick();
@@ -41,6 +43,8 @@ private:
     std::shared_ptr<Window> window;
     std::unique_ptr<Bridge> bridge;
     std::deque<Work> queue;
+    std::deque<std::string> to_web, to_host;
+    size_t message_bytes = 0, web_messages = 0;
     std::set<std::string> subscriptions;
     std::map<std::string, Json> events;
     Json last_state, saved_state, pending_state;
@@ -112,6 +116,9 @@ private:
   bool ticking_ = false;
   std::thread::id main_thread_;
   void check_thread() const;
+  void enqueue_message(Session& session, const std::string& message, bool to_web);
+  void clear_messages(Session& session);
+  void flush_messages(Session& session, Clock::time_point deadline);
   int open_impl(const std::string& path, const fs::path& base, const std::string& dev_url);
   bool start_async(Session& session, const Work& request);
   void refresh_icon(Session& session);

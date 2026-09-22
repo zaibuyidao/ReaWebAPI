@@ -530,6 +530,92 @@ int main() {
       runtime.tick();
       CHECK(window->response(stale).is_null() && latency_calls == before + 1);
     }
+    {
+      Runtime runtime(host, root, [](const std::string&) {}, docks);
+      auto id = runtime.open("Tool/index.html"); auto a = windows.back().lock();
+      auto other_id = runtime.open("Tool/index.html"); auto b = windows.back().lock();
+      auto rejects = [](const std::function<void()>& call, const std::string& code) {
+        try { call(); } catch (const Error& e) { CHECK(e.code == code); return; }
+        throw std::runtime_error("Expected " + code);
+      };
+      CHECK(runtime.receive(id).empty());
+      rejects([&] { runtime.send(id, "early"); }, "NOT_READY");
+      for (auto w : {a, b}) result(runtime, *w, w->send("__reawebHello", {1}));
+      auto messages = [](const FakeWindow& w) {
+        std::vector<std::string> values;
+        for (const auto& r : w.responses) if (r.value("event", "") == "message") values.push_back(r.at("data").get<std::string>());
+        return values;
+      };
+      const std::vector<std::string> sent = {"A", std::string(8192, 'x'), u8"鼓组 🎛️\n\"\\", "{\"json\":true}", "", "C"};
+      for (const auto& text : sent) CHECK(runtime.send(id, text));
+      runtime.tick(); CHECK(messages(*a).empty());
+      result(runtime, *a, a->send("ReaWeb_Subscribe", {"message"}));
+      until(runtime, [&] { return messages(*a).size() == sent.size(); });
+      CHECK(messages(*a) == sent && messages(*b).empty());
+      std::vector<int> requests;
+      for (const auto& text : sent) requests.push_back(a->send("ReaWeb_HostSend", {text}));
+      for (auto request : requests) CHECK(result(runtime, *a, request)["result"] == true);
+      CHECK(runtime.receive(other_id).empty());
+      for (const auto& text : sent) CHECK(runtime.receive(id) == text);
+      CHECK(runtime.receive(id).empty());
+      CHECK(result(runtime, *b, b->send("ReaWeb_HostSend", {"only b"}))["result"] == true);
+      CHECK(runtime.receive(id).empty() && runtime.receive(other_id) == "only b");
+      rejects([&] { runtime.send(id, std::string(host_message_limit + 1, 'x')); }, "MESSAGE_LIMIT");
+      rejects([&] { runtime.send(id, std::string("bad\0text", 8)); }, "INVALID_ARGUMENT");
+      rejects([&] { runtime.send(id, std::string("\xff")); }, "INVALID_ARGUMENT");
+      CHECK(result(runtime, *a, a->send("ReaWeb_HostSend", {std::string(host_message_limit + 1, 'x')}))["error"]["code"] == "MESSAGE_LIMIT");
+      CHECK(result(runtime, *a, a->send("ReaWeb_HostSend", {std::string("a\0b", 3)}))["error"]["code"] == "INVALID_ARGUMENT");
+      CHECK(result(runtime, *a, a->send("ReaWeb_HostSend", {42}))["error"]["code"] == "INVALID_ARGUMENT");
+      result(runtime, *a, a->send("ReaWeb_Unsubscribe", {"message"}));
+      for (size_t i = 0; i < host_queue_limit; ++i) CHECK(runtime.send(id, std::to_string(i)));
+      rejects([&] { runtime.send(id, "overflow"); }, "QUEUE_LIMIT");
+      for (size_t i = 0; i < host_queue_limit; ++i)
+        CHECK(result(runtime, *a, a->send("ReaWeb_HostSend", {std::to_string(i)}))["result"] == true);
+      CHECK(result(runtime, *a, a->send("ReaWeb_HostSend", {"overflow"}))["error"]["code"] == "QUEUE_LIMIT");
+      for (size_t i = 0; i < host_queue_limit; ++i) CHECK(runtime.receive(id) == std::to_string(i));
+      const auto before = messages(*a).size();
+      result(runtime, *a, a->send("ReaWeb_Subscribe", {"message"}));
+      until(runtime, [&] { return messages(*a).size() == before + host_queue_limit; });
+      const auto all = messages(*a);
+      for (size_t i = 0; i < host_queue_limit; ++i) CHECK(all[before + i] == std::to_string(i));
+      result(runtime, *a, a->send("ReaWeb_Unsubscribe", {"message"}));
+      const std::string block(host_message_limit, 'x');
+      for (int i = 0; i < 8; ++i) CHECK(runtime.send(id, block));
+      for (int i = 0; i < 8; ++i) CHECK(result(runtime, *a, a->send("ReaWeb_HostSend", {block}))["result"] == true);
+      rejects([&] { runtime.send(id, "x"); }, "QUEUE_LIMIT");
+      CHECK(result(runtime, *a, a->send("ReaWeb_HostSend", {"x"}))["error"]["code"] == "QUEUE_LIMIT");
+      CHECK(runtime.receive(id) == block);
+      CHECK(runtime.send(id, "space reclaimed"));
+      // Navigation cancels both retained messages and requests still on the worker.
+      a->send("ReaWeb_HostSend", {"stale request"}, 0, 0, 8192);
+      a->options.on_navigation(); a->document = "second";
+      CHECK(runtime.receive(id).empty());
+      result(runtime, *a, a->send("__reawebHello", {1}));
+      const auto after = messages(*a).size();
+      result(runtime, *a, a->send("ReaWeb_Subscribe", {"message"}));
+      a->document = "first";
+      CHECK(result(runtime, *a, a->send("ReaWeb_HostSend", {"old token"}))["error"]["code"] == "DOCUMENT_STALE");
+      a->document = "second";
+      CHECK(runtime.receive(id).empty());
+      runtime.send(id, "fresh");
+      until(runtime, [&] { return messages(*a).size() > after; });
+      CHECK(messages(*a).size() == after + 1 && messages(*a).back() == "fresh");
+      bool wrong_send = false, wrong_receive = false;
+      std::thread wrong([&] {
+        try { runtime.send(id, "thread"); } catch (const Error& e) { wrong_send = e.code == "WRONG_THREAD"; }
+        try { runtime.receive(id); } catch (const Error& e) { wrong_receive = e.code == "WRONG_THREAD"; }
+      }); wrong.join(); CHECK(wrong_send && wrong_receive);
+      runtime.send(id, block); runtime.tick();
+      const auto closed_count = messages(*a).size();
+      CHECK(runtime.close(id));
+      rejects([&] { runtime.send(id, "closed"); }, "WINDOW_CLOSED");
+      rejects([&] { runtime.receive(id); }, "WINDOW_CLOSED");
+      until(runtime, [&] { return runtime.diagnostics(id)["stage"] == "closed"; });
+      CHECK(messages(*a).size() == closed_count);
+      auto next_id = runtime.open("Tool/index.html");
+      CHECK(runtime.receive(next_id).empty());
+      CHECK(runtime.is_open(other_id));
+    }
     const auto metadata_root = root / "MetadataApp";
     DevToolsPreferences inspector;
     CHECK(!inspector.floating && inspector.width_ratio == 0.4);

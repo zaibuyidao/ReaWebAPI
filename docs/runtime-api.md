@@ -4,11 +4,11 @@
 
 **English** | [简体中文](runtime-api.zh-CN.md)
 
-JavaScript Runtime fixes thirteen namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`. All 730 REAPER methods retain their names, Promise results, typed handles and Lua argument/result order. Distribute `reaper.d.ts`, `reaper-api.generated.d.ts` and `runtime-api.d.ts` together. `capabilities.runtime.contract` is 2 (host SDK), while `webRuntime.contract` remains 1 (Web resources/storage).
+JavaScript Runtime fixes fourteen namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`, `reaper.host`. All 730 REAPER methods retain their names, Promise results, typed handles and Lua argument/result order. Distribute `reaper.d.ts`, `reaper-api.generated.d.ts` and `runtime-api.d.ts` together. `capabilities.runtime.contract` is 2 (host SDK), while `webRuntime.contract` remains 1 (Web resources/storage).
 
 Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
 
-All thirteen namespaces provide implemented members: 64 methods and one Promise property. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All fourteen namespaces provide implemented members: 65 methods and one Promise property. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
 `transaction.batch` accepts call arrays or synchronous Mirror Builder callbacks, with automatic references, tuple destructuring and typed result selection. Both forms use the existing native batch implementation. `transaction` also provides Undo groups, without atomic rollback or isolation: completed writes remain applied and other edits may interleave. See the [batch contract](host-api.md#batches-and-continuous-controls).
 
@@ -153,3 +153,17 @@ await dispose(); // Still safe after off.
 Manifest files do not automatically launch/install an App; existing HTML launchers remain the entry point. No app manager, updater, installer or permission enforcement is included. Unsupported permissions fields are rejected. Apps remain trusted; the resource-server root is not a native API sandbox.
 
 Run Open.lua beside [Runtime Studio](../runtime/runtime-demo/index.html) for an unbundled example covering windows, events, theme, dialogs, audio waveform, manual meters, diagnostics and cleanup-state persistence.
+
+## Host messages
+
+`reaper.host.send(message)` returns `Promise<boolean>`. Strings are sent unchanged. Other JSON values are serialized before entering the per-window Lua queue. Native rejection, including queue overflow, rejects the Promise. Receive Lua text with the existing event API:
+
+```js
+await reaper.events.on('message', text => {
+  const state = JSON.parse(text);
+  render(state);
+});
+await reaper.host.send({ type: 'setVolume', value: 0.5 });
+```
+
+Messages are FIFO, without coalescing, initial snapshots or replay. The current document owns both queues. Close/reload clears them. Limits: 1 MiB UTF-8 per message, 256 pending messages per direction, 16 MiB total queued payload per window. See the [Lua contract](host-api.md#lua-message-bridge) and [Lua backend example](../web/lua-backend/README.md). The existing pure JavaScript Mirror/Runtime workflow remains available.

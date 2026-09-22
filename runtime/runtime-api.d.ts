@@ -1,5 +1,6 @@
 /** ReaWebAPI Runtime contract 2. Standard REAPER APIs use their original names. */
 type ReaWebDispose = () => Promise<void>;
+type ReaWebHostMessage = string | number | boolean | null | ReaWebHostMessage[] | { [key: string]: ReaWebHostMessage };
 type ReaWebPlatform = 'windows' | 'macos' | 'linux';
 /** Architecture of the running extension process (including under emulation). */
 type ReaWebArchitecture = 'x64' | 'arm64' | 'x86' | 'arm' | 'unknown';
@@ -55,11 +56,12 @@ interface ReaWebLogEntry {
 }
 interface ReaWebCleanupEvent { reason: 'close' | 'reload' | 'unload'; timeoutMs: number; }
 type ReaWebRuntimeNamespace = 'window' | 'theme' | 'dialog' | 'events' | 'lifecycle' | 'debug' | 'fs' | 'audio'
-  | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction';
+  | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction' | 'host';
 interface ReaWebRuntimeCapabilities {
   contract: 2; namespaces: ReaWebRuntimeNamespace[]; cleanupTimeoutMs: number;
   /** Reserved Runtime namespace identifiers. */
   reservedNamespaces: ReaWebRuntimeNamespace[];
+  host: { maxMessageBytes: number; maxPendingMessages: number; maxQueuedBytes: number };
   dragDrop: { maxFiles: number; maxTextBytes: number; effect: 'copy' };
   audio: { maxChannels: number; maxWaveformPoints: number; maxPendingJobs: number };
 }
@@ -79,6 +81,8 @@ interface ReaWebDevToolsState {
 }
 interface ReaWebDiagnostics { lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; devtools: ReaWebDevToolsState; }
 interface ReaWebEvents {
+  /** Original Lua text, FIFO within this document. No snapshot or replay. */
+  message: string;
   /** Discrete native drops; no initial snapshot or replay. */
   'native-drop': ReaWebDropPayload;
   'track-added': { projectEpoch: number; revision: number; guids: string[] };
@@ -97,6 +101,11 @@ interface ReaWebEvents {
   'theme-changed': ReaWebTheme;
 }
 interface ReaWebAPI {
+  readonly host: {
+    /** Queue text for Lua ReaWeb_Receive. Other JSON values are serialized. Resolves true on acceptance.
+     * Limit 1 MiB UTF-8, no raw NUL. Invalid values and queue overflow reject. */
+    send(message: ReaWebHostMessage): Promise<boolean>;
+  };
   readonly fs: {
     /** Encoding-specific helpers use the same worker and 16 MiB limit as readFile/writeFile. */
     readText(path: string): Promise<string>;
