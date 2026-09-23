@@ -155,7 +155,7 @@ An unstarted native request expires after 25 seconds, with a 30-second client wa
 
 ## Distribute your tool
 
-Ship the Lua launcher, HTML, built JavaScript, CSS and required assets, preserving relative paths. Rename the starter's action description and window title for your tool. The `.d.ts` files and editor configuration are only needed by developers. Users need the native ReaWebAPI extension, not Python or a compiler.
+Ship the Lua launcher, HTML, built JavaScript, CSS and required assets, preserving relative paths. Rename the starter's action description and `<title>` in `index.html` for your tool. See [window titles](runtime-api.md#window-titles) for dynamic names and explicit overrides. The `.d.ts` files and editor configuration are only needed by developers. Users need the native ReaWebAPI extension, not Python or a compiler.
 
 State your minimum REAPER and ReaWebAPI versions. Feature-detect required methods and explain missing dependencies in the UI. Test empty projects, missing selection, Unicode paths, deleted objects, project switches, docking, repeated open/close and each supported OS. Use the larger bundled Demo for bridge diagnostics. A passing simulated ABI test is not proof of all native side effects on real projects.
 

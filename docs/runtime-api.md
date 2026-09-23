@@ -34,6 +34,23 @@ Native close buttons, bridge close requests and same-document reloads participat
 
 On Windows, macOS and Linux, the WebView’s native context menu starts with **Dock in REAPER** when floating or **Undock from REAPER** when docked. Windows/macOS also provide state-dependent **Open DevTools** / **Hide DevTools** and **Float DevTools** / **Embed DevTools** actions. Windows replaces **Inspect**, while macOS retains WebKit's **Inspect Element** action. Other default items are preserved. Page `contextmenu` handlers, including `preventDefault()`, remain effective. Windows retains **Dock in REAPER** in the title-bar system menu. Both docking menu entries and `setDocked()` use the same REAPER Docker integration and preserve the current WebView document.
 
+### Window titles
+
+The native window follows the top-level page's HTML `<title>` and subsequent `document.title` changes:
+
+```html
+<title>SendFlow</title>
+```
+
+```js
+document.title = 'SendFlow — Mixer';
+await reaper.window.setTitle('SendFlow'); // Explicit native-window override.
+```
+
+Priority is an explicit `setTitle()` override, then a nonempty page title, then the existing `ReaWebAPI — <entry directory>` fallback. `instanceKey` and named-window `id` identify instances only and never supply the title. Missing, removed or blank page titles restore the fallback. Automatic titles remove NUL and surrounding whitespace and truncate to 256 UTF-8 bytes without splitting a character.
+
+`setTitle()` retains its existing contract: 1–256 UTF-8 bytes without NUL, returning `Promise<boolean>`. It overrides automatic synchronization for the lifetime of the window, including reloads and instance reuse, without changing `document.title`. Invalid calls leave the title and automatic synchronization unchanged. Closing and reopening creates fresh title state. Automatic updates are asynchronous and apply to both floating windows and Docker labels.
+
 ### Window icons
 
 Declare a favicon in `<head>` to set the native host-window icon automatically:

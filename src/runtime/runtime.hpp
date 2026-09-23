@@ -39,7 +39,8 @@ private:
     int id = 0, slot = 0;
     fs::path entry;
     fs::path state_path;
-    std::string ident, document, title, last_error;
+    std::string ident, document, title, default_title, last_error;
+    bool title_explicit = false;
     std::optional<std::pair<std::string, std::string>> instance;
     std::shared_ptr<App> app;
     std::shared_ptr<Window> window;
@@ -124,6 +125,7 @@ private:
   int open_impl(const std::string& path, const fs::path& base, const std::string& dev_url);
   bool start_async(Session& session, const Work& request);
   void refresh_icon(Session& session);
+  void set_title(Session& session, const std::string& title);
   void finish_undo();
   Json transaction_call(int id, const std::string& method, const Json& args);
   void detach(const Session& session);

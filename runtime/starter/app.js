@@ -51,7 +51,6 @@
     }
     // Do not put the first visible track read behind presentation/subscriptions.
     void refresh();
-    await reaper.window.setTitle('ReaWebAPI Starter');
     // Refresh catches its own asynchronous errors. Initial snapshots also refresh.
     await reaper.events.on('selectionchange', () => { void refresh(true); });
     await reaper.events.on('projectchange', state => {

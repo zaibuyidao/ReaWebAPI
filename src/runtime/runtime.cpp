@@ -135,8 +135,7 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
     auto title = args[0].get<std::string>();
     if (title.empty() || title.size() > 256 || title.find('\0') != std::string::npos)
       throw Error("INVALID_ARGUMENT", "Title must contain 1 to 256 UTF-8 bytes without NUL");
-    s.window->set_title(title); s.title = std::move(title);
-    if (is_docked(id) && dock_.refresh) dock_.refresh(s.window->native_handle());
+    set_title(s, title); s.title_explicit = true;
     return true;
   }
   if (method == "ReaWeb_SetKeyboardCapture") {
@@ -174,6 +173,22 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
 bool Runtime::start_async(Session& session, const Work& request) {
   const auto method = request.data.at("method").get<std::string>();
   const auto& args = request.data.at("args");
+  if (method == "ReaWeb_DocumentTitle") {
+    if (args.size() != 1 || !args[0].is_string())
+      throw Error("INVALID_ARGUMENT", "Expected a document title");
+    auto title = args[0].get<std::string>();
+    if (title.find('\0') != std::string::npos)
+      throw Error("INVALID_ARGUMENT", "Document title must not contain NUL");
+    if (title.size() > 256) {
+      size_t end = 256;
+      while ((static_cast<unsigned char>(title[end]) & 0xc0) == 0x80) --end;
+      title.resize(end);
+    }
+    if (!session.title_explicit) set_title(session, title.empty() ? session.default_title : title);
+    reply(session, request, {{"id", request.data.at("id")}, {"document", request.data.at("document")},
+      {"result", !session.title_explicit}});
+    return true;
+  }
   if (method == "ReaWeb_Favicon") {
     if (args.size() != 1 || !args[0].is_object() || !args[0].contains("revision") ||
         !args[0]["revision"].is_number_integer() || args[0]["revision"].get<double>() < 1 ||

@@ -113,6 +113,32 @@
     ++waiting;
     return ready.then(() => send(method, args)).finally(() => --waiting);
   };
+  let stopTitle = () => {};
+  const startTitle = () => {
+    const document = window.document;
+    if (closed || typeof document?.title !== 'string' || !window.MutationObserver) return;
+    let selected, timer, stopped = false;
+    const update = async () => {
+      if (closed || stopped) return;
+      const title = document.title.replace(/\0/g, '').trim();
+      if (title === selected) return;
+      selected = title;
+      try {
+        if (!await call('ReaWeb_DocumentTitle', [title])) stopTitle();
+      } catch (error) {
+        if (!closed && !stopped) console.warn('[ReaWebAPI title]', error);
+      }
+    };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(update, 0); };
+    const relevant = node => node.nodeType === 1 && (['TITLE', 'HEAD'].includes(node.tagName) || node.querySelector('title,head'));
+    const observer = new window.MutationObserver(records => {
+      if (records.some(record => record.target.tagName === 'TITLE' || record.target.parentNode?.tagName === 'TITLE' ||
+        (record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].some(relevant)))) schedule();
+    });
+    observer.observe(document, { subtree: true, childList: true, characterData: true });
+    stopTitle = () => { stopped = true; clearTimeout(timer); observer.disconnect(); };
+    void update();
+  };
   let stopFavicon = () => {};
   const startFavicon = () => {
     const document = window.document;
@@ -559,8 +585,10 @@
     }
   });
   Object.defineProperty(window, 'reaper', { value: Object.freeze(api), enumerable: true });
+  ready.then(startTitle).catch(() => {});
   ready.then(startFavicon).catch(() => {});
   window.addEventListener('pagehide', () => {
+    stopTitle();
     stopFavicon();
     if (!cleanupToken) for (const callback of lifecycleListeners.get('cleanup') || [])
       notify(callback, Object.freeze({ reason: 'unload', timeoutMs: 0 }));

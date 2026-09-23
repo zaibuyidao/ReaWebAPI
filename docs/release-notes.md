@@ -2,10 +2,10 @@
 
 ## English
 
-- Add explicit `instanceKey`, named-window `id` and `multiple` options to Lua `ReaWeb_Open`, with Runtime-managed reuse, focus and lifecycle cleanup.
-- Update Lua launchers to pass their script source as the instance key. Calls without a key continue to create new windows.
+- Use HTML `<title>` and dynamic `document.title` changes for native window titles, preserving the existing fallback for untitled pages and explicit `reaper.window.setTitle()` overrides.
+- Define Demo and Starter window titles in HTML, with documentation for title priority and instance identity.
 
 ## 简体中文
 
-- Lua `ReaWeb_Open` 新增显式 `instanceKey`、命名窗口 `id` 和 `multiple` 参数，由 Runtime 管理实例复用、聚焦及生命周期清理。
-- 更新 Lua 启动器，将脚本 source 作为实例 key。未传入 key 时继续每次创建新窗口。
+- 原生窗口标题自动采用 HTML `<title>` 并跟随 `document.title` 动态更新，无标题页面保留原有回退名称，`reaper.window.setTitle()` 显式设置优先。
+- Demo 和 Starter 在 HTML 中定义窗口标题，补充标题优先级与实例标识说明。

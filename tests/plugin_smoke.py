@@ -23,6 +23,7 @@ parser.add_argument('--starter', action='store_true', help='Exercise the SDK sta
 parser.add_argument('--dev', action='store_true', help='Exercise Vite modules, Worker, fetch and CSS HMR through OpenDev')
 parser.add_argument('--modern', action='store_true', help='Exercise the built TypeScript template')
 parser.add_argument('--runtime', action='store_true', help='Exercise Web Runtime v1 and per-App browser storage')
+parser.add_argument('--titles', action='store_true', help='Verify HTML and explicit native window titles in WebView2')
 parser.add_argument('--studio', action='store_true', help='Exercise the v0.1.8 Runtime Studio UI')
 parser.add_argument('--resource-root', type=Path, help='Reuse a dedicated test resource directory across host processes')
 parser.add_argument('--empty', action='store_true', help='Use an empty project for demo tests')
@@ -421,6 +422,10 @@ try:
     send_vararg = C.CFUNCTYPE(C.c_void_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Send'])
     receive_vararg = C.CFUNCTYPE(C.c_char_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Receive'])
     assert not send_vararg(send_args, 2) and receive_vararg(send_args, 1) == b''
+    if args.webview and args.titles:
+        from window_title_smoke import run_windows
+        run_windows(globals())
+        args.webview = False
     if args.webview and args.runtime:
         from web_runtime_browser import run_windows
         run_windows(globals())

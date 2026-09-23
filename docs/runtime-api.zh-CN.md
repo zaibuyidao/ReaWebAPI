@@ -35,6 +35,23 @@ await reaper.window.hide();
 
 Windows、macOS、Linux 的 WebView 原生右键菜单顶部在浮动时显示 **Dock in REAPER**，停靠时显示 **Undock from REAPER**。Windows/macOS 另提供随状态变化的 **Open DevTools** / **Hide DevTools** 和 **Float DevTools** / **Embed DevTools**。Windows 替换 **Inspect**，macOS 保留 WebKit 的 **Inspect Element**，其他原有菜单项保持不变。页面的 `contextmenu` 处理及 `preventDefault()` 仍然有效。Windows 标题栏系统菜单保留 **Dock in REAPER**。两个停靠菜单入口与 `setDocked()` 使用相同的 REAPER Docker 接口，切换时保留当前 WebView 文档。
 
+### 窗口标题
+
+原生窗口自动采用顶层页面的 HTML `<title>`，并跟随 `document.title` 的后续变化：
+
+```html
+<title>SendFlow</title>
+```
+
+```js
+document.title = 'SendFlow — Mixer';
+await reaper.window.setTitle('SendFlow'); // 显式覆盖原生窗口标题。
+```
+
+优先级为 `setTitle()` 显式设置、非空网页标题、原有 `ReaWebAPI — <入口目录名>` 回退名称。`instanceKey` 和命名窗口 `id` 仅标识实例，不参与标题生成。网页标题缺失、移除或为空白时恢复回退名称。自动标题会移除 NUL 和首尾空白，超过 256 UTF-8 字节时在完整字符边界截断。
+
+`setTitle()` 保留现有约定，接受 1–256 UTF-8 字节且不含 NUL 的字符串，返回 `Promise<boolean>`。显式设置在窗口存续期间优先于自动同步，重载和实例复用后仍保留，不修改 `document.title`。无效调用不改变标题或自动同步状态。关闭后重新打开会创建新的标题状态。自动更新为异步操作，同时适用于浮动窗口和 Docker 标签。
+
 ### 窗口图标
 
 在 `<head>` 中声明 favicon，Runtime 会自动同步到原生宿主窗口：

@@ -174,7 +174,9 @@ interface ReaWebAPI {
     getPosition(): Promise<Pick<ReaWebBounds, 'x' | 'y' | 'mode' | 'units'>>;
     setPosition(x: number, y: number): Promise<ReaWebBounds>;
     show(): Promise<ReaWebWindowState>; hide(): Promise<ReaWebWindowState>;
-    getState(): Promise<ReaWebWindowState>; setTitle(title: string): Promise<boolean>;
+    getState(): Promise<ReaWebWindowState>;
+    /** Override the HTML title for this window, including reloads. Requires 1–256 UTF-8 bytes without NUL. */
+    setTitle(title: string): Promise<boolean>;
     /** Overrides automatic HTML favicon synchronization for this window session, including reloads. PNG, ICO or SVG from an App-root-relative or absolute local path. */
     setIcon(path: string): Promise<boolean>;
     /** Shows/hides the title-bar icon and its space, retaining the icon. Defaults to true and survives reloads. Linux decorations depend on the window manager. Resolves to true on success. */

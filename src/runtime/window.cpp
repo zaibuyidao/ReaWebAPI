@@ -65,6 +65,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
   session->ident = "ReaWebAPI:" + key;
   session->state_path = resource_ / "ReaWebAPI" / "WindowState" / (key + ".json");
   session->title = "ReaWebAPI — " + entry.parent_path().filename().u8string();
+  session->default_title = session->title;
   session->bridge = std::make_unique<Bridge>(host_, Bridge::Controls{
     [this, entry](const std::string& next) { return open(next, entry.parent_path()); },
     [this, id] { close(id); }, [this, id] { devtools(id); },
@@ -224,6 +225,11 @@ void Runtime::detach(const Session& session) {
     auto handle = session.window->native_handle();
     if (handle && dock_.index(handle) >= 0) dock_.remove(handle);
   }
+}
+
+void Runtime::set_title(Session& s, const std::string& title) {
+  s.window->set_title(title); s.title = title;
+  if (is_docked(s.id) && dock_.refresh) dock_.refresh(s.window->native_handle());
 }
 
 void Runtime::refresh_icon(Session& s) {

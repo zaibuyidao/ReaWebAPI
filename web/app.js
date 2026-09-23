@@ -447,7 +447,6 @@ run(async () => {
   ui['api-coverage'].textContent = `${capabilities.api.implemented} bound APIs / ${capabilities.api.official} definitions · ${capabilities.api.available} available in this REAPER · ${capabilities.api.reaperVersion} catalogue`;
   if (capabilities.api.unavailable.length)
     log(`${capabilities.api.unavailable.length} APIs require a newer REAPER version. See Runtime diagnostics for their names.`, 'warn', 'API');
-  await reaper.window.setTitle('ReaWebAPI · API Workbench');
   dispose.push(await reaper.events.on('selectionchange', () => { list('fx-list', ['Selection changed. Inspect FX to refresh.']); void refresh(true); }));
   dispose.push(await reaper.events.on('projectchange', state => {
     const switched = projectEpoch !== state.projectEpoch;

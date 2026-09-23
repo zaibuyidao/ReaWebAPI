@@ -8,6 +8,7 @@ void Runtime::navigate(Session& session) {
   ++session.icon_sequence; session.icon_pending = false;
   session.icon_explicit = session.icon_explicit_source; session.favicon_revision = 0;
   session.icon_dirty = true;
+  if (!session.title_explicit && session.title != session.default_title) set_title(session, session.default_title);
   session.ready = false;
   session.document.clear();
   session.queue.clear();

@@ -47,6 +47,7 @@ struct FakeWindow : Window {
   std::vector<Json> responses;
   int sequence = 0;
   std::string document = "first";
+  void set_title(const std::string& title) override { options.title = title; }
   Json bounds = {{"x", 40}, {"y", 50}, {"width", 860}, {"height", 640}, {"maximized", false}};
   explicit FakeWindow(WindowOptions value) : options(std::move(value)) {}
   void evaluate(const std::string& script) override {
@@ -676,6 +677,60 @@ int main() {
       CHECK(reopened != replacement);
       windows.back().lock()->options.on_error("Test initialization failure");
       CHECK(runtime.open_instance("Tool/index.html", script.u8string()) != reopened);
+    }
+    {
+      int refreshed = 0;
+      auto title_docks = docks;
+      title_docks.refresh = [&](void*) { ++refreshed; };
+      Runtime runtime(host, root, [&](const std::string& error) { errors.push_back(error); }, title_docks);
+      const auto id = runtime.open_instance("Tool/index.html", "@private/launcher.lua");
+      auto window = windows.back().lock();
+      const auto fallback = window->options.title;
+      CHECK(fallback == "ReaWebAPI — Tool");
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      const auto title = [&](const std::string& text) {
+        return result(runtime, *window, window->send("ReaWeb_DocumentTitle", {text}));
+      };
+      CHECK(title("")["result"] == true && window->options.title == fallback);
+      CHECK(title("SendFlow")["result"] == true && window->options.title == "SendFlow");
+      CHECK(runtime.open_instance("missing.html", "@private/launcher.lua") == id);
+      CHECK(window->options.title == "SendFlow");
+      CHECK(title("我的工具 🎵")["result"] == true);
+      CHECK(runtime.diagnostics(id)["window"]["title"] == "我的工具 🎵");
+      CHECK(title(std::string(255, 'a') + "🎵")["result"] == true);
+      CHECK(window->options.title == std::string(255, 'a'));
+      CHECK(title(std::string(252, 'a') + "🎵x")["result"] == true);
+      CHECK(window->options.title == std::string(252, 'a') + "🎵");
+      CHECK(title(std::string("a\0b", 3))["error"]["code"] == "INVALID_ARGUMENT");
+      for (const auto& args : {Json::array(), Json::array({12}), Json::array({"a", "b"})})
+        CHECK(result(runtime, *window, window->send("ReaWeb_DocumentTitle", args))["error"]["code"] == "INVALID_ARGUMENT");
+      CHECK(title("")["result"] == true && window->options.title == fallback);
+      runtime.set_docked(id, true);
+      const auto prior_refresh = refreshed;
+      CHECK(title("Docked title")["result"] == true && refreshed == prior_refresh + 1);
+      CHECK(window->options.title == "Docked title");
+      const auto abandoned = window->send("ReaWeb_DocumentTitle", {"Old document"});
+      window->options.on_navigation(); window->document = "new-title-document";
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      CHECK(window->response(abandoned).is_null() && window->options.title == fallback);
+      CHECK(title("ReaGBA")["result"] == true && window->options.title == "ReaGBA");
+      for (const auto& invalid : {std::string(), std::string(257, 'x'), std::string("a\0b", 3)})
+        CHECK(result(runtime, *window, window->send("ReaWeb_SetTitle", {invalid}))["error"]["code"] == "INVALID_ARGUMENT");
+      CHECK(title("Still automatic")["result"] == true);
+      CHECK(result(runtime, *window, window->send("ReaWeb_SetTitle", {"Explicit"}))["result"] == true);
+      CHECK(title("Ignored")["result"] == false && window->options.title == "Explicit");
+      window->options.on_navigation(); window->document = "explicit-reload";
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      CHECK(title("Reloaded HTML")["result"] == false && window->options.title == "Explicit");
+      CHECK(runtime.open_instance("Tool/index.html", "@private/launcher.lua") == id);
+      runtime.set_docked(id, false);
+      CHECK(window->options.title == "Explicit");
+      const auto other = runtime.open("Tool/index.html");
+      auto second = windows.back().lock();
+      result(runtime, *second, second->send("__reawebHello", {1}));
+      CHECK(result(runtime, *second, second->send("ReaWeb_DocumentTitle", {"Independent"}))["result"] == true);
+      CHECK(second->options.title == "Independent" && window->options.title == "Explicit");
+      CHECK(runtime.diagnostics(other)["window"]["title"] == "Independent");
     }
     const auto metadata_root = root / "MetadataApp";
     DevToolsPreferences inspector;
