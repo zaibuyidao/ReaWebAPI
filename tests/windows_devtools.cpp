@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <chrono>
+#include <thread>
 using namespace reaweb;
 #define CHECK(value) do { if (!(value)) throw std::runtime_error("Check failed: " #value); } while (false)
 void pump(const std::vector<std::shared_ptr<Window>>& windows, const std::function<bool()>& done, const char* stage = "DevTools") {
@@ -109,10 +110,140 @@ LRESULT CALLBACK shortcut_probe(HWND hwnd, UINT message, WPARAM key, LPARAM data
     *reinterpret_cast<int*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) += LOWORD(data);
   return DefWindowProcW(hwnd, message, key, data);
 }
+void focus_switching(bool separate_profiles, bool dialog_navigation = false) {
+  // A blocked window procedure cannot reach pump()'s timeout.
+  auto finished = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  CHECK(finished);
+  std::thread watchdog([finished] {
+    if (WaitForSingleObject(finished, 60000) == WAIT_TIMEOUT) {
+      std::cerr << "Multi-window focus test deadlocked\n";
+      TerminateProcess(GetCurrentProcess(), 2);
+    }
+  });
+  struct Finish {
+    HANDLE event; std::thread& watchdog;
+    ~Finish() { SetEvent(event); watchdog.join(); CloseHandle(event); }
+  } finish{finished, watchdog};
+  auto path = fs::current_path() / ("devtools-focus-test-" + std::to_string(GetCurrentProcessId()));
+  fs::create_directories(path);
+  auto entry = path / "index.html";
+  std::ofstream(entry) << "<!doctype html><input autofocus><h1>Focus test</h1>";
+  auto platform = make_platform(path / "profile");
+  auto other_platform = separate_profiles ? make_platform(path / "other-profile") : nullptr;
+  auto reaper = CreateWindowW(L"STATIC", L"DevTools focus test REAPER root", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+    0, 0, 300, 200, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+  CHECK(reaper);
+  struct Desktop {
+    HWND root; POINT cursor{};
+    ~Desktop() { DestroyWindow(root); SetCursorPos(cursor.x, cursor.y); }
+  } desktop{reaper};
+  GetCursorPos(&desktop.cursor);
+  int messages[2]{}, navigations[2]{};
+  std::string error;
+  std::vector<std::shared_ptr<Window>> windows;
+  for (int i = 0; i < 2; ++i) {
+    WindowOptions options;
+    options.parent = reaper;
+    options.entry = entry; options.title = "ReaWebAPI focus test " + std::to_string(i);
+    options.script = "window.token='retained';setInterval(()=>chrome.webview.postMessage(window.token),25);";
+    options.on_message = [&, i](std::string text) { CHECK(text == "retained"); ++messages[i]; };
+    options.on_navigation = [&, i] { ++navigations[i]; };
+    options.on_error = [&](std::string message) { error = message; };
+    windows.push_back((i && other_platform ? other_platform : platform)->open(options));
+  }
+  pump(windows, [&] { return messages[0] && messages[1]; }, "Two pages ready");
+  if (dialog_navigation) {
+    SetWindowPos(reaper, nullptr, 40, 40, 950, 750, SWP_NOZORDER | SWP_NOACTIVATE);
+    auto button = CreateWindowW(L"BUTTON", L"Docker tab", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+      0, 0, 100, 25, reaper, nullptr, GetModuleHandleW(nullptr), nullptr);
+    CHECK(button);
+    for (auto& window : windows) {
+      auto hwnd = static_cast<HWND>(window->native_handle());
+      window->prepare_dock();
+      SetWindowLongPtrW(hwnd, GWL_STYLE, WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN);
+      SetParent(hwnd, reaper);
+      SetWindowPos(hwnd, nullptr, 0, 30, 900, 650, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
+    for (int owner = 0; owner < 2; ++owner) {
+      windows[owner]->set_visible(true);
+      windows[owner]->devtools();
+      pump(windows, [&] { return windows[owner]->diagnostics()["devtools"]["visible"] == true; });
+      auto inspector = inspector_for(windows[owner]);
+      CHECK(inspector);
+      SetForegroundWindow(reaper); SetFocus(inspector);
+      for (bool previous : {false, true}) {
+        // REAPER's dialog manager walks from the focused native inspector when
+        // activating Docker tabs. Every intermediate container must be traversable.
+        auto next = GetNextDlgTabItem(reaper, inspector, previous);
+        CHECK(next && IsChild(reaper, next));
+      }
+      SetFocus(button);
+      windows[owner]->set_visible(false);
+      windows[1 - owner]->set_visible(true);
+      windows[1 - owner]->focus();
+      const auto before = messages[1 - owner];
+      pump(windows, [&] { return messages[1 - owner] > before; }, "Docker page switch");
+      CHECK(navigations[0] == 1 && navigations[1] == 1 && error.empty());
+    }
+    std::cout << "Embedded DevTools dialog navigation and Docker page switching passed\n";
+    return;
+  }
+  auto responsive = [&] {
+    const int before[] = {messages[0], messages[1]};
+    pump(windows, [&] { return messages[0] > before[0] + 1 && messages[1] > before[1] + 1; }, "Both page heartbeats");
+    CHECK(navigations[0] == 1 && navigations[1] == 1 && error.empty());
+  };
+  for (const auto mode : {"embedded", "floating"}) {
+    for (int owner = 0; owner < 2; ++owner) {
+      std::cout << "Focus switching: " << mode << ", inspector " << owner << std::endl;
+      windows[owner]->restore_devtools({{"mode", mode}});
+      windows[owner]->devtools();
+      pump(windows, [&] { return windows[owner]->diagnostics()["devtools"]["visible"] == true; });
+      auto inspector = inspector_for(windows[owner]);
+      CHECK(inspector);
+      for (int i = 0; i < 6; ++i) {
+        SetForegroundWindow(GetAncestor(inspector, GA_ROOT)); SetFocus(inspector);
+        responsive();
+        const auto target = windows[(owner + i + 1) % 2];
+        auto hwnd = static_cast<HWND>(target->native_handle());
+        SetWindowPos(hwnd, HWND_TOP, 40, 40, 700, 550, SWP_NOACTIVATE);
+        POINT point{40, 100}; ClientToScreen(hwnd, &point);
+        if (i % 2) { RECT bounds{}; GetWindowRect(hwnd, &bounds); point.y = bounds.top + 10; }
+        auto hit = WindowFromPoint(point);
+        CHECK(hit == hwnd || IsChild(hwnd, hit));
+        CHECK(SetCursorPos(point.x, point.y));
+        INPUT click[2]{};
+        click[0].type = click[1].type = INPUT_MOUSE;
+        click[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN; click[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        CHECK(SendInput(2, click, sizeof(INPUT)) == 2);
+        pump(windows, [&] { return target->focused() && GetFocus() != hwnd; }, "Switch to page");
+        responsive();
+        const auto inactive = windows[(owner + i) % 2];
+        const auto inactive_hwnd = static_cast<HWND>(inactive->native_handle());
+        // A focus notification can be superseded by another window's activation.
+        SendMessageW(inactive_hwnd, WM_SETFOCUS, reinterpret_cast<WPARAM>(hwnd), 0);
+        responsive();
+        CHECK(target->focused() && !inactive->focused());
+        const auto inactive_panel = FindWindowExW(inactive_hwnd, nullptr, L"ReaWebAPI.DevTools.Panel", L"Developer Tools");
+        SendMessageW(inactive_panel, WM_SETFOCUS, reinterpret_cast<WPARAM>(hwnd), 0);
+        responsive();
+        CHECK(target->focused() && !inactive->focused());
+        CHECK(inspector_for(windows[owner]) == inspector);
+        CHECK(windows[owner]->diagnostics()["devtools"]["visible"] == true);
+      }
+    }
+  }
+  std::cout << "Multi-window DevTools focus switching and page heartbeats passed\n";
+}
 int main(int argc, char** argv) {
   const bool dpi_v1 = argc > 1 && std::string(argv[1]) == "--dpi-v1";
   SetProcessDpiAwarenessContext(dpi_v1 ? DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE : DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
   try {
+    for (int i = 1; i < argc; ++i) {
+      if (std::string(argv[i]) == "--focus-switching") { focus_switching(false); return 0; }
+      if (std::string(argv[i]) == "--focus-switching-separate-profiles") { focus_switching(true); return 0; }
+      if (std::string(argv[i]) == "--dialog-navigation") { focus_switching(true, true); return 0; }
+    }
     auto path = fs::current_path() / ("devtools-test-" + std::to_string(GetCurrentProcessId()));
     fs::create_directories(path);
     auto entry = path / "index.html";

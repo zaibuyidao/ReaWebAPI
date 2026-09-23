@@ -11,6 +11,7 @@ class WinDevTools {
   static constexpr const wchar_t* marker = L"ReaWebAPI.DevTools.Owner";
   static constexpr const wchar_t* panel_class = L"ReaWebAPI.DevTools.Panel";
   static constexpr const wchar_t* splitter_class = L"ReaWebAPI.DevTools.Splitter";
+  static constexpr UINT focus_inspector_message = WM_APP + 74;
   HWND window_ = nullptr, owner_ = nullptr, original_owner_ = nullptr;
   HWND panel_ = nullptr, splitter_ = nullptr;
   HWND content_ = nullptr, renderer_ = nullptr;
@@ -178,7 +179,7 @@ class WinDevTools {
       }
       const auto previous = SetThreadDpiAwarenessContext(inspector_dpi);
       if (previous) {
-        content_ = CreateWindowExW(0, panel_class, L"DevTools content", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
+        content_ = CreateWindowExW(WS_EX_CONTROLPARENT, panel_class, L"DevTools content", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
           0, 0, 0, 0, panel_, nullptr, reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(owner_, GWLP_HINSTANCE)), this);
         SetThreadDpiAwarenessContext(previous);
       }
@@ -232,7 +233,15 @@ class WinDevTools {
     } else {
       if (msg == WM_CLOSE) { self->hide(); return 0; }
       if (msg == WM_SIZE) { self->panel_layout(); return 0; }
-      if (msg == WM_SETFOCUS && self->requested_) { self->focus_inspector(); return 0; }
+      if (msg == WM_SETFOCUS && self->requested_) {
+        // Do not reactivate an inspector from inside a cross-process focus change.
+        PostMessageW(hwnd, focus_inspector_message, 0, 0); return 0;
+      }
+      if (msg == focus_inspector_message) {
+        if (self->requested_ && GetFocus() == hwnd &&
+            GetForegroundWindow() == GetAncestor(hwnd, GA_ROOT)) self->focus_inspector();
+        return 0;
+      }
       if (msg == WM_DPICHANGED) {
         self->panel_layout(); return 0;
       }

@@ -24,7 +24,7 @@ Ctrl+Shift+I 在检查器内同样有效。快捷键、工具栏 **Hide DevTools
 
 在 WebView 页面上右键，DevTools 操作与 **Dock in REAPER** / **Undock from REAPER** 位于同一菜单。隐藏时显示 **Open DevTools**，显示时提供 **Hide DevTools**。嵌入模式提供 **Float DevTools**，浮动模式提供 **Embed DevTools**。隐藏时切换模式只保存偏好，不打开检查器。检查器填满容器，不附加宿主工具栏，Demo 也不再单独提供 DevTools 按钮。
 
-右键菜单、快捷键和 API 共用状态管理。Ctrl+Shift+I 和 **Hide DevTools** 只隐藏检查器并保留会话。浮动窗口的原生关闭按钮会结束检查器会话。浮动窗口跟随当前 REAPER 根窗口，其他 REAPER 窗口激活时不抢焦点地提升层级，不设置全局置顶。焦点移至 DevTools 不会暂停或重载页面。
+右键菜单、快捷键和 API 共用状态管理。Ctrl+Shift+I 和 **Hide DevTools** 只隐藏检查器并保留会话。浮动窗口的原生关闭按钮会结束检查器会话。浮动窗口跟随当前 REAPER 根窗口，其他 REAPER 窗口激活时不抢焦点地提升层级，不设置全局置顶。焦点移至 DevTools 不会暂停或重载页面。Windows 嵌入式 DevTools 支持多个停靠 WebView 之间的切换，包括 REAPER 与 WebView2 使用不同 DPI 上下文的情况。
 
 WebView2 没有公开的嵌入式检查器控制器。ReaWebAPI 通过 [`OpenDevToolsWindow`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2#opendevtoolswindow) 创建并识别原生检查器窗口，在 Embedded 模式下依据实际渲染起点和客户区边界裁去 Chromium 自绘标题栏及边框。Per-Monitor V1/V2 宿主通过兼容的 DPI 容器托管，不修改 REAPER 或 Chromium 的进程 DPI 模式。内容边界不可用、不支持的 DPI 组合或托管失败时保留原生浮动窗口，并禁用 **Embed DevTools**，`devtools.fallbackReason` 返回降级原因。窗口识别或检查器内按键处理失败时，`devtools.lastError` 返回对应限制。无法识别的窗口需使用自身关闭按钮。此集成依赖 WebView2 原生窗口实现。
 

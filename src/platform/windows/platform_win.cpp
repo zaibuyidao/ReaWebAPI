@@ -82,6 +82,7 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   bool closed_ = false;
   std::unique_ptr<WinDevTools> devtools_;
   static constexpr UINT toggle_devtools_message = DevToolsKeys::toggle_message;
+  static constexpr UINT focus_page_message = WM_APP + 74;
   RECT floating_rect_{};
   bool maximized_ = false;
   std::string browser_version_;
@@ -125,7 +126,14 @@ public:
       } else if (msg == WM_MOVE && self->controller_) {
         self->controller_->NotifyParentWindowPositionChanged();
       } else if (msg == WM_SETFOCUS && self->controller_) {
-        self->controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+        // DevTools shares the host's input queue across processes. Finish the
+        // focus notification before calling back into WebView2.
+        PostMessageW(hwnd, focus_page_message, 0, 0);
+      } else if (msg == focus_page_message) {
+        if (!self->closed_ && self->controller_ && GetFocus() == hwnd &&
+            GetForegroundWindow() == GetAncestor(hwnd, GA_ROOT))
+          self->controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+        return 0;
       } else if (msg == WM_CLOSE || (msg == WM_COMMAND && LOWORD(wp) == IDCANCEL && !HIWORD(wp) && !lp)) {
         if (self->options_.on_close) self->options_.on_close(); else self->closed_ = true;
         return 0;
@@ -137,7 +145,8 @@ public:
     return DefWindowProcW(hwnd, msg, wp, lp);
   }
   WinWindow(WindowOptions options, HINSTANCE instance) : options_(std::move(options)), uri_(options_.url.empty() ? file_uri(options_.entry) : options_.url) {
-    hwnd_ = CreateWindowExW(0, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+    // REAPER's Docker must be able to find focus inside the embedded inspector.
+    hwnd_ = CreateWindowExW(WS_EX_CONTROLPARENT, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
       CW_USEDEFAULT, CW_USEDEFAULT, 860, 640, static_cast<HWND>(options_.parent), nullptr, instance, this);
     if (!hwnd_) throw std::runtime_error("CreateWindowEx failed");
     if (options_.on_dock_toggle) {
