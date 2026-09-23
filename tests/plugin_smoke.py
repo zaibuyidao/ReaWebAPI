@@ -380,7 +380,10 @@ assert entry(None, C.byref(info)) == 1
 try:
     assert len(registrations) == 43, list(registrations)
     assert b'csurf_inst' in registrations
-    open_window = C.CFUNCTYPE(C.c_int, C.c_char_p)(registrations[b'API_ReaWeb_Open'])
+    native_open = C.CFUNCTYPE(C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.POINTER(C.c_bool))(registrations[b'API_ReaWeb_Open'])
+    def open_window(path, instance_key=None, name=None, multiple=None):
+        flag = C.c_bool(multiple) if multiple is not None else None
+        return native_open(path, instance_key, name, C.byref(flag) if flag is not None else None)
     for prefix in (b'API_', b'APIvararg_', b'APIdef_'):
         assert prefix + b'ReaWeb_Open' in registrations
         assert prefix + b'ReaWebOpen' not in registrations
@@ -819,8 +822,27 @@ try:
                 placement=dict(x=900000, y=900000, width=860, height=640, maximized=slot == 0))), encoding='utf-8')
             state_files.append(file)
         messages.clear()
-        ids = [dev_open(dev_url.encode()) if args.dev else open_window(str(page).encode('utf-8')) for _ in range(window_count)]
+        page_bytes = str(page).encode('utf-8')
+        instance_key = b'@native-smoke/Open.lua'
+        ids = [dev_open(dev_url.encode()) if args.dev else open_window(page_bytes, instance_key, str(i).encode() if i else None)
+               for i in range(window_count)]
         assert all(ids), get_error()
+        if not args.dev:
+            for i, id in enumerate(ids):
+                name = str(i).encode() if i else b''
+                assert open_window(b'missing.html', instance_key, name, False) == id
+                key_buffer, name_buffer = C.create_string_buffer(instance_key), C.create_string_buffer(name)
+                path_buffer = C.create_string_buffer(page_bytes)
+                flag = C.c_bool(False)
+                keyed_args = (C.c_void_p * 4)(C.addressof(path_buffer), C.addressof(key_buffer),
+                                            C.addressof(name_buffer), C.addressof(flag))
+                if not i:
+                    assert vararg(keyed_args, 2) == id
+                assert vararg(keyed_args, 3) == id and vararg(keyed_args, 4) == id
+                flag.value = True
+                independent = vararg(keyed_args, 4)
+                assert independent and independent not in ids and close_window(independent)
+            assert len(set(ids)) == window_count, 'Named instances collided'
         # Close a controller request before its asynchronous initialization completes.
         early = open_window(str(page).encode('utf-8'))
         assert early and close_window(early)

@@ -40,7 +40,7 @@ ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩�
 
 ## 开发
 
-Lua 通过 `reaper.ReaWeb_Open(path)` 打开应用。JavaScript 等待 `reaper.lifecycle.ready` 后，可调用 REAPER Mirror 和 `reaper.window`、`reaper.events` 等 Runtime 接口。API 以 Promise 返回结果，参数和返回值顺序遵循 REAPER 的 Lua 签名。
+Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开应用。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。JavaScript 等待 `reaper.lifecycle.ready` 后，可调用 REAPER Mirror 和 `reaper.window`、`reaper.events` 等 Runtime 接口。API 以 Promise 返回结果，参数和返回值顺序遵循 REAPER 的 Lua 签名。
 
 基础模板位于 `SDK/starter/`，Vite 与 TypeScript 模板位于 `SDK/modern/`。运行 `SDK/runtime-demo/Open.lua` 可打开 Runtime Studio。
 

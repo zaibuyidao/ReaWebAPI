@@ -5,16 +5,25 @@ local launchers = {
   'web/lua-backend/Open.lua'
 }
 for _, path in ipairs(launchers) do
-  local ext, windows, deferred, exits, sent = {}, {}, {}, {}, {}
+  local ext, windows, deferred, exits, sent, instances = {}, {}, {}, {}, {}, {}
   local created, focused, current, volume = 0, 0, 0, 1
-  local function open()
+  local function open(_, instanceKey)
+    if instanceKey then
+      assert(instanceKey:sub(1, 1) == '@' and instanceKey:find(path, 1, true), 'Pass the launcher source as instanceKey')
+      local id = instances[instanceKey]
+      if id and windows[id] then focused = focused + 1 return id end
+    end
     created = created + 1
     windows[created] = true
+    if instanceKey then instances[instanceKey] = created end
     return created
   end
   reaper = {
     APIExists = function() return true end,
-    GetExtState = function(section, key) return ext[section .. key] or '' end,
+    GetExtState = function(section, key)
+      assert(path == 'runtime/modern/OpenDev.lua' or section == 'ReaWebAPI.Backends', 'Window reuse belongs to Runtime')
+      return ext[section .. key] or ''
+    end,
     SetExtState = function(section, key, value, persist)
       assert(not persist, 'Window IDs must not survive REAPER restarts')
       ext[section .. key] = value

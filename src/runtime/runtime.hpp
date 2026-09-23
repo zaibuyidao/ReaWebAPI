@@ -14,6 +14,7 @@ public:
   Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock = {});
   ~Runtime();
   int open(const std::string& path, const fs::path& base = {});
+  int open_instance(const std::string& path, const std::string& instance_key, const std::string& name = {}, bool multiple = false);
   int open_dev(const std::string& url, const fs::path& base = {});
   bool is_open(int id) const;
   bool close(int id);
@@ -39,6 +40,7 @@ private:
     fs::path entry;
     fs::path state_path;
     std::string ident, document, title, last_error;
+    std::optional<std::pair<std::string, std::string>> instance;
     std::shared_ptr<App> app;
     std::shared_ptr<Window> window;
     std::unique_ptr<Bridge> bridge;

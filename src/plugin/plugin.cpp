@@ -55,8 +55,9 @@ template<class F> auto guarded(F&& fn, decltype(fn()) fallback) noexcept -> decl
   return fallback;
 }
 
-int ReaWeb_Open(const char* path) {
-  return guarded([&] { return runtime->open(path ? path : ""); }, 0);
+int ReaWeb_Open(const char* path, const char* instance_key, const char* name, const bool* multiple) {
+  return guarded([&] { return runtime->open_instance(path ? path : "", instance_key ? instance_key : "",
+    name ? name : "", multiple && *multiple); }, 0);
 }
 int ReaWeb_OpenDev(const char* url) { return guarded([&] { return runtime->open_dev(url ? url : ""); }, 0); }
 bool ReaWeb_Close(int id) { return guarded([&] { return runtime->close(id); }, false); }
@@ -82,7 +83,11 @@ const char* ReaWeb_GetDiagnostics(int id) {
 }
 const char* ReaWeb_GetLastError() { return last_error.c_str(); }
 void* open_vararg(void** args, int count) {
-  return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_Open(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
+  return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_Open(
+    count >= 1 ? static_cast<const char*>(args[0]) : nullptr,
+    count >= 2 ? static_cast<const char*>(args[1]) : nullptr,
+    count >= 3 ? static_cast<const char*>(args[2]) : nullptr,
+    count >= 4 ? static_cast<const bool*>(args[3]) : nullptr)));
 }
 void* dev_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_OpenDev(count >= 1 ? static_cast<const char*>(args[0]) : nullptr)));
@@ -279,7 +284,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       [refresh_dock](void* h) { if (refresh_dock) refresh_dock(static_cast<HWND>(h)); }};
     runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
     add_api("ReaWeb_Open", reinterpret_cast<void*>(ReaWeb_Open), reinterpret_cast<void*>(open_vararg),
-      "int\0const char*\0path\0Open local HTML. Relative paths resolve under resource/Scripts. Returns a window id, or 0 on failure.\0");
+      "int\0const char*,const char*,const char*,const bool*\0path,instanceKeyInOptional,idInOptional,multipleInOptional\0Open local HTML. Relative paths resolve under resource/Scripts. An instanceKey reuses and focuses its window, optionally scoped by id. Omit the key or set multiple=true to create a new window. Returns a window id, or 0 on failure.\0");
     add_api("ReaWeb_Close", reinterpret_cast<void*>(ReaWeb_Close), reinterpret_cast<void*>(id_vararg<ReaWeb_Close>),
       "bool\0int\0windowId\0Close a ReaWebAPI window.\0");
     add_api("ReaWeb_IsOpen", reinterpret_cast<void*>(ReaWeb_IsOpen), reinterpret_cast<void*>(id_vararg<ReaWeb_IsOpen>),

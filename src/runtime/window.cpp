@@ -7,6 +7,25 @@ int Runtime::open(const std::string& path, const fs::path& base) {
   return open_impl(path, base, "");
 }
 
+int Runtime::open_instance(const std::string& path, const std::string& instance_key, const std::string& name, bool multiple) {
+  check_thread();
+  if (instance_key.find('\0') != std::string::npos || name.find('\0') != std::string::npos)
+    throw Error("INVALID_ARGUMENT", "Instance key and window name must not contain NUL");
+  if (multiple || instance_key.empty()) return open(path);
+  const auto key = std::make_pair(instance_key, name);
+  // The identity lives with the session, so destruction cannot leave a stale registry entry.
+  for (const auto& item : sessions_) {
+    auto& session = *item.second;
+    if (session.instance == key && !session.failed && is_open(session.id)) {
+      focus(session.id);
+      return session.id;
+    }
+  }
+  const auto id = open(path);
+  sessions_.at(id)->instance = key;
+  return id;
+}
+
 int Runtime::open_dev(const std::string& url, const fs::path& base) {
   return open_impl("", base, validate_dev_url(url));
 }

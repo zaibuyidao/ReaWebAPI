@@ -42,6 +42,8 @@ struct FakeWindow : Window {
   void set_drop_enabled(bool value) override { drop_enabled = value; }
   void start_drag(const Json& payload, Reply reply) override { dragged = payload; if (defer_drag) drag_reply = std::move(reply); else reply({{"result", drag_result}}); }
   int reloads = 0;
+  int focuses = 0;
+  void focus() override { ++focuses; shown = true; }
   std::vector<Json> responses;
   int sequence = 0;
   std::string document = "first";
@@ -633,6 +635,47 @@ int main() {
       CHECK(runtime.diagnostics(id)["stage"] == "closed");
       const auto reopened = runtime.open("Tool/index.html");
       CHECK(reopened != id && runtime.receive(reopened).empty());
+    }
+    {
+      Runtime runtime(host, root, [&](const std::string& error) { errors.push_back(error); }, docks);
+      const auto script = entry.parent_path() / "Open.lua";
+      std::ofstream(script) << "-- launcher";
+      const auto id = runtime.open_instance("Tool/index.html", script.u8string());
+      auto first = windows.back().lock();
+      CHECK(runtime.open_instance("Tool/missing.html", script.u8string()) == id);
+      CHECK(first->focuses == 1 && !runtime.is_ready(id));
+      CHECK(runtime.open_instance("Tool/index.html", "@" + script.u8string()) != id);
+      const auto exact = runtime.open_instance("Tool/index.html", "opaque:Ä:key");
+      CHECK(runtime.open_instance("Tool/index.html", "opaque:Ä:key") == exact);
+      CHECK(runtime.open_instance("Tool/index.html", "opaque:ä:key") != exact);
+      CHECK(runtime.open_instance("Tool/index.html", "") != runtime.open_instance("Tool/index.html", ""));
+      CHECK(runtime.open_instance("Tool/index.html", "", "Settings") != runtime.open_instance("Tool/index.html", "", "Settings"));
+      CHECK(runtime.open_instance("Tool/index.html", "a:b", "c") != runtime.open_instance("Tool/index.html", "a", "b:c"));
+      CHECK(runtime.open_instance("Tool/index.html", (script.parent_path() / "Other.lua").u8string()) != id);
+      auto copy = root / "Scripts" / "Copy";
+      fs::create_directories(copy); std::ofstream(copy / "index.html") << "<html></html>";
+      CHECK(runtime.open_instance("Copy/index.html", (copy / "Open.lua").u8string()) != id);
+      const auto settings = runtime.open_instance("Tool/index.html", script.u8string(), "Settings");
+      CHECK(settings != id && runtime.open_instance("Tool/index.html", script.u8string(), "Settings") == settings);
+      CHECK(runtime.open_instance("Tool/index.html", script.u8string(), "settings") != settings);
+      const auto many = runtime.open_instance("Tool/index.html", script.u8string(), "", true);
+      CHECK(many != id && runtime.open_instance("Tool/index.html", script.u8string(), "", true) != many);
+      CHECK(runtime.open_instance("Tool/index.html", script.u8string()) == id);
+      CHECK(runtime.open("Tool/index.html") != runtime.open("Tool/index.html"));
+      runtime.set_docked(id, true);
+      first->shown = false;
+      CHECK(runtime.open_instance("Tool/index.html", script.u8string()) == id && first->shown);
+      CHECK(runtime.is_docked(id));
+      first->is_closed = true;
+      const auto replacement = runtime.open_instance("Tool/index.html", script.u8string());
+      CHECK(replacement != id);
+      runtime.tick();
+      CHECK(runtime.open_instance("Tool/index.html", script.u8string()) == replacement);
+      runtime.close(replacement);
+      const auto reopened = runtime.open_instance("Tool/index.html", script.u8string());
+      CHECK(reopened != replacement);
+      windows.back().lock()->options.on_error("Test initialization failure");
+      CHECK(runtime.open_instance("Tool/index.html", script.u8string()) != reopened);
     }
     const auto metadata_root = root / "MetadataApp";
     DevToolsPreferences inspector;

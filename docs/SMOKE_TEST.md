@@ -24,9 +24,13 @@ Inspector behavior is documented in [DevTools](devtools.md). Linux binaries buil
 - On macOS verify the localhost entry against the actual REAPER bundle's ATS policy. On Linux verify the default renderer and consult the Web Runtime document if WSLg/DMA-BUF stalls frames.
 
 
+## Lua window instances
+
+Run `python tests/single_instance_smoke.py --reaper <executable> --extension <binary> --output <new-directory>` against a disposable host. Verify repeated launcher actions, copied launchers, different scripts sharing one HTML entry, named windows, omitted keys, `multiple=true`, initialization reuse and close/reopen. Manually minimize or dock a keyed window, rerun its launcher and verify focus without losing page state. Instance keys are exact strings supplied by Lua.
+
 ## Lua message bridge
 
-For the message bridge, run `web/lua-backend/Open.lua`, select a track with quotes, control characters and Unicode in its name, and verify exact UI text and volume readback. Reload the page and confirm it requests fresh state. Open a second instance and confirm independent queues. Closing either window must stop only its Lua backend. Automated real-host checks: `python tests/message_bridge_smoke.py --reaper <executable> --extension <binary> --output <new-directory>` uses an isolated resource directory.
+For the message bridge, run `web/lua-backend/Open.lua`, select a track with quotes, control characters and Unicode in its name, and verify exact UI text and volume readback. Reload the page and confirm it requests fresh state. Run a copy of the launcher in another directory and confirm independent queues. Closing either window must stop only its Lua backend. Automated real-host checks: `python tests/message_bridge_smoke.py --reaper <executable> --extension <binary> --output <new-directory>` uses an isolated resource directory.
 
 ## DevTools acceptance
 

@@ -162,7 +162,7 @@ These native extension functions are called synchronously from Lua. First use `r
 | Lua call | Return |
 | --- | --- |
 | `reaper.ReaWeb_OpenDev(url)` | Positive window ID, or 0 |
-| `reaper.ReaWeb_Open(html_path)` | Positive window ID, or `0` on failure |
+| `reaper.ReaWeb_Open(path, instanceKey?, id?, multiple?)` | Positive window ID, or `0` on failure |
 | `reaper.ReaWeb_Close(id)` | Boolean |
 | `reaper.ReaWeb_IsOpen(id)` | Boolean |
 | `reaper.ReaWeb_IsReady(id)` | Boolean, true after document handshake |
@@ -182,6 +182,22 @@ Lua relative HTML paths resolve from REAPER's `Scripts/` directory. The starter 
 JavaScript opens pages with `reaper.window.open(path)` and waits on `reaper.lifecycle.ready`. Lua bootstrap uses `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains Lua-only native functions. The 730 standard REAPER mirror names are unchanged.
 
 `reaper.events.off(name, callback)` removes all matching registrations of that callback. Subscribe to `native-drop` through `reaper.events.on('native-drop', callback)`; it carries files/text/x/y and has neither coalescing nor an initial snapshot. See [Runtime API](runtime-api.md).
+
+### Window instances
+
+`ReaWeb_Open(path, instanceKey?, id?, multiple?)` uses positional arguments, not a Lua table. Since v0.3.5, a nonempty `instanceKey` reuses and focuses the matching open or initializing window and returns its existing numeric window ID. Reuse preserves the page and ignores the new HTML path. Omitted, nil or empty keys create a new window on every call. `multiple = true` bypasses reuse without replacing an existing singleton.
+
+```lua
+local instanceKey = debug.getinfo(1, "S").source
+local directory = instanceKey:sub(2):match("^(.*[/\\])")
+local window = reaper.ReaWeb_Open(directory .. "index.html", instanceKey)
+local settings = reaper.ReaWeb_Open(directory .. "settings.html", instanceKey, "Settings")
+local extra = reaper.ReaWeb_Open(directory .. "index.html", instanceKey, nil, true)
+```
+
+Runtime compares `(instanceKey, id)` as separate, case-sensitive strings. Nil or empty `id` selects the default window. Keys are opaque: Runtime does not normalize paths, remove the `@` source prefix, or inspect the Lua stack. Capture the launcher source in the launcher itself and pass it through any helper. Use the same spelling on subsequent calls. Copied launchers in different directories have different keys. Closing or failed windows are excluded from reuse, and destroying the session releases its identity.
+
+JavaScript `reaper.window.open(path)` and `ReaWeb_OpenDev(url)` retain their existing behavior. Native C/C++ consumers must use the v0.3.5 signature `int ReaWeb_Open(const char* path, const char* instanceKey, const char* id, const bool* multiple)` and pass `nullptr` for omitted options. Existing one-argument Lua calls remain valid.
 
 ## Lua message bridge
 

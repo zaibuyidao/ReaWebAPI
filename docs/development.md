@@ -19,7 +19,7 @@ SDK/
     jsconfig.json
 ```
 
-No web server, npm install or build step is needed for this JavaScript template. The Lua action can finish immediately after `reaper.ReaWeb_Open`: the extension owns the window. The page runs in a browser environment, not Node.js. Ordinary browsers do not provide `reaper.window.reaper`.
+No web server, npm install or build step is needed for this JavaScript template. The Lua action can finish immediately after `reaper.ReaWeb_Open`: the extension owns the window. The starter passes its launcher source as `instanceKey`, so rerunning it focuses the existing page. See [window instances](host-api.md#window-instances) for named windows and explicit multiple instances. The page runs in a browser environment, not Node.js. Ordinary browsers do not provide `reaper.window.reaper`.
 
 Use relative paths for bundled assets and a deferred classic script (`<script src="app.js" defer></script>`). If using a bundler, emit files suitable for a local HTML entry point. Test asset loading, module loading and any network requests on each target WebView. A development server URL cannot be passed to `reaper.window.open`, which accepts local `.html` or `.htm` files.
 
@@ -149,7 +149,7 @@ try {
 }
 ```
 
-Use `await reaper.debug.getDiagnostics()` to inspect backend, stage, queue counts and the last host error. Press Ctrl+Shift+I on Windows/Linux or Option+Command+I on macOS in the WebView or Inspector to show or hide DevTools. Call `reaper.debug.openDevTools()` to request opening it. Windows/macOS page context menus also control visibility and Embedded/Floating mode. See [DevTools](devtools.md) for layouts, saved preferences and platform limits. Reopen the page after changing assets. Reloading creates a new document and invalidates its old handles.
+Use `await reaper.debug.getDiagnostics()` to inspect backend, stage, queue counts and the last host error. Press Ctrl+Shift+I on Windows/Linux or Option+Command+I on macOS in the WebView or Inspector to show or hide DevTools. Call `reaper.debug.openDevTools()` to request opening it. Windows/macOS page context menus also control visibility and Embedded/Floating mode. See [DevTools](devtools.md) for layouts, saved preferences and platform limits. Close and reopen the page after changing assets. Reloading creates a new document and invalidates its old handles.
 
 An unstarted native request expires after 25 seconds, with a 30-second client watchdog. Once execution starts, the queue timer stops. A native dialog or render cannot be interrupted by JavaScript. Never retry a timed-out write automatically. Check state first. Limits and error codes are listed in the [host reference](host-api.md#errors-and-limits).
 

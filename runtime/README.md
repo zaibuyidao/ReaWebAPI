@@ -17,7 +17,7 @@ TypeScript declarations, templates and examples for the current ReaWebAPI releas
 
 Copy the SDK to your workspace and run `starter/Open.lua` from REAPER's Action List. For an existing project, include `reaper.d.ts` in `jsconfig.json` or `tsconfig.json` and keep the three declaration files together.
 
-The extension injects the browser runtime. Lua opens the page with `reaper.ReaWeb_Open(path)`. JavaScript uses the Mirror and Runtime APIs after `reaper.lifecycle.ready` resolves.
+The extension injects the browser runtime. Lua opens the page with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. JavaScript uses the Mirror and Runtime APIs after `reaper.lifecycle.ready` resolves.
 
 `reaper.transaction.batch(b => { ... })` collects reviewed Mirror calls with automatic result references and tuple destructuring. Return a reference, object or array to select typed results. The callback is synchronous. The [batch contract](../docs/host-api.md#batches-and-continuous-controls) also documents the existing call-array form.
 

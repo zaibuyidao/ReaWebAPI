@@ -19,7 +19,7 @@ SDK/
     jsconfig.json
 ```
 
-这个 JavaScript 模板无需服务器、npm 安装或构建步骤。Lua 调用 `reaper.ReaWeb_Open` 后即可结束，窗口由扩展管理。页面运行于浏览器环境，不是 Node.js。普通浏览器不提供 `reaper.window.reaper`。
+这个 JavaScript 模板无需服务器、npm 安装或构建步骤。Lua 调用 `reaper.ReaWeb_Open` 后即可结束，窗口由扩展管理。Starter 将启动脚本 source 作为 `instanceKey`，重复运行时聚焦已有页面。命名窗口和显式多实例见[窗口实例](host-api.zh-CN.md#窗口实例)。页面运行于浏览器环境，不是 Node.js。普通浏览器不提供 `reaper.window.reaper`。
 
 资源使用相对路径，入口采用延迟执行的普通脚本 `<script src="app.js" defer></script>`。使用打包器时，应输出适合本地 HTML 入口的文件，并在各平台 WebView 中验证资源、模块及网络请求。`reaper.window.open` 只接受本地 `.html` 或 `.htm` 文件，不能直接打开开发服务器网址。
 
@@ -149,7 +149,7 @@ try {
 }
 ```
 
-`await reaper.debug.getDiagnostics()` 可查看后端、加载阶段、队列计数和最近宿主错误。在 WebView 或检查器中，Windows/Linux 按 Ctrl+Shift+I，macOS 按 Option+Command+I 显示或隐藏 DevTools，也可调用 `reaper.debug.openDevTools()` 请求打开。Windows/macOS 页面右键菜单还可控制显示状态及 Embedded/Floating 模式。布局、偏好保存和平台限制见 [DevTools](devtools.zh-CN.md)。修改资源后重新打开页面。重载会建立新文档，旧句柄失效。
+`await reaper.debug.getDiagnostics()` 可查看后端、加载阶段、队列计数和最近宿主错误。在 WebView 或检查器中，Windows/Linux 按 Ctrl+Shift+I，macOS 按 Option+Command+I 显示或隐藏 DevTools，也可调用 `reaper.debug.openDevTools()` 请求打开。Windows/macOS 页面右键菜单还可控制显示状态及 Embedded/Floating 模式。布局、偏好保存和平台限制见 [DevTools](devtools.zh-CN.md)。修改资源后关闭窗口，再重新打开页面。重载会建立新文档，旧句柄失效。
 
 尚未开始的原生请求在 25 秒后过期，客户端另有 30 秒等待保护。原生执行开始后停止排队计时，JavaScript 无法中断已开始的对话框或渲染。不要自动重试超时写入，应先检查状态。限制及错误码见 [宿主接口](host-api.zh-CN.md#错误与限制)。
 

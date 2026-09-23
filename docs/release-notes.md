@@ -2,10 +2,10 @@
 
 ## English
 
-- Add Lua ↔ WebView messaging with `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and the `message` event, with bounded FIFO queues and document lifecycle isolation.
-- Add a Lua backend / WebView track-volume example, TypeScript declarations and message bridge documentation.
+- Add explicit `instanceKey`, named-window `id` and `multiple` options to Lua `ReaWeb_Open`, with Runtime-managed reuse, focus and lifecycle cleanup.
+- Update Lua launchers to pass their script source as the instance key. Calls without a key continue to create new windows.
 
 ## 简体中文
 
-- 新增 Lua ↔ WebView 消息桥接，提供 `ReaWeb_Send`、`ReaWeb_Receive`、`reaper.host.send` 和 `message` 事件，支持有界 FIFO 队列及文档生命周期隔离。
-- 新增 Lua 后端 / WebView 轨道音量示例、TypeScript 声明及消息桥接文档。
+- Lua `ReaWeb_Open` 新增显式 `instanceKey`、命名窗口 `id` 和 `multiple` 参数，由 Runtime 管理实例复用、聚焦及生命周期清理。
+- 更新 Lua 启动器，将脚本 source 作为实例 key。未传入 key 时继续每次创建新窗口。

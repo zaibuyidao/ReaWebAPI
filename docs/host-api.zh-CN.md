@@ -162,7 +162,7 @@ const results = await reaper.transaction.batch([
 | Lua 调用 | 返回 |
 | --- | --- |
 | `reaper.ReaWeb_OpenDev(url)` | 正数窗口 ID，失败返回 0 |
-| `reaper.ReaWeb_Open(html_path)` | 正数窗口 ID，失败为 `0` |
+| `reaper.ReaWeb_Open(path, instanceKey?, id?, multiple?)` | 正数窗口 ID，失败为 `0` |
 | `reaper.ReaWeb_Close(id)` | 布尔值 |
 | `reaper.ReaWeb_IsOpen(id)` | 布尔值 |
 | `reaper.ReaWeb_IsReady(id)` | 文档握手完成后为 true |
@@ -182,6 +182,22 @@ Lua 相对 HTML 路径从 REAPER 的 `Scripts/` 目录解析，模板使用启�
 JavaScript 使用 `reaper.window.open(path)` 和 `reaper.lifecycle.ready`。Lua 在网页尚未启动时通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
 
 `reaper.events.off(name, callback)` 可按回调引用取消该事件的全部匹配订阅。使用 `reaper.events.on('native-drop', callback)` 订阅原生拖放事件，返回 files/text/x/y，不合并、不提供初始快照。详见 [Runtime API](runtime-api.zh-CN.md)。
+
+### 窗口实例
+
+`ReaWeb_Open(path, instanceKey?, id?, multiple?)` 使用位置参数，不接收 Lua table。从 v0.3.5 起，非空 `instanceKey` 会复用并聚焦匹配的已打开或初始化中的窗口，返回原有数字窗口 ID。复用保留页面状态，忽略本次传入的 HTML 路径。未传入、nil 或空字符串 key 每次都创建新窗口。`multiple = true` 跳过复用，不替换已有单实例。
+
+```lua
+local instanceKey = debug.getinfo(1, "S").source
+local directory = instanceKey:sub(2):match("^(.*[/\\])")
+local window = reaper.ReaWeb_Open(directory .. "index.html", instanceKey)
+local settings = reaper.ReaWeb_Open(directory .. "settings.html", instanceKey, "Settings")
+local extra = reaper.ReaWeb_Open(directory .. "index.html", instanceKey, nil, true)
+```
+
+Runtime 对 `(instanceKey, id)` 两个字符串分别进行区分大小写的精确匹配。nil 或空字符串 `id` 表示默认窗口。key 是不透明标识，不做路径规范化，不移除 source 的 `@` 前缀，也不读取 Lua 调用栈。在启动脚本中获取 source，再传给需要的辅助函数。后续调用应保持相同写法。复制到不同目录的启动脚本具有不同 key。正在关闭或初始化失败的窗口不参与复用，会话销毁时释放实例身份。
+
+JavaScript 的 `reaper.window.open(path)` 和 `ReaWeb_OpenDev(url)` 行为不变。原生 C/C++ 调用方须使用 v0.3.5 签名 `int ReaWeb_Open(const char* path, const char* instanceKey, const char* id, const bool* multiple)`，省略的选项传 `nullptr`。现有单参数 Lua 调用仍然有效。
 
 ## Lua 消息桥接
 

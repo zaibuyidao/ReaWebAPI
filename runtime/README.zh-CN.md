@@ -17,7 +17,7 @@
 
 将 SDK 复制到工作目录，在 REAPER 的 Action List 运行 `starter/Open.lua`。整合现有项目时，在 `jsconfig.json` 或 `tsconfig.json` 中包含 `reaper.d.ts`，并将三个声明文件保存在同一目录。
 
-扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path)` 打开页面，JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Mirror 和 Runtime API。
+扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开页面。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Mirror 和 Runtime API。
 
 `reaper.transaction.batch(b => { ... })` 在同步回调内收集已审核的 Mirror 调用，自动处理结果引用和多返回值解构。返回引用、对象或数组可选择结果并推导类型。[批处理契约](../docs/host-api.zh-CN.md#批处理与连续参数) 同时说明原有调用数组形式。
 
