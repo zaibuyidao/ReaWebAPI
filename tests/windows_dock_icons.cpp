@@ -18,7 +18,7 @@ LRESULT original_small, original_large, main_small, main_large;
 LONG_PTR original_frame;
 RECT bounds{};
 int id, other_id, phase;
-bool ready, other_ready, floating;
+bool ready, other_ready, floating, startup_hidden, other_startup_hidden;
 ULONGLONG started;
 constexpr LONG_PTR frame_mask = WS_EX_TOOLWINDOW | WS_EX_DLGMODALFRAME;
 
@@ -82,10 +82,31 @@ void finish(const std::string& result) {
   host->Register("-timer", reinterpret_cast<void*>(tick));
   PostMessageW(host->hwnd_main, WM_CLOSE, 0, 0);
 }
-void report(int handle, bool& is_ready) {
+void report(int handle, bool& is_ready, bool& hidden) {
   if (!handle || !is_open(handle)) return;
   const std::string result = receive(handle);
   require(result.rfind("ERROR:", 0) != 0, result.c_str());
+  const auto native = handle == id ? window : second;
+  if (result == "startup-visible") {
+    if (!is_docked(handle)) require(icon(native, ICON_SMALL) && icon(native, ICON_BIG), "Default icon was not restored");
+    require(send(handle, "rehide"), "Could not recheck startup visibility");
+  }
+  if (result == "startup-rehidden") {
+    require(!icon(native, ICON_SMALL) && !icon(native, ICON_BIG), "Hidden icon returned after show");
+    require(send(handle, "favicon"), "Could not continue favicon test");
+  }
+  if (result == "startup-hidden") {
+    hidden = true;
+    std::ofstream(resource / "dock-icon-test.log", std::ios::app) << "startup hiding acknowledged\n";
+  }
+  if (hidden) {
+    require(!icon(native, ICON_SMALL) && !icon(native, ICON_BIG), "Startup icon was not hidden");
+    if (!is_docked(handle))
+      require(GetWindowLongPtrW(native, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME, "Startup icon slot was not hidden");
+    if (std::filesystem::exists(resource / "startup-icon-test.pause")) { started = GetTickCount64(); return; }
+    hidden = false; require(send(handle, "start"), "Could not continue startup icon test");
+    std::ofstream(resource / "dock-icon-test.log", std::ios::app) << "startup visibility passed\n";
+  }
   if (result == "ready") is_ready = true;
 }
 void tick() {
@@ -110,7 +131,7 @@ void tick() {
       window = find(L"ReaWebAPI — dock-icon-test"); second = nullptr;
       if (is_docked(id)) require(!set_docked(id, false) && !is_docked(id), "Initial undock failed");
     }
-    report(id, ready); report(other_id, other_ready);
+    report(id, ready, startup_hidden); report(other_id, other_ready, other_startup_hidden);
     require(icon(host->hwnd_main, ICON_SMALL) == main_small && icon(host->hwnd_main, ICON_BIG) == main_large,
       "Changed REAPER's main window icon");
     switch (phase) {
@@ -177,7 +198,7 @@ void tick() {
       case 17:
         if (icon(window, ICON_SMALL) || icon(window, ICON_BIG) || !restored()) return;
         unchanged();
-        finish("PASS: favicon, Dock/Undock, visibility, hidden replacement, inactive tab, two WebViews, close/reopen, clear, host icons, focus and bounds"); break;
+        finish("PASS: startup visibility, favicon, Dock/Undock, visibility, hidden replacement, inactive tab, two WebViews, close/reopen, clear, host icons, focus and bounds"); break;
     }
   } catch (const std::exception& error) { finish(std::string("FAIL: ") + error.what()); }
 }
@@ -195,17 +216,30 @@ extern "C" __declspec(dllexport) int ReaperPluginEntry(HINSTANCE, reaper_plugin_
     std::ofstream(page.parent_path() / (std::string(name) + ".svg"))
       << "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><rect width='32' height='32' fill='" << fill << "'/></svg>";
   }
-  std::ofstream(page) << R"(<title>Dock icon test</title><link rel="icon" href="red.svg"><h1>Dock icon test</h1><script>
+  std::ofstream(page) << R"(<title>Dock icon test</title><h1>Dock icon test</h1><script>
 (async () => {
   await reaper.lifecycle.ready;
   await reaper.events.on('message', async message => {
     try {
-      if (message === 'hide' || message === 'show') await reaper.window.setIconVisible(message === 'show');
+      if (message === 'start') {
+        await reaper.window.setIconVisible(true);
+        await reaper.host.send('startup-visible');
+      } else if (message === 'rehide') {
+        await reaper.window.setIconVisible(false);
+        await reaper.window.hide(); await reaper.window.show();
+        await reaper.host.send('startup-rehidden');
+      } else if (message === 'favicon') {
+        const link = document.createElement('link'); link.rel = 'icon'; link.href = 'red.svg'; document.head.append(link);
+        await reaper.window.setIconVisible(true);
+        await reaper.host.send('ready');
+      } else if (message === 'hide' || message === 'show') await reaper.window.setIconVisible(message === 'show');
       else if (message === 'clear') document.querySelector('link').remove();
       else await reaper.window.setIcon(message);
     } catch (e) { await reaper.host.send('ERROR:' + e); }
   });
-  await reaper.host.send('ready');
+  await reaper.window.setIconVisible(false);
+  document.querySelector('h1').textContent = 'Startup icon hidden';
+  await reaper.host.send('startup-hidden');
 })().catch(e => reaper.host.send('ERROR:' + e));
 </script>)";
   add_dock = reinterpret_cast<decltype(add_dock)>(host->GetFunc("DockWindowAddEx"));

@@ -83,7 +83,7 @@ await reaper.window.setIconVisible(true);
 const { iconVisible } = await reaper.window.getState();
 ```
 
-`setIconVisible(boolean)` 默认为 `true`，成功返回 `true`。隐藏时移除标题栏图标及其占位，保留当前图标数据。隐藏期间仍可更新图标，重新显示时恢复当前图标。显示设置在同一窗口会话的停靠切换、原生窗口重建和重载后保留。
+`setIconVisible(boolean)` 默认为 `true`，成功返回 `true`。隐藏时立即移除标题栏图标及其占位，包括默认启动图标，保留当前图标数据，无需 Dock/Undock。隐藏期间仍可更新图标，重新显示时恢复当前图标。显示设置在同一窗口会话的停靠切换、原生窗口重建和重载后保留。
 
 Windows 设置窗口大小图标。浮动 Docker 标题栏跟随当前 WebView 的图标和显示设置。切换到其他标签、取消停靠或关闭后，还原容器原有图标和标题栏样式。嵌入 REAPER 主窗口的 Docker 保留 WebView 的图标配置，不更改 REAPER 主窗口图标。macOS 使用浮动窗口的文档代理图标，不更改 REAPER 的应用或 Dock 图标。Linux 设置浮动窗口图标，通过窗口装饰提示请求移除标题栏图标，图标及占位是否移除取决于桌面主题和窗口管理器。停靠标签文字的显示由 REAPER 控制。这些 API 不修改 HTML 中的 favicon 声明。
 

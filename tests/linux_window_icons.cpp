@@ -11,17 +11,12 @@ int main(int argc, char** argv) {
     CHECK(gtk_init_check(&argc, &argv));
     const std::string svg = "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect width='16' height='16' fill='red' fill-opacity='.5'/></svg>";
     auto images = render_icon({".svg", {svg.begin(), svg.end()}}, {16, 32});
+    auto fallback = gdk_pixbuf_new_from_data(images[0].rgba.data(), GDK_COLORSPACE_RGB, TRUE, 8, 16, 16, 64, nullptr, nullptr);
+    CHECK(fallback); gtk_window_set_default_icon(fallback); g_object_unref(fallback);
     LinuxIcon icon;
     for (int n = 0; n < 3; ++n) {
       auto window = gtk_window_new(GTK_WINDOW_TOPLEVEL); gtk_widget_realize(window);
       auto native = gtk_widget_get_window(window);
-      if (!n) {
-        icon.set_visible(native, false); icon.set_visible(native, true);
-        GdkWMDecoration decorations{}; CHECK(gdk_window_get_decorations(native, &decorations));
-        CHECK((decorations & GDK_DECOR_ALL) && !(decorations & GDK_DECOR_MENU));
-      }
-      if (!n) icon.set(native, images); else icon.refresh(native);
-      CHECK(icon.last_error.empty());
       auto display = gdk_x11_display_get_xdisplay(gdk_window_get_display(native));
       const auto property_count = [&] {
         Atom type; int bits; unsigned long length, left; unsigned char* data = nullptr;
@@ -30,12 +25,20 @@ int main(int argc, char** argv) {
         if (data) XFree(data);
         return length;
       };
-      if (n) {
-        CHECK(property_count() == 0);
-        GdkWMDecoration decorations{}; CHECK(gdk_window_get_decorations(native, &decorations));
-        CHECK((decorations & GDK_DECOR_ALL) && (decorations & GDK_DECOR_MENU));
-        icon.set_visible(native, true);
-      }
+      if (!n) {
+        gtk_widget_show(window);
+        while (gtk_events_pending()) gtk_main_iteration();
+        CHECK(property_count() != 0);
+        icon.set_visible(native, false);
+      } else icon.refresh(native);
+      CHECK(icon.last_error.empty() && property_count() == 0);
+      GdkWMDecoration startup_decorations{}; CHECK(gdk_window_get_decorations(native, &startup_decorations));
+      CHECK((startup_decorations & GDK_DECOR_ALL) && (startup_decorations & GDK_DECOR_MENU));
+      if (!n) icon.set(native, images);
+      gtk_widget_show(window);
+      while (gtk_events_pending()) gtk_main_iteration();
+      CHECK(property_count() == 0);
+      icon.set_visible(native, true);
       Atom actual; int format; unsigned long count, remaining; unsigned char* bytes = nullptr;
       CHECK(XGetWindowProperty(display, gdk_x11_window_get_xid(native), XInternAtom(display, "_NET_WM_ICON", False),
         0, 2048, False, XA_CARDINAL, &actual, &format, &count, &remaining, &bytes) == Success);

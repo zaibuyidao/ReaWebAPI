@@ -2,8 +2,8 @@
 
 ## English
 
-- Fix Windows WebView icons disappearing when docked. Floating Docker title bars now follow the active WebView's icon and visibility setting, restoring the container's original presentation when switching away or closing the WebView.
+- Fix `setIconVisible(false)` leaving the default Windows startup icon visible until Dock/Undock. Apply the current icon visibility when showing the window.
 
 ## 简体中文
 
-- 修复 Windows WebView 停靠后窗口图标消失的问题。浮动 Docker 标题栏跟随当前 WebView 的图标和显示设置，切换到其他标签或关闭 WebView 后还原容器原有显示。
+- 修复 Windows 首次启动时调用 `setIconVisible(false)` 后默认图标仍显示、需要 Dock/Undock 才生效的问题。窗口显示时同步应用当前图标可见状态。

@@ -104,6 +104,7 @@ public:
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     }
     if (self) {
+      if (msg == WM_SHOWWINDOW && wp) self->icon_.refresh(hwnd, self->icon_host(true));
       if (msg == WM_SYSCOMMAND && (wp & 0xfff0) == dock_command) {
         if (self->options_.on_dock_toggle) self->options_.on_dock_toggle();
         return 0;
@@ -146,7 +147,7 @@ public:
   }
   WinWindow(WindowOptions options, HINSTANCE instance) : options_(std::move(options)), uri_(options_.url.empty() ? file_uri(options_.entry) : options_.url) {
     // REAPER's Docker must be able to find focus inside the embedded inspector.
-    hwnd_ = CreateWindowExW(WS_EX_CONTROLPARENT, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+    hwnd_ = CreateWindowExW(WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME, window_class, wide(options_.title).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
       CW_USEDEFAULT, CW_USEDEFAULT, 860, 640, static_cast<HWND>(options_.parent), nullptr, instance, this);
     if (!hwnd_) throw std::runtime_error("CreateWindowEx failed");
     if (options_.on_dock_toggle) {
@@ -320,8 +321,8 @@ public:
     const auto dpi = GetDpiForWindow(hwnd_);
     return {std::clamp(GetSystemMetricsForDpi(SM_CXSMICON, dpi), 8, 256), std::clamp(GetSystemMetricsForDpi(SM_CXICON, dpi), 8, 256)};
   }
-  HWND icon_host() const {
-    if (!(GetWindowLongPtrW(hwnd_, GWL_STYLE) & WS_CHILD) || !IsWindowVisible(hwnd_)) return nullptr;
+  HWND icon_host(bool showing = false) const {
+    if (!(GetWindowLongPtrW(hwnd_, GWL_STYLE) & WS_CHILD) || (!showing && !IsWindowVisible(hwnd_))) return nullptr;
     const auto root = GetAncestor(hwnd_, GA_ROOT);
     return root != options_.parent && (GetWindowLongPtrW(root, GWL_STYLE) & WS_CAPTION) == WS_CAPTION ? root : nullptr;
   }

@@ -148,6 +148,11 @@ int main() {
       CHECK(calls == 0);
       CHECK(result(runtime, *first, first->send("__reawebHello", {1}))["result"]["protocol"] == 1);
       CHECK(runtime.is_ready(id));
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {false}))["result"] == true);
+      CHECK(!first->icon_visible && first->icons.empty() && !runtime.is_docked(id));
+      CHECK(runtime.diagnostics(id)["window"]["iconVisible"] == false);
+      CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {true}))["result"] == true);
+      CHECK(first->icon_visible && first->icons.empty());
       const auto web = result(runtime, *first, first->send("ReaWeb_GetCapabilities"))["result"]["webRuntime"];
       CHECK(web["contract"] == 1 && web["mode"] == "app-http" && web["storageIsolation"] == "app-profile");
       CHECK(first->options.url == web["origin"].get<std::string>() + "/index.html");

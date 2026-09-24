@@ -4,6 +4,13 @@
 #include <chrono>
 #ifdef _WIN32
 #include "platform/windows/win_icon.hpp"
+namespace {
+int icon_updates = 0;
+LRESULT CALLBACK icon_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (message == WM_SETICON) ++icon_updates;
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+}
 #endif
 using namespace reaweb;
 #define CHECK(value) do { if (!(value)) throw std::runtime_error("Check failed: " #value); } while (false)
@@ -87,6 +94,31 @@ int main() {
     try { load_icon(root, path.u8string()); throw std::runtime_error("Oversize icon accepted"); }
     catch (const Error& error) { CHECK(error.code == "ICON_LIMIT"); }
 #ifdef _WIN32
+    WNDCLASSW cls{}; cls.lpfnWndProc = icon_proc; cls.hInstance = GetModuleHandleW(nullptr);
+    cls.lpszClassName = L"ReaWebAPI.StartupIconTest";
+    CHECK(RegisterClassW(&cls));
+    for (const bool before_show : {false, true}) {
+      WinIcon native;
+      if (before_show) native.set_visible(nullptr, false);
+      auto initial = CreateWindowExW(WS_EX_DLGMODALFRAME, cls.lpszClassName, L"Default icon", WS_OVERLAPPEDWINDOW,
+        0, 0, 240, 120, nullptr, nullptr, cls.hInstance, nullptr);
+      CHECK(initial);
+      native.refresh(initial);
+      if (!before_show) ShowWindow(initial, SW_SHOWNOACTIVATE);
+      const auto icons = icon_updates;
+      if (before_show) native.refresh(initial); else native.set_visible(initial, false);
+      CHECK(icon_updates == icons + (before_show ? 0 : 2));
+      CHECK(!SendMessageW(initial, WM_GETICON, ICON_SMALL, 0) && !SendMessageW(initial, WM_GETICON, ICON_BIG, 0));
+      CHECK(GetWindowLongPtrW(initial, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME);
+      if (before_show) ShowWindow(initial, SW_SHOWNOACTIVATE);
+      native.refresh(initial); native.set_visible(initial, false);
+      CHECK(icon_updates == icons + (before_show ? 0 : 2));
+      native.set_visible(initial, true);
+      CHECK(SendMessageW(initial, WM_GETICON, ICON_SMALL, 0) == reinterpret_cast<LRESULT>(LoadIconW(nullptr, MAKEINTRESOURCEW(32512))));
+      CHECK(GetWindowLongPtrW(initial, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME);
+      DestroyWindow(initial);
+    }
+    UnregisterClassW(cls.lpszClassName, cls.hInstance);
     auto window = CreateWindowExW(0, L"STATIC", L"Icon test", WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     CHECK(window);
     {
@@ -111,14 +143,15 @@ int main() {
       CHECK(window); native.refresh(window);
       CHECK(!SendMessageW(window, WM_GETICON, ICON_SMALL, 0) && (GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME));
       native.set_visible(window, true);
-      CHECK(SendMessageW(window, WM_GETICON, ICON_SMALL, 0) && !(GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME));
+      CHECK(SendMessageW(window, WM_GETICON, ICON_SMALL, 0) && (GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME));
       for (int i = 0; i < 20; ++i) native.set(window, images);
       auto latest = reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_BIG, 0)); CHECK(latest);
       CHECK(GetIconInfo(latest, &info));
       CHECK(GetObjectW(info.hbmColor, sizeof(description), &description)); CHECK(description.bmWidth == 64);
       DeleteObject(info.hbmColor); DeleteObject(info.hbmMask);
       native.clear(window);
-      CHECK(!SendMessageW(window, WM_GETICON, ICON_SMALL, 0) && !SendMessageW(window, WM_GETICON, ICON_BIG, 0));
+      const auto fallback = reinterpret_cast<LRESULT>(LoadIconW(nullptr, MAKEINTRESOURCEW(32512)));
+      CHECK(SendMessageW(window, WM_GETICON, ICON_SMALL, 0) == fallback && SendMessageW(window, WM_GETICON, ICON_BIG, 0) == fallback);
       native.set(window, images);
       DestroyWindow(window);
     }

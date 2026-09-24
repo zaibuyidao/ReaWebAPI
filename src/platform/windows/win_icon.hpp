@@ -73,8 +73,11 @@ public:
     const auto small_icon = visible_ ? small_ : nullptr, large_icon = visible_ ? large_ : nullptr;
     if (window) {
       const auto style = GetWindowLongPtrW(window, GWL_STYLE);
-      const bool hide_slot = !visible_ && !(style & WS_CHILD) && (style & WS_CAPTION);
-      apply(window, small_icon, large_icon, hide_slot ? WS_EX_DLGMODALFRAME : 0, WS_EX_DLGMODALFRAME);
+      const bool caption = !(style & WS_CHILD) && (style & WS_CAPTION);
+      // Keep the frame used at creation. Windows otherwise caches a fallback icon slot on first show.
+      const auto fallback = visible_ && caption && !small_ && !large_ ? LoadIconW(nullptr, MAKEINTRESOURCEW(32512)) : nullptr;
+      apply(window, small_icon ? small_icon : fallback, large_icon ? large_icon : fallback,
+        caption ? WS_EX_DLGMODALFRAME : 0, WS_EX_DLGMODALFRAME);
     }
     if (dock_) apply(dock_, small_icon, large_icon,
       visible_ ? 0 : (dock_frame_ | WS_EX_DLGMODALFRAME), dock_frame_mask);
