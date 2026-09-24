@@ -8,7 +8,7 @@ Run against a disposable REAPER project on each target architecture. CI core tes
 - Open three windows while transport plays. Move/resize, type into an HTML input, and use REAPER controls. Closing any window must not stop transport or close REAPER.
 - From Inspector, retain a track handle, delete that track, then call `GetTrackName` with the old handle. Expect `STALE_HANDLE`. Repeat after switching project tabs.
 - Reload the page with requests pending. Old responses must not settle new-page requests.
-- Verify HTML `<title>`, dynamic `document.title`, title removal/blank fallback and Unicode titles in floating and docked windows. Close a docked window and reopen it, then repeat after restarting REAPER. Check the visible Docker tab label as well as the native caption and `getState().title`. `setTitle()` must override later page changes and survive reload/instance reuse. Untitled pages retain the directory-based fallback without exposing `instanceKey`. The opt-in Windows check is `python tests/plugin_smoke.py --dll <extension> --webview --titles`.
+- Verify HTML `<title>`, dynamic `document.title`, title removal/blank fallback and Unicode titles in floating and docked windows. Close a docked window and reopen it, then repeat after restarting REAPER. Check the Docker tab label, the outer title bar of a single-tab floating Docker, the WebView caption and `getState().title`. Background title changes must preserve the selected tab, focus and Docker placement. `setTitle()` must override later page changes and survive reload/instance reuse. Untitled pages retain the directory-based fallback without exposing `instanceKey`. The mock-host Windows check is `python tests/plugin_smoke.py --dll <extension> --webview --titles`.
 - Open Inspector and verify `console.log`. Follow the [DevTools checks](#devtools-acceptance) for platform-specific behavior.
 - In the Demo, click **Log selected track** and check the printed name and Pan, including no selection. Change selection, rename a track, and adjust Pan from both REAPER and the Demo. Confirm readback logs, final drag values, Copy/Clear, and optional REAPER console output. Scroll through the log while new entries arrive and verify that it remains bounded to 200 entries.
 - Open another HTML tool with `reaper.window.open`. Verify that windows in one App directory share persistent storage and different directories have isolated localStorage, cookies and IndexedDB profiles.
@@ -24,6 +24,10 @@ Inspector behavior is documented in [DevTools](devtools.md). Linux binaries buil
 - Exercise item/take selection, transport and FX events; large MIDI payloads; batched/managed Undo cleanup on errors, close and project switch; file/clipboard/external-link helpers; production and Vite HMR. Confirm Undo/redo on a disposable real project.
 - On macOS verify the localhost entry against the actual REAPER bundle's ATS policy. On Linux verify the default renderer and consult the Web Runtime document if WSLg/DMA-BUF stalls frames.
 
+
+## Windows Docker titles
+
+Build `windows_dock_titles` with CMake and copy `reaper_dock_title_test.dll` alongside the extension in a disposable REAPER resource directory's `UserPlugins`. Create `dock-title-test.enabled` in that resource directory. Set `[REAPER]` options `dockermode0=32771` and `dockcompactsingle=1`, use the default English UI, and start REAPER with `-newinst -cfgfile <resource>/reaper.ini`. The test creates its own HTML fixture, checks the actual outer Docker caption, exercises inactive-tab title updates, closes the single-tab Docker and reopens the WebView. It writes `dock-title-test.log` and exits the disposable REAPER instance. Run again to check persisted docking across host restarts. This test requires WebView2 and is excluded from `ctest`.
 
 ## Lua window instances
 

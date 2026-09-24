@@ -282,7 +282,13 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       [dock_index](void* h) { bool floating = false; return dock_index(static_cast<HWND>(h), &floating); },
       [activate_dock](void* h) { activate_dock(static_cast<HWND>(h)); },
       [remember_dock](const std::string& ident, int index) { remember_dock(ident.c_str(), index); },
-      [refresh_dock](void* h) { if (refresh_dock) refresh_dock(static_cast<HWND>(h)); }};
+      [refresh_dock, dock_index, activate_dock](void* h) {
+        auto hwnd = static_cast<HWND>(h);
+        if (refresh_dock) refresh_dock(hwnd);
+        // Refresh only the selected, visible tab so REAPER also updates its floating Docker caption.
+        bool floating = false;
+        if (dock_index(hwnd, &floating) >= 0 && floating && IsWindowVisible(hwnd)) activate_dock(hwnd);
+      }};
     runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
     add_api("ReaWeb_Open", reinterpret_cast<void*>(ReaWeb_Open), reinterpret_cast<void*>(open_vararg),
       "int\0const char*,const char*,const char*,const bool*\0path,instanceKeyInOptional,idInOptional,multipleInOptional\0Open local HTML. Relative paths resolve under resource/Scripts. An instanceKey reuses and focuses its window, optionally scoped by id. Omit the key or set multiple=true to create a new window. Returns a window id, or 0 on failure.\0");

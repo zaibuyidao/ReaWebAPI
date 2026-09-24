@@ -2,8 +2,8 @@
 
 ## English
 
-- Fix Docker labels retaining the default name when reopening a docked WebView. Restored windows now follow HTML `<title>` and `document.title` updates.
+- Fix single-tab floating Docker captions retaining the default name after restoring a docked WebView. Title updates preserve the selected tab, focus and window placement.
 
 ## 简体中文
 
-- 修复 WebView 关闭后恢复停靠时 Docker 标签仍显示默认名称的问题，恢复后的标题正确跟随 HTML `<title>` 和 `document.title` 更新。
+- 修复 WebView 恢复停靠后，单标签浮动 Docker 标题栏仍显示默认名称的问题。标题更新保留当前标签、焦点和窗口位置。
