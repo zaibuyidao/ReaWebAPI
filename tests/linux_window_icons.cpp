@@ -5,6 +5,17 @@
 #include <iostream>
 using namespace reaweb;
 #define CHECK(value) do { if (!(value)) throw std::runtime_error("Check failed: " #value); } while (false)
+std::vector<unsigned long> property(GdkWindow* window, const char* name) {
+  auto display = gdk_x11_display_get_xdisplay(gdk_window_get_display(window));
+  Atom type; int format; unsigned long count, remaining; unsigned char* bytes = nullptr;
+  CHECK(XGetWindowProperty(display, gdk_x11_window_get_xid(window), XInternAtom(display, name, False),
+    0, 65536, False, AnyPropertyType, &type, &format, &count, &remaining, &bytes) == Success);
+  CHECK(!remaining && (!count || format == 32));
+  std::vector<unsigned long> values;
+  if (count) values.assign(reinterpret_cast<unsigned long*>(bytes), reinterpret_cast<unsigned long*>(bytes) + count);
+  if (bytes) XFree(bytes);
+  return values;
+}
 int main(int argc, char** argv) {
   try {
     gdk_set_allowed_backends("x11");
@@ -72,6 +83,29 @@ int main(int argc, char** argv) {
       }
       icon.refresh(nullptr); gtk_widget_destroy(window);
     }
-    std::cout << "Linux native window icon, alpha and reparent restoration passed\n";
+    auto host = gtk_window_new(GTK_WINDOW_TOPLEVEL); gtk_widget_realize(host);
+    auto native = gtk_widget_get_window(host);
+    const auto original = property(native, "_NET_WM_ICON"), decorations = property(native, "_MOTIF_WM_HINTS");
+    auto blue = images;
+    for (auto& bitmap : blue) for (size_t i = 0; i < bitmap.rgba.size(); i += 4) { bitmap.rgba[i] = 0; bitmap.rgba[i+2] = 255; }
+    {
+      LinuxIcon first, second;
+      first.refresh(native, true); CHECK(property(native, "_NET_WM_ICON") == original);
+      first.set(native, blue, true); CHECK((property(native, "_NET_WM_ICON")[2] & 0xffffff) == 0x0000ff);
+      first.set_visible(native, false, true); CHECK(property(native, "_NET_WM_ICON").empty());
+      first.set(native, images, true); CHECK(property(native, "_NET_WM_ICON").empty());
+      first.set_visible(native, true, true); CHECK((property(native, "_NET_WM_ICON")[2] & 0xffffff) == 0xff0000);
+      second.set(native, blue, true);
+      first.refresh(nullptr, true); CHECK((property(native, "_NET_WM_ICON")[2] & 0xffffff) == 0x0000ff);
+      second.clear(native, true);
+      CHECK(property(native, "_NET_WM_ICON") == original && property(native, "_MOTIF_WM_HINTS") == decorations);
+      first.refresh(native, true);
+    }
+    CHECK(property(native, "_NET_WM_ICON") == original && property(native, "_MOTIF_WM_HINTS") == decorations);
+    {
+      LinuxIcon owner; owner.set(native, blue, true);
+      gtk_widget_destroy(host); owner.refresh(nullptr, true);
+    }
+    std::cout << "Linux native window icon, alpha, reparent and shared Docker restoration passed\n";
   } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

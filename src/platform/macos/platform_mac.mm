@@ -1,6 +1,7 @@
 #include "platform/platform.hpp"
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import <objc/runtime.h>
 #include "platform/shared/swell_window.hpp"
 #include "platform/macos/mac_devtools.hpp"
 #include <fstream>
@@ -138,6 +139,7 @@
 namespace reaweb {
 namespace {
 NSString* ns(const std::string& text) { return [[NSString alloc] initWithBytes:text.data() length:text.size() encoding:NSUTF8StringEncoding]; }
+char dock_icon_owner;
 class MacWindow final : public Window {
   std::unique_ptr<SwellWindow> window_;
   ReaWebNativeView* webview_;
@@ -150,8 +152,37 @@ class MacWindow final : public Window {
   __weak NSWindow* icon_window_ = nil;
   bool icon_visible_ = true;
   bool icon_initialized_ = false;
+  __weak NSWindow* dock_window_ = nil;
+  NSURL* dock_url_ = nil;
+  NSString* dock_filename_ = nil;
+  NSImage* dock_image_ = nil;
+  void release_dock_icon() {
+    auto previous = dock_window_; dock_window_ = nil;
+    auto owner = (NSValue*)objc_getAssociatedObject(previous, &dock_icon_owner);
+    if (previous && owner.pointerValue == this) {
+      objc_setAssociatedObject(previous, &dock_icon_owner, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+      previous.representedURL = dock_url_;
+      if (!dock_url_) previous.representedFilename = dock_filename_ ?: @"";
+      [previous standardWindowButton:NSWindowDocumentIconButton].image = dock_image_;
+    }
+    dock_url_ = nil; dock_filename_ = nil; dock_image_ = nil; icon_window_ = nil;
+  }
   void apply_icon() {
     auto native = (__bridge NSWindow*)icon_target();
+    const bool docked = delegate_->options.is_docked && delegate_->options.is_docked();
+    auto shared = docked && (icon_ || !icon_visible_) ? native : nil;
+    if (dock_window_ != shared || (dock_window_ && [(NSValue*)objc_getAssociatedObject(dock_window_, &dock_icon_owner) pointerValue] != this))
+      release_dock_icon();
+    if (shared && !dock_window_) {
+      auto owner = (NSValue*)objc_getAssociatedObject(shared, &dock_icon_owner);
+      if (auto previous = static_cast<MacWindow*>(owner.pointerValue)) previous->release_dock_icon();
+      dock_url_ = shared.representedURL; dock_filename_ = shared.representedFilename;
+      dock_image_ = [shared standardWindowButton:NSWindowDocumentIconButton].image;
+      dock_window_ = shared;
+      objc_setAssociatedObject(shared, &dock_icon_owner, [NSValue valueWithPointer:this], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+      icon_window_ = nil;
+    }
+    if (docked && !shared) return;
     if (!native) { icon_window_ = nil; return; }
     if (!icon_visible_ || (icon_initialized_ && !icon_)) {
       if (native.representedURL) native.representedURL = nil;
@@ -208,6 +239,7 @@ public:
     } else [webview_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:ns(delegate_->options.url)]]];
   }
   ~MacWindow() override {
+    release_dock_icon();
     if (mouse_monitor_) [NSEvent removeMonitor:mouse_monitor_];
     webview_->devtoolsMenu = {};
     devtools_.reset();
@@ -261,8 +293,15 @@ public:
   bool closed() const override { return delegate_->isClosed || window_->closed(); }
   void* native_handle() const override { return window_->handle(); }
   void* icon_target() const override {
-    return delegate_->options.is_docked && delegate_->options.is_docked() ? nullptr : (__bridge void*)webview_.window;
+    auto native = webview_.window;
+    if (delegate_->options.is_docked && delegate_->options.is_docked()) {
+      auto main = (__bridge id)delegate_->options.parent;
+      NSWindow* main_window = [main isKindOfClass:NSWindow.class] ? main : [main window];
+      if (native == main_window || !window_->visible() || webview_.hiddenOrHasHiddenAncestor) return nullptr;
+    }
+    return (__bridge void*)native;
   }
+  void prepare_undock() override { release_dock_icon(); }
   void prepare_dock() override {
     icon_window_ = nil;
     maximized_ = webview_.window.zoomed;

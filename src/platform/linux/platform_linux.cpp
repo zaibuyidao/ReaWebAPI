@@ -172,7 +172,7 @@ public:
   }
   void sync() {
     if (closed()) return;
-    icon_.refresh(icon_target());
+    icon_.refresh(icon_target(), docked());
     using GetXid = unsigned long (*)(void*);
     static auto get_xid = reinterpret_cast<GetXid>(dlsym(RTLD_DEFAULT, "gdk_x11_window_get_xid"));
     if (!get_xid) get_xid = reinterpret_cast<GetXid>(dlsym(RTLD_DEFAULT, "gdk_x11_drawable_get_xid"));
@@ -241,14 +241,25 @@ public:
     return {16 * scale, 32 * scale};
   }
   void set_icon(const std::vector<IconBitmap>& images) override {
-    icon_.set(icon_target(), images);
+    icon_.set(icon_target(), images, docked());
+  }
+  bool docked() const {
+    const auto& options = process_->listeners.at(id_);
+    return options.is_docked && options.is_docked();
   }
   void* icon_target() const override {
-    const auto& options = process_->listeners.at(id_);
-    return options.is_docked && options.is_docked() ? nullptr : SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow");
+    auto handle = static_cast<HWND>(window_->handle());
+    if (!docked()) return SWELL_GetOSWindow(handle, "GdkWindow");
+    if (!window_->visible()) return nullptr;
+    const auto main = process_->listeners.at(id_).parent;
+    while (handle && handle != main) {
+      if (auto native = SWELL_GetOSWindow(handle, "GdkWindow")) return native;
+      handle = GetParent(handle);
+    }
+    return nullptr;
   }
-  void clear_icon() override { icon_.clear(icon_target()); }
-  void set_icon_visible(bool visible) override { icon_.set_visible(icon_target(), visible); }
+  void clear_icon() override { icon_.clear(icon_target(), docked()); }
+  void set_icon_visible(bool visible) override { icon_.set_visible(icon_target(), visible, docked()); }
   void set_visible(bool visible) override { window_->set_visible(visible); }
   Json bounds() const override { return window_->placement(); }
   void reload() override { process_->send({{"id", id_}, {"op", "reload"}}); }

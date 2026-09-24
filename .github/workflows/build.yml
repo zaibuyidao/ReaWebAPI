@@ -62,6 +62,9 @@ jobs:
       - name: Compile macOS DevTools integration test
         if: matrix.platform == 'macos'
         run: cmake --build build --config Release --target macos_devtools
+      - name: Compile Docker integration test
+        if: matrix.platform != 'windows'
+        run: cmake --build build --config Release --target swell_dock_windows
       - name: Run regression tests
         run: ctest --test-dir build -C Release --output-on-failure
         env:
