@@ -84,7 +84,7 @@ const { iconVisible } = await reaper.window.getState();
 
 `setIconVisible(boolean)` defaults to `true` and resolves to `true` on success. Hiding removes the title-bar icon and its reserved space without clearing the current icon. Icon updates continue while hidden. Showing restores the current icon. The setting survives docking, native window recreation and reloads within the same window session.
 
-Windows applies small and large window icons. macOS uses the floating window’s document proxy icon and does not change REAPER’s application/Dock icon. Linux sets the floating window’s icon and requests title-bar icon removal through window-decoration hints. The theme/window manager determines whether those hints remove the icon and its space. Docked tabs use REAPER’s presentation. These APIs do not modify HTML favicon declarations.
+Windows applies small and large window icons. A floating Docker title bar follows the active WebView's icon and visibility setting. Switching away, undocking or closing restores the container's original icons and caption style. Dockers embedded in REAPER retain the WebView's configuration without changing REAPER's main window icon. macOS uses the floating window’s document proxy icon and does not change REAPER’s application/Dock icon. Linux sets the floating window’s icon and requests title-bar icon removal through window-decoration hints. The theme/window manager determines whether those hints remove the icon and its space. Docked tab labels use REAPER’s presentation. These APIs do not modify HTML favicon declarations.
 
 ## Events
 

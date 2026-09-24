@@ -122,6 +122,49 @@ int main() {
       native.set(window, images);
       DestroyWindow(window);
     }
+    auto dock = CreateWindowExW(WS_EX_TOOLWINDOW, L"STATIC", L"Shared Docker", WS_OVERLAPPEDWINDOW,
+      0, 0, 200, 200, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    window = CreateWindowW(L"STATIC", L"Docked WebView", WS_CHILD, 0, 0, 100, 100, dock, nullptr, nullptr, nullptr);
+    CHECK(dock && window);
+    const auto original = LoadIconW(nullptr, MAKEINTRESOURCEW(32516));
+    SendMessageW(dock, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(original));
+    const auto original_frame = GetWindowLongPtrW(dock, GWL_EXSTYLE);
+    {
+      WinIcon first, second;
+      first.refresh(window, dock);
+      CHECK(reinterpret_cast<HICON>(SendMessageW(dock, WM_GETICON, ICON_SMALL, 0)) == original);
+      first.set(window, images, dock);
+      CHECK(SendMessageW(window, WM_GETICON, ICON_SMALL, 0) == SendMessageW(dock, WM_GETICON, ICON_SMALL, 0));
+      CHECK(!(GetWindowLongPtrW(dock, GWL_EXSTYLE) & WS_EX_TOOLWINDOW));
+      for (int i = 0; i < 20; ++i) {
+        first.set(window, images, dock);
+        CHECK(SendMessageW(window, WM_GETICON, ICON_BIG, 0) == SendMessageW(dock, WM_GETICON, ICON_BIG, 0));
+      }
+      first.set_visible(window, false, dock);
+      CHECK(!SendMessageW(dock, WM_GETICON, ICON_SMALL, 0));
+      CHECK(GetWindowLongPtrW(dock, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME);
+      first.set(window, multi, dock);
+      CHECK(!SendMessageW(dock, WM_GETICON, ICON_BIG, 0));
+      first.set_visible(window, true, dock);
+      CHECK(SendMessageW(window, WM_GETICON, ICON_SMALL, 0) == SendMessageW(dock, WM_GETICON, ICON_SMALL, 0));
+      second.set(nullptr, images, dock);
+      const auto second_icon = SendMessageW(dock, WM_GETICON, ICON_SMALL, 0);
+      first.refresh(window); // An inactive tab must not restore over its successor.
+      CHECK(SendMessageW(dock, WM_GETICON, ICON_SMALL, 0) == second_icon);
+      second.clear(nullptr, dock);
+      CHECK(reinterpret_cast<HICON>(SendMessageW(dock, WM_GETICON, ICON_SMALL, 0)) == original);
+      CHECK(GetWindowLongPtrW(dock, GWL_EXSTYLE) == original_frame);
+      first.refresh(window, dock);
+      DestroyWindow(dock);
+      dock = CreateWindowExW(WS_EX_TOOLWINDOW, L"STATIC", L"Recreated Docker", WS_OVERLAPPEDWINDOW,
+        0, 0, 200, 200, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+      CHECK(dock);
+      first.refresh(nullptr, dock);
+      CHECK(SendMessageW(dock, WM_GETICON, ICON_SMALL, 0));
+    }
+    CHECK(!SendMessageW(dock, WM_GETICON, ICON_SMALL, 0) && !SendMessageW(dock, WM_GETICON, ICON_BIG, 0));
+    CHECK(GetWindowLongPtrW(dock, GWL_EXSTYLE) & WS_EX_TOOLWINDOW);
+    DestroyWindow(dock);
 #endif
     std::cout << "Window icon formats, transparency, paths and memory rendering passed\n";
   } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

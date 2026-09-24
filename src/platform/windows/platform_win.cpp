@@ -303,7 +303,7 @@ public:
     return hwnd_ && (focus == hwnd_ || IsChild(hwnd_, focus));
   }
   void tick() override {
-    if (!closed_) icon_.refresh(hwnd_);
+    if (!closed_) icon_.refresh(hwnd_, icon_host());
     if (!closed_ && devtools_) devtools_->tick(webview_.Get());
     const bool next = visible();
     if (controller_ && next != visible_) { controller_->put_IsVisible(next); visible_ = next; }
@@ -320,9 +320,14 @@ public:
     const auto dpi = GetDpiForWindow(hwnd_);
     return {std::clamp(GetSystemMetricsForDpi(SM_CXSMICON, dpi), 8, 256), std::clamp(GetSystemMetricsForDpi(SM_CXICON, dpi), 8, 256)};
   }
-  void set_icon(const std::vector<IconBitmap>& images) override { icon_.set(hwnd_, images); }
-  void clear_icon() override { icon_.clear(hwnd_); }
-  void set_icon_visible(bool visible) override { icon_.set_visible(hwnd_, visible); }
+  HWND icon_host() const {
+    if (!(GetWindowLongPtrW(hwnd_, GWL_STYLE) & WS_CHILD) || !IsWindowVisible(hwnd_)) return nullptr;
+    const auto root = GetAncestor(hwnd_, GA_ROOT);
+    return root != options_.parent && (GetWindowLongPtrW(root, GWL_STYLE) & WS_CAPTION) == WS_CAPTION ? root : nullptr;
+  }
+  void set_icon(const std::vector<IconBitmap>& images) override { icon_.set(hwnd_, images, icon_host()); }
+  void clear_icon() override { icon_.clear(hwnd_, icon_host()); }
+  void set_icon_visible(bool visible) override { icon_.set_visible(hwnd_, visible, icon_host()); }
   void set_visible(bool visible) override { ShowWindow(hwnd_, visible ? SW_SHOWNOACTIVATE : SW_HIDE); }
   void reload() override { if (webview_) webview_->Reload(); }
   Json bounds() const override {
