@@ -276,7 +276,8 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     auto remember_dock = load<void (*)(const char*, int)>(rec, "Dock_UpdateDockID");
     auto refresh_dock = reinterpret_cast<void (*)(HWND)>(rec->GetFunc("DockWindowRefreshForHWND"));
     DockApi dock{rec->hwnd_main,
-      [add_dock](void* h, const std::string& title, const std::string& ident) { add_dock(static_cast<HWND>(h), title.c_str(), ident.c_str(), true); },
+      // A nonempty Docker label is fixed. Let REAPER read the current HWND title on refresh.
+      [add_dock](void* h, const std::string&, const std::string& ident) { add_dock(static_cast<HWND>(h), nullptr, ident.c_str(), true); },
       [remove_dock](void* h) { remove_dock(static_cast<HWND>(h)); },
       [dock_index](void* h) { bool floating = false; return dock_index(static_cast<HWND>(h), &floating); },
       [activate_dock](void* h) { activate_dock(static_cast<HWND>(h)); },

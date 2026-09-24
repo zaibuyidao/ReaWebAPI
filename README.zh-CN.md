@@ -44,7 +44,7 @@ Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开应用。传入 `debug.
 
 基础模板位于 `SDK/starter/`，Vite 与 TypeScript 模板位于 `SDK/modern/`。运行 `SDK/runtime-demo/Open.lua` 可打开 Runtime Studio。
 
-使用 HTML `<title>` 或 `document.title` 设置窗口名称，`reaper.window.setTitle(title)` 可显式覆盖。`instanceKey` 仅控制实例复用。详见[窗口标题](docs/runtime-api.zh-CN.md#窗口标题)。
+使用 HTML `<title>` 或 `document.title` 设置窗口名称，关闭后恢复停靠的 Docker 标签同样适用。`reaper.window.setTitle(title)` 可显式覆盖。`instanceKey` 仅控制实例复用。详见[窗口标题](docs/runtime-api.zh-CN.md#窗口标题)。
 
 [SDK](runtime/README.zh-CN.md) · [开发指南](docs/development.zh-CN.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.zh-CN.md) · [Lua 宿主 API](docs/host-api.zh-CN.md) · [Web 运行环境](docs/frontend.zh-CN.md) · [DevTools](docs/devtools.zh-CN.md)
 

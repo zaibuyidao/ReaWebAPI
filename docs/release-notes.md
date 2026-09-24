@@ -2,10 +2,8 @@
 
 ## English
 
-- Expand batch RPC and managed Undo support from 173 to 456 APIs, including transport queries, time mapping, object inspection and conversion helpers.
-- Add batch pointer validation with `ValidatePtr` and `ValidatePtr2`, preserving false results for expired handles.
+- Fix Docker labels retaining the default name when reopening a docked WebView. Restored windows now follow HTML `<title>` and `document.title` updates.
 
 ## 简体中文
 
-- 批量 RPC 与托管 Undo 支持从 173 项扩展至 456 项 API，涵盖播放查询、时间映射、对象信息和格式转换。
-- 批处理新增 `ValidatePtr` 与 `ValidatePtr2`，失效句柄校验保留 false 返回值。
+- 修复 WebView 关闭后恢复停靠时 Docker 标签仍显示默认名称的问题，恢复后的标题正确跟随 HTML `<title>` 和 `document.title` 更新。

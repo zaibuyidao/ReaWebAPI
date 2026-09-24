@@ -45,6 +45,7 @@ registrations, functions, callbacks, messages = {}, {}, [], []
 name_calls = 0
 main_thread = threading.get_ident()
 docked, dock_events, dock_failures = set(), [], []
+dock_titles = {}
 owner_window, docker_window = None, None
 if args.webview:
     user32 = C.windll.user32
@@ -327,6 +328,8 @@ def update():
 def dock_add(window, title, identifier, show):
     dock_events.append('dock')
     docked.add(window)
+    # REAPER fixes nonempty labels at registration. Empty labels use the HWND caption.
+    dock_titles[window] = title.decode('utf-8') if title else None
     if args.webview:
         if user32.GetWindowLongPtrW(window, -8) != owner_window:
             dock_failures.append('Floating owner missing before docking')
@@ -340,6 +343,7 @@ def dock_add(window, title, identifier, show):
 def dock_remove(window):
     dock_events.append('undock')
     docked.discard(window)
+    dock_titles.pop(window, None)
     if args.webview:
         user32.SetParent(window, None)
         user32.SendMessageW(window, 0x80, 0, 0)

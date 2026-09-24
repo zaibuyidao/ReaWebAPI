@@ -49,7 +49,7 @@ await reaper.window.setTitle('SendFlow'); // Explicit native-window override.
 
 Priority is an explicit `setTitle()` override, then a nonempty page title, then the existing `ReaWebAPI — <entry directory>` fallback. `instanceKey` and named-window `id` identify instances only and never supply the title. Missing, removed or blank page titles restore the fallback. Automatic titles remove NUL and surrounding whitespace and truncate to 256 UTF-8 bytes without splitting a character.
 
-`setTitle()` retains its existing contract: 1–256 UTF-8 bytes without NUL, returning `Promise<boolean>`. It overrides automatic synchronization for the lifetime of the window, including reloads and instance reuse, without changing `document.title`. Invalid calls leave the title and automatic synchronization unchanged. Closing and reopening creates fresh title state. Automatic updates are asynchronous and apply to both floating windows and Docker labels.
+`setTitle()` retains its existing contract: 1–256 UTF-8 bytes without NUL, returning `Promise<boolean>`. It overrides automatic synchronization for the lifetime of the window, including reloads and instance reuse, without changing `document.title`. Invalid calls leave the title and automatic synchronization unchanged. Closing and reopening creates fresh title state. Automatic updates are asynchronous and apply to both floating windows and Docker labels, including when saved docking is restored before the page loads.
 
 ### Window icons
 

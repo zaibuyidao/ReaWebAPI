@@ -44,7 +44,7 @@ Lua opens an App with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getin
 
 Start with `SDK/starter/Open.lua` or use `SDK/modern/` for Vite and TypeScript. `SDK/runtime-demo/Open.lua` opens Runtime Studio.
 
-Set the window name with HTML `<title>` or `document.title`. `reaper.window.setTitle(title)` explicitly overrides it. `instanceKey` controls reuse only. See [window titles](docs/runtime-api.md#window-titles).
+Set the window name with HTML `<title>` or `document.title`, including Docker labels after restoring a closed docked window. `reaper.window.setTitle(title)` explicitly overrides it. `instanceKey` controls reuse only. See [window titles](docs/runtime-api.md#window-titles).
 
 [SDK](runtime/README.md) · [Developer guide](docs/development.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md) · [DevTools](docs/devtools.md)
 

@@ -24,6 +24,7 @@ SCRIPT = r'''
     await acknowledged;
   };
   if (phase === 'explicit') {
+    await reaper.window.setDocked(true);
     await check('Explicit 标题');
     if (document.title !== pageTitle) throw new Error('Native override changed document.title');
     sessionStorage.removeItem('titlePhase');
@@ -66,6 +67,7 @@ def run_windows(host):
     user32.GetClassNameW.argtypes = [W.HWND, W.LPWSTR, C.c_int]
     callback_type = C.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM)
     user32.EnumThreadWindows.argtypes = [W.DWORD, callback_type, W.LPARAM]
+    user32.EnumChildWindows.argtypes = [W.HWND, callback_type, W.LPARAM]
 
     def pump():
         message = W.MSG()
@@ -77,7 +79,7 @@ def run_windows(host):
         host['timer']()
         time.sleep(.01)
 
-    for declared in ('SendFlow', ''):
+    for run, declared in enumerate(('SendFlow', 'SendFlow', '', '')):
         page = folder / 'index.html'
         page.write_text('<!doctype html><meta charset="utf-8">' +
                         (f'<title>{declared}</title>' if declared else '') +
@@ -94,8 +96,15 @@ def run_windows(host):
                 handles.append(handle)
             return True
 
-        user32.EnumThreadWindows(C.windll.kernel32.GetCurrentThreadId(), find_window, 0)
+        @callback_type
+        def find_children(handle, data):
+            find_window(handle, data)
+            user32.EnumChildWindows(handle, find_window, data)
+            return True
+
+        user32.EnumThreadWindows(C.windll.kernel32.GetCurrentThreadId(), find_children, 0)
         assert len(handles) == 1, handles
+        assert (handles[0] in host['docked']) == (run > 0)
         checked = []
         deadline = time.monotonic() + 40
         while host['is_open'](identifier):
@@ -111,6 +120,9 @@ def run_windows(host):
             caption = C.create_unicode_buffer(512)
             user32.GetWindowTextW(handles[0], caption, 512)
             assert caption.value == report['expected'], (caption.value, report)
+            if handles[0] in host['docked']:
+                label = host['dock_titles'][handles[0]] or caption.value
+                assert label == report['expected'], ('Docker label', label, report)
             assert host['open_window'](b'missing.html', b'@private/title-launcher.lua') == identifier
             checked.append(caption.value)
             assert host['host_send'](identifier, b'next')
@@ -121,4 +133,4 @@ def run_windows(host):
                            'Docked 标题', 'Docked 标题', initial, 'Explicit 标题', 'Explicit 标题'], checked
     assert not host['docked'] and not host['dock_failures'], host['dock_failures']
     print('WebView2 titles: HTML, dynamic/Unicode titles, DOM replacement/removal, empty fallback, '
-          'UTF-8 boundary, docking, explicit priority, reload and instance reuse passed (24 native captions)')
+          'UTF-8 boundary, restored docking, Docker labels, explicit priority, reload and instance reuse passed (48 native captions)')
