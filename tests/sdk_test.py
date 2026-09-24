@@ -54,7 +54,7 @@ class SdkTests(unittest.TestCase):
         self.assertEqual(native, declared)
         schema = json.loads((ROOT / 'api/reaper_api.json').read_text(encoding='utf-8'))
         self.assertTrue(native <= set(schema['functions']))
-        self.assertEqual(len(native), 173)
+        self.assertEqual(len(native), 456)
 
     def test_standalone_sdk_content_links_and_checksums(self):
         with tempfile.TemporaryDirectory() as directory:

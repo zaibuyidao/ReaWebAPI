@@ -274,6 +274,34 @@ for (const engine of ['windows', 'webkit']) {
   });
 }
 
+for (const engine of ['windows', 'webkit']) {
+  test(`${engine}: transport queries and tuple conversions share one batch`, async () => {
+    const t = await connected(engine);
+    const pending = t.window.reaper.transaction.batch(b => {
+      const position = b.GetPlayPosition();
+      const state = b.GetPlayState();
+      const [beats, measures] = b.TimeMap2_timeToBeats(0, position);
+      const display = b.format_timestr_pos(position, '', 0);
+      const valid = b.ValidatePtr2(0, null, 'MediaTrack*');
+      return { position, state, beats, measures, display, valid };
+    });
+    await flush();
+    assert.equal(t.messages.length, 2);
+    assert.equal(t.messages[1].method, 'ReaWeb_Batch');
+    assert.deepEqual(t.messages[1].args, [[
+      { method: 'GetPlayPosition', args: [] },
+      { method: 'GetPlayState', args: [] },
+      { method: 'TimeMap2_timeToBeats', args: [0, { $ref: 0 }] },
+      { method: 'format_timestr_pos', args: [{ $ref: 0 }, '', 0] },
+      { method: 'ValidatePtr2', args: [0, null, 'MediaTrack*'] }
+    ]]);
+    t.reply(1, { result: [0, 0, [0, 0, 4, 0, 4], '0:00.000', false] });
+    assert.deepEqual(JSON.parse(JSON.stringify(await pending)), {
+      position: 0, state: 0, beats: 0, measures: 0, display: '0:00.000', valid: false
+    });
+  });
+}
+
 test('builder gates collection on the handshake and returns raw, scalar, tuple and null results', async () => {
   const t = setup();
   let ran = false;

@@ -422,6 +422,7 @@ try:
     send_vararg = C.CFUNCTYPE(C.c_void_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Send'])
     receive_vararg = C.CFUNCTYPE(C.c_char_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Receive'])
     assert not send_vararg(send_args, 2) and receive_vararg(send_args, 1) == b''
+    saved_error = get_error()
     if args.webview and args.titles:
         from window_title_smoke import run_windows
         run_windows(globals())
@@ -444,8 +445,8 @@ try:
         expected_name = json.dumps('Guitar 吉他 "A"')
         (folder / 'app.js').write_text('''(async () => {
   const capabilities = await reaper.lifecycle.ready;
-  const namespaces = ["window","theme","dialog","events","lifecycle","debug","fs","audio","clipboard","dragDrop","app","system","transaction"];
-  if (Object.keys(reaper).length !== 743 || Object.keys(reaper).some(name => name.startsWith('ReaWeb')) || 'ready' in reaper)
+  const namespaces = ["window","theme","dialog","events","lifecycle","debug","fs","audio","clipboard","dragDrop","app","system","transaction","host"];
+  if (Object.keys(reaper).length !== 744 || Object.keys(reaper).some(name => name.startsWith('ReaWeb')) || 'ready' in reaper)
     throw new Error('Runtime root exposes a flat API or has an incomplete Mirror');
   if (JSON.stringify(capabilities.runtime.namespaces) !== JSON.stringify(namespaces) || namespaces.some(name => !Object.isFrozen(reaper[name])))
     throw new Error('Incomplete Runtime namespaces');
@@ -504,6 +505,13 @@ try:
   if (marker.length !== 7 || marker[1] !== true || marker[4] !== '段落 A' || marker[5] !== 11) throw new Error('Marker outputs ABI');
   if (JSON.stringify(await reaper.EnumProjectMarkers3(0, 2)) !== '[0,false,0,0,null,0,0]') throw new Error('End of enumeration');
   if (JSON.stringify(await reaper.TimeMap2_timeToBeats(0, 1.25)) !== '[2.5,0,4,2.5,4]') throw new Error('Beat outputs ABI');
+  const transport = await reaper.transaction.batch(b => {
+    const position = b.GetPlayPosition();
+    const state = b.GetPlayState();
+    const [beats] = b.TimeMap2_timeToBeats(0, position);
+    return { position, state, beats, valid: b.ValidatePtr2(0, track, 'MediaTrack*') };
+  });
+  if (JSON.stringify(transport) !== '{"position":2.5,"state":1,"beats":5,"valid":true}') throw new Error('Transport batch');
   if (await reaper.SetEditCurPos(5, true, false) !== undefined || await reaper.GetCursorPosition() !== 5) throw new Error('Void result/cursor write');
   const nativeColor = await reaper.ColorToNative(37, 149, 211);
   if (JSON.stringify(await reaper.ColorFromNative(nativeColor)) !== '[37,149,211]') throw new Error('Color outputs ABI');
@@ -762,6 +770,9 @@ try:
   const el = id => document.getElementById(id);
   await until(() => el('status').textContent === 'Ready' && el('resources').textContent.includes('Worker sum: 10'));
   if (!el('project').textContent.includes('tracks')) throw new Error('Project data missing');
+  el('transport-snapshot').click(); await until(() => !el('transport-snapshot').disabled);
+  const snapshot = JSON.parse(el('output').textContent);
+  if (snapshot.position !== 2.5 || snapshot.state !== 1 || snapshot.tempo !== 120) throw new Error('Transport snapshot');
   el('gain').click(); await until(() => !el('gain').disabled);
   const bytes = Uint8Array.from({length:100000}, (_,i)=>i%256);
   await reaper.fs.writeFile('roundtrip.bin', bytes, {encoding:'binary'});
@@ -943,7 +954,7 @@ try:
             time.sleep(0.01)
         assert captured_seen, 'Native keyboard capture hook was not active'
         diagnostics = C.CFUNCTYPE(C.c_char_p, C.c_int)(registrations[b'API_ReaWeb_GetDiagnostics'])
-        assert (name_calls == 0 if args.empty or args.modern else name_calls > 0 if args.demo or args.starter or args.studio else name_calls == 4) and not any(is_open(window) for window in ids), (name_calls, messages, [diagnostics(id) for id in ids])
+        assert (name_calls == 0 if args.empty else name_calls == 1 if args.modern else name_calls > 0 if args.demo or args.starter or args.studio else name_calls == 4) and not any(is_open(window) for window in ids), (name_calls, messages, [diagnostics(id) for id in ids])
         if args.demo:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'DEMO PASS'
             assert set(favicon_icons) == set(range(1, 12)), favicon_icons

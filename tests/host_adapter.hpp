@@ -33,6 +33,7 @@ inline void* resolve(const char* name) {
   FN("CountSelectedTracks", [](void* p) { return host->count_selected_tracks(proj(p)); });
   FN("GetTrack", [](void* p, int i) { return host->get_track(proj(p), i); });
   FN("GetSelectedTrack", [](void* p, int i) { return host->get_selected_track(proj(p), i); });
+  FN("ValidatePtr", [](void* t, const char* type) { return !std::strcmp(type,"ReaProject*") ? t == host->current_project() : host->valid_track(host->current_project(),t); });
   FN("ValidatePtr2", [](void* p, void* t, const char* type) { return !std::strcmp(type,"ReaProject*") ? t == host->current_project() : host->valid_track(proj(p),t); });
   FN("GetTrackGUID", [](void* t) -> void* { static reaweb::Guid g; g=host->track_guid(t); return g.data(); });
   FN("GetTrackName", [](void* t, char* b, int sz) { auto s=host->track_name(t); if (s.size()+1>static_cast<size_t>(sz)) return false; std::memcpy(b,s.c_str(),s.size()+1); return true; });

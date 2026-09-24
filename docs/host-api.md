@@ -63,7 +63,22 @@ FX events observe focus, last-touched parameters and project changeCount to inva
 
 ## Batches and continuous controls
 
-`reaper.transaction.batch(callsOrBuilder, { undoLabel? })` accepts 1–128 calls, supplied as a call array or collected by a synchronous Builder callback. `capabilities.batchMethods` and `ReaWebBatchMethod` list 173 reviewed APIs for tracks, items, takes, MIDI, FX, envelopes, sends, markers and tempo. Project switching, action dispatch, modal dialogs, file I/O, lifecycle services, manual Undo/refresh scopes and audio sample buffers are excluded. All 730 standard APIs remain callable individually.
+`reaper.transaction.batch(callsOrBuilder, { undoLabel? })` accepts 1–128 calls, supplied as a call array or collected by a synchronous Builder callback. `capabilities.batchMethods` and `ReaWebBatchMethod` list 456 reviewed APIs for transport, project and object queries, MIDI, FX, envelopes, routing, markers, time mapping and conversion helpers. Project switching, action dispatch, modal dialogs, file I/O, resource lifecycle operations, manual Undo/refresh scopes and audio sample buffers are excluded. All 730 standard APIs remain callable individually.
+
+Read transport values in one RPC without requiring a selected track:
+
+```javascript
+const data = await reaper.transaction.batch(b => {
+  const position = b.GetPlayPosition();
+  const state = b.GetPlayState();
+  const tempo = b.Master_GetTempo();
+  return { position, state, tempo };
+});
+```
+
+Calls execute consecutively on the main thread. This reduces RPC round trips without freezing the audio clock or setting a polling rate. New methods still require availability in the installed REAPER version. Admission is reviewed per method, including all argument modes. Getters that can rescan files or instantiate resources are not admitted merely by name.
+
+References can also connect dependent calls. This example requires a track at index zero:
 
 ```javascript
 const data = await reaper.transaction.batch(b => {
@@ -79,6 +94,8 @@ const data = await reaper.transaction.batch(b => {
 The callback runs after the handshake and must be synchronous. References belong to that callback and can be passed as complete API arguments or returned, but cannot be awaited, used for arithmetic or inspected as real handles. They are always truthy objects, so do not branch on them or compare them to `null`. Read outside the batch when control flow depends on a native result. For example, check selection with `await reaper.GetSelectedTrack(0, 0)` before collecting calls that require a selected track. Unknown methods, async callbacks, cross-builder references and invalid structures reject with `INVALID_ARGUMENT` before dispatch. Callback exceptions propagate unchanged.
 
 The Builder lowers calls to the existing `ReaWeb_Batch` request, with no additional RPC or Native layer. Native validation and `BATCH_FAILED` details remain unchanged.
+
+`ValidatePtr` and `ValidatePtr2` can test null or expired object handles and return `false`. They do not conditionally skip later calls. Foreign-project handles are still rejected, and other object APIs still require live handles.
 
 Batches operate on the **current project only**. Foreign project handles and objects are rejected before any write, including a foreign handle later in the batch. Methods, availability and arguments of calls without references are prevalidated. Arguments depending on earlier results are validated just before their call. Reference indices start at zero; optional paths select array elements or object properties, with at most eight segments. References must be complete top-level arguments and cannot point forward.
 

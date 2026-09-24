@@ -31,6 +31,12 @@ async function main() {
     }, { undoLabel: 'Set track to −6 dB' });
   });
   action('save', () => r.fs.writeFile('snapshot.json', JSON.stringify({ projectName, saved: new Date().toISOString() }, null, 2), { overwrite: true }));
+  action('transport-snapshot', () => r.transaction.batch(b => {
+    const position = b.GetPlayPosition();
+    const state = b.GetPlayState();
+    const tempo = b.Master_GetTempo();
+    return { position, state, tempo };
+  }));
   action('read', async () => JSON.parse(await r.fs.readFile('snapshot.json')));
   action('copy', () => r.clipboard.writeText(projectName));
   action('paste', () => r.clipboard.readText());

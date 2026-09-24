@@ -117,6 +117,56 @@ int main() {
       CHECK(color_batch.call("ReaWeb_Batch", {calls, {{"undoLabel", "Invalid color"}}})["error"]["code"] == "INVALID_ARGUMENT");
       CHECK(color_batch.color_writes == 1 && undo_begin == 1 && undo_end == 1 && refresh_depth == 0);
     }
+    {
+      Fixture queries;
+      Json calls = Json::array({
+        {{"method", "GetPlayPosition"}, {"args", Json::array()}},
+        {{"method", "GetPlayState"}, {"args", Json::array()}},
+        {{"method", "Master_GetTempo"}, {"args", Json::array()}},
+        {{"method", "TimeMap2_timeToBeats"}, {"args", {0, Json{{"$ref", 0}}}}},
+        {{"method", "GetProjectName"}, {"args", {0}}},
+        {{"method", "ColorToNative"}, {"args", {37, 149, 211}}},
+        {{"method", "ColorFromNative"}, {"args", {Json{{"$ref", 5}}}}}
+      });
+      CHECK(queries.call("ReaWeb_Batch", {calls})["result"] ==
+        Json::array({1.25, 1, 120, Json::array({2.5, 0, 4, 2.5, 4}), u8"Demo 工程.rpp",
+          37 | (149 << 8) | (211 << 16), Json::array({37, 149, 211})}));
+      queries.host.play_position = [] { return 0.0; };
+      queries.host.play_state = [] { return 0; };
+      auto stopped = queries.call("ReaWeb_Batch", {calls})["result"];
+      CHECK(stopped[0] == 0 && stopped[1] == 0);
+      queries.bridge->validate_managed_call("GetPlayPosition", Json::array());
+      calls[0]["args"] = {1};
+      CHECK(queries.call("ReaWeb_Batch", {calls})["error"]["code"] == "INVALID_ARGUMENT");
+      CHECK(queries.call("ReaWeb_Batch", {Json::array({
+        {{"method", "GetPlayPositionEx"}, {"args", {0}}}
+      })})["error"]["code"] == "API_UNAVAILABLE");
+
+      auto track = queries.call("GetTrack", {0, 0})["result"];
+      Json probes = Json::array({
+        {{"method", "ValidatePtr"}, {"args", {track, "MediaTrack*"}}},
+        {{"method", "ValidatePtr2"}, {"args", {0, track, "MediaTrack*"}}},
+        {{"method", "ValidatePtr2"}, {"args", {0, nullptr, "MediaTrack*"}}}
+      });
+      CHECK(queries.call("ReaWeb_Batch", {probes})["result"] == Json::array({true, true, false}));
+      Json dependent_probes = Json::array({
+        {{"method", "GetSelectedTrack"}, {"args", {0, 99}}},
+        {{"method", "ValidatePtr2"}, {"args", {0, Json{{"$ref", 0}}, "MediaTrack*"}}}
+      });
+      CHECK(queries.call("ReaWeb_Batch", {dependent_probes})["result"] == Json::array({nullptr, false}));
+      dependent_probes.push_back({{"method", "GetTrackName"}, {"args", {Json{{"$ref", 0}}}}});
+      auto missing_track = queries.call("ReaWeb_Batch", {dependent_probes});
+      CHECK(missing_track["error"]["code"] == "BATCH_FAILED");
+      CHECK(missing_track["error"]["details"]["completed"] == 2);
+      CHECK(missing_track["error"]["details"]["results"] == Json::array({nullptr, false}));
+      queries.valid = false;
+      CHECK(queries.call("ReaWeb_Batch", {probes})["result"] == Json::array({false, false, false}));
+      CHECK(queries.call("GetTrackName", {track})["error"]["code"] == "STALE_HANDLE");
+      CHECK(queries.call("ReaWeb_Batch", {probes})["result"] == Json::array({false, false, false}));
+      // A malformed token must not be treated as a native null pointer.
+      probes[0]["args"][0]["id"] = 42;
+      CHECK(queries.call("ReaWeb_Batch", {probes})["error"]["code"] == "INVALID_HANDLE");
+    }
     auto name = f.call("GetTrackName", {handle});
     if (name["result"][1] != f.host.track_name(nullptr)) std::cerr << "GetTrackName response: " << name.dump() << '\n';
     CHECK(name["result"][1] == f.host.track_name(nullptr));

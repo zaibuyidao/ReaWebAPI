@@ -24,6 +24,8 @@ static void* resolve(const char* name) {
     return (project == &project_b && object == &track_b) || ((project == &project_a || !project) && object == &track_a);
   });
   if (!std::strcmp(name, "SetTrackColor")) return reinterpret_cast<void*>(+[](void*, int color) { if (color == 999) throw Error("NATIVE_ERROR", "mock failure"); ++writes; });
+  if (!std::strcmp(name, "GetPlayPositionEx")) return reinterpret_cast<void*>(+[](void* project) -> double { CHECK(!project || project == &project_a); return 12.5; });
+  if (!std::strcmp(name, "GetPlayStateEx")) return reinterpret_cast<void*>(+[](void* project) -> int { CHECK(!project || project == &project_a); return 5; });
   return nullptr;
 }
 int main() { try {
@@ -73,6 +75,26 @@ int main() { try {
   CHECK(failed["error"]["code"] == "BATCH_FAILED" && failed["error"]["details"]["completed"] == 1);
   CHECK(failed["error"]["details"]["rolledBack"] == false && begins == 2 && ends == 2 && refresh == 0);
   CHECK(batch_methods().size() > 150);
+  auto query_batch = [&](Json calls) { return call("ReaWeb_Batch", Json::array({calls})); };
+  auto transport = query_batch(Json::array({
+    {{"method", "GetPlayPositionEx"}, {"args", {0}}},
+    {{"method", "GetPlayStateEx"}, {"args", {0}}}
+  }));
+  if (transport.contains("error")) throw std::runtime_error(transport.dump());
+  CHECK(transport["result"] == Json::array({12.5, 5}));
+  Json foreign_query = {{"method", "GetPlayPositionEx"}, {"args", Json::array({foreign_project})}};
+  const int previous_writes = writes;
+  CHECK(query_batch(Json::array({own, foreign_query}))["error"]["code"] == "UNSUPPORTED_PROJECT");
+  CHECK(writes == previous_writes);
+  rejects("UNSUPPORTED_PROJECT", [&] { bridge.validate_managed_call("GetPlayPositionEx", Json::array({foreign_project})); });
+  CHECK(query_batch(Json::array({
+    {{"method", "ValidatePtr2"}, {"args", {0, foreign_track, "MediaTrack*"}}}
+  }))["error"]["code"] == "UNSUPPORTED_PROJECT");
+  for (const auto* name : {"Main_OnCommand", "GetUserInputs", "EnumInstalledFX", "get_config_var_string",
+      "EnumProjects", "SelectProjectInstance", "GetAudioAccessorSamples", "PCM_Source_CreateFromFile",
+      "Undo_BeginBlock2", "PreventUIRefresh", "TrackFX_GetEQ", "TakeFX_GetEnvelope"}) {
+    CHECK(query_batch(Json::array({{{"method", name}, {"args", Json::array()}}}))["error"]["code"] == "INVALID_ARGUMENT");
+  }
   const std::string big(100000, 'x');
   CHECK(parse_request(Json{{"id", 1}, {"method", "ReaWeb_WriteFile"}, {"args", {"large.txt", big}}}.dump())["args"][1] == big);
   CHECK(validate_dev_url("http://127.0.0.1:5173") == "http://127.0.0.1:5173/");

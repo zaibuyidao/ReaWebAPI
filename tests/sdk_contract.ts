@@ -157,6 +157,19 @@ async function batchBuilderContract(track: MediaTrackHandle, take: MediaItem_Tak
   const bytes: Uint8Array = data.bytes;
   const nested: readonly [number, string] = data.nested;
   const tuple: [boolean, string] = await reaper.transaction.batch(b => b.GetTrackName(track));
+  const transport: { position: number; state: number; beats: number; display: string; valid: boolean } =
+    await reaper.transaction.batch(b => {
+      const position = b.GetPlayPosition();
+      const [beats] = b.TimeMap2_timeToBeats(0, position);
+      return { position, state: b.GetPlayState(), beats,
+        display: b.format_timestr_pos(position, '', 0), valid: b.ValidatePtr2(0, track, 'MediaTrack*') };
+    });
+  await reaper.transaction.batch([
+    { method: 'GetPlayPositionEx', args: [0] },
+    { method: 'GetPlayStateEx', args: [0] },
+    { method: 'TimeMap2_timeToBeats', args: [0, { $ref: 0 }] }
+  ]);
+  const fxName: [boolean, string] = await reaper.transaction.batch(b => b.TrackFX_GetParamName(track, 0, 0));
   const voidResult: null = await reaper.transaction.batch(b => b.UpdateArrange());
   const raw: unknown[] = await reaper.transaction.batch(b => { b.UpdateArrange(); });
   // @ts-expect-error Builder callbacks cannot return Promises.
@@ -164,6 +177,12 @@ async function batchBuilderContract(track: MediaTrackHandle, take: MediaItem_Tak
   await reaper.transaction.batch(b => {
     // @ts-expect-error Action dispatch is outside the reviewed batch set.
     b.Main_OnCommand(40004, 0);
+    // @ts-expect-error File rescanning is outside the reviewed batch set.
+    b.EnumInstalledFX(-1);
+    // @ts-expect-error Audio sample arrays remain individual calls.
+    b.GetMediaItemTake_Peaks(take, 100, 0, 2, 10, 0, new Float64Array(40));
+    // @ts-expect-error Project variants require an explicit project.
+    b.GetPlayStateEx();
     // @ts-expect-error Runtime services are not Mirror builder methods.
     b.window.close();
     // @ts-expect-error Mirror argument requirements are preserved.

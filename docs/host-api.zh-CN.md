@@ -63,7 +63,22 @@ FX 事件追踪焦点、最后触碰参数及工程 changeCount，用于使 FX �
 
 ## 批处理与连续参数
 
-`reaper.transaction.batch(callsOrBuilder, { undoLabel? })` 接受 1–128 个调用，可传入调用数组或同步 Builder 回调。`capabilities.batchMethods` 与 `ReaWebBatchMethod` 列出 173 个已审核接口，覆盖轨道、Item、Take、MIDI、FX、包络、发送、标记和速度。工程切换、Action 调用、模态对话框、文件读写、生命周期服务、手动 Undo/刷新作用区间及音频样本数组不进入批处理。全部 730 项标准 API 仍可单独调用。
+`reaper.transaction.batch(callsOrBuilder, { undoLabel? })` 接受 1–128 个调用，可传入调用数组或同步 Builder 回调。`capabilities.batchMethods` 与 `ReaWebBatchMethod` 列出 456 个已审核接口，覆盖播放状态、工程与对象查询、MIDI、FX、包络、路由、标记、时间映射和格式转换。工程切换、Action 调用、模态对话框、文件读写、资源生命周期操作、手动 Undo/刷新作用区间及音频样本数组不进入批处理。全部 730 项标准 API 仍可单独调用。
+
+一次 RPC 读取播放信息，无需选中轨道：
+
+```javascript
+const data = await reaper.transaction.batch(b => {
+  const position = b.GetPlayPosition();
+  const state = b.GetPlayState();
+  const tempo = b.Master_GetTempo();
+  return { position, state, tempo };
+});
+```
+
+调用在主线程连续执行，减少 RPC 往返，但不会冻结音频时钟或设定轮询频率。新增方法仍需当前 REAPER 版本提供。准入按方法及其全部参数模式审核，可能重新扫描文件或创建资源的 getter 不会仅凭名称放行。
+
+延迟引用也可以连接有依赖关系的调用。以下示例要求索引 0 的轨道存在：
 
 ```javascript
 const data = await reaper.transaction.batch(b => {
@@ -79,6 +94,8 @@ const data = await reaper.transaction.batch(b => {
 回调在握手完成后同步执行。引用只属于当前回调，可作为完整 API 参数传递或返回，不能 await、参与算术运算或当作真实句柄读取。引用对象始终为真，不能据此判断条件或与 `null` 比较。依赖原生结果的分支应先在批处理外读取，例如先用 `await reaper.GetSelectedTrack(0, 0)` 检查选择，再收集需要轨道的调用。未知方法、异步回调、跨 Builder 引用和无效结构在发送前以 `INVALID_ARGUMENT` 拒绝。回调自身的异常原样传播。
 
 Builder 将调用转换为现有 `ReaWeb_Batch` 请求，不新增 RPC 或 Native 层。原生校验和 `BATCH_FAILED` 详情保持不变。
+
+`ValidatePtr` 和 `ValidatePtr2` 可校验空句柄或已失效的对象句柄，并返回 `false`。校验结果不会使后续调用自动跳过。其他工程的句柄仍会被拒绝，其他对象 API 仍要求句柄有效。
 
 批处理仅作用于**当前工程**。任何外部工程句柄或对象都会在写入前被拒绝，包括后面条目中的外部句柄。方法、可用性和不含引用的条目参数会预先校验；依赖前面结果的参数在该条执行前校验。引用序号从零开始，可通过最多八段 `path` 选取数组元素或对象属性。引用必须作为完整的顶层参数，不能向后引用。
 

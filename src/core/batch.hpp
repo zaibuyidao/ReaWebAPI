@@ -3,7 +3,7 @@
 #include <set>
 
 namespace reaweb {
-// Reviewed synchronous project operations. Dialogs, arbitrary actions, project
+// Reviewed synchronous queries, conversions and project operations. Dialogs, arbitrary actions, project
 // lifetime changes and manual Undo/UI-refresh scopes are deliberately excluded.
 inline const std::set<std::string>& batch_methods() {
   static const std::set<std::string> names = {
@@ -49,7 +49,83 @@ inline const std::set<std::string>& batch_methods() {
     "GetSet_LoopTimeRange2", "GetSetProjectGrid", "GetSetProjectInfo", "GetSetProjectInfo_String",
     "GetProjectStateChangeCount", "GetCursorPositionEx", "SetEditCurPos2", "GetSetRepeatEx",
     "GetTrackStateChunk", "SetTrackStateChunk",
-    "GetItemStateChunk", "SetItemStateChunk", "GetEnvelopeStateChunk", "SetEnvelopeStateChunk"
+    "GetItemStateChunk", "SetItemStateChunk", "GetEnvelopeStateChunk", "SetEnvelopeStateChunk",
+    // Transport and timing.
+    "GetPlayPosition", "GetPlayPosition2", "GetPlayPositionEx", "GetPlayPosition2Ex", "GetPlayState",
+    "GetPlayStateEx", "GetCursorPosition", "Master_GetTempo", "Master_GetPlayRate", "Master_GetPlayRateAtTime",
+    "Master_NormalizePlayRate", "Master_NormalizeTempo", "GetTempoMatchPlayRate", "SnapToGrid",
+    "TimeMap2_GetDividedBpmAtTime", "TimeMap2_GetNextChangeTime", "TimeMap2_QNToTime", "TimeMap2_beatsToTime",
+    "TimeMap2_timeToBeats", "TimeMap2_timeToQN", "TimeMap_GetDividedBpmAtTime", "TimeMap_GetMeasureInfo",
+    "TimeMap_GetMetronomePattern", "TimeMap_GetTimeSigAtTime", "TimeMap_QNToMeasures", "TimeMap_QNToTime",
+    "TimeMap_QNToTime_abs", "TimeMap_curFrameRate", "TimeMap_timeToQN", "TimeMap_timeToQN_abs",
+    "MediaExplorerGetLastPlayedFileInfo",
+    // Project, track and routing queries.
+    "EnumProjExtState", "GetProjExtState", "GetProjectLength", "GetProjectName", "GetProjectPath",
+    "GetProjectPathEx", "GetProjectTimeOffset", "GetProjectTimeSignature", "GetProjectTimeSignature2",
+    "IsProjectDirty", "Undo_CanRedo2", "Undo_CanUndo2", "Undo_GetCurEntry", "Undo_GetEntryDesc",
+    "Undo_GetEntryTime", "Undo_GetNumEntries", "Undo_IsEntryAltTree", "AnyTrackSolo", "CSurf_GetTouchState",
+    "CSurf_NumTracks", "CSurf_TrackFromID", "CSurf_TrackToID", "CountSelectedTracks2", "GetLastTouchedTrack",
+    "GetMasterMuteSoloFlags", "GetMasterTrackVisibility", "GetNumTracks", "GetParentTrack",
+    "GetSelectedTrack2", "GetTrackAutomationMode", "GetTrackDepth", "GetTrackFromPoint", "GetTrackState",
+    "GetTrackUIMute", "GetTrackUIPan", "GetTrackUIVolPan", "IsTrackSelected", "IsTrackVisible",
+    "Track_GetPeakInfo", "GetTrackReceiveName", "GetTrackReceiveUIMute", "GetTrackReceiveUIVolPan",
+    "GetTrackSendName", "GetTrackSendUIMute", "GetTrackSendUIVolPan",
+    // Item, take and source queries.
+    "GetItemEditingTime2", "GetItemFromPoint", "GetItemProjectContext", "GetMediaItem_Track",
+    "GetTrackNumMediaItems", "IsMediaItemSelected", "MediaItemDescendsFromTrack", "GetMediaItemNumTakes",
+    "GetMediaItemTake", "GetMediaItemTakeByGUID", "GetMediaItemTake_Source", "GetMediaItemTake_Track",
+    "GetMediaSourceFileName", "GetMediaSourceLength", "GetMediaSourceNumChannels", "GetMediaSourceParent",
+    "GetMediaSourceSampleRate", "GetMediaSourceType", "PCM_Source_GetSectionInfo", "AudioAccessorStateChanged",
+    "GetAudioAccessorEndTime", "GetAudioAccessorHash", "GetAudioAccessorStartTime",
+    // Envelope and marker queries.
+    "Envelope_Evaluate", "Envelope_FormatValue", "Envelope_GetParentTake", "Envelope_GetParentTrack",
+    "GetEnvelopePointByTime", "GetEnvelopePointByTimeEx", "GetEnvelopeScalingMode", "GetEnvelopeUIState",
+    "GetSelectedEnvelope", "GetSelectedTrackEnvelope", "GetTrackEnvelopeByChunkName", "ScaleFromEnvelopeMode",
+    "ScaleToEnvelopeMode", "EnumProjectMarkers", "EnumProjectMarkers2", "EnumRegionRenderMatrix",
+    "FindTempoTimeSigMarker", "GetLastMarkerAndCurRegion", "GetNumRegionsOrMarkers", "GetNumTakeMarkers",
+    "GetRegionOrMarker", "GetRegionOrMarkerInfo_Value", "GetTakeMarker", "GetTakeNumStretchMarkers",
+    "GetTakeStretchMarker", "GetTakeStretchMarkerSlope",
+    // MIDI queries.
+    "EnumTrackMIDIProgramNames", "EnumTrackMIDIProgramNamesEx", "GetMIDIInputName", "GetMIDIInputNameNoAlias",
+    "GetMIDIOutputName", "GetMIDIOutputNameNoAlias", "GetNumMIDIInputs", "GetNumMIDIOutputs",
+    "GetTrackMIDILyrics", "GetTrackMIDINoteName", "GetTrackMIDINoteNameEx", "GetTrackMIDINoteRange",
+    "HasTrackMIDIPrograms", "HasTrackMIDIProgramsEx", "MIDIEditor_EnumTakes", "MIDIEditor_GetActive",
+    "MIDIEditor_GetMode", "MIDIEditor_GetSetting_int", "MIDIEditor_GetSetting_str", "MIDIEditor_GetTake",
+    "MIDI_GetGrid", "MIDI_GetHash", "MIDI_GetPPQPos_EndOfMeasure", "MIDI_GetPPQPos_StartOfMeasure",
+    "MIDI_GetRecentInputEvent", "MIDI_GetScale", "MIDI_GetTrackHash",
+    // FX queries and formatting.
+    "CountTCPFXParms", "GetFocusedFX", "GetFocusedFX2", "GetLastTouchedFX", "GetTCPFXParm",
+    "GetTouchedOrFocusedFX", "TakeFX_FormatParamValue", "TakeFX_FormatParamValueNormalized",
+    "TakeFX_GetChainVisible", "TakeFX_GetFloatingWindow", "TakeFX_GetFormattedParamValue", "TakeFX_GetIOSize",
+    "TakeFX_GetOpen", "TakeFX_GetParamEx", "TakeFX_GetParamFromIdent", "TakeFX_GetParamIdent",
+    "TakeFX_GetParamName", "TakeFX_GetParamSectionName", "TakeFX_GetParameterStepSizes",
+    "TakeFX_GetPinMappings", "TakeFX_GetPreset", "TakeFX_GetPresetIndex", "TakeFX_GetUserPresetFilename",
+    "TrackFX_FormatParamValue", "TrackFX_FormatParamValueNormalized", "TrackFX_GetChainVisible",
+    "TrackFX_GetEQBandEnabled", "TrackFX_GetEQParam", "TrackFX_GetFloatingWindow",
+    "TrackFX_GetFormattedParamValue", "TrackFX_GetIOSize", "TrackFX_GetInstrument", "TrackFX_GetOpen",
+    "TrackFX_GetParamEx", "TrackFX_GetParamFromIdent", "TrackFX_GetParamIdent", "TrackFX_GetParamName",
+    "TrackFX_GetParamSectionName", "TrackFX_GetParameterStepSizes", "TrackFX_GetPinMappings",
+    "TrackFX_GetPreset", "TrackFX_GetPresetIndex", "TrackFX_GetRecChainVisible", "TrackFX_GetRecCount",
+    "TrackFX_GetUserPresetFilename",
+    // System queries and conversion helpers.
+    "APIExists", "Audio_IsPreBuffer", "Audio_IsRunning", "ColorFromNative", "ColorToNative",
+    "CountActionShortcuts", "DB2SLIDER", "DockGetPosition", "DockIsChildOfDock",
+    "EnsureNotCompletelyOffscreen", "EnumPitchShiftModes", "EnumPitchShiftSubModes", "GetActionShortcutDesc",
+    "GetArmedCommand", "GetAudioDeviceInfo", "GetConfigWantsDock", "GetCursorContext", "GetCursorContext2",
+    "GetExePath", "GetExtState", "GetGlobalAutomationOverride", "GetHZoomLevel", "GetInputActivityLevel",
+    "GetInputChannelName", "GetInputOutputLatency", "GetLastColorThemeFile", "GetMainHwnd", "GetMaxMidiInputs",
+    "GetMaxMidiOutputs", "GetMixerScroll", "GetMouseModifier", "GetMousePosition", "GetNumAudioInputs",
+    "GetNumAudioOutputs", "GetOS", "GetOutputChannelName", "GetOutputLatency", "GetResourcePath",
+    "GetThemeColor", "GetThingFromPoint", "GetToggleCommandState", "GetToggleCommandStateEx",
+    "GetTooltipWindow", "GetUnderrunTime", "HasExtState", "IsMediaExtension", "LICE_ClipLine",
+    "LocalizeString", "Menu_GetHash", "NamedCommandLookup", "PCM_Sink_Enum", "PCM_Sink_GetExtension",
+    "Resample_EnumModes", "ResolveWildcards", "ReverseNamedCommandLookup", "SLIDER2DB", "SectionFromUniqueID",
+    "Splash_GetWnd", "ThemeLayout_GetLayout", "ThemeLayout_GetParameter", "ValidatePtr", "ValidatePtr2",
+    "format_timestr", "format_timestr_len", "format_timestr_pos", "genGuid", "get_ini_file", "guidToString",
+    "kbd_enumerateActions", "kbd_getTextFromCmd", "mkpanstr", "mkvolpanstr", "mkvolstr", "my_getViewport",
+    "parse_timestr", "parse_timestr_len", "parse_timestr_pos", "parsepanstr", "relative_fn", "stringToGuid",
+    "time_precise", "joystick_enum", "joystick_getaxis", "joystick_getbuttonmask", "joystick_getinfo",
+    "joystick_getpov"
   };
   return names;
 }

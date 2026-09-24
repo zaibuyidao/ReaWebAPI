@@ -84,7 +84,7 @@ if (track) {
 }
 ```
 
-The [batch contract](host-api.md#batches-and-continuous-controls) covers 173 reviewed standard APIs and up to 128 calls. Builder callbacks are synchronous, with deferred result references and tuple destructuring. Return an object or array to select typed results, or omit the return value for the ordered native result array. The explicit call-array form and all 730 ordinary Mirror calls remain available. A batch is not a transaction: completed writes remain if a later call fails, and its error reports completed results.
+The [batch contract](host-api.md#batches-and-continuous-controls) covers 456 reviewed standard APIs and up to 128 calls. Builder callbacks are synchronous, with deferred result references and tuple destructuring. Return an object or array to select typed results, or omit the return value for the ordered native result array. The explicit call-array form and all 730 ordinary Mirror calls remain available. A batch is not a transaction: completed writes remain if a later call fails, and its error reports completed results.
 
 For continuous controls across awaits, use managed Undo as described in the [host reference](host-api.md#batches-and-continuous-controls). It uses the reviewed batch API set and closes on reload, close, project change or after 30 seconds. Raw REAPER Undo scopes remain available outside this set, but callers must pair them and cannot rely on cleanup requests after a page closes.
 

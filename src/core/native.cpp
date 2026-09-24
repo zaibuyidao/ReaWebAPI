@@ -271,7 +271,10 @@ void NativeContext::validate_project(const NativeEntry& entry, const Json& args,
     if (param.kind != Kind::Handle || param.input < 0 || static_cast<size_t>(param.input) >= args.size()) continue;
     const auto& value = args[param.input];
     if (value.is_object() && value.contains("$ref")) continue;
-    auto p = pointer(value, param.handle);
+    // Pointer probes must reach REAPER even when the tested object has expired.
+    const bool probe = std::string(param.handle) == "void" &&
+      (std::string(entry.name) == "ValidatePtr" || std::string(entry.name) == "ValidatePtr2");
+    auto p = pointer(value, param.handle, !probe);
     if (!p) continue;
     const auto it = impl_->reverse.find(p);
     if (it != impl_->reverse.end() && impl_->handles.at(it->second).project != project)
