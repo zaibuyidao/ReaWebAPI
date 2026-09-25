@@ -36,50 +36,68 @@ x.XMapWindow(display, window); x.XSync(display, 0)
 bridge = '(() => {\n' + (root / 'runtime/reaper-api.generated.js').read_text() + (root / 'runtime/reaper.js').read_text() + '\n})();'
 methods = list(json.loads((root / 'api/bindings.json').read_text())['functions'])
 origins, reports = {}, []
+data = fixture / 'ReaWebAPI' / 'WebViewData'
+data.mkdir(parents=True)
 try:
-    for app, visit in ((apps[0], 1), (apps[1], 1), (apps[0], 2)):
-        profile = fixture / (app.name + '-profile')
-        server = subprocess.Popen([str(build / 'tests/web_resources_driver'), str(app), str(profile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-        origin = server.stdout.readline().strip(); assert origin.startswith('http://127.0.0.1:'), origin
-        data = profile / 'WebViewData'; data.mkdir(exist_ok=True)
+    for visits in (((0, 1), (1, 1), (0, 2)), ((0, 3),)):
+        servers = []
+        for app in apps:
+            profile = fixture / 'ReaWebAPI' / 'Apps' / app.name
+            server = subprocess.Popen([str(build / 'tests/web_resources_driver'), str(app), str(profile)],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            servers.append(server)
+            origin = server.stdout.readline().strip()
+            assert origin.startswith('http://127.0.0.1:'), origin
+            if app in origins: assert origins[app] == origin, 'Origin changed on restart'
+            origins[app] = origin
         parent, child = socket.socketpair()
         helper = str(build / 'reawebapi-webview-x86_64')
         process = os.posix_spawn(helper, [helper, str(data)], dict(os.environ, GDK_BACKEND='x11'),
             file_actions=[(os.POSIX_SPAWN_DUP2, child.fileno(), 3), (os.POSIX_SPAWN_CLOSE, child.fileno())])
         child.close(); parent.setblocking(False)
         def send(message): parent.sendall((json.dumps(message) + '\n').encode())
-        received, report = b'', None
+        received, active = b'', {}
         try:
-            deadline = time.monotonic() + 40
-            while report is None and time.monotonic() < deadline:
-                if not select.select([parent], [], [], .05)[0]: continue
-                chunk = parent.recv(65536); assert chunk, 'WebKit exited early'
-                received += chunk
-                while b'\n' in received:
-                    line, received = received.split(b'\n', 1); message = json.loads(line)
-                    assert message['op'] != 'error', message
-                    if message['op'] == 'ready':
-                        send(dict(id=1, op='open', uri=origin + '/index.html', script=bridge))
-                        send(dict(id=1, op='geometry', parent=window, x=0, y=0, width=800, height=800, visible=True))
-                    elif message['op'] == 'message':
+            for page_id, (app_index, visit) in enumerate(visits, 1):
+                app = apps[app_index]
+                if app in active: send(dict(id=active.pop(app), op='close'))
+                active[app] = page_id
+                send(dict(id=page_id, op='open', uri=origins[app] + '/index.html', script=bridge))
+                send(dict(id=page_id, op='geometry', parent=window, x=app_index * 400, y=0,
+                          width=400, height=800, visible=True))
+                report = None
+                deadline = time.monotonic() + 40
+                while report is None and time.monotonic() < deadline:
+                    if not select.select([parent], [], [], .05)[0]: continue
+                    chunk = parent.recv(65536); assert chunk, 'WebKit exited early'
+                    received += chunk
+                    while b'\n' in received:
+                        line, received = received.split(b'\n', 1); message = json.loads(line)
+                        assert message['op'] != 'error', message
+                        if message['op'] != 'message': continue
                         request = json.loads(message['message']); method = request['method']
                         value = None
                         if method == '__reawebHello': value = dict(protocol=1, projectEpoch=1, methods=methods)
                         elif method == 'GetAppVersion': value = '7.smoke'
-                        elif method == 'ReaWeb_GetCapabilities': value = dict(webRuntime=dict(contract=1, origin=origin, mode='app-http', storageIsolation='app-profile'))
-                        elif method == 'ShowConsoleMsg': report = json.loads(request['args'][0].split(':', 1)[1])
+                        elif method in ('ReaWeb_DocumentTitle', 'ReaWeb_Favicon'): value = True
+                        elif method == 'ReaWeb_GetCapabilities':
+                            value = dict(webRuntime=dict(contract=1, origin=origins[app], mode='app-http', storageIsolation='origin'))
+                        elif method == 'ShowConsoleMsg':
+                            assert message['id'] == page_id, message
+                            report = json.loads(request['args'][0].split(':', 1)[1])
                         else: raise AssertionError(request)
                         response = dict(id=request['id'], document=request['document'], result=value)
-                        send(dict(id=1, op='eval', script='window.__reawebReceive(' + json.dumps(response) + ');'))
-            assert report is not None, 'Timed out waiting for module App'
-            print(json.dumps(report, ensure_ascii=False))
-            assert report['passed'], report
-            for name in ('storageVisits', 'cookieVisits', 'indexedDBVisits'): assert report[name] == visit, (name, report)
-            # GPU access is optional under WSLg/headless CI; all other exercised checks must pass.
-            assert all(check['ok'] for check in report['checks'] if check['name'] != 'WebGL'), report
-            if app in origins: assert origins[app] == origin, 'Origin changed across browser process restart'
-            origins[app] = origin; reports.append(report)
-            send(dict(id=1, op='close'))
+                        send(dict(id=message['id'], op='eval', script='window.__reawebReceive(' + json.dumps(response) + ');'))
+                assert report is not None, 'Timed out waiting for module App'
+                assert report['passed'], report
+                for name in ('storageVisits', 'indexedDBVisits'): assert report[name] == visit, (name, report)
+                assert report['cookieVisits'] == len(reports) + 1, report
+                # GPU access is optional under WSLg/headless CI.
+                assert all(check['ok'] for check in report['checks'] if check['name'] != 'WebGL'), report
+                assert report['origin'] == origins[app], report
+                reports.append(report)
+                print(f"App {app_index}: storage={visit}, cookies={report['cookieVisits']}")
+            for page_id in active.values(): send(dict(id=page_id, op='close'))
             time.sleep(.3)
         finally:
             parent.close()
@@ -88,10 +106,11 @@ try:
                 if os.waitpid(process, os.WNOHANG)[0]: break
                 time.sleep(.02)
             else: os.kill(process, signal.SIGKILL); os.waitpid(process, 0)
-            server.communicate('\n', timeout=8)
+            for server in servers: server.communicate('\n', timeout=8)
     assert origins[apps[0]] != origins[apps[1]]
+    assert not list((fixture / 'ReaWebAPI' / 'Apps').glob('*/WebViewData'))
     (fixture / 'report.json').write_text(json.dumps(reports, indent=2), encoding='utf-8')
-    print('WebKitGTK: required Web Runtime checks, restart persistence, cross-App storage/cookie/IndexedDB isolation and both Workers passed')
+    print('WebKitGTK: concurrent Apps, restart persistence, origin-isolated localStorage/IndexedDB, shared cookies and both Workers passed')
 finally:
     network.shutdown(); network.server_close()
     x.XDestroyWindow(display, window); x.XCloseDisplay(display)

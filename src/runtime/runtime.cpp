@@ -47,7 +47,7 @@ void Runtime::check_thread() const {
 }
 Json Runtime::web_runtime(const Session& session) const {
   return {{"contract", 1}, {"mode", session.app->mode}, {"appId", session.app->id},
-    {"origin", session.app->origin}, {"storageIsolation", "app-profile"}, {"localResources", session.app->mode == "app-http"}};
+    {"origin", session.app->origin}, {"storageIsolation", "origin"}, {"localResources", session.app->mode == "app-http"}};
 }
 Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   auto& s = *sessions_.at(id);
@@ -314,8 +314,9 @@ void Runtime::tick() {
   ticking_ = true;
   struct Reset { bool& value; ~Reset() { value = false; } } reset{ticking_};
   const auto deadline = Clock::now() + std::chrono::milliseconds(2);
+  if (auto platform = platform_.lock()) platform->pump();
   for (auto it = apps_.begin(); it != apps_.end();) {
-    if (auto app = it->second.lock()) { app->platform->pump(); ++it; }
+    if (!it->second.expired()) ++it;
     else it = apps_.erase(it);
   }
   observe(deadline);

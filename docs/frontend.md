@@ -46,7 +46,7 @@ The v1 support contract is the required column below, on supported and maintaine
 | Local `fetch` | Required | Read resources within the App root; JSON/text/ArrayBuffer; missing files return 404 |
 | Timers, requestAnimationFrame | Required | Normal browser throttling applies in hidden/minimized windows; not an audio clock |
 | Canvas 2D | Required | Native browser context |
-| localStorage | Required | Persistent native profile, isolated by App directory; native quota/errors apply |
+| localStorage | Required | Persistent storage isolated by origin in the shared profile; native quota/errors apply |
 | File, Blob, FileReader, ArrayBuffer | Required | Browser file objects; arbitrary disk access uses host file APIs |
 | Standard DOM Drag & Drop | Required | Handle `dragover`/`drop` and `DataTransfer`; does not imply a REAPER-to-OS native drag export API |
 | External HTTP/HTTPS fetch, WebSocket | Optional | Remote CORS, certificates, CSP, network and browser restrictions apply; no native proxy or CORS bypass |
@@ -60,25 +60,39 @@ No special support is added for Service Worker, PWA, push, geolocation, camera, 
 
 `reaper.window.open(path)` still accepts a local HTML path. Its canonical parent directory is the **App root**. A read-only native listener serves that directory on `http://127.0.0.1:<port>/`; the WebView performs normal HTTP requests. Relative assets, Unicode/space/#/% file names, query strings, MIME types, HEAD and byte ranges are supported. Encode `#` and `%` in resource URLs (for example `file%23%25.js`). The server has no directory listing, write or bridge endpoint. Paths escaping the root, including resolved symlinks/junctions, are rejected.
 
-Each root gets one profile and one saved origin. Windows in the same directory share browser storage. Different directories use separate profiles, including separate cookie jars: distinct ports alone would not isolate cookies. Each bridge document still owns its own handles and subscriptions. Do not persist native handles; store settings or GUIDs.
+Each root retains its own App identity and saved origin. All Apps and Modules share one browser profile. localStorage and IndexedDB remain isolated by origin. Cookies follow native host/domain and path rules and are shared across ports on the same host. Each bridge document still owns its own handles and subscriptions. Persist settings or GUIDs rather than native handles.
 
-The profile registry is `<REAPER resource>/ReaWebAPI/Apps/<appId>/`. `origin.json` records the root and port. Windows/Linux browser data is in its `WebViewData/` directory. macOS stores a WKWebsiteDataStore UUID there; WebKit owns the actual database location. Reopening or restarting preserves the origin and profile. Moving/renaming the App directory creates a different identity. Upgrades in the same directory retain it.
+Runtime data is organized as follows:
+
+```text
+<REAPER resource>/ReaWebAPI/
+  WebViewData/
+  Apps/
+    <appId>/
+      origin.json
+      Data/
+      WindowState/
+```
+
+Windows shares one WebView2 Environment, and Linux shares one WebKitGTK context and helper process across active Apps. Their browser data is stored in `WebViewData/`. macOS stores the shared WKWebsiteDataStore UUID there, with the actual database location managed by WebKit. `origin.json` records each local App's root and port. `Data/` and `WindowState/` remain App private. Development Apps keep their configured origin without an `origin.json` record.
+
+Reopening or restarting preserves the origin and shared profile. Moving or renaming an App directory creates a different identity. Updates in the same directory retain it. Legacy per-App browser data and global window state are not migrated.
 
 If a saved port is occupied, opening fails with `APP_ORIGIN_BUSY` instead of silently changing origin and losing access to storage. Close the conflicting process and reopen. Malformed/mismatched origin metadata fails with `APP_ORIGIN_INVALID`. Do not delete that record as a routine fix: a new port gives a new origin. Normal browser quotas and clearing data still apply.
 
-Keep browser data and origin metadata together when preserving an App’s state.
+Back up the shared `WebViewData/` together with the relevant `Apps/<appId>/` directories to preserve App state.
 
 Only the loopback interface is bound. Requests with a foreign Host/Origin or cross-origin Fetch Metadata are rejected; there is no permissive CORS header. Serving stops when the last App window closes. The listener uses two bounded worker threads per active App; REAPER calls continue through the existing main-thread bridge. The root is a resource boundary, **not a sandbox for trusted native APIs**: pages retain the exposed filesystem and REAPER privileges. Do not put secrets in a directory you serve or open untrusted Apps.
 
 Both `reaper.system.getCapabilities()` and `reaper.debug.getDiagnostics()` expose `webRuntime`:
-`{ contract: 1, mode: 'app-http' | 'dev-http', appId, origin, storageIsolation: 'app-profile', localResources }`.
+`{ contract: 1, mode: 'app-http' | 'dev-http', appId, origin, storageIsolation: 'origin', localResources }`.
 `localResources` is true for the built-in local resource origin.
 
 ## TypeScript and development servers
 
 The [modern starter](../runtime/modern/README.md) supplies Vite/TypeScript as optional **build-time** tooling. Run `npm ci`, `npm run dev`, then `OpenDev.lua`. The default URL is `http://localhost:5173/`. `reaper.window.openDev` accepts explicit-port HTTP URLs on 127.0.0.1, localhost or [::1]. Start the server yourself. ReaWebAPI does not embed Vite, Node or npm.
 
-Development URLs have separate profiles keyed by the exact URL. Use a stable entry URL and port. Hash navigation is allowed; navigation to a different document is blocked. Avoid entry redirects. HMR uses the browser's native WebSocket and has been exercised with Vite.
+Development App identities are keyed by the exact URL. Browser storage is isolated by origin in the shared profile, so different entry URLs on the same origin share storage. Use a stable entry URL and port. Hash navigation is allowed; navigation to a different document is blocked. Avoid entry redirects. HMR uses the browser's native WebSocket and has been exercised with Vite.
 
 Run `npm run build` and `Open.lua` for production; ship `Open.lua` and `dist/`. The current template emits an IIFE and inline Blob Worker as one packaging choice; ordinary ES module Apps work as well. Both modes use native `fetch('./data.json')`. Native host file paths resolve from the local HTML directory (`dist/` here); a Lua-opened development page uses REAPER's Scripts directory. A browser fetch URL and a native file path are different namespaces.
 
@@ -100,6 +114,6 @@ On macOS the displayed origin uses `http://localhost:<port>/` while the listener
 
 In the tested WSLg environment, WebKitGTK's DMA-BUF renderer stalled animation frames despite a visible document. Running the helper with `WEBKIT_DISABLE_DMABUF_RENDERER=1` passed the full browser suite, including native requestAnimationFrame and WebGL. This is an environment setting, not a default forced by the extension or a JS polyfill. Validate the default renderer on your target Linux desktop; when affected, set the variable before launching REAPER. Native GTK viewport allocation is synchronized with the foreign X11 parent's client size.
 
-Implementation: `src/web/web_resources.*` handles local resources; `src/runtime/runtime.*` owns App origin/profile lifetimes; `src/platform/windows/platform_win.cpp`, `src/platform/macos/platform_mac.mm` and `src/platform/linux/linux_webkit.cpp` select native profiles and load the entry; `runtime/reaper.d.ts` describes the runtime metadata. Tests cover the native HTTP boundary, all 730 mirror ABI mappings and actual browser behavior.
+Implementation: `src/web/web_resources.*` handles local resources; `src/runtime/runtime.*` owns App origins and the shared profile lifetime; `src/platform/windows/platform_win.cpp`, `src/platform/macos/platform_mac.mm` and `src/platform/linux/linux_webkit.cpp` select native profiles and load the entry; `runtime/reaper.d.ts` describes the runtime metadata. Tests cover the native HTTP boundary, all 730 mirror ABI mappings and actual browser behavior.
 
 Native behavior references: [WebView2 local content](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/working-with-local-content), [WebKitGTK persistent cookies](https://webkitgtk.org/reference/webkit2gtk/2.42.5/method.CookieManager.set_persistent_storage.html). Native cookie persistence is explicitly enabled on Linux.

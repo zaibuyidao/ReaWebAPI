@@ -134,7 +134,7 @@ await stop();
 
 订阅会提供初始快照及合并后的变化，工程变化和原生轨道选择通知在每个主线程调度周期检查，轨道选择另保留 100 ms 兜底检查。它们用于刷新界面，不是编辑历史或采样时钟。异步回调需自行处理异常，组件卸载时取消订阅，整个页面关闭时会自动清理本页订阅。
 
-停靠切换会保留页面状态。浏览器 profile 按 App 目录隔离，同一目录的窗口共享存储。来源持久化与存储规则见 [Web Runtime 约定](frontend.zh-CN.md)。保存 GUID 或工具设置，不要保存对象句柄，下次打开时针对正确的工程重新解析引用。浏览器存储和网络行为由各平台 WebView 决定。ReaWebAPI 不提供 Node.js 文件系统或 shell 接口。
+停靠切换会保留页面状态。App 共用一个浏览器 profile，localStorage 和 IndexedDB 按 origin 隔离，cookie 遵循原生域和路径规则。来源持久化与存储规则见 [Web Runtime 约定](frontend.zh-CN.md)。保存 GUID 或工具设置，不要保存对象句柄，下次打开时针对正确的工程重新解析引用。浏览器存储和网络行为由各平台 WebView 决定。ReaWebAPI 不提供 Node.js 文件系统或 shell 接口。
 
 ## 错误与调试
 

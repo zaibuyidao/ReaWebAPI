@@ -48,6 +48,8 @@ Set the window name with HTML `<title>` or `document.title`, including Docker la
 
 [SDK](runtime/README.md) · [Developer guide](docs/development.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md) · [DevTools](docs/devtools.md)
 
+All Apps share `ReaWebAPI/WebViewData/`. App identities, private data and window state remain under `ReaWebAPI/Apps/<appId>/`. See the [storage contract](docs/frontend.md#resource-origin-and-storage) for origin isolation and shared cookies.
+
 ## Build
 
 Requires CMake 3.24+, a C++17 toolchain and Python 3.10+. Tests use Node.js. Linux development dependencies are `pkg-config`, `libwebkit2gtk-4.1-dev` and `libx11-dev`.

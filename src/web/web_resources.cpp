@@ -9,7 +9,7 @@ std::string root_identity(const fs::path& root) {
   auto value = fs::canonical(root).generic_u8string();
 #ifdef _WIN32
   // Windows paths are case insensitive. Keep ordinary launcher path casing
-  // differences from creating a second browser profile.
+  // differences from creating a second App identity.
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
     return c >= 'A' && c <= 'Z' ? static_cast<char>(c + 32) : static_cast<char>(c);
   });

@@ -10,6 +10,7 @@ using namespace reaweb;
 #define CHECK(condition) do { if (!(condition)) throw std::runtime_error("Check failed: " #condition); } while (false)
 namespace {
 int platform_count = 0;
+int platform_pumps = 0;
 std::vector<fs::path> profiles;
 std::string waiting_on;
 struct FakeWindow : Window {
@@ -81,6 +82,7 @@ struct FakeWindow : Window {
 };
 std::vector<std::weak_ptr<FakeWindow>> windows;
 struct FakePlatform : Platform {
+  void pump() override { ++platform_pumps; }
   std::string clipboard;
   void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
     if (method == "ReaWeb_ClipboardWriteText") { clipboard = args[0]; reply({{"result", true}}); }
@@ -154,9 +156,9 @@ int main() {
       CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {true}))["result"] == true);
       CHECK(first->icon_visible && first->icons.empty());
       const auto web = result(runtime, *first, first->send("ReaWeb_GetCapabilities"))["result"]["webRuntime"];
-      CHECK(web["contract"] == 1 && web["mode"] == "app-http" && web["storageIsolation"] == "app-profile");
+      CHECK(web["contract"] == 1 && web["mode"] == "app-http" && web["storageIsolation"] == "origin");
       CHECK(first->options.url == web["origin"].get<std::string>() + "/index.html");
-      CHECK(profiles.back().parent_path().parent_path().filename() == "Apps");
+      CHECK(profiles.back() == root / "ReaWebAPI" / "WebViewData");
       const auto app = result(runtime, *first, first->send("ReaWeb_GetAppInfo"))["result"];
       CHECK(app["id"] == web["appId"] && app["name"] == "Tool" && app["version"].is_null());
       CHECK(fs::equivalent(fs::u8path(app["rootPath"].get<std::string>()), entry.parent_path()));
@@ -736,6 +738,59 @@ int main() {
       CHECK(result(runtime, *second, second->send("ReaWeb_DocumentTitle", {"Independent"}))["result"] == true);
       CHECK(second->options.title == "Independent" && window->options.title == "Explicit");
       CHECK(runtime.diagnostics(other)["window"]["title"] == "Independent");
+    }
+    {
+      const auto resource = root / "PrivateState";
+      const auto platforms_before = platform_count;
+      std::vector<fs::path> entries, records;
+      std::vector<std::string> origins;
+      for (const auto& name : {"AppA", "AppB"}) {
+        auto entry = resource / "Scripts" / name / "index.html";
+        fs::create_directories(entry.parent_path()); std::ofstream(entry) << "<html></html>";
+        entries.push_back(entry);
+        records.push_back(resource / "ReaWebAPI" / "Apps" / ("local-" + app_identity(entry.parent_path())));
+      }
+      {
+        Runtime runtime(host, resource, [&](const std::string& error) { errors.push_back(error); });
+        for (size_t i = 0; i < entries.size(); ++i) {
+          runtime.open(entries[i].u8string());
+          auto window = windows.back().lock();
+          result(runtime, *window, window->send("__reawebHello", {1}));
+          origins.push_back(result(runtime, *window, window->send("ReaWeb_GetCapabilities"))["result"]["webRuntime"]["origin"]);
+          CHECK(fs::is_regular_file(records[i] / "origin.json"));
+          const auto app = result(runtime, *window, window->send("ReaWeb_GetAppInfo"))["result"];
+          CHECK(fs::u8path(app["dataPath"].get<std::string>()) == records[i] / "Data");
+          CHECK(result(runtime, *window, window->send("ReaWeb_WriteFile", {(records[i] / "Data" / "setting.txt").u8string(), std::to_string(i)}))["result"]["bytes"] == 1);
+          window->bounds["x"] = 200 + i;
+          window->inspector.restore({{"mode", i ? "floating" : "embedded"}, {"widthRatio", 0.5}});
+        }
+        CHECK(origins[0] != origins[1]);
+        runtime.open_dev("http://127.0.0.1:5173", entries[0].parent_path());
+        CHECK(platform_count == platforms_before + 1);
+        CHECK(profiles.back() == resource / "ReaWebAPI" / "WebViewData");
+        CHECK(fs::is_directory(profiles.back()));
+        const auto pumps_before = platform_pumps;
+        runtime.tick();
+        CHECK(platform_pumps == pumps_before + 1);
+      }
+      CHECK(!fs::exists(resource / "ReaWebAPI" / "WindowState"));
+      {
+        Runtime runtime(host, resource, [&](const std::string& error) { errors.push_back(error); });
+        for (size_t i = 0; i < entries.size(); ++i) {
+          const auto state = records[i] / "WindowState" / (state_key(entries[i].generic_u8string(), 0) + ".json");
+          CHECK(fs::is_regular_file(state));
+          runtime.open(entries[i].u8string());
+          auto window = windows.back().lock();
+          CHECK(window->bounds["x"] == 200 + i && window->inspector.floating == bool(i));
+          result(runtime, *window, window->send("__reawebHello", {1}));
+          CHECK(result(runtime, *window, window->send("ReaWeb_GetCapabilities"))["result"]["webRuntime"]["origin"] == origins[i]);
+          std::ifstream input(records[i] / "Data" / "setting.txt"); std::string value; input >> value;
+          CHECK(value == std::to_string(i));
+        }
+      }
+      CHECK(platform_count == platforms_before + 2);
+      for (const auto& app : fs::directory_iterator(resource / "ReaWebAPI" / "Apps"))
+        CHECK(!fs::exists(app.path() / "WebViewData"));
     }
     const auto metadata_root = root / "MetadataApp";
     DevToolsPreferences inspector;

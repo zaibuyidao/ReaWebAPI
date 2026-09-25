@@ -37,20 +37,24 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
   if (sessions_.size() >= 32) throw Error("WINDOW_LIMIT", "At most 32 ReaWebAPI windows may be open");
   if (next_id_ == std::numeric_limits<int>::max()) throw Error("WINDOW_LIMIT", "Window id space exhausted");
   const auto app_id = dev_url.empty() ? "local-" + app_identity(entry.parent_path()) : "dev-" + state_key(dev_url, 0);
+  const auto profile = resource_ / "ReaWebAPI" / "Apps" / app_id;
   auto app = apps_[app_id].lock();
   if (!app) {
     app = std::make_shared<App>();
     app->id = app_id;
     app->mode = dev_url.empty() ? "app-http" : "dev-http";
-    const auto profile = resource_ / "ReaWebAPI" / "Apps" / app_id;
     app->info = app_info(fs::canonical(entry.parent_path()), profile / "Data", app_id);
     if (dev_url.empty()) {
       app->resources = std::make_unique<WebResources>(entry.parent_path(), profile);
       app->origin = app->resources->origin();
     } else app->origin = dev_url.substr(0, dev_url.find('/', 7));
-    auto data = profile / "WebViewData";
-    fs::create_directories(data);
-    app->platform = make_platform(data);
+    app->platform = platform_.lock();
+    if (!app->platform) {
+      const auto data = resource_ / "ReaWebAPI" / "WebViewData";
+      fs::create_directories(data);
+      app->platform = make_platform(data);
+      platform_ = app->platform;
+    }
     apps_[app_id] = app;
   }
   const auto id = ++next_id_;
@@ -63,7 +67,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
   while (slots.count(session->slot)) ++session->slot;
   auto key = state_key(entry.generic_u8string(), session->slot);
   session->ident = "ReaWebAPI:" + key;
-  session->state_path = resource_ / "ReaWebAPI" / "WindowState" / (key + ".json");
+  session->state_path = profile / "WindowState" / (key + ".json");
   session->title = "ReaWebAPI — " + entry.parent_path().filename().u8string();
   session->default_title = session->title;
   session->bridge = std::make_unique<Bridge>(host_, Bridge::Controls{

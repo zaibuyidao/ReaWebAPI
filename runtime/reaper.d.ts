@@ -30,7 +30,7 @@ interface ReaWebRuntimeInfo {
   mode: 'app-http' | 'dev-http';
   appId: string;
   origin: string;
-  storageIsolation: 'app-profile';
+  storageIsolation: 'origin';
   localResources: boolean;
 }
 interface ReaWebCapabilities {

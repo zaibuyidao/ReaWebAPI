@@ -22,7 +22,7 @@ Small isolated requests and bounded replies use a fast path, while native API ex
 
 `projectScope` is `all`. `limits` reports request bytes, batch calls and pending calls. Diagnostics counters describe this window, and `lastError` is a diagnostic string rather than a complete history of rejected calls. The scheduler's 2 ms budget is a soft dispatch budget, not a deadline for an individual native function.
 
-Both capabilities and diagnostics include `webRuntime`: `contract` (1), `mode` (`app-http` / `dev-http`), `appId`, `origin`, `storageIsolation` (`app-profile`), and `localResources`. See the [Web Runtime contract](frontend.md).
+Both capabilities and diagnostics include `webRuntime`: `contract` (1), `mode` (`app-http` / `dev-http`), `appId`, `origin`, `storageIsolation` (`origin`), and `localResources`. See the [Web Runtime contract](frontend.md).
 
 ## Windows
 

@@ -67,7 +67,7 @@ await check('localStorage', true, () => {
   localStorage.setItem('reaweb-runtime-visits', String(report.storageVisits));
   assert(Number(localStorage.getItem('reaweb-runtime-visits')) === report.storageVisits);
 });
-await check('Cookies (profile isolation check)', false, () => {
+await check('Cookies (shared profile)', false, () => {
   const old = document.cookie.match(/(?:^|;\s*)reaweb_runtime_visits=(\d+)/);
   report.cookieVisits = Number(old?.[1] || 0) + 1;
   document.cookie = 'reaweb_runtime_visits=' + report.cookieVisits + '; Path=/; SameSite=Strict; Max-Age=86400';

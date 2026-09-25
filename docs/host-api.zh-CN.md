@@ -22,7 +22,7 @@
 
 `projectScope` 为 `all`，`limits` 报告请求字节数、批处理及等待调用上限。诊断计数针对当前窗口，`lastError` 是诊断字符串，不是所有调用错误的历史记录。2 ms 调度预算是软预算，不约束单个原生函数的执行时间。
 
-能力与诊断都包含 `webRuntime`：`contract`（1）、`mode`（`app-http` / `dev-http`）、`appId`、`origin`、`storageIsolation`（`app-profile`）、`localResources`。详见 [Web Runtime 约定](frontend.zh-CN.md)。
+能力与诊断都包含 `webRuntime`：`contract`（1）、`mode`（`app-http` / `dev-http`）、`appId`、`origin`、`storageIsolation`（`origin`）、`localResources`。详见 [Web Runtime 约定](frontend.zh-CN.md)。
 
 ## 窗口
 

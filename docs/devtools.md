@@ -40,6 +40,6 @@ Public `WKWebView.inspectable` remains enabled. Programmatic Inspector control a
 
 ## Saved preferences and diagnostics
 
-`ReaWebAPI/WindowState/*.json` saves `devtools.mode` (`embedded` or `floating`) and `devtools.widthRatio` per page and window slot. Preferences survive reopening the tool and restarting REAPER. DevTools starts closed. Debugging sessions are not persisted. All platforms restore the saved mode, including floating preferences from earlier versions. Windows/macOS hosting fallbacks do not overwrite the saved preference.
+`ReaWebAPI/Apps/<appId>/WindowState/*.json` saves `devtools.mode` (`embedded` or `floating`) and `devtools.widthRatio` per page and window slot. Preferences survive reopening the tool and restarting REAPER. DevTools starts closed. Debugging sessions are not persisted. All platforms restore the saved mode. Windows/macOS hosting fallbacks do not overwrite the saved preference.
 
 `(await reaper.debug.getDiagnostics()).devtools` reports the effective mode, width ratio, embedding support and backend-specific status. On macOS, `visible` reports the local WebKit Inspector state. On Windows, it refers to the native window identified by ReaWebAPI. See [manual verification](SMOKE_TEST.md#devtools-acceptance).

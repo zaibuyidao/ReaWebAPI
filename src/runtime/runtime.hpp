@@ -33,7 +33,7 @@ private:
     std::string id, origin, mode;
     Json info;
     std::unique_ptr<WebResources> resources;
-    std::unique_ptr<Platform> platform;
+    std::shared_ptr<Platform> platform;
   };
   struct Session {
     int id = 0, slot = 0;
@@ -80,6 +80,7 @@ private:
   DockApi dock_;
   fs::path resource_;
   std::function<void(const std::string&)> log_;
+  std::weak_ptr<Platform> platform_;
   std::map<std::string, std::weak_ptr<App>> apps_;
   std::map<int, std::shared_ptr<Session>> sessions_;
   std::map<std::string, Json> state_cache_;

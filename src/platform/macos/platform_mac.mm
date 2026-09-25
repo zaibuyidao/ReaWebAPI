@@ -369,13 +369,13 @@ public:
     std::ifstream input(profile);
     std::getline(input, identifier);
     NSUUID* uuid = identifier.empty() ? nil : [[NSUUID alloc] initWithUUIDString:ns(identifier)];
-    if (!uuid && fs::exists(profile)) throw std::runtime_error("Invalid WKWebView App profile id; browser data was left unchanged");
+    if (!uuid && fs::exists(profile)) throw std::runtime_error("Invalid WKWebView shared profile id; browser data was left unchanged");
     if (!uuid) {
       uuid = [NSUUID UUID];
       std::ofstream output(profile, std::ios::trunc);
       output << uuid.UUIDString.UTF8String;
       output.close();
-      if (!output) throw std::runtime_error("Cannot persist the WKWebView App profile id");
+      if (!output) throw std::runtime_error("Cannot persist the WKWebView shared profile id");
     }
     data_ = [WKWebsiteDataStore dataStoreForIdentifier:uuid];
     pool_ = [WKProcessPool new];

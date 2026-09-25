@@ -45,29 +45,38 @@ def run_checks(host, endpoints):
     prior = json.loads(saved.read_text(encoding='utf-8')) if saved.exists() else None
     first_a = prior[-1]['storageVisits'] + 1 if prior else 1
     first_b = prior[1]['storageVisits'] + 1 if prior else 1
+    first_cookie = prior[-1]['cookieVisits'] + 1 if prior else 1
+    active = {}
     if prior: origins = {app_a: prior[-1]['origin'], app_b: prior[1]['origin']}
-    for folder, visit in ((app_a, first_a), (app_b, first_b), (app_a, first_a + 1)):
+    for index, (folder, visit) in enumerate(((app_a, first_a), (app_b, first_b), (app_a, first_a + 1))):
+        if folder in active:
+            assert host['close_window'](active.pop(folder))
+            settle = time.monotonic() + .5
+            while time.monotonic() < settle: pump()
         host['messages'].clear()
         identifier = host['open_window'](str(folder / 'index.html').encode('utf-8'))
         assert identifier, host['get_error']()
+        active[folder] = identifier
         deadline = time.monotonic() + 35
         while time.monotonic() < deadline and not any(m.startswith('RUNTIME_REPORT:') for m in host['messages']): pump()
         captured = [m for m in host['messages'] if m.startswith('RUNTIME_REPORT:')]
         assert captured, host['messages']
         report = json.loads(captured[-1].split(':', 1)[1])
         assert report['passed'], report
-        for name in ('storageVisits', 'cookieVisits', 'indexedDBVisits'):
+        for name in ('storageVisits', 'indexedDBVisits'):
             assert report[name] == visit, (name, visit, report)
+        assert report['cookieVisits'] == first_cookie + index, report
         assert all(check['ok'] for check in report['checks']), report
-        assert report['runtime']['mode'] == 'app-http' and report['runtime']['storageIsolation'] == 'app-profile'
+        assert report['runtime']['mode'] == 'app-http' and report['runtime']['storageIsolation'] == 'origin'
         if folder in origins: assert report['origin'] == origins[folder], 'Origin changed on reopen'
         origins[folder] = report['origin']
         reports.append(report)
-        assert host['close_window'](identifier)
-        # Let browser profile writes settle before constructing another environment.
-        settle = time.monotonic() + .5
-        while time.monotonic() < settle: pump()
+        assert (root / 'ReaWebAPI/WebViewData').is_dir()
+        assert not list((root / 'ReaWebAPI/Apps').glob('*/WebViewData'))
+    for identifier in active.values(): assert host['close_window'](identifier)
+    settle = time.monotonic() + .5
+    while time.monotonic() < settle: pump()
     assert origins[app_a] != origins[app_b], origins
     (root / 'web-runtime-report.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')
     print('WebView2: required Web Runtime checks, IndexedDB, both Worker kinds, WebGL, '
-          'stable origin, reopen persistence and cross-App localStorage/cookie/IndexedDB isolation passed')
+          'concurrent Apps, stable origin, reopen persistence, origin-isolated localStorage/IndexedDB and shared cookies passed')

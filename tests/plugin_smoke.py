@@ -826,7 +826,13 @@ try:
             else:
                 with (folder / 'app.js').open('a', encoding='utf-8') as stream:
                     stream.write(driver)
-        state_folder = root / 'ReaWebAPI' / 'WindowState'
+        identity = dev_url if args.dev else page.parent.resolve().as_posix()
+        if not args.dev and sys.platform == 'win32':
+            identity = ''.join(chr(ord(c) + 32) if 'A' <= c <= 'Z' else c for c in identity)
+        app_hash = 14695981039346656037
+        for byte in identity.encode('utf-8'): app_hash = ((app_hash ^ byte) * 1099511628211) & ((1 << 64) - 1)
+        app_id = ('dev-' if args.dev else 'local-') + f'{app_hash:016x}-0'
+        state_folder = root / 'ReaWebAPI' / 'Apps' / app_id / 'WindowState'
         state_folder.mkdir(parents=True, exist_ok=True)
         state_files = []
         for slot in range(window_count):
@@ -1000,7 +1006,8 @@ try:
             timer(); time.sleep(.01)
         assert all(state['placement']['x'] != 900000 and state['docked'] for state in states), states
         assert states[0]['placement']['maximized'] is (not args.studio), states
-        assert list((root / 'ReaWebAPI' / 'Apps').glob('*/WebViewData'))
+        assert (root / 'ReaWebAPI' / 'WebViewData').is_dir()
+        assert not list((root / 'ReaWebAPI' / 'Apps').glob('*/WebViewData'))
         if not (args.demo or args.starter or args.modern or args.studio):
             for id in ids:
                 assert (folder / f'cleanup-{id}.txt').read_text() == 'close saved'

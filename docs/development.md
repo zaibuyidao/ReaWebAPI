@@ -134,7 +134,7 @@ await stop();
 
 Subscriptions deliver an initial snapshot and coalesced changes. Project changes and native track-selection notifications are checked on each main-thread tick, with a 100 ms selection fallback for silent edits. These are UI refresh signals, not an edit history or sample clock. Catch failures inside asynchronous callbacks. Dispose subscriptions when a component unmounts. Page closure clears the document's subscriptions.
 
-Docking preserves page state. Browser profiles are isolated by App directory; windows in the same directory share storage. Use the [Web Runtime contract](frontend.md) for origin persistence and storage rules. Persist GUIDs or tool settings rather than object handles, and resolve persisted references against the appropriate project on the next run. Browser storage and network behavior follow the platform WebView. ReaWebAPI does not add Node.js filesystem or shell APIs.
+Docking preserves page state. Apps share one browser profile. localStorage and IndexedDB are isolated by origin, while cookies follow native domain and path rules. Use the [Web Runtime contract](frontend.md) for origin persistence and storage rules. Persist GUIDs or tool settings rather than object handles, and resolve persisted references against the appropriate project on the next run. Browser storage and network behavior follow the platform WebView. ReaWebAPI does not add Node.js filesystem or shell APIs.
 
 ## Errors and debugging
 
