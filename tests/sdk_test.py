@@ -74,7 +74,7 @@ class SdkTests(unittest.TestCase):
                 self.assertIn('ReaWebAPI/SDK/runtime-api.d.ts', files)
                 self.assertIn('ReaWebAPI/docs/runtime-api-inventory.md', files)
                 self.assertIn('ReaWebAPI/SDK/runtime-demo/app.js', files)
-                self.assertIn('ReaWebAPI/SDK/lua-backend/Open.lua', files)
+                self.assertIn('ReaWebAPI/SDK/lua-backend/reawebapi-lua-backend.lua', files)
                 self.assertIn('ReaWebAPI/SDK/tools/validate_app.py', files)
                 for name in ('LICENSE.md', 'COPYING', 'COPYING.LESSER', 'THIRD_PARTY.md'):
                     self.assertEqual(files[f'ReaWebAPI/{name}'], (ROOT / name).read_bytes())
