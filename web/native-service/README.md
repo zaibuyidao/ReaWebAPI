@@ -1,6 +1,6 @@
 # Native Events and Host Service
 
-Run `Open.lua` in REAPER. The launcher returns immediately. Change track selection, transport, project tabs, markers, regions, loop points or time selection and inspect the native events.
+Run `reawebapi-native-service.lua` in REAPER. The launcher returns immediately. Change track selection, transport, project tabs, markers, regions, loop points or time selection and inspect the native events.
 
 `runtime.getInfo` is built in. To exercise `test`, build the `native_service_extension` target and place its `reaper_zz_reaweb_service_test` binary in a test REAPER installation's `UserPlugins`. Restart REAPER. The extension must load after ReaWebAPI. Use ping, send, pending and unregister. After unregister, calls reject until the extension registers again. Subscribe again after registration.
 

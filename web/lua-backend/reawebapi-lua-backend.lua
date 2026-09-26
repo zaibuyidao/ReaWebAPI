@@ -1,5 +1,5 @@
+-- @noindex
 -- @description ReaWebAPI: Lua backend and WebView UI
--- @author zaibuyidao
 local reaper = reaper
 if not reaper.APIExists("ReaWeb_Send") then
   reaper.MB("Install a ReaWebAPI version with the Lua message bridge.", "ReaWebAPI", 0)
