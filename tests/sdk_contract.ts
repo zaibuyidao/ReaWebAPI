@@ -9,6 +9,21 @@ async function hostMessages() {
   // @ts-expect-error Message events carry strings.
   await reaper.events.on('message', (data: number) => {});
 }
+
+async function nativeServices() {
+  const service = reaper.host.service('test');
+  const pong: string = await service.invoke<string>('ping');
+  const sent: void = service.send('message', {text: pong});
+  const callback = (value: {text: string}) => console.log(value.text);
+  const dispose = await service.on('changed', callback);
+  await service.off('changed', callback);
+  await dispose();
+  await reaper.events.on('trackSelectionChanged', event => console.log(event.count, event.revision));
+  await reaper.events.on('transportChanged', event => console.log(event.rate, event.recording));
+  await reaper.events.on('projectChanged', event => console.log(event.projects));
+  await reaper.events.on('currentRegionChanged', event => console.log(event.region?.name));
+  void sent;
+}
 export {};
 
 // Public Runtime names must match the reviewed inventory; no flat aliases may leak through.

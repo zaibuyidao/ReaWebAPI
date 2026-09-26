@@ -22,6 +22,12 @@ def payload(root, version, revision):
     paths = {f'ReaWebAPI/SDK/{name}': root / 'runtime' / name for name in (
         'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'README.md', 'README.zh-CN.md')}
     paths['ReaWebAPI/SDK/tools/validate_app.py'] = root / 'tools/validate_app.py'
+    paths['ReaWebAPI/SDK/native/reaweb_service.h'] = root / 'src/public/reaweb_service.h'
+    paths['ReaWebAPI/SDK/native/test_extension.cpp'] = root / 'tests/native_service_extension.cpp'
+    paths['ReaWebAPI/docs/native-services.md'] = root / 'docs/native-services.md'
+    paths['ReaWebAPI/docs/native-services.zh-CN.md'] = root / 'docs/native-services.zh-CN.md'
+    for name in ('Open.lua', 'Coexist.lua', 'index.html', 'app.js', 'style.css', 'README.md'):
+        paths[f'ReaWebAPI/SDK/native-service/{name}'] = root / 'web/native-service' / name
     for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'README.md'):
         paths[f'ReaWebAPI/SDK/lua-backend/{name}'] = root / 'web/lua-backend' / name
     for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'app.json'):
@@ -36,7 +42,7 @@ def payload(root, version, revision):
                  'src/main.ts', 'src/worker.ts', 'src/style.css', 'public/data.json'):
         paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'runtime/modern' / name
     for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md',
-                 'devtools.md', 'devtools.zh-CN.md', 'SMOKE_TEST.md',
+                 'devtools.md', 'devtools.zh-CN.md', 'SMOKE_TEST.md', 'VALIDATION.md',
                  'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reaper_api.json', 'bindings.json'):
@@ -52,6 +58,9 @@ def payload(root, version, revision):
             text = content.decode('utf-8-sig')
             text = text.replace('](../runtime/', '](../SDK/').replace('](runtime/', '](SDK/')
             text = text.replace('](../web/lua-backend/', '](../SDK/lua-backend/').replace('](web/lua-backend/', '](SDK/lua-backend/')
+            text = text.replace('](../web/native-service/', '](../SDK/native-service/').replace('](web/native-service/', '](SDK/native-service/')
+            text = text.replace('](../src/public/reaweb_service.h)', '](../SDK/native/reaweb_service.h)')
+            text = text.replace('](../tests/native_service_extension.cpp)', '](../SDK/native/test_extension.cpp)')
             if name == 'ReaWebAPI/docs/release-notes.md':
                 text = re.sub(r'\A# ReaWebAPI[ \t]*\r?\n', f'# ReaWebAPI v{version}\n', text, count=1)
             content = text.encode('utf-8')

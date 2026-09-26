@@ -8,7 +8,9 @@ JavaScript Runtime fixes fourteen namespace boundaries: `reaper.window`, `reaper
 
 Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
 
-All fourteen namespaces provide implemented members: 65 methods and one Promise property. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All fourteen namespaces provide implemented members: 66 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+
+`reaper.host` retains the Lua Backend route. `reaper.host.service(name)` routes to named native services. `reaper.events` adds native selection, track, transport, project and timeline sources. See [Native Services](native-services.md) for payloads, thread boundaries and lifecycle rules. Existing Clipboard, Drag & Drop, Window/Dock/Focus and System interfaces remain unchanged.
 
 `transaction.batch` accepts call arrays or synchronous Mirror Builder callbacks, with automatic references, tuple destructuring and typed result selection. Both forms use the existing native batch implementation. `transaction` also provides Undo groups, without atomic rollback or isolation: completed writes remain applied and other edits may interleave. See the [batch contract](host-api.md#batches-and-continuous-controls).
 

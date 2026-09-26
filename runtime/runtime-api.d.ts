@@ -1,6 +1,17 @@
 /** ReaWebAPI Runtime contract 2. Standard REAPER APIs use their original names. */
 type ReaWebDispose = () => Promise<void>;
 type ReaWebHostMessage = string | number | boolean | null | ReaWebHostMessage[] | { [key: string]: ReaWebHostMessage };
+interface ReaWebHostService {
+  invoke<T = ReaWebHostMessage>(method: string, payload?: ReaWebHostMessage): Promise<T>;
+  /** Fire-and-forget. Dispatch failures are reported to the Runtime error log. */
+  send(method: string, payload?: ReaWebHostMessage): void;
+  /** No replay. The reserved unloaded event carries EXTENSION_UNLOADED. */
+  on<T = ReaWebHostMessage>(event: string, callback: (data: T) => void): Promise<ReaWebDispose>;
+  off<T = ReaWebHostMessage>(event: string, callback: (data: T) => void): Promise<void>;
+}
+interface ReaWebNativeState { projectEpoch: number; revision: number; available: boolean; }
+interface ReaWebNativeInvalidation extends ReaWebNativeState { count: number; invalidated: true; }
+interface ReaWebRegion { id: number; start: number; end: number; name: string; color: number; }
 type ReaWebPlatform = 'windows' | 'macos' | 'linux';
 /** Architecture of the running extension process (including under emulation). */
 type ReaWebArchitecture = 'x64' | 'arm64' | 'x86' | 'arm' | 'unknown';
@@ -61,7 +72,8 @@ interface ReaWebRuntimeCapabilities {
   contract: 2; namespaces: ReaWebRuntimeNamespace[]; cleanupTimeoutMs: number;
   /** Reserved Runtime namespace identifiers. */
   reservedNamespaces: ReaWebRuntimeNamespace[];
-  host: { maxMessageBytes: number; maxPendingMessages: number; maxQueuedBytes: number };
+  host: { maxMessageBytes: number; maxPendingMessages: number; maxQueuedBytes: number;
+    serviceABI: 1; serviceTimeoutMs: 30000; builtinServices: string[] };
   dragDrop: { maxFiles: number; maxTextBytes: number; effect: 'copy' };
   audio: { maxChannels: number; maxWaveformPoints: number; maxPendingJobs: number };
 }
@@ -81,6 +93,17 @@ interface ReaWebDevToolsState {
 }
 interface ReaWebDiagnostics { lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; devtools: ReaWebDevToolsState; }
 interface ReaWebEvents {
+  trackSelectionChanged: ReaWebNativeInvalidation;
+  trackStateChanged: ReaWebNativeInvalidation;
+  markersChanged: ReaWebNativeInvalidation;
+  regionsChanged: ReaWebNativeInvalidation;
+  transportChanged: ReaWebNativeState & { state?: number; playing?: boolean; paused?: boolean; recording?: boolean;
+    position?: number; cursor?: number; rate?: number; loop?: boolean };
+  projectChanged: ReaWebNativeState & { activeProject?: string; projects?: { id: string; path: string; dirty: boolean }[];
+    changeCount?: number; generation?: number };
+  currentRegionChanged: ReaWebNativeState & { region?: ReaWebRegion | null };
+  loopPointsChanged: ReaWebNativeState & { start?: number; end?: number };
+  timeSelectionChanged: ReaWebEvents['loopPointsChanged'];
   /** Original Lua text, FIFO within this document. No snapshot or replay. */
   message: string;
   /** Discrete native drops; no initial snapshot or replay. */
@@ -102,6 +125,7 @@ interface ReaWebEvents {
 }
 interface ReaWebAPI {
   readonly host: {
+    service(name: string): ReaWebHostService;
     /** Queue text for Lua ReaWeb_Receive. Other JSON values are serialized. Resolves true on acceptance.
      * Limit 1 MiB UTF-8, no raw NUL. Invalid values and queue overflow reject. */
     send(message: ReaWebHostMessage): Promise<boolean>;

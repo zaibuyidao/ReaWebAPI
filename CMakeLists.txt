@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.6.2 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.6.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -100,6 +100,9 @@ target_compile_definitions(reaweb_core PUBLIC REAWEB_VERSION="${PROJECT_VERSION}
 
 # Share the same session implementation between the plugin and native tests.
 add_library(reaweb_runtime STATIC
+  src/runtime/host_service.cpp
+  src/runtime/native_monitor.cpp
+  src/runtime/service_router.cpp
   src/runtime/runtime.cpp
   src/runtime/window.cpp
   src/runtime/events.cpp

@@ -54,7 +54,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(len(entries), len(demo_files))
             self.assertEqual({target for _, target, _ in entries}, set(demo_files))
             self.assertCountEqual([target for mode, target, _ in entries if mode == 'main'],
-                             ['web/ReaWebAPI_Demo.lua', 'web/lua-backend/Open.lua'])
+                             ['web/ReaWebAPI_Demo.lua', 'web/lua-backend/Open.lua', 'web/native-service/Open.lua', 'web/native-service/Coexist.lua'])
             for _, target, url in entries:
                 self.assertEqual(unquote(url),
                                  'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/' + target)

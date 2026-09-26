@@ -3,6 +3,8 @@
 #include "core/worker.hpp"
 #include "web/web_resources.hpp"
 #include "runtime/services.hpp"
+#include "runtime/host_service.hpp"
+#include "runtime/native_monitor.hpp"
 #include <deque>
 #include <optional>
 #include <set>
@@ -28,6 +30,7 @@ public:
   Json diagnostics(int id) const;
   bool captures_keyboard(void* handle, const std::function<bool(void*, void*)>& is_child) const;
   void tick();
+  ServiceRegistry& services() { return services_; }
 private:
   struct App {
     std::string id, origin, mode;
@@ -49,6 +52,7 @@ private:
     std::deque<std::string> to_web, to_host;
     size_t message_bytes = 0, web_messages = 0;
     std::set<std::string> subscriptions;
+    std::map<uint64_t, std::set<std::string>> service_subscriptions;
     std::map<std::string, Json> events;
     Json last_state, saved_state, pending_state;
     Clock::time_point started = Clock::now(), state_changed = Clock::now();
@@ -77,6 +81,8 @@ private:
     std::deque<Audio> audio;
   };
   Host host_;
+  ServiceRegistry services_;
+  NativeMonitorManager monitors_;
   DockApi dock_;
   fs::path resource_;
   std::function<void(const std::string&)> log_;
@@ -139,6 +145,9 @@ private:
   void emit(Session& session, const std::string& name, Json data);
   void observe(Clock::time_point deadline);
   void observe_extra(Clock::time_point deadline, int changes);
+  void observe_native(Clock::time_point deadline);
+  bool service_call(Session& session, const Work& request);
+  void service_event(uint64_t handle, const std::string& service, int window, const std::string& name, Json data);
   bool lifecycle(Session& session, const std::string& action);
   bool defer_reload(int id);
   void complete_lifecycle(Session& session);

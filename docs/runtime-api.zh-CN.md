@@ -1,5 +1,7 @@
 # Runtime API
 
+`reaper.host` 保留 Lua Backend 路由。`reaper.host.service(name)` 访问具名原生服务。`reaper.events` 新增选轨、轨道、Transport、工程和时间线状态源。载荷、线程与生命周期契约见 [Native Service](native-services.zh-CN.md)。现有 Clipboard、Drag & Drop、Window/Dock/Focus、System 接口保持不变。
+
 [Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) · [TypeScript](../runtime/runtime-api.d.ts)
 
 [English](runtime-api.md) | **简体中文**
@@ -10,7 +12,7 @@ JavaScript Runtime 使用下列 14 个命名空间。730 项标准 REAPER 镜像
 
 就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
-14 个命名空间均提供具体方法，共 65 个方法和 1 个 Promise 属性；`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
+14 个命名空间共 66 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
 `transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
 

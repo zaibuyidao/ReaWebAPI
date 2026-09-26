@@ -9,6 +9,7 @@ TypeScript declarations, templates and examples for the current ReaWebAPI releas
 | `reaper.d.ts` | Type declaration entry point, referencing the Mirror and Runtime declarations |
 | `reaper-api.generated.d.ts` | 730 REAPER API signatures and result types |
 | `runtime-api.d.ts` | Runtime namespaces and data types |
+| [Native Service Demo](../web/native-service/README.md) | Native events, services and Lua coexistence. Packaged SDK also includes `native/reaweb_service.h` and `native/test_extension.cpp`. See [integration](../docs/native-services.md). |
 | `starter/` | Lua, HTML and JavaScript template with editor type checking |
 | `modern/` | Vite and TypeScript template |
 | `runtime-demo/` | Runtime Studio: windows, events, audio and App services |

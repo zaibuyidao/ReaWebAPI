@@ -2,12 +2,12 @@
 
 ## English
 
-- Share `ReaWebAPI/WebViewData/` across Apps and Modules on Windows, macOS and Linux, with one native browser backend for active Apps.
-- Keep App identities and origins unchanged. Report `storageIsolation: "origin"` for localStorage and IndexedDB isolation within the shared profile. Cookies on the same host are shared across ports.
-- Store window state in `Apps/<appId>/WindowState/`, alongside private `Data/` and `origin.json`. Legacy browser data and global window state are not migrated.
+- Add named Host Services with invoke, send, events, a versioned C extension registry, bounded queues and lifecycle cleanup.
+- Add subscription-driven native monitoring for track selection/state, transport, projects, markers, regions, loop points and time selection.
+- Add native service SDK headers, TypeScript contracts, test extension and demos for Lua-independent operation and Lua Backend coexistence.
 
 ## 简体中文
 
-- Windows、macOS 和 Linux 的 App 与 Module 共享 `ReaWebAPI/WebViewData/`，活动 App 复用同一原生浏览器后端。
-- 保留 App 身份和 origin 规则。`storageIsolation` 返回 `"origin"`，表示 localStorage 和 IndexedDB 在共享 profile 内按 origin 隔离。同一主机的不同端口共享 cookie。
-- 窗口状态保存在 `Apps/<appId>/WindowState/`，与私有 `Data/` 和 `origin.json` 同级。旧浏览器数据和全局窗口状态不迁移。
+- 新增具名 Host Service，支持 invoke、send、事件、版本化 C 扩展注册、有界队列和生命周期清理。
+- 新增按订阅启停的原生状态监测，覆盖选轨、轨道状态、Transport、工程、Marker、Region、循环区间和时间选区。
+- 新增原生服务 SDK 头文件、TypeScript 类型、测试扩展及 Lua 独立运行和 Backend 共存示例。

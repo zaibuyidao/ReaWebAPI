@@ -28,14 +28,27 @@ bool small_message(const Json& value, size_t& budget) {
 }
 }
 Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock)
-  : host_(std::move(host)), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), main_thread_(std::this_thread::get_id()) {
+  : host_(std::move(host)), services_([this](auto handle, const auto& service, int window, const auto& name, Json data) {
+      service_event(handle, service, window, name, std::move(data));
+    }), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), main_thread_(std::this_thread::get_id()) {
   project_ = host_.current_project();
   host_generation_ = host_.project_generation ? host_.project_generation() : 0;
   project_epoch_ = 1;
+  register_native_monitors(monitors_, host_);
+  ReaWeb_ServiceCallbacks builtin{sizeof(ReaWeb_ServiceCallbacks), REAWEB_SERVICE_ABI, &services_,
+    [](void* context, uint64_t handle, uint64_t request, int, const char* method, const char*) -> int {
+      if (std::string(method) != "getInfo") return REAWEB_METHOD_NOT_FOUND;
+      if (!request) return REAWEB_OK;
+      return static_cast<ServiceRegistry*>(context)->complete(handle, request,
+        Json{{"version", REAWEB_VERSION}, {"serviceABI", REAWEB_SERVICE_ABI}}.dump().c_str(), REAWEB_OK, nullptr);
+    }, nullptr};
+  uint64_t handle = 0;
+  services_.add("runtime", &builtin, &handle);
 }
 Runtime::~Runtime() {
   try { finish_undo(); } catch (...) {}
   for (const auto& item : sessions_) {
+    services_.cancel_window(item.first);
     try { persist(*item.second, true); detach(*item.second); } catch (...) {}
   }
   sessions_.clear();
@@ -158,6 +171,7 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   }
   if (name == "native-drop") s.window->set_drop_enabled(true);
   s.subscriptions.insert(name);
+  if (monitors_.contains(name)) return monitors_.snapshot(name);
   next_observation_ = Clock::now();
   if (name == "windowstatechange") return window_state(s);
   if (name == "projectchange") return project_event_;
@@ -173,6 +187,7 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
 bool Runtime::start_async(Session& session, const Work& request) {
   const auto method = request.data.at("method").get<std::string>();
   const auto& args = request.data.at("args");
+  if (service_call(session, request)) return true;
   if (method == "ReaWeb_DocumentTitle") {
     if (args.size() != 1 || !args[0].is_string())
       throw Error("INVALID_ARGUMENT", "Expected a document title");
@@ -319,7 +334,9 @@ void Runtime::tick() {
     if (!it->second.expired()) ++it;
     else it = apps_.erase(it);
   }
+  services_.tick(Clock::now(), Clock::now() + std::chrono::microseconds(500));
   observe(deadline);
+  observe_native(deadline);
   if (undo_owner_ && Clock::now() >= undo_deadline_) finish_undo();
   Work work;
   for (int n = 0; n < 128 && Clock::now() < deadline && worker_.take(work); ++n) {
@@ -456,6 +473,8 @@ void Runtime::tick() {
         if (response) { auto request = std::move(audio.request); s.audio.pop_front(); reply(s, std::move(request), *response); }
       }
       if (s.closing || s.window->closed()) {
+        services_.cancel_window(s.id);
+        s.service_subscriptions.clear(); s.subscriptions.clear();
         clear_messages(s);
         // Close requests get a bounded chance to flush their reply before destroying the page.
         if (s.closing && !s.window->closed() && s.output_pending && Clock::now() - s.closing_since < std::chrono::milliseconds(250)) { ++it; continue; }

@@ -11,6 +11,7 @@
 | [SDK](../runtime/README.zh-CN.md) | 类型声明、模板和示例 |
 | [REAPER API](api-reference.md) | 730 项 REAPER 7.80 接口签名和返回类型 |
 | [Runtime API](runtime-api.zh-CN.md) | 窗口、事件、文件、音频和应用服务 |
+| [Native Service](native-services.zh-CN.md) | 原生事件、监测数据与 C/C++ 服务接入 |
 | [接口清单](runtime-api-inventory.md) | Runtime 命名空间和方法索引 |
 | [宿主 API](host-api.zh-CN.md) | Lua 入口、原生桥接行为和错误码 |
 | [Web 运行环境](frontend.zh-CN.md) | 资源、存储、Worker 和平台要求 |

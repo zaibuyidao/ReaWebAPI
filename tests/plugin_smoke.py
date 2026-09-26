@@ -383,7 +383,10 @@ entry.restype = C.c_int
 info = Info(0x20E, owner_window, register, get_func)
 assert entry(None, C.byref(info)) == 1
 try:
-    assert len(registrations) == 43, list(registrations)
+    assert len(registrations) == 47, list(registrations)
+    for name in (b'ReaWeb_RegisterService', b'ReaWeb_UnregisterService', b'ReaWeb_CompleteServiceCall', b'ReaWeb_EmitServiceEvent'):
+        assert b'API_' + name in registrations
+        assert b'APIvararg_' + name not in registrations
     assert b'csurf_inst' in registrations
     native_open = C.CFUNCTYPE(C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.POINTER(C.c_bool))(registrations[b'API_ReaWeb_Open'])
     def open_window(path, instance_key=None, name=None, multiple=None):

@@ -2,7 +2,7 @@ local root = arg[1] or '.'
 local launchers = {
   'web/ReaWebAPI_Demo.lua', 'runtime/starter/Open.lua', 'runtime/runtime-demo/Open.lua',
   'runtime/modern/Open.lua', 'runtime/modern/OpenDev.lua', 'runtime/web-runtime/Open.lua',
-  'web/lua-backend/Open.lua'
+  'web/lua-backend/Open.lua', 'web/native-service/Open.lua'
 }
 for _, path in ipairs(launchers) do
   local ext, windows, deferred, exits, sent, instances = {}, {}, {}, {}, {}, {}

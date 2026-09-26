@@ -7,6 +7,7 @@ ReaWebAPI is a native REAPER extension for building tools with HTML, CSS and Jav
 - 730 standard REAPER 7.80 API bindings with TypeScript declarations.
 - Mirror-aware Batch Builder for 456 reviewed APIs, including transport queries and time conversions, with deferred references, tuple destructuring and typed results.
 - Lua backend + WebView UI through `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and `message` events.
+- [Native Events and Host Services](docs/native-services.md) with subscription-driven state monitoring and a C/C++ extension registry, independent of Lua loops.
 - 14 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
 - Native WebView support for modules, local resources, Workers and persistent App storage.
 - Windows/Linux [DevTools](docs/devtools.md) with a resizable right-hand panel, floating mode and saved layout preferences. Ctrl+Shift+I toggles visibility. Windows offers a borderless embedded panel, native floating window and page context-menu controls.

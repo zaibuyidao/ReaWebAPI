@@ -103,7 +103,8 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
       {"events", runtime_events()},
       {"runtime", {{"contract", 2}, {"namespaces", {"window", "theme", "dialog", "events", "lifecycle", "debug", "fs", "audio",
                                                   "clipboard", "dragDrop", "app", "system", "transaction", "host"}},
-        {"host", {{"maxMessageBytes", host_message_limit}, {"maxPendingMessages", host_queue_limit}, {"maxQueuedBytes", host_queue_bytes}}},
+        {"host", {{"maxMessageBytes", host_message_limit}, {"maxPendingMessages", host_queue_limit}, {"maxQueuedBytes", host_queue_bytes},
+          {"serviceABI", 1}, {"serviceTimeoutMs", 30000}, {"builtinServices", {"runtime"}}}},
         {"reservedNamespaces", Json::array()},
         {"dragDrop", {{"maxFiles", 256}, {"maxTextBytes", value_limit}, {"effect", "copy"}}},
         {"cleanupTimeoutMs", 2000}, {"audio", {{"maxChannels", 32}, {"maxWaveformPoints", 8192}, {"maxPendingJobs", 8}}}}},
@@ -111,6 +112,10 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
       {"limits", {{"requestBytes", message_limit}, {"batchCalls", batch_limit}, {"pendingCalls", 256}}}};
   });
   add("ReaWeb_Batch", 1, 2, [this](const Json& a) { return batch(a); });
+  for (const auto* name : {"ReaWeb_ServiceInvoke", "ReaWeb_ServiceSend"})
+    add(name, 3, 3, [](const Json&) -> Json { throw Error("MAIN_THREAD_REQUIRED", "Host Service requires Runtime dispatch"); });
+  for (const auto* name : {"ReaWeb_ServiceSubscribe", "ReaWeb_ServiceUnsubscribe"})
+    add(name, 2, 2, [](const Json&) -> Json { throw Error("MAIN_THREAD_REQUIRED", "Host Service requires Runtime dispatch"); });
   add("ReaWeb_SetBufferSize", 1, 1, [this](const Json& a) { return native_->set_buffer_size([&]() -> size_t {
     if (!a[0].is_number_unsigned() && (!a[0].is_number_integer() || a[0].get<int64_t>() < 0))
       throw Error("INVALID_ARGUMENT", "bytes must be a positive integer");

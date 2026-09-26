@@ -15,6 +15,9 @@ src/
 ├─ runtime/
 │  ├─ runtime.cpp / runtime.hpp
 │  ├─ events.cpp
+│  ├─ native_monitor.cpp / native_monitor.hpp
+│  ├─ host_service.cpp / host_service.hpp
+│  ├─ service_router.cpp
 │  ├─ lifecycle.cpp
 │  ├─ services.cpp / services.hpp
 │  ├─ window.cpp
@@ -26,6 +29,7 @@ src/
 │  ├─ app.cpp
 │  ├─ system.cpp
 │  └─ transaction.cpp
+├─ public/reaweb_service.h
 ├─ platform/
 │  ├─ platform.hpp
 │  ├─ windows/platform_win.cpp

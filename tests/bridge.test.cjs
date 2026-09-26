@@ -13,7 +13,7 @@ test('The public SDK has exactly 730 unchanged Mirror methods and fourteen froze
   const t = await connected();
   const api = t.window.reaper;
   const expected = {
-  "host": ["send"],
+  "host": ["send", "service"],
   "window": [
     "open",
     "openDev",
@@ -299,6 +299,43 @@ for (const engine of ['windows', 'webkit']) {
     assert.deepEqual(JSON.parse(JSON.stringify(await pending)), {
       position: 0, state: 0, beats: 0, measures: 0, display: '0:00.000', valid: false
     });
+  });
+}
+for (const engine of ['windows', 'webkit']) {
+  test(`${engine}: named services preserve Lua routing, listeners, unload and pending cleanup`, async () => {
+    const t = await connected(engine), api = t.window.reaper, testService = api.host.service('test');
+    assert.ok(Object.isFrozen(testService));
+    assert.throws(() => api.host.service('bad/name'), {code:'INVALID_ARGUMENT'});
+    assert.equal(await answer(t, 'ReaWeb_ServiceInvoke', ['test','ping',null], 'pong', testService.invoke('ping')), 'pong');
+    const jsonResult = {__reawebBytes:'business JSON',__reawebCall:true};
+    assert.deepEqual(await answer(t,'ReaWeb_ServiceInvoke',['test','json',null],jsonResult,testService.invoke('json')),jsonResult);
+    await answer(t, 'ReaWeb_HostSend', ['{"method":"old","payload":1}'], true, api.host.send({method:'old',payload:1}));
+    let calls = 0, unloads = 0;
+    const cb = () => ++calls;
+    const pendingA = testService.on('changed',cb), pendingB = testService.on('changed',cb);
+    await answer(t,'ReaWeb_ServiceSubscribe',['test','changed'],{handle:'1'},pendingA);
+    const stopA = await pendingA, stopB = await pendingB;
+    const event = (name, handle='1') => t.window.__reawebReceive({document:t.messages[0].document,service:'test',serviceHandle:handle,serviceEvent:name,data:{x:1}});
+    event('changed'); assert.equal(calls,2);
+    await stopA(); event('changed'); assert.equal(calls,3);
+    assert.equal(testService.send('message',{x:1}),undefined);
+    await answer(t,'ReaWeb_ServiceSend',['test','message',{x:1}],true);
+    await answer(t,'ReaWeb_ServiceUnsubscribe',['test','changed'],{handle:'1'},testService.off('changed',cb));
+    await stopB(); event('changed'); assert.equal(calls,3);
+    const stopUnload = await answer(t,'ReaWeb_ServiceSubscribe',['test','unloaded'],{handle:'1'},testService.on('unloaded',()=>++unloads));
+    const stopOld = await answer(t,'ReaWeb_ServiceSubscribe',['test','changed'],{handle:'1'},testService.on('changed',cb));
+    event('unloaded'); assert.equal(unloads,1); event('changed'); assert.equal(calls,3);
+    await stopOld(); await stopUnload();
+    const stopNew = await answer(t,'ReaWeb_ServiceSubscribe',['test','changed'],{handle:'2'},testService.on('changed',cb));
+    event('changed'); assert.equal(calls,3); event('changed','2'); assert.equal(calls,4);
+    await stopOld(); event('changed','2'); assert.equal(calls,5);
+    await answer(t,'ReaWeb_ServiceUnsubscribe',['test','changed'],{handle:'2'},stopNew());
+    for (const code of ['SERVICE_NOT_FOUND','METHOD_NOT_FOUND','INVALID_ARGUMENT','EXTENSION_UNLOADED','MAIN_THREAD_REQUIRED','TIMEOUT']) {
+      const check = assert.rejects(testService.invoke('ping'),{code});
+      await flush(); t.reply(t.messages.length-1,{error:{code,message:code}}); await check;
+    }
+    const closing = assert.rejects(testService.invoke('pending'),{code:'WINDOW_CLOSED'});
+    await flush(); t.listeners.pagehide(); await closing;
   });
 }
 

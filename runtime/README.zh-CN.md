@@ -9,6 +9,7 @@
 | `reaper.d.ts` | 类型声明入口，引用 Mirror 和 Runtime 声明 |
 | `reaper-api.generated.d.ts` | 730 项 REAPER API 签名和返回类型 |
 | `runtime-api.d.ts` | Runtime 命名空间和数据类型 |
+| [Native Service Demo](../web/native-service/README.md) | 原生事件、服务与 Lua 共存。SDK 包含 `native/reaweb_service.h` 和 `native/test_extension.cpp`，参见 [接入文档](../docs/native-services.zh-CN.md)。 |
 | `starter/` | Lua、HTML 和 JavaScript 模板，附带编辑器类型检查 |
 | `modern/` | Vite 与 TypeScript 模板 |
 | `runtime-demo/` | Runtime Studio，演示窗口、事件、音频和应用服务 |

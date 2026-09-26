@@ -1,5 +1,7 @@
 # 宿主 API 参考
 
+具名 C/C++ 服务通过 `reaper.host.service(name)` 访问 [Native Service 注册机制](native-services.zh-CN.md)。`reaper.host.send(message)` 保留 Lua Backend 路由。原生服务另有执行超时和生命周期取消机制。
+
 [Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) · [TypeScript](../runtime/runtime-api.d.ts)
 
 [English](host-api.md) | **简体中文** · [开发指南](development.zh-CN.md)

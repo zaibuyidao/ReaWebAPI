@@ -1,5 +1,7 @@
 # ReaWebAPI
 
+[Native Event 与 Host Service](docs/native-services.zh-CN.md) 提供按订阅启停的原生状态监测和 C/C++ 扩展注册，独立于 Lua 循环，与现有 Lua Backend 共存。
+
 [English](README.md) | **简体中文**
 
 ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩展，提供可停靠的 WebView 窗口，并通过 `reaper` 对象异步调用 REAPER API。

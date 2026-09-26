@@ -1,8 +1,8 @@
 # Runtime API 完整清单 / Complete API inventory
 
-JavaScript Runtime 只公开以下 **14 个命名空间、65 个方法和 1 个 Promise 属性**。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
+JavaScript Runtime 公开以下 **14 个命名空间、66 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
 
-The JavaScript Runtime exposes only these fourteen namespaces: 65 methods and one Promise property. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact parameter and result types, including overloads, are in [runtime-api.d.ts](../runtime/runtime-api.d.ts). Behavior and limits: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Host services](host-api.md).
+The JavaScript Runtime exposes fourteen namespaces: 66 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
@@ -19,6 +19,7 @@ Lua 后端与 WebView UI 之间的消息。Text messages between a Lua backend a
 | API | 返回 / Result | 用途 |
 | --- | --- | --- |
 | `reaper.host.send(message)` | `Promise<boolean>` | Queue a string or JSON-serialized value for Lua `ReaWeb_Receive`. Receive Lua text through `events.on('message', callback)` |
+| `reaper.host.service(name)` | `ReaWebHostService` | Named native service with invoke, send, on and off |
 
 ## reaper.window
 

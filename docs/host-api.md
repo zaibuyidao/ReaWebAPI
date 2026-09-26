@@ -1,5 +1,7 @@
 # Host API reference
 
+Named C/C++ services use `reaper.host.service(name)` through the [Native Service registry](native-services.md). `reaper.host.send(message)` keeps its Lua Backend route. Native services have separate execution timeouts and lifecycle cancellation.
+
 [Runtime API 完整清单 / Complete inventory](runtime-api-inventory.md) · [TypeScript](../runtime/runtime-api.d.ts)
 
 **English** | [简体中文](host-api.zh-CN.md) · [Developer guide](development.md)

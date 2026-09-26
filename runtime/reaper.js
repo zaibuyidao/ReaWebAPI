@@ -3,12 +3,15 @@
   if (window !== window.top || window.reaper) return;
   const pending = new Map();
   const subscriptions = new Map();
+  const serviceSubscriptions = new Map();
   const latest = new Map();
   const batchReferences = new WeakMap();
   const eventNames = ['projectchange', 'selectionchange', 'itemselectionchange', 'takeselectionchange',
     'transportchange', 'fxchange', 'windowstatechange', 'track-added', 'track-deleted', 'track-selected',
     'item-changed', 'take-changed', 'playback-state-changed', 'tempo-changed', 'marker-changed',
-    'fx-changed', 'project-loaded', 'project-saved', 'theme-changed', 'native-drop', 'message'];
+    'fx-changed', 'project-loaded', 'project-saved', 'theme-changed', 'native-drop', 'message',
+    'trackSelectionChanged', 'trackStateChanged', 'transportChanged', 'projectChanged', 'markersChanged',
+    'regionsChanged', 'currentRegionChanged', 'loopPointsChanged', 'timeSelectionChanged'];
   const lifecycleListeners = new Map();
   let cleanupToken = null;
   const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('-');
@@ -54,6 +57,18 @@
   const receive = message => {
     if (closed || message?.document !== documentId) return;
     if (message.lifecycle) { runCleanup(message.lifecycle); return; }
+    if (message.serviceEvent) {
+      const entries = serviceSubscriptions.get(message.service);
+      if (entries) for (const [name, entry] of [...entries]) {
+        if (entry.handle !== message.serviceHandle) continue;
+        if (name === message.serviceEvent) for (const listener of [...entry.listeners]) notify(listener, message.data);
+        if (message.serviceEvent === 'unloaded') {
+          for (const listener of entry.listeners) listener.invalidate();
+          entries.delete(name);
+        }
+      }
+      return;
+    }
     if (message.event) {
       if (!Number.isSafeInteger(message.sequence) || message.sequence <= eventSequence) return;
       eventSequence = message.sequence;
@@ -75,7 +90,7 @@
       if (message.error.code === 'PROJECT_CHANGED' && message.error.details?.projectEpoch)
         projectEpoch = message.error.details.projectEpoch;
       item.reject(failure(message.error.code, message.error.message, message.error.details));
-    } else item.resolve(decodeValue(message.result));
+    } else item.resolve(item.service ? message.result : decodeValue(message.result));
   };
   Object.defineProperty(window, '__reawebReceive', { value: receive });
   const send = (method, args) => new Promise((resolve, reject) => {
@@ -87,7 +102,7 @@
       pending.delete(id);
       reject(failure('TIMEOUT', `${method} timed out; check the tool state before repeating a write`));
     }, 30000);
-    pending.set(id, { resolve, reject, timer });
+    pending.set(id, { resolve, reject, timer, service: method === 'ReaWeb_ServiceInvoke' });
     try {
       const message = JSON.stringify({ id, document: documentId, project: projectEpoch, expiresAt: Date.now() + 25000, method, args }, encodeValue);
       if (new TextEncoder().encode(message).length > 64 * 1024 * 1024) throw failure('MESSAGE_LIMIT', 'Bridge message exceeds 64 MiB');
@@ -295,6 +310,63 @@
     const listeners = subscriptions.get(name)?.listeners;
     if (listeners) await Promise.all([...listeners].filter(listener => listener.callback === callback).map(listener => listener.dispose()));
   };
+  const serviceName = name => {
+    if (typeof name !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(name))
+      throw failure('INVALID_ARGUMENT', 'Expected 1..128 ASCII letters, digits, _, -, .');
+    return name;
+  };
+  const service = name => {
+    serviceName(name);
+    const entries = () => {
+      if (!serviceSubscriptions.has(name)) serviceSubscriptions.set(name, new Map());
+      return serviceSubscriptions.get(name);
+    };
+    return Object.freeze({
+      invoke: async (method, payload = null) => call('ReaWeb_ServiceInvoke', [name, serviceName(method), payload]),
+      send: (method, payload = null) => {
+        call('ReaWeb_ServiceSend', [name, serviceName(method), payload]).catch(error => console.error('[ReaWebAPI service]', error));
+      },
+      on: async (event, callback) => {
+        serviceName(event);
+        if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an event callback');
+        const map = entries();
+        let entry = map.get(event);
+        if (!entry) {
+          entry = { listeners: new Set(), handle: null };
+          entry.initial = call('ReaWeb_ServiceSubscribe', [name, event]).then(result => { entry.handle = result.handle; });
+          map.set(event, entry);
+        }
+        let disposed = false;
+        const listener = data => { if (!disposed) return callback(data); };
+        listener.callback = callback;
+        listener.invalidate = () => { disposed = true; };
+        listener.dispose = async () => {
+          if (disposed) return;
+          disposed = true; entry.listeners.delete(listener);
+          if (!entry.listeners.size && map.get(event) === entry) {
+            map.delete(event);
+            if (!closed) await call('ReaWeb_ServiceUnsubscribe', [name, event]);
+          }
+        };
+        entry.listeners.add(listener);
+        try {
+          await entry.initial;
+          if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
+        } catch (error) {
+          disposed = true; entry.listeners.delete(listener);
+          if (!entry.listeners.size && map.get(event) === entry) map.delete(event);
+          throw error;
+        }
+        return listener.dispose;
+      },
+      off: async (event, callback) => {
+        serviceName(event);
+        if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an event callback');
+        const listeners = serviceSubscriptions.get(name)?.get(event)?.listeners;
+        if (listeners) await Promise.all([...listeners].filter(item => item.callback === callback).map(item => item.dispose()));
+      }
+    });
+  };
   const withUndo = async (label, callback) => {
     if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an Undo callback');
     const token = await call('ReaWeb_BeginUndo', [label]);
@@ -421,7 +493,7 @@
   // Runtime namespaces share the existing bridge; the 730 REAPER methods retain
   // their names, argument order, typed handles and asynchronous results.
   api.events = Object.freeze({ on: onEvent, off: offEvent });
-  api.host = Object.freeze({ send: async message => {
+  api.host = Object.freeze({ service, send: async message => {
     let text;
     try {
       text = typeof message === 'string' ? message : JSON.stringify(message, (_, value) => {
@@ -599,6 +671,7 @@
     }
     pending.clear();
     subscriptions.clear();
+    serviceSubscriptions.clear();
     lifecycleListeners.clear();
     for (const entry of latest.values()) {
       if (entry.next) entry.next.reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));

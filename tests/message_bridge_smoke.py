@@ -15,7 +15,10 @@ args = parser.parse_args()
 root = args.output.resolve()
 root.mkdir(parents=True, exist_ok=False)
 (root / 'UserPlugins').mkdir()
-(root / 'reaper.ini').write_text('[REAPER]\n', encoding='utf-8')
+config = '[REAPER]\n'
+if sys.platform == 'darwin':
+    config += 'hasrecentlyopened=1\n[audioconfig]\nmode=4\n'
+(root / 'reaper.ini').write_text(config, encoding='utf-8')
 binary = root / 'UserPlugins' / args.extension.name
 shutil.copy2(args.extension, binary)
 if sys.platform == 'darwin':

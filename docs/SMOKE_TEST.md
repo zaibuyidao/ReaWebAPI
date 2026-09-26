@@ -1,5 +1,16 @@
 # REAPER host acceptance
 
+## Native communication
+
+- Run `web/native-service/Open.lua`. Confirm the Lua action returns, the window stays open, `runtime.getInfo` works and all native state events continue. Repeat dock, undock, close and reopen.
+- Change selection from none to one to multiple tracks, then replace the second track while retaining the first. Reorder selected tracks. Observe `trackSelectionChanged` without a browser or Lua polling loop.
+- Change track name/color/mute/solo/arm/TCP/MCP visibility and add/delete/reorder tracks. Exercise play/pause/stop/record/rate/repeat, project tabs/open/close/save-as/dirty, marker/region metadata, current region, loop points and time selection.
+- Use two WebViews, unsubscribe one and verify the other continues. Unsubscribe both and verify native monitor reads stop. Close/reload with pending service calls and ensure no stale delivery.
+- Build and install the optional `native_service_extension` in the isolated host. Check ping, send/changed, on/off, repeated disposal, missing method/service, pending timeout and unregister while pending. Re-register and subscribe again. An old handle must not reach the new registration.
+- Run `web/native-service/Coexist.lua` and use Lua echo while native features remain active. Run the existing Lua Backend Demo and check bidirectional messages and window behavior.
+
+Automated native tests exercise the same lifecycle and comparison contracts. See [Native Services](native-services.md) and [current validation](VALIDATION.md).
+
 Run against a disposable REAPER project on each target architecture. CI core tests use a mock REAPER host and do not establish real-host UI compatibility.
 
 - Install one architecture-matching binary in the resource `UserPlugins` directory and restart REAPER. Verify `reaper.APIExists("ReaWeb_Open")`.

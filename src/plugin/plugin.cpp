@@ -17,6 +17,7 @@ std::vector<std::pair<std::string, void*>> registrations;
 std::atomic<uint64_t> project_generation{0};
 std::atomic<uint64_t> marker_revision{0}, fx_revision{0}, save_revision{0};
 std::atomic<uint64_t> selection_revision{0};
+std::atomic<uint64_t> transport_revision{0};
 class EventSurface final : public IReaperControlSurface {
 public:
   const char* GetTypeString() override { return "REAWEBAPI"; }
@@ -25,6 +26,10 @@ public:
   void SetSurfaceSelected(MediaTrack*, bool) override { ++selection_revision; }
   void OnTrackSelection(MediaTrack*) override { ++selection_revision; }
   void SetTrackListChange() override { ++selection_revision; }
+  void SetPlayState(bool, bool, bool) override { ++transport_revision; }
+  void SetSurfaceMute(MediaTrack*, bool) override { ++selection_revision; }
+  void SetSurfaceSolo(MediaTrack*, bool) override { ++selection_revision; }
+  void SetSurfaceRecArm(MediaTrack*, bool) override { ++selection_revision; }
   int Extended(int call, void*, void*, void*) override {
     // A callback may originate outside the UI thread. Only publish counters;
     // Runtime reads host state and dispatches JavaScript on the main thread.
@@ -82,6 +87,22 @@ const char* ReaWeb_GetDiagnostics(int id) {
   return guarded([&]() -> const char* { value = runtime->diagnostics(id).dump(); return value.c_str(); }, "{}");
 }
 const char* ReaWeb_GetLastError() { return last_error.c_str(); }
+int ReaWeb_RegisterService(const char* name, const ReaWeb_ServiceCallbacks* callbacks, uint64_t* handle) {
+  try { return runtime ? runtime->services().add(name, callbacks, handle) : REAWEB_EXTENSION_UNLOADED; }
+  catch (...) { return REAWEB_SERVICE_ERROR; }
+}
+int ReaWeb_UnregisterService(uint64_t handle) {
+  try { return runtime ? runtime->services().remove(handle) : REAWEB_EXTENSION_UNLOADED; }
+  catch (...) { return REAWEB_SERVICE_ERROR; }
+}
+int ReaWeb_CompleteServiceCall(uint64_t handle, uint64_t request, const char* json, int status, const char* message) {
+  try { return runtime ? runtime->services().complete(handle, request, json, status, message) : REAWEB_EXTENSION_UNLOADED; }
+  catch (...) { return REAWEB_SERVICE_ERROR; }
+}
+int ReaWeb_EmitServiceEvent(uint64_t handle, int window, const char* name, const char* json) {
+  try { return runtime ? runtime->services().emit(handle, window, name, json) : REAWEB_EXTENSION_UNLOADED; }
+  catch (...) { return REAWEB_SERVICE_ERROR; }
+}
 void* open_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_Open(
     count >= 1 ? static_cast<const char*>(args[0]) : nullptr,
@@ -204,6 +225,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       };
     }
     host.event_revision = [](const std::string& name) {
+      if (name == "transport") return transport_revision.load();
       if (name == "track-selected") return selection_revision.load();
       if (name == "marker-changed") return marker_revision.load();
       if (name == "fx-changed") return fx_revision.load();
@@ -290,6 +312,10 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
         if (dock_index(hwnd, &floating) >= 0 && floating && IsWindowVisible(hwnd)) activate_dock(hwnd);
       }};
     runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
+    add_registration("API_ReaWeb_RegisterService", reinterpret_cast<void*>(ReaWeb_RegisterService));
+    add_registration("API_ReaWeb_UnregisterService", reinterpret_cast<void*>(ReaWeb_UnregisterService));
+    add_registration("API_ReaWeb_CompleteServiceCall", reinterpret_cast<void*>(ReaWeb_CompleteServiceCall));
+    add_registration("API_ReaWeb_EmitServiceEvent", reinterpret_cast<void*>(ReaWeb_EmitServiceEvent));
     add_api("ReaWeb_Open", reinterpret_cast<void*>(ReaWeb_Open), reinterpret_cast<void*>(open_vararg),
       "int\0const char*,const char*,const char*,const bool*\0path,instanceKeyInOptional,idInOptional,multipleInOptional\0Open local HTML. Relative paths resolve under resource/Scripts. An instanceKey reuses and focuses its window, optionally scoped by id. Omit the key or set multiple=true to create a new window. Returns a window id, or 0 on failure.\0");
     add_api("ReaWeb_Close", reinterpret_cast<void*>(ReaWeb_Close), reinterpret_cast<void*>(id_vararg<ReaWeb_Close>),

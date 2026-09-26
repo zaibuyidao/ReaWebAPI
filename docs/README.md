@@ -11,6 +11,7 @@ Reference for building WebView tools in REAPER.
 | [SDK](../runtime/README.md) | Type declarations, templates and examples |
 | [REAPER API](api-reference.md) | 730 REAPER 7.80 signatures and return types |
 | [Runtime API](runtime-api.md) | Windows, events, files, audio and App services |
+| [Native Services](native-services.md) | Native events, monitor payloads and C/C++ service integration |
 | [API inventory](runtime-api-inventory.md) | Runtime namespace and method index |
 | [Host API](host-api.md) | Lua entry points, native bridge behavior and error codes |
 | [Web runtime](frontend.md) | Resources, storage, Workers and platform requirements |
