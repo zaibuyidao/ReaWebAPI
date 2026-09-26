@@ -58,7 +58,7 @@ def ack(sock):
     sock.sendall(b'\x82\x81\x11\x22\x33\x44\x10')
 
 
-process = subprocess.Popen([sys.argv[1]], stdout=subprocess.PIPE, text=True)
+process = subprocess.Popen([sys.argv[1]], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 try:
     first, second = json.loads(process.stdout.readline())
     assert connect(first, 'http://wrong.invalid') is None
@@ -85,6 +85,9 @@ try:
         assert sequence > seq_b
         seq_b = sequence
     b.close()
+    process.stdin.write('done\n')
+    process.stdin.flush()
+    process.stdin.close()
     assert process.wait(timeout=5) == 0
     assert json.loads(process.stdout.readline())['streams'] == []
     print('Binary transport, authentication, independent consumers and producer close passed')

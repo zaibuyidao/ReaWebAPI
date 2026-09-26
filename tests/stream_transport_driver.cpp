@@ -12,9 +12,17 @@ int main() {
   auto begin = std::chrono::steady_clock::now();
   for (unsigned sequence = 1; sequence <= 120; ++sequence) {
     std::fill(pixels.begin(), pixels.end(), static_cast<unsigned char>(sequence));
-    if (hub.publish(REAWEB_FRAME, handle, pixels.data(), static_cast<uint32_t>(pixels.size()), sequence, sequence / 60.0)) return 2;
+    const auto status = hub.publish(REAWEB_FRAME, handle, pixels.data(), static_cast<uint32_t>(pixels.size()), sequence, sequence / 60.0);
+    // A descheduled producer can catch up while transport owns a buffer slot.
+    if (status != REAWEB_OK && status != REAWEB_BUFFER_FULL) {
+      std::cerr << "Frame publication failed: " << status << std::endl;
+      return 2;
+    }
     std::this_thread::sleep_until(begin + std::chrono::microseconds(sequence * 16667));
   }
-  hub.close(handle); std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  hub.close(handle);
+  // Keep transport alive until the consumer has received the complete close.
+  std::string done;
+  if (!std::getline(std::cin, done) || done != "done") return 3;
   std::cout << hub.info().dump() << std::endl;
 }
