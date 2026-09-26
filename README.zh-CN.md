@@ -48,6 +48,8 @@ Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开应用。传入 `debug.
 
 使用 HTML `<title>` 或 `document.title` 设置窗口名称，关闭后恢复停靠的 Docker 标签和单标签浮动 Docker 标题栏同样适用。`reaper.window.setTitle(title)` 可显式覆盖。`instanceKey` 仅控制实例复用。详见[窗口标题](docs/runtime-api.zh-CN.md#窗口标题)。
 
+外部 HTTP、HTTPS、mailto 导航交给系统默认程序打开，App 页面保持不变。其他本地 HTML 使用 `reaper.window.open(path)` 打开。详见[导航行为](docs/frontend.zh-CN.md#导航行为)。
+
 [SDK](runtime/README.zh-CN.md) · [开发指南](docs/development.zh-CN.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.zh-CN.md) · [Lua 宿主 API](docs/host-api.zh-CN.md) · [Web 运行环境](docs/frontend.zh-CN.md) · [DevTools](docs/devtools.zh-CN.md)
 
 所有 App 共享 `ReaWebAPI/WebViewData/`，App 身份、私有数据和窗口状态保存在 `ReaWebAPI/Apps/<appId>/`。origin 隔离与共享 cookie 规则见[存储约定](docs/frontend.zh-CN.md#资源来源与存储)。

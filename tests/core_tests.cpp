@@ -1,4 +1,5 @@
 #include "core/core.hpp"
+#include "platform/shared/navigation.hpp"
 #include "host_adapter.hpp"
 #include <fstream>
 #include <iostream>
@@ -239,6 +240,38 @@ int main() {
     CHECK(same_document("file:///a/index.html#x", "file:///a/index.html"));
     CHECK(!same_document("file:///a/evil.html", "file:///a/index.html"));
     CHECK(!same_document("https://evil.example/", "file:///a/index.html"));
+    for (const std::string entry : {"file:///a/index.html", "http://127.0.0.1:19280/index.html",
+                                   "http://localhost:5173/tool?mode=dev", "http://[::1]:5173/"}) {
+      CHECK(same_document(entry + "#section", entry));
+      CHECK(!same_document(entry + "?changed", entry));
+      std::vector<std::string> opened, warnings;
+      auto navigate = [&](const std::string& target) {
+        blocked_navigation(target, entry, [&](const std::string& url) { opened.push_back(url); },
+          [&](const std::string& script) { warnings.push_back(script); });
+      };
+      navigate(entry); navigate(entry + "#section");
+      CHECK(opened.empty() && warnings.empty());
+      for (const std::string target : {"https://example.com/path?q=1#section", "http://example.com/", "mailto:test@example.com?subject=Hi"}) {
+        navigate(target); CHECK(opened.back() == target);
+      }
+      CHECK(opened.size() == 3 && warnings.empty());
+      navigate(entry.substr(0, entry.rfind('/') + 1) + "other.html");
+      navigate(entry + "?changed"); navigate("file:///a/other.html");
+      CHECK(opened.size() == 3 && warnings.size() == 3);
+      CHECK(warnings.back().find("reaper.window.open(path)") != std::string::npos);
+      for (const std::string target : {"javascript:alert(1)", "data:text/html,test", "custom:test", "https://", "https://example.com/\n", "https://example.com/\\bad"})
+        navigate(target);
+      navigate(std::string("https://example.com/\0bad", 24));
+      navigate("https://example.com/" + std::string(8192, 'x'));
+      CHECK(opened.size() == 3 && warnings.size() == 11);
+      blocked_navigation("https://example.com/", entry, [](const std::string&) { throw Error("EXTERNAL_OPEN_FAILED", "No handler"); },
+        [&](const std::string& script) { warnings.push_back(script); });
+      CHECK(warnings.back().find("No handler") != std::string::npos);
+    }
+    CHECK(local_navigation("http://localhost:5173?query", "http://localhost:5173/"));
+    CHECK(!local_navigation("http://localhost:51730/", "http://localhost:5173/"));
+    CHECK(!local_navigation("http://localhost:5173@example.com/", "http://localhost:5173/"));
+    CHECK(!local_navigation("http://localhost:5173.example.com/", "http://localhost:5173/"));
     auto root = fs::current_path() / "path-test-fixture";
     fs::create_directories(root);
     const auto file = root / fs::u8path(u8"空 格#%.html");

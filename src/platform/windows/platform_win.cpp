@@ -1,4 +1,5 @@
 #include "platform/platform.hpp"
+#include "platform/shared/navigation.hpp"
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -33,6 +34,11 @@ std::string utf8(const wchar_t* value) {
 }
 void check(HRESULT hr, const char* operation) {
   if (FAILED(hr)) throw std::runtime_error(std::string(operation) + " failed (HRESULT " + std::to_string(static_cast<unsigned long>(hr)) + ")");
+}
+void open_external(const std::string& url) {
+  validate_external_url(url);
+  if (reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
+    throw Error("EXTERNAL_OPEN_FAILED", "The system could not open this link");
 }
 constexpr wchar_t window_class[] = L"ReaWebAPI.Window";
 class DragSource final : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDropSource> {
@@ -241,14 +247,25 @@ public:
       [weak](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
         LPWSTR uri = nullptr; args->get_Uri(&uri);
         auto self = weak.lock();
-        if (!self || !same_document(utf8(uri), self->uri_)) args->put_Cancel(TRUE);
+        if (!self || self->closed_ || !same_document(utf8(uri), self->uri_)) {
+          args->put_Cancel(TRUE);
+          if (self && !self->closed_) blocked_navigation(utf8(uri), self->uri_, open_external,
+            [self](const std::string& script) { self->evaluate(script); });
+        }
         else if (self->options_.on_reload && self->options_.on_reload()) args->put_Cancel(TRUE);
         else if (self->options_.on_navigation) self->options_.on_navigation();
         CoTaskMemFree(uri); return S_OK;
       }).Get(), &token), "add_NavigationStarting");
     check(webview_->add_FrameNavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>(
-      [](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
-        args->put_Cancel(TRUE); return S_OK;
+      [weak](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+        args->put_Cancel(TRUE);
+        if (auto self = weak.lock(); self && !self->closed_) {
+          LPWSTR uri = nullptr; args->get_Uri(&uri);
+          const auto target = utf8(uri); CoTaskMemFree(uri);
+          blocked_navigation(target, self->uri_, open_external,
+            [self](const std::string& script) { self->evaluate(script); });
+        }
+        return S_OK;
       }).Get(), &token), "add_FrameNavigationStarting");
     check(webview_->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
       [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
@@ -527,9 +544,7 @@ public:
       reply({{"result", true}}); return;
     }
     if (method == "ReaWeb_OpenExternal") {
-      const auto url = args[0].get<std::string>(); validate_external_url(url);
-      if (reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
-        throw Error("EXTERNAL_OPEN_FAILED", "The system could not open this link");
+      open_external(args[0].get<std::string>());
       reply({{"result", true}}); return;
     }
     if (!clipboard_owner_) clipboard_owner_ = CreateWindowExW(0, L"STATIC", L"ReaWebAPI Clipboard", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, instance_, nullptr);

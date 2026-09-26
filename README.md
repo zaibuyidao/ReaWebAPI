@@ -47,6 +47,8 @@ Start with `SDK/starter/Open.lua` or use `SDK/modern/` for Vite and TypeScript. 
 
 Set the window name with HTML `<title>` or `document.title`, including Docker labels and single-tab floating Docker captions after restoring a closed docked window. `reaper.window.setTitle(title)` explicitly overrides it. `instanceKey` controls reuse only. See [window titles](docs/runtime-api.md#window-titles).
 
+External HTTP, HTTPS and mailto navigation opens in the system default handler while the App stays open. Open other local HTML with `reaper.window.open(path)`. See [navigation behavior](docs/frontend.md#navigation).
+
 [SDK](runtime/README.md) · [Developer guide](docs/development.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md) · [DevTools](docs/devtools.md)
 
 All Apps share `ReaWebAPI/WebViewData/`. App identities, private data and window state remain under `ReaWebAPI/Apps/<appId>/`. See the [storage contract](docs/frontend.md#resource-origin-and-storage) for origin isolation and shared cookies.

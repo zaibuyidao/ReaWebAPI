@@ -25,7 +25,8 @@ Run against a disposable REAPER project on each target architecture. CI core tes
 - Open another HTML tool with `reaper.window.open`. Keep both Apps open and verify that they share `ReaWebAPI/WebViewData/`, with no `Apps/<appId>/WebViewData/` created. Check separate localStorage and IndexedDB values per origin, shared cookies on the same host, and private `origin.json`, `Data/` and `WindowState/` under each `Apps/<appId>/`. Close and reopen one App while the other remains open, then restart REAPER and verify storage and window state persistence.
 - Close a window immediately during browser initialization, reopen it, then exit REAPER with several windows open. Check for crashes and surviving application windows.
 - On Windows test a machine without WebView2 Runtime. Lua receives an error/console diagnostic without crashing REAPER; retry after installing the runtime.
-- Test a missing entry file, remote URL, unknown API, forged handle and oversized message. No arbitrary native function or external navigation should execute.
+- Test a missing entry file, remote entry URL, unknown API, forged handle and oversized message. No arbitrary native function should execute or external document replace the entry page.
+- On Windows, macOS and Linux, follow HTTP/HTTPS/mailto links and redirect with `location.href` / `location.assign()`. Each blocked external navigation must open once in the system handler and preserve page state and bridge calls. Check local `other.html`, same-origin paths and query changes stay blocked with a console hint for `reaper.window.open(path)`. Hash changes must preserve the bridge. `window.open()` and `target="_blank"` must not launch a handler or create a window. Verify a missing system handler reports a console warning without closing the App.
 
 Inspector behavior is documented in [DevTools](devtools.md). Linux binaries built on Ubuntu 24.04 should also be checked on the intended distribution and display server.
 
@@ -87,6 +88,16 @@ build/tests/macos_devtools
 ```
 
 ## Runtime and audio acceptance
+
+Optional navigation tests use real WebViews with a simulated system URL handler:
+
+```sh
+cmake --build build --config Release --target windows_navigation
+build/tests/Release/windows_navigation.exe
+# Linux, under X11/XWayland
+cmake --build build --target linux_navigation
+python3 tests/linux_navigation.py build/tests/linux_navigation
+```
 
 - Load SDK/runtime-demo/Open.lua. Confirm theme colors, selected-track name, diagnostics, floating resize and dock/undock; hiding/showing must affect only this App container. Docked geometry setters should report WINDOW_DOCKED.
 - In Demo and Starter on each OS, verify the WebView context menu starts with **Dock in REAPER** when floating and **Undock from REAPER** when docked, above the default items. Check the Windows title-bar entry too. Repeat after resizing and changing Docker tabs. Verify page state, focus, keyboard input, saved docking state and full client-area WebView bounds, with no toolbar gap or page reload.

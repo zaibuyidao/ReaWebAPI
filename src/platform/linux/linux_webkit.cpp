@@ -1,4 +1,5 @@
 #include "platform/linux/linux_channel.hpp"
+#include "platform/shared/navigation.hpp"
 #include <gtk/gtk.h>
 #include <gtk/gtkx.h>
 #include <gdk/gdkx.h>
@@ -12,6 +13,15 @@
 
 namespace reaweb {
 namespace {
+void open_external(const std::string& url) {
+  validate_external_url(url);
+  GError* error = nullptr;
+  if (!gtk_show_uri_on_window(nullptr, url.c_str(), GDK_CURRENT_TIME, &error)) {
+    std::string message = error ? error->message : "Cannot open external link";
+    if (error) g_error_free(error);
+    throw Error("EXTERNAL_OPEN_FAILED", message);
+  }
+}
 class Page {
   LinuxChannel& channel_;
   int id_;
@@ -98,7 +108,14 @@ public:
       if (type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
         auto action = webkit_navigation_policy_decision_get_navigation_action(WEBKIT_NAVIGATION_POLICY_DECISION(decision));
         auto uri = webkit_uri_request_get_uri(webkit_navigation_action_get_request(action));
-        if (!uri || !same_document(uri, self->uri_)) { webkit_policy_decision_ignore(decision); return TRUE; }
+        if (!uri || !same_document(uri, self->uri_)) {
+          const std::string target = uri ? uri : "";
+          webkit_policy_decision_ignore(decision);
+          if (!self->failed_) blocked_navigation(target, self->uri_, open_external, [self](const std::string& script) {
+            webkit_web_view_evaluate_javascript(self->view_, script.c_str(), static_cast<gssize>(script.size()), nullptr, nullptr, nullptr, nullptr, nullptr);
+          });
+          return TRUE;
+        }
         // WebKit sends navigation policy callbacks for in-document hash links.
         // Those must preserve the document and must not trigger cleanup.
         if (self->loaded_ && webkit_navigation_action_get_navigation_type(action) != WEBKIT_NAVIGATION_TYPE_RELOAD &&
@@ -292,13 +309,7 @@ struct Process {
         }, pending); return;
       }
       if (method == "ReaWeb_OpenExternal") {
-        const auto url = args.at(0).get<std::string>(); validate_external_url(url);
-        GError* error = nullptr;
-        if (!gtk_show_uri_on_window(nullptr, url.c_str(), GDK_CURRENT_TIME, &error)) {
-          std::string message = error ? error->message : "Cannot open external link";
-          if (error) g_error_free(error);
-          throw Error("EXTERNAL_OPEN_FAILED", message);
-        }
+        open_external(args.at(0).get<std::string>());
         respond({{"result", true}}); return;
       }
       auto clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);

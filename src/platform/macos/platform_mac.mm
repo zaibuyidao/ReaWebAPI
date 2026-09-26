@@ -1,4 +1,5 @@
 #include "platform/platform.hpp"
+#include "platform/shared/navigation.hpp"
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
@@ -6,6 +7,15 @@
 #include "platform/macos/mac_devtools.hpp"
 #include <fstream>
 #include <cstring>
+
+namespace {
+void open_external(const std::string& url) {
+  reaweb::validate_external_url(url);
+  NSString* text = [[NSString alloc] initWithBytes:url.data() length:url.size() encoding:NSUTF8StringEncoding];
+  if (![[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:text]])
+    throw reaweb::Error("EXTERNAL_OPEN_FAILED", "The system could not open this link");
+}
+}
 
 @interface ReaWebDelegate : NSObject <WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate> {
 @public
@@ -33,6 +43,11 @@
   if (allowed && !fragment && options.on_reload && options.on_reload()) allowed = false;
   if (allowed) navigationURI = uri;
   handler(allowed ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
+  if (!allowed && !isClosed && action.targetFrame)
+    reaweb::blocked_navigation(uri, entryURI, open_external, [webView](const std::string& script) {
+      NSString* text = [[NSString alloc] initWithBytes:script.data() length:script.size() encoding:NSUTF8StringEncoding];
+      [webView evaluateJavaScript:text completionHandler:nil];
+    });
 }
 - (WKWebView*)webView:(WKWebView*)webView createWebViewWithConfiguration:(WKWebViewConfiguration*)configuration
     forNavigationAction:(WKNavigationAction*)action windowFeatures:(WKWindowFeatures*)features {
@@ -398,8 +413,7 @@ public:
         reply({{"result", true}}); return;
       }
       if (method == "ReaWeb_OpenExternal") {
-        const auto url = args[0].get<std::string>(); validate_external_url(url);
-        if (![[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:ns(url)]]) throw Error("EXTERNAL_OPEN_FAILED", "The system could not open this link");
+        open_external(args[0].get<std::string>());
         reply({{"result", true}}); return;
       }
       auto pasteboard = [NSPasteboard generalPasteboard];

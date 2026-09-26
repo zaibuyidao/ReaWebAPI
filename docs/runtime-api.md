@@ -16,7 +16,7 @@ All fifteen namespaces provide implemented members: 76 methods and one Promise p
 
 ## Files and clipboard
 
-`reaper.fs` provides `readText`, `writeText`, `readBinary` and `writeBinary` with explicit encoding, plus overloaded `readFile` / `writeFile`, `stat`, `readDirectory`, `makeDirectory`. Text is UTF-8 and binary data is `Uint8Array`. Writes accept `{overwrite:true}` to replace an existing file; the default refuses overwrite. The same 16 MiB limits and worker-based file operations apply. Clipboard text is read/written with `reaper.clipboard.readText()` / `reaper.clipboard.writeText(text)`. External URLs use `reaper.system.openExternal(url)`.
+`reaper.fs` provides `readText`, `writeText`, `readBinary` and `writeBinary` with explicit encoding, plus overloaded `readFile` / `writeFile`, `stat`, `readDirectory`, `makeDirectory`. Text is UTF-8 and binary data is `Uint8Array`. Writes accept `{overwrite:true}` to replace an existing file; the default refuses overwrite. The same 16 MiB limits and worker-based file operations apply. Clipboard text is read/written with `reaper.clipboard.readText()` / `reaper.clipboard.writeText(text)`. Use `reaper.system.openExternal(url)` to open external URLs explicitly. Ordinary external navigation also uses the system handler. See [navigation](frontend.md#navigation).
 
 ## Window and lifecycle
 

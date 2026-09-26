@@ -141,6 +141,8 @@ if(UNIX AND NOT APPLE AND REAWEB_BUILD_EXTENSION)
   target_link_libraries(linux_window_icons PRIVATE reaweb_core PkgConfig::WEBKIT X11::X11 ${CMAKE_DL_LIBS})
   add_executable(linux_devtools EXCLUDE_FROM_ALL linux_devtools.cpp)
   target_link_libraries(linux_devtools PRIVATE reaweb_core PkgConfig::WEBKIT X11::X11)
+  add_executable(linux_navigation EXCLUDE_FROM_ALL linux_navigation.cpp)
+  target_link_libraries(linux_navigation PRIVATE reaweb_core PkgConfig::WEBKIT X11::X11)
 endif()
 if(WIN32 AND REAWEB_BUILD_EXTENSION)
   add_library(windows_dock_icons MODULE EXCLUDE_FROM_ALL windows_dock_icons.cpp)
@@ -168,6 +170,13 @@ if(WIN32 AND REAWEB_BUILD_EXTENSION)
   target_include_directories(windows_devtools PRIVATE "${webview2_SOURCE_DIR}/build/native/include")
   target_compile_definitions(windows_devtools PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
   target_compile_options(windows_devtools PRIVATE /utf-8)
+  add_executable(windows_navigation EXCLUDE_FROM_ALL windows_navigation.cpp)
+  target_link_libraries(windows_navigation PRIVATE reaweb_core
+    "${webview2_SOURCE_DIR}/build/native/x64/WebView2LoaderStatic.lib"
+    ole32 oleaut32 user32 gdi32 shlwapi shell32 version advapi32 uuid ws2_32)
+  target_include_directories(windows_navigation PRIVATE "${webview2_SOURCE_DIR}/build/native/include")
+  target_compile_definitions(windows_navigation PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_compile_options(windows_navigation PRIVATE /utf-8)
   add_executable(windows_native_drag EXCLUDE_FROM_ALL windows_native_drag.cpp
     "${PROJECT_SOURCE_DIR}/src/platform/windows/platform_win.cpp")
   target_link_libraries(windows_native_drag PRIVATE reaweb_runtime

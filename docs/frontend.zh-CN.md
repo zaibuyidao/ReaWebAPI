@@ -88,6 +88,21 @@ Windows 的活动 App 共用一个 WebView2 Environment，Linux 共用一个 Web
 `{ contract: 1, mode: 'app-http' | 'dev-http', appId, origin, storageIsolation: 'origin', localResources }`。
 内建本地资源模式的 `localResources` 为 true。
 
+## 导航行为
+
+Windows、macOS 和 Linux 的 WebView 均保留入口文档。被拦截的外部 `http://`、`https://`、`mailto:` 导航使用与 `reaper.system.openExternal(url)` 相同的校验和系统默认程序，支持普通链接及 `location.href`、`location.assign()` 等 JavaScript 重定向。
+
+本地 `file:` URL、App 或开发入口同源的其他路径和查询参数导航继续被拦截，并在开发者控制台显示提示。其他本地 HTML 使用 `reaper.window.open(path)` 打开。仅修改 hash 的导航继续允许，查询参数变化仍采用原有入口文档身份判断。`window.open()` 和请求新窗口的链接继续不受支持。
+
+```html
+<a href="https://www.extremraym.com">打开网站</a>
+```
+
+```js
+window.location.assign('https://www.extremraym.com'); // 由系统浏览器打开。
+await reaper.window.open('other.html');
+```
+
 ## TypeScript 与开发服务器
 
 [现代模板](../runtime/modern/README.zh-CN.md) 提供可选的 Vite/TypeScript **构建工具**。运行 `npm ci`、`npm run dev`，然后在 REAPER 运行 `OpenDev.lua`，默认地址 `http://localhost:5173/`。`reaper.window.openDev` 只接受 127.0.0.1、localhost 或 [::1] 上带明确端口的 HTTP URL。开发服务器由开发者启动，扩展不内置 Vite、Node 或 npm。

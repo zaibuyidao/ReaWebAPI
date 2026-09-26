@@ -88,6 +88,21 @@ Both `reaper.system.getCapabilities()` and `reaper.debug.getDiagnostics()` expos
 `{ contract: 1, mode: 'app-http' | 'dev-http', appId, origin, storageIsolation: 'origin', localResources }`.
 `localResources` is true for the built-in local resource origin.
 
+## Navigation
+
+The entry document stays in the WebView on Windows, macOS and Linux. Blocked navigation to external `http://`, `https://` and `mailto:` URLs uses the same validation and system handler as `reaper.system.openExternal(url)`. This covers ordinary links and JavaScript redirects such as `location.href` and `location.assign()`.
+
+Local `file:` URLs and other paths or queries on the App/dev entry origin remain blocked, with a developer-console warning. Use `reaper.window.open(path)` to open another local HTML document. Hash-only navigation remains allowed. Query changes still use the existing entry-document identity check. `window.open()` and links requesting a new window remain unsupported.
+
+```html
+<a href="https://www.extremraym.com">Open website</a>
+```
+
+```js
+window.location.assign('https://www.extremraym.com'); // Opens the system browser.
+await reaper.window.open('other.html');
+```
+
 ## TypeScript and development servers
 
 The [modern starter](../runtime/modern/README.md) supplies Vite/TypeScript as optional **build-time** tooling. Run `npm ci`, `npm run dev`, then `OpenDev.lua`. The default URL is `http://localhost:5173/`. `reaper.window.openDev` accepts explicit-port HTTP URLs on 127.0.0.1, localhost or [::1]. Start the server yourself. ReaWebAPI does not embed Vite, Node or npm.
