@@ -383,7 +383,7 @@ entry.restype = C.c_int
 info = Info(0x20E, owner_window, register, get_func)
 assert entry(None, C.byref(info)) == 1
 try:
-    assert len(registrations) == 47, list(registrations)
+    assert len(registrations) == 66, list(registrations)
     for name in (b'ReaWeb_RegisterService', b'ReaWeb_UnregisterService', b'ReaWeb_CompleteServiceCall', b'ReaWeb_EmitServiceEvent'):
         assert b'API_' + name in registrations
         assert b'APIvararg_' + name not in registrations
@@ -452,7 +452,7 @@ try:
         expected_name = json.dumps('Guitar 吉他 "A"')
         (folder / 'app.js').write_text('''(async () => {
   const capabilities = await reaper.lifecycle.ready;
-  const namespaces = ["window","theme","dialog","events","lifecycle","debug","fs","audio","clipboard","dragDrop","app","system","transaction","host"];
+  const namespaces = ["window","theme","dialog","events","lifecycle","debug","fs","audio","clipboard","dragDrop","app","system","transaction","host","stream"];
   if (Object.keys(reaper).length !== 744 || Object.keys(reaper).some(name => name.startsWith('ReaWeb')) || 'ready' in reaper)
     throw new Error('Runtime root exposes a flat API or has an incomplete Mirror');
   if (JSON.stringify(capabilities.runtime.namespaces) !== JSON.stringify(namespaces) || namespaces.some(name => !Object.isFrozen(reaper[name])))

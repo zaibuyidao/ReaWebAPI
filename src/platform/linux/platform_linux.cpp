@@ -168,7 +168,11 @@ public:
   ~LinuxWindow() override {
     process_->listeners.erase(id_);
     process_->inspectors.erase(id_);
-    try { process_->send({{"id", id_}, {"op", "close"}}); } catch (...) {}
+    try {
+      // Detach before SWELL destroys the X11 parent, preserving other pages.
+      process_->park(id_);
+      process_->send({{"id", id_}, {"op", "close"}});
+    } catch (...) {}
   }
   void sync() {
     if (closed()) return;
@@ -196,7 +200,7 @@ public:
     ScreenToClient(ancestor, &origin);
     const auto& options = process_->listeners.at(id_);
     Json next = {{"id", id_}, {"op", "geometry"}, {"parent", get_xid(native)}, {"x", origin.x}, {"y", origin.y},
-      {"width", rect.right - rect.left}, {"height", std::max(1, int(rect.bottom - rect.top))}, {"visible", visible()},
+      {"width", rect.right - rect.left}, {"height", std::max(1, int(rect.bottom - rect.top))}, {"visible", visible()}, {"focused", focused()},
       {"docked", options.is_docked && options.is_docked()}};
     if (geometry_ != next) { process_->send(next); geometry_ = std::move(next); }
   }

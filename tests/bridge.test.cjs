@@ -9,11 +9,12 @@ const batchMethods = [...fs.readFileSync(path.join(__dirname, '../src/core/batch
 const script = '(() => {\n' + fs.readFileSync(path.join(__dirname, '../runtime/reaper-api.generated.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8') + '\n})();';
 const flush = () => new Promise(setImmediate);
 
-test('The public SDK has exactly 730 unchanged Mirror methods and fourteen frozen Runtime namespaces', async () => {
+test('The public SDK has exactly 730 unchanged Mirror methods and fifteen frozen Runtime namespaces', async () => {
   const t = await connected();
   const api = t.window.reaper;
   const expected = {
   "host": ["send", "service"],
+  "stream": ["open", "getDiagnostics"],
   "window": [
     "open",
     "openDev",
@@ -62,6 +63,7 @@ test('The public SDK has exactly 730 unchanged Mirror methods and fourteen froze
     "setBufferSize"
   ],
   "fs": [
+    "watch",
     "readText",
     "writeText",
     "readBinary",
@@ -73,18 +75,20 @@ test('The public SDK has exactly 730 unchanged Mirror methods and fourteen froze
     "makeDirectory"
   ],
   "audio": [
+    "openStream",
     "getFileInfo",
     "getWaveform",
     "getTrackMeter",
     "setTrackValueLatest"
   ],
   "clipboard": [
+    "readBinary", "writeBinary",
     "readText",
     "writeText"
   ],
   "dragDrop": ["startFiles", "startText"],
   "app": ["getId", "getName", "getVersion", "getRootPath", "getDataPath"],
-  "system": ["getPlatform", "getArchitecture", "revealInFileManager",
+  "system": ["getDevices", "getDisplays", "openMIDIInput", "schedule", "getPlatform", "getArchitecture", "revealInFileManager",
     "openExternal",
     "getCapabilities"
   ],
@@ -230,7 +234,7 @@ function setup(engine = 'windows') {
   window.top = window;
   if (engine === 'windows') window.chrome = { webview: { postMessage: post } };
   else if (engine === 'webkit') window.webkit = { messageHandlers: { reaweb: { postMessage: post } } };
-  const context = vm.createContext({ window, crypto: webcrypto, TextEncoder, console, Uint8Array, Float64Array, DataView, btoa, atob,
+  const context = vm.createContext({ window, crypto: webcrypto, TextEncoder, console, Uint8Array, Float32Array, Float64Array, DataView, btoa, atob,
     setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id) });
   vm.runInContext(script, context);
   const reply = (index, payload) => window.__reawebReceive({ id: messages[index].id, document: messages[index].document, ...payload });
@@ -731,4 +735,68 @@ test('Debug captures JS errors and bounded circular object previews', async () =
   assert.equal(t.messages.at(-1).args[0].level,'error');
   assert.equal(t.messages.at(-1).args[0].message,'script failed');
   t.reply(t.messages.length-1,{result:true}); await flush();
+});
+const streamDescriptor = (kind = 'frame', name = 'test.frames') => ({ name, kind, format: kind === 'audio' ? 'float32' : 'rgba8', capacity: 3, maxBytes: 16, width: 2, height: 2, stride: 8, token: 'ticket', url: 'ws://127.0.0.1:9000/ticket' });
+function streamSockets(t) {
+  const sockets = [];
+  t.context.WebSocket = class {
+    constructor(url) { this.url = url; this.sent = []; sockets.push(this); }
+    send(bytes) { this.sent.push(bytes); }
+    close() { this.onclose?.({ reason: 'STREAM_CLOSED' }); }
+  };
+  return sockets;
+}
+function streamPacket(sequence, kind = 1, bytes = new Uint8Array(16)) {
+  const buffer = new ArrayBuffer(40 + bytes.byteLength), view = new DataView(buffer);
+  view.setUint32(0, 0x01535752, true); view.setUint8(4, kind);
+  view.setBigUint64(8, BigInt(sequence), true); view.setFloat64(16, sequence / 60, true);
+  view.setBigUint64(24, 2n, true); view.setBigUint64(32, BigInt(bytes.byteLength), true);
+  new Uint8Array(buffer, 40).set(bytes); return { data: buffer };
+}
+test('Native streams cache binary frames, ACK delivery and detach only one consumer', async () => {
+  const t = await connected(), sockets = streamSockets(t), api = t.window.reaper;
+  const pending = api.stream.open('test.frames'); await flush();
+  assert.equal(t.messages.at(-1).method, 'ReaWeb_StreamOpen');
+  t.reply(t.messages.length - 1, { result: streamDescriptor() }); await flush();
+  const socket = sockets[0]; assert.equal(socket.binaryType, 'arraybuffer'); socket.onopen();
+  const stream = await pending, received = [], ended = [];
+  stream.on('data', value => received.push(value)); stream.on('close', error => ended.push(error.code));
+  assert.equal(stream.latest(), null);
+  const requests = t.messages.length;
+  for (let i = 1; i <= 100; ++i) socket.onmessage(streamPacket(i));
+  assert.equal(stream.latest().frameId, 100n); assert.equal(stream.latest().bytes.byteLength, 16);
+  assert.equal(stream.latest().producerDropped, 2n); assert.equal(received.length, 100);
+  assert.equal(t.messages.length, requests, 'latest and frame delivery never use RPC');
+  assert.equal(socket.sent.length, 100); assert.equal(socket.sent[0][0], 1);
+  const closing = stream.close(); await flush();
+  assert.equal(t.messages.at(-1).method, 'ReaWeb_StreamDetach');
+  t.reply(t.messages.length - 1, { result: true }); await closing;
+  assert.equal(stream.closed, true); assert.equal(stream.latest(), null); assert.deepEqual(ended, ['STREAM_CLOSED']);
+  await stream.close(); assert.equal(t.messages.length, requests + 1);
+});
+test('Audio consumers bound FIFO, drop incoming on overrun and return null on underrun', async () => {
+  const t = await connected(), sockets = streamSockets(t);
+  const pending = t.window.reaper.stream.open('test.audio'); await flush();
+  t.reply(t.messages.length - 1, { result: streamDescriptor('audio', 'test.audio') }); await flush(); sockets[0].onopen();
+  const stream = await pending;
+  for (let i = 1; i <= 5; ++i) sockets[0].onmessage(streamPacket(i, 2));
+  assert.equal(stream.dropped, 2); assert.equal(stream.latest().sequence, 5n);
+  assert.ok(stream.read().data instanceof Float32Array);
+  assert.equal(stream.read().sequence, 2n); assert.equal(stream.read().sequence, 3n); assert.equal(stream.read(), null);
+  sockets[0].onmessage(streamPacket(6, 2)); assert.equal(stream.read().sequence, 6n);
+  sockets[0].onclose({ reason: 'EXTENSION_UNLOADED' });
+  assert.equal(stream.closed, true); assert.equal(stream.error.code, 'EXTENSION_UNLOADED'); assert.equal(stream.read(), null);
+});
+test('Stream format mismatch and connection failure expose typed errors', async () => {
+  const t = await connected(), sockets = streamSockets(t);
+  const pending = t.window.reaper.stream.open('test.frames'); await flush();
+  t.reply(t.messages.length - 1, { result: streamDescriptor() }); await flush(); sockets[0].onopen();
+  const stream = await pending, errors = [];
+  stream.on('error', error => errors.push(error.code));
+  sockets[0].onmessage(streamPacket(1, 2));
+  assert.deepEqual(errors, ['UNSUPPORTED_FORMAT']); assert.equal(stream.error.code, 'UNSUPPORTED_FORMAT');
+  assert.equal(stream.closed, true);
+  const unavailable = t.window.reaper.stream.open('missing'); await flush();
+  t.reply(t.messages.length - 1, { error: { code: 'STREAM_NOT_FOUND', message: 'missing' } });
+  await assert.rejects(unavailable, { code: 'STREAM_NOT_FOUND' });
 });

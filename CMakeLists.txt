@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.6.3 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.6.4 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,6 +15,19 @@ FetchContent_Declare(json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
   GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03)
 FetchContent_MakeAvailable(json)
+
+FetchContent_Declare(ebur128
+  GIT_REPOSITORY https://github.com/jiixyj/libebur128.git
+  GIT_TAG 67b33abe1558160ed76ada1322329b0e9e058b02
+  SOURCE_SUBDIR reaweb-static)
+FetchContent_MakeAvailable(ebur128)
+add_library(reaweb_loudness STATIC "${ebur128_SOURCE_DIR}/ebur128/ebur128.c")
+target_include_directories(reaweb_loudness SYSTEM PUBLIC "${ebur128_SOURCE_DIR}/ebur128")
+target_include_directories(reaweb_loudness SYSTEM PRIVATE "${ebur128_SOURCE_DIR}/ebur128/queue")
+target_compile_definitions(reaweb_loudness PRIVATE _USE_MATH_DEFINES)
+if(UNIX)
+  target_link_libraries(reaweb_loudness PRIVATE m)
+endif()
 
 # Read-only local App resources. Browser networking remains native to the WebView.
 FetchContent_Declare(httplib
@@ -100,6 +113,12 @@ target_compile_definitions(reaweb_core PUBLIC REAWEB_VERSION="${PROJECT_VERSION}
 
 # Share the same session implementation between the plugin and native tests.
 add_library(reaweb_runtime STATIC
+  src/runtime/native_stream.cpp
+  src/runtime/native_tasks.cpp
+  src/runtime/audio_analysis.cpp
+  src/runtime/native_producers.cpp
+  src/runtime/stream_transport.cpp
+  "${wdl_SOURCE_DIR}/WDL/sha.cpp"
   src/runtime/host_service.cpp
   src/runtime/native_monitor.cpp
   src/runtime/service_router.cpp
@@ -110,8 +129,12 @@ add_library(reaweb_runtime STATIC
   src/runtime/lifecycle.cpp
   src/runtime/debug.cpp
   src/runtime/transaction.cpp)
-target_link_libraries(reaweb_runtime PUBLIC reaweb_core)
+target_link_libraries(reaweb_runtime PUBLIC reaweb_core PRIVATE reaweb_loudness)
 target_include_directories(reaweb_runtime PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_include_directories(reaweb_runtime SYSTEM PRIVATE "${wdl_SOURCE_DIR}/WDL")
+if(WIN32)
+  target_link_libraries(reaweb_runtime PRIVATE ws2_32)
+endif()
 
 if(REAWEB_BUILD_EXTENSION)
 
@@ -189,6 +212,8 @@ if(REAWEB_BUILD_EXTENSION)
   ")
   install(FILES "${httplib_SOURCE_DIR}/LICENSE" DESTINATION ReaWebAPI/licenses RENAME cpp-httplib.txt)
   install(FILES "${json_SOURCE_DIR}/LICENSE.MIT" DESTINATION ReaWebAPI/licenses RENAME nlohmann-json.txt)
+  install(FILES "${ebur128_SOURCE_DIR}/COPYING" DESTINATION ReaWebAPI/licenses RENAME libebur128.txt)
+  install(FILES "${ebur128_SOURCE_DIR}/doc/license/queue.txt" DESTINATION ReaWebAPI/licenses RENAME libebur128-queue.txt)
   install(FILES "${lunasvg_SOURCE_DIR}/LICENSE" DESTINATION ReaWebAPI/licenses RENAME lunasvg.txt)
   install(FILES "${lunasvg_SOURCE_DIR}/plutovg/LICENSE" DESTINATION ReaWebAPI/licenses RENAME plutovg.txt)
   install(FILES src/runtime/licenses/FTL.TXT src/runtime/licenses/stb.txt DESTINATION ReaWebAPI/licenses)

@@ -1,5 +1,45 @@
 /** ReaWebAPI Runtime contract 2. Standard REAPER APIs use their original names. */
 type ReaWebDispose = () => Promise<void>;
+interface ReaWebStreamInfo {
+  name: string; kind: 'frame' | 'audio' | 'spectrum' | 'meter' | 'waveform' | 'binary' | 'midi';
+  format: 'rgba8' | 'bgra8' | 'float32' | 'bytes'; capacity: number; maxBytes: number;
+  width: number; height: number; stride: number; channels: number; sampleRate: number;
+  blockFrames: number; fftSize: number; binHz: number; updateRate: number; source: string;
+  policy: 'latest' | 'drop-new';
+}
+interface ReaWebStreamPacket {
+  sequence: bigint; frameId: bigint; timestamp: number; producerDropped: bigint;
+  data: Uint8Array | Float32Array; bytes: Uint8Array;
+}
+interface ReaWebStream {
+  readonly info: Readonly<ReaWebStreamInfo>;
+  readonly closed: boolean;
+  readonly error: (Error & { code: string }) | null;
+  readonly dropped: number;
+  /** Reads the consumer's cached data without a native call. */
+  latest(): ReaWebStreamPacket | null;
+  /** Audio/MIDI dequeue one block. Other types return latest(). Empty queues return null. */
+  read(): ReaWebStreamPacket | null;
+  on(event: 'data', callback: (packet: ReaWebStreamPacket) => void): () => void;
+  on(event: 'close' | 'error', callback: (error: Error & { code: string }) => void): () => void;
+  /** Detaches this consumer. The native producer and other consumers remain active. */
+  close(): Promise<void>;
+}
+interface ReaWebFileChange {
+  id: number; type: 'ready' | 'created' | 'changed' | 'renamed' | 'deleted' | 'overflow' | 'error';
+  path?: string; oldPath?: string; directory?: boolean; code?: string; message?: string;
+}
+interface ReaWebDevices {
+  audio: Record<'MODE' | 'IDENT_IN' | 'IDENT_OUT' | 'BSIZE' | 'SRATE' | 'BPS', string | null> & {
+    inputs: { id: number; name: string }[]; outputs: { id: number; name: string }[];
+  };
+  midiInputs: { id: number; name: string; present: boolean }[];
+  midiOutputs: { id: number; name: string; present: boolean }[];
+}
+interface ReaWebDisplay {
+  id: string; bounds: { x: number; y: number; width: number; height: number };
+  workArea: ReaWebDisplay['bounds']; scaleFactor: number; dpi: number; primary: boolean; units: 'native';
+}
 type ReaWebHostMessage = string | number | boolean | null | ReaWebHostMessage[] | { [key: string]: ReaWebHostMessage };
 interface ReaWebHostService {
   invoke<T = ReaWebHostMessage>(method: string, payload?: ReaWebHostMessage): Promise<T>;
@@ -67,7 +107,7 @@ interface ReaWebLogEntry {
 }
 interface ReaWebCleanupEvent { reason: 'close' | 'reload' | 'unload'; timeoutMs: number; }
 type ReaWebRuntimeNamespace = 'window' | 'theme' | 'dialog' | 'events' | 'lifecycle' | 'debug' | 'fs' | 'audio'
-  | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction' | 'host';
+  | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction' | 'host' | 'stream';
 interface ReaWebRuntimeCapabilities {
   contract: 2; namespaces: ReaWebRuntimeNamespace[]; cleanupTimeoutMs: number;
   /** Reserved Runtime namespace identifiers. */
@@ -76,6 +116,7 @@ interface ReaWebRuntimeCapabilities {
     serviceABI: 1; serviceTimeoutMs: 30000; builtinServices: string[] };
   dragDrop: { maxFiles: number; maxTextBytes: number; effect: 'copy' };
   audio: { maxChannels: number; maxWaveformPoints: number; maxPendingJobs: number };
+  stream: { abi: 1; transport: 'websocket-binary'; maxStreams: number; maxConsumers: number; maxBytes: number; kinds: ReaWebStreamInfo['kind'][] };
 }
 interface ReaWebCapabilities { runtime: ReaWebRuntimeCapabilities; }
 interface ReaWebDevToolsState {
@@ -91,8 +132,15 @@ interface ReaWebDevToolsState {
   fallbackReason?: string;
   lastError?: string;
 }
-interface ReaWebDiagnostics { lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; devtools: ReaWebDevToolsState; }
+interface ReaWebDiagnostics {
+  system: { processCpuSeconds: number; logicalProcessors: number };
+  streams: { allocatedBytes: number; consumers: number; streams: { name: string; published: number; dropped: number }[] };
+  audioCapture: { callbacks: number; users: number; sampleRate: number; published: number; dropped: number; unavailable: number; blockFrames: number; channels: number; bufferAvailable: boolean }[];
+  lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; devtools: ReaWebDevToolsState; }
 interface ReaWebEvents {
+  devicesChanged: ReaWebDevices;
+  'file-change': ReaWebFileChange;
+  'native-timer': { id: number };
   trackSelectionChanged: ReaWebNativeInvalidation;
   trackStateChanged: ReaWebNativeInvalidation;
   markersChanged: ReaWebNativeInvalidation;
@@ -124,6 +172,10 @@ interface ReaWebEvents {
   'theme-changed': ReaWebTheme;
 }
 interface ReaWebAPI {
+  readonly stream: {
+    open(name: string): Promise<ReaWebStream>;
+    getDiagnostics(): Promise<{ allocatedBytes: number; consumers: number; streams: { name: string; published: number; dropped: number }[] }>;
+  };
   readonly host: {
     service(name: string): ReaWebHostService;
     /** Queue text for Lua ReaWeb_Receive. Other JSON values are serialized. Resolves true on acceptance.
@@ -131,6 +183,8 @@ interface ReaWebAPI {
     send(message: ReaWebHostMessage): Promise<boolean>;
   };
   readonly fs: {
+    /** Resolves after the native baseline scan. Changes are coalesced at 250 ms. */
+    watch(path: string, callback: (event: ReaWebFileChange) => void | Promise<void>, options?: { recursive?: boolean }): Promise<ReaWebDispose>;
     /** Encoding-specific helpers use the same worker and 16 MiB limit as readFile/writeFile. */
     readText(path: string): Promise<string>;
     writeText(path: string, text: string, options?: { overwrite?: boolean }): Promise<{ path: string; bytes: number }>;
@@ -147,10 +201,18 @@ interface ReaWebAPI {
     makeDirectory(path: string, options?: { recursive?: boolean }): Promise<boolean>;
   };
   readonly clipboard: {
+    /** Custom ReaWebAPI MIME format. Limit 16 MiB. */
+    readBinary(format: string): Promise<Uint8Array>;
+    writeBinary(format: string, bytes: Uint8Array): Promise<boolean>;
     readText(): Promise<string>;
     writeText(text: string): Promise<boolean>;
   };
   readonly system: {
+    getDevices(): Promise<ReaWebDevices>;
+    getDisplays(): Promise<ReaWebDisplay[]>;
+    openMIDIInput(device?: number): Promise<ReaWebStream>;
+    /** Milliseconds. Repeats skip missed periods. This is not a frame clock. */
+    schedule(callback: (event: { id: number }) => void | Promise<void>, options?: { delay?: number; interval?: number }): Promise<ReaWebDispose>;
     getCapabilities(): Promise<ReaWebCapabilities>;
     getPlatform(): Promise<ReaWebPlatform>;
     getArchitecture(): Promise<ReaWebArchitecture>;
@@ -257,6 +319,9 @@ interface ReaWebAPI {
 
   };
   readonly audio: {
+    openStream(kind: 'audio' | 'spectrum' | 'meter' | 'waveform', options?: {
+      source?: 'master' | 'input' | 'selected-track' | `track:${string}`; fftSize?: number; updateRate?: number;
+    }): Promise<ReaWebStream>;
     /** Explicit coalescing: one in-flight write and the latest waiting value per track/key.
      * Superseded values settle without being sent. Does not create an Undo gesture.
      */

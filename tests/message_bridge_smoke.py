@@ -16,6 +16,8 @@ root = args.output.resolve()
 root.mkdir(parents=True, exist_ok=False)
 (root / 'UserPlugins').mkdir()
 config = '[REAPER]\n'
+if sys.platform.startswith('linux'):
+    config += 'linux_audio_mode=3\nlinux_audio_srate=48000\nlinux_audio_bsize=512\n'
 if sys.platform == 'darwin':
     config += 'hasrecentlyopened=1\n[audioconfig]\nmode=4\n'
 (root / 'reaper.ini').write_text(config, encoding='utf-8')

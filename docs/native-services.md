@@ -66,3 +66,8 @@ Existing events retain their original names and payloads. Clipboard, native drag
 ## Verification
 
 With `BUILD_TESTING=ON`, CTest includes registry lifecycle/error/worker tests, monitor state comparisons, JavaScript bridge tests and Runtime session regressions. `native_service_extension` builds on Windows, macOS and Linux. Run the [Native Service Demo](../web/native-service/README.md) for real-host checks. The five-platform CI matrix runs the same contracts. See [validation results](VALIDATION.md) for platforms actually exercised for this checkout.
+
+
+## Stream lifecycle and input
+
+`ReaWeb_SetServiceInput(handle, method)` opts a send method into bounded, immediate main-thread dispatch. Requests up to 4096 bytes may overtake ordinary commands. The callback must only update the latest input state, never perform I/O or wait for a worker. `ReaWeb_SetServiceShutdown(handle, callback)` runs before service removal or Runtime destruction, so producers can stop and join before their resources are released. Both exports are additive and retain Service ABI 1. See [Native Streams](native-streams.md).

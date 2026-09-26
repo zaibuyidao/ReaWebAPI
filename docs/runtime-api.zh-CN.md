@@ -6,13 +6,13 @@
 
 [English](runtime-api.md) | **简体中文**
 
-JavaScript Runtime 使用下列 14 个命名空间。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
+JavaScript Runtime 使用下列 15 个命名空间。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
 
 `capabilities.runtime.contract` 为 2，描述宿主 SDK；`capabilities.webRuntime.contract` 仍为 1，描述 Web 资源和存储约定。能力信息列出命名空间、事件、清理超时和音频上限；底层标准 API 是否存在仍应查询 `api.availableMethods`。
 
 就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
-14 个命名空间共 66 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
+15 个命名空间共 76 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
 `transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
 
@@ -231,3 +231,5 @@ await reaper.host.send({ type: 'setVolume', value: 0.5 });
 ```
 
 消息保持 FIFO，不合并、不提供初始快照、不回放。队列归当前文档所有，关闭或重载时清空。单条消息最多 1 MiB UTF-8，每方向最多 256 条，窗口双向合计最多 16 MiB。参见 [Lua 契约](host-api.zh-CN.md#lua-消息桥接)与 [Lua 后端示例](../web/lua-backend/README.md)。纯 JavaScript 的 Mirror/Runtime 开发方式保持可用。
+
+Native Streams and platform additions: [English](native-streams.md) · [中文](native-streams.zh-CN.md).

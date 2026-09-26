@@ -18,6 +18,11 @@ std::atomic<uint64_t> project_generation{0};
 std::atomic<uint64_t> marker_revision{0}, fx_revision{0}, save_revision{0};
 std::atomic<uint64_t> selection_revision{0};
 std::atomic<uint64_t> transport_revision{0};
+int (*register_audio_hook)(bool, audio_hook_register_t*) = nullptr;
+audio_hook_register_t audio_hook{
+  [](bool post, int frames, double rate, audio_hook_register_t* hook) {
+    if (runtime) runtime->producers().capture(post, frames, rate, post ? hook->output_nch : hook->input_nch, hook->GetBuffer);
+  }, nullptr, nullptr, 0, 0, nullptr};
 class EventSurface final : public IReaperControlSurface {
 public:
   const char* GetTypeString() override { return "REAWEBAPI"; }
@@ -95,6 +100,14 @@ int ReaWeb_UnregisterService(uint64_t handle) {
   try { return runtime ? runtime->services().remove(handle) : REAWEB_EXTENSION_UNLOADED; }
   catch (...) { return REAWEB_SERVICE_ERROR; }
 }
+int ReaWeb_SetServiceInput(uint64_t handle, const char* method) {
+  try { return runtime ? runtime->services().set_input(handle, method) : REAWEB_EXTENSION_UNLOADED; }
+  catch (...) { return REAWEB_SERVICE_ERROR; }
+}
+int ReaWeb_SetServiceShutdown(uint64_t handle, ReaWeb_ServiceShutdown callback) {
+  try { return runtime ? runtime->services().set_shutdown(handle, callback) : REAWEB_EXTENSION_UNLOADED; }
+  catch (...) { return REAWEB_SERVICE_ERROR; }
+}
 int ReaWeb_CompleteServiceCall(uint64_t handle, uint64_t request, const char* json, int status, const char* message) {
   try { return runtime ? runtime->services().complete(handle, request, json, status, message) : REAWEB_EXTENSION_UNLOADED; }
   catch (...) { return REAWEB_SERVICE_ERROR; }
@@ -103,6 +116,28 @@ int ReaWeb_EmitServiceEvent(uint64_t handle, int window, const char* name, const
   try { return runtime ? runtime->services().emit(handle, window, name, json) : REAWEB_EXTENSION_UNLOADED; }
   catch (...) { return REAWEB_SERVICE_ERROR; }
 }
+template<int Kind> int create_stream(const char* name, const ReaWeb_StreamDesc* desc, uint64_t* handle) {
+  try {
+    if (!runtime) return REAWEB_EXTENSION_UNLOADED;
+    if (desc && desc->size >= sizeof(*desc) && desc->owner && !runtime->services().contains(desc->owner)) return REAWEB_SERVICE_NOT_FOUND;
+    return runtime->streams().create(Kind, name, desc, handle);
+  }
+  catch (...) { return REAWEB_SERVICE_ERROR; }
+}
+template<int Kind> int publish_stream(uint64_t handle, const void* data, uint32_t bytes, uint64_t sequence, double timestamp) noexcept {
+  return runtime ? runtime->streams().publish(Kind, handle, data, bytes, sequence, timestamp) : REAWEB_EXTENSION_UNLOADED;
+}
+int ReaWeb_CloseStream(uint64_t handle) {
+  try { return runtime ? runtime->streams().close(handle) : REAWEB_EXTENSION_UNLOADED; }
+  catch (...) { return REAWEB_SERVICE_ERROR; }
+}
+int ReaWeb_CreateTimer(uint32_t delay, uint32_t interval, uint64_t owner, ReaWeb_TimerCallback callback, void* context, uint64_t* handle) {
+  try {
+    if (runtime && owner && !runtime->services().contains(owner)) return REAWEB_SERVICE_NOT_FOUND;
+    return runtime ? runtime->tasks().timer(delay, interval, owner, callback, context, handle) : REAWEB_EXTENSION_UNLOADED;
+  } catch (...) { return REAWEB_SERVICE_ERROR; }
+}
+int ReaWeb_CancelTimer(uint64_t handle) { return runtime ? runtime->tasks().cancel(handle) : REAWEB_EXTENSION_UNLOADED; }
 void* open_vararg(void** args, int count) {
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_Open(
     count >= 1 ? static_cast<const char*>(args[0]) : nullptr,
@@ -156,6 +191,7 @@ void add_api(const char* name, void* native, void* vararg, const char* definitio
   add_registration(std::string("APIdef_") + name, const_cast<char*>(definition));
 }
 void unload() {
+  if (register_audio_hook) { register_audio_hook(false, &audio_hook); register_audio_hook = nullptr; }
   for (auto it = registrations.rbegin(); it != registrations.rend(); ++it)
     register_api(("-" + it->first).c_str(), it->second);
   registrations.clear();
@@ -312,10 +348,26 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
         if (dock_index(hwnd, &floating) >= 0 && floating && IsWindowVisible(hwnd)) activate_dock(hwnd);
       }};
     runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
+    register_audio_hook = reinterpret_cast<int (*)(bool, audio_hook_register_t*)>(rec->GetFunc("Audio_RegHardwareHook"));
+    if (register_audio_hook && !register_audio_hook(true, &audio_hook)) register_audio_hook = nullptr;
     add_registration("API_ReaWeb_RegisterService", reinterpret_cast<void*>(ReaWeb_RegisterService));
+    add_registration("API_ReaWeb_SetServiceInput", reinterpret_cast<void*>(ReaWeb_SetServiceInput));
+    add_registration("API_ReaWeb_SetServiceShutdown", reinterpret_cast<void*>(ReaWeb_SetServiceShutdown));
     add_registration("API_ReaWeb_UnregisterService", reinterpret_cast<void*>(ReaWeb_UnregisterService));
     add_registration("API_ReaWeb_CompleteServiceCall", reinterpret_cast<void*>(ReaWeb_CompleteServiceCall));
     add_registration("API_ReaWeb_EmitServiceEvent", reinterpret_cast<void*>(ReaWeb_EmitServiceEvent));
+    const std::pair<const char*, void*> stream_api[] = {
+      {"CreateFrameStream", reinterpret_cast<void*>(create_stream<REAWEB_FRAME>)}, {"PublishFrame", reinterpret_cast<void*>(publish_stream<REAWEB_FRAME>)},
+      {"CreateAudioStream", reinterpret_cast<void*>(create_stream<REAWEB_AUDIO>)}, {"PublishAudio", reinterpret_cast<void*>(publish_stream<REAWEB_AUDIO>)},
+      {"CreateSpectrumStream", reinterpret_cast<void*>(create_stream<REAWEB_SPECTRUM>)}, {"PublishSpectrum", reinterpret_cast<void*>(publish_stream<REAWEB_SPECTRUM>)},
+      {"CreateMeterStream", reinterpret_cast<void*>(create_stream<REAWEB_METER>)}, {"PublishMeter", reinterpret_cast<void*>(publish_stream<REAWEB_METER>)},
+      {"CreateWaveformStream", reinterpret_cast<void*>(create_stream<REAWEB_WAVEFORM>)}, {"PublishWaveform", reinterpret_cast<void*>(publish_stream<REAWEB_WAVEFORM>)},
+      {"CreateBinaryStream", reinterpret_cast<void*>(create_stream<REAWEB_BINARY>)}, {"PublishBinary", reinterpret_cast<void*>(publish_stream<REAWEB_BINARY>)},
+      {"CreateMIDIStream", reinterpret_cast<void*>(create_stream<REAWEB_MIDI>)}, {"PublishMIDI", reinterpret_cast<void*>(publish_stream<REAWEB_MIDI>)},
+      {"CloseStream", reinterpret_cast<void*>(ReaWeb_CloseStream)}};
+    for (const auto& api : stream_api) add_registration(std::string("API_ReaWeb_") + api.first, api.second);
+    add_registration("API_ReaWeb_CreateTimer", reinterpret_cast<void*>(ReaWeb_CreateTimer));
+    add_registration("API_ReaWeb_CancelTimer", reinterpret_cast<void*>(ReaWeb_CancelTimer));
     add_api("ReaWeb_Open", reinterpret_cast<void*>(ReaWeb_Open), reinterpret_cast<void*>(open_vararg),
       "int\0const char*,const char*,const char*,const bool*\0path,instanceKeyInOptional,idInOptional,multipleInOptional\0Open local HTML. Relative paths resolve under resource/Scripts. An instanceKey reuses and focuses its window, optionally scoped by id. Omit the key or set multiple=true to create a new window. Returns a window id, or 0 on failure.\0");
     add_api("ReaWeb_Close", reinterpret_cast<void*>(ReaWeb_Close), reinterpret_cast<void*>(id_vararg<ReaWeb_Close>),

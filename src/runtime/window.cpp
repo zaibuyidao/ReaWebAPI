@@ -87,6 +87,30 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
           fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.");
           return;
         }
+        if (s->ready && work.text.size() <= 4096) {
+          Json input;
+          try { input = parse_request(work.text); } catch (const std::exception&) {}
+          if (input.is_object() && input.value("method", std::string()) == "ReaWeb_ServiceSend") {
+            const auto& args = input.at("args");
+            if (args.size() == 3 && args[0].is_string() && args[1].is_string() &&
+                services_.is_input(args[0].get<std::string>(), args[1].get<std::string>())) {
+              work.kind = Work::Request; work.data = std::move(input); work.text.clear();
+              ++s->outstanding;
+              Json response{{"id", work.data.at("id")}, {"document", work.data.value("document", Json())}};
+              try {
+                if (!work.data.contains("document") || work.data.at("document") != s->document) throw Error("DOCUMENT_STALE", "The bridge document is no longer active");
+                if (work.data.contains("expiresAt")) {
+                  const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                  if (!work.data["expiresAt"].is_number_integer()) throw Error("INVALID_REQUEST", "Invalid request deadline");
+                  if (work.data["expiresAt"].get<double>() <= static_cast<double>(now)) throw Error("REQUEST_EXPIRED", "Input request expired");
+                }
+                service_call(*s, work);
+              } catch (const Error& e) { response["error"] = {{"code", e.code}, {"message", e.what()}}; reply(*s, work, std::move(response)); }
+              catch (const std::exception& e) { response["error"] = {{"code", "SERVICE_ERROR"}, {"message", e.what()}}; reply(*s, work, std::move(response)); }
+              return;
+            }
+          }
+        }
         // Parse a small isolated request without a worker round-trip. Execution
         // still waits for tick(), outside the WebView callback. A pending call
         // keeps later requests on the worker so a large parse is never overtaken.

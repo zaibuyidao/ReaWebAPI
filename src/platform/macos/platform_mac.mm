@@ -382,6 +382,16 @@ public:
   }
   void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
     @autoreleasepool {
+      if (method == "ReaWeb_GetDisplays") {
+        Json displays = Json::array();
+        for (NSScreen* screen in NSScreen.screens) {
+          const auto rectangle = [](NSRect r) { return Json{{"x", r.origin.x}, {"y", r.origin.y}, {"width", r.size.width}, {"height", r.size.height}}; };
+          displays.push_back({{"id", std::to_string([screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue])},
+            {"bounds", rectangle(screen.frame)}, {"workArea", rectangle(screen.visibleFrame)}, {"scaleFactor", screen.backingScaleFactor},
+            {"dpi", 96 * screen.backingScaleFactor}, {"primary", screen == NSScreen.screens.firstObject}, {"units", "native"}});
+        }
+        reply({{"result", displays}}); return;
+      }
       if (method == "ReaWeb_RevealPath") {
         auto url = [NSURL fileURLWithPath:ns(args.at(0).get<std::string>())];
         [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[url]];
@@ -393,6 +403,19 @@ public:
         reply({{"result", true}}); return;
       }
       auto pasteboard = [NSPasteboard generalPasteboard];
+      if (method == "ReaWeb_ClipboardReadBinary" || method == "ReaWeb_ClipboardWriteBinary") {
+        auto type = ns("ReaWebAPI.Binary:" + args.at(0).get<std::string>());
+        if (method == "ReaWeb_ClipboardReadBinary") {
+          NSData* data = [pasteboard dataForType:type];
+          if (!data) { reply({{"result", nullptr}}); return; }
+          if (data.length > value_limit) throw Error("BUFFER_LIMIT", "Clipboard exceeds 16 MiB");
+          reply({{"result", encode_binary(static_cast<const char*>(data.bytes), data.length)}}); return;
+        }
+        const auto bytes = decode_binary(args.at(1));
+        auto data = [NSData dataWithBytes:bytes.data() length:bytes.size()]; [pasteboard clearContents];
+        if (![pasteboard setData:data forType:type]) throw Error("CLIPBOARD_ERROR", "Cannot write binary clipboard data");
+        reply({{"result", true}}); return;
+      }
       if (method == "ReaWeb_ClipboardReadText") {
         std::string value = [pasteboard stringForType:NSPasteboardTypeString].UTF8String ?: "";
         if (value.size() > value_limit) throw Error("BUFFER_LIMIT", "Clipboard exceeds 16 MiB");

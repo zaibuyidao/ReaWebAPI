@@ -17,6 +17,11 @@ src/
 │  ├─ events.cpp
 │  ├─ native_monitor.cpp / native_monitor.hpp
 │  ├─ host_service.cpp / host_service.hpp
+│  ├─ native_stream.cpp / native_stream.hpp
+│  ├─ stream_transport.cpp / stream_transport.hpp
+│  ├─ native_producers.cpp / native_producers.hpp
+│  ├─ audio_analysis.cpp / audio_analysis.hpp
+│  ├─ native_tasks.cpp / native_tasks.hpp
 │  ├─ service_router.cpp
 │  ├─ lifecycle.cpp
 │  ├─ services.cpp / services.hpp
@@ -29,7 +34,7 @@ src/
 │  ├─ app.cpp
 │  ├─ system.cpp
 │  └─ transaction.cpp
-├─ public/reaweb_service.h
+├─ public/reaweb_service.h / reaweb_stream.h / reaweb_tasks.h
 ├─ platform/
 │  ├─ platform.hpp
 │  ├─ windows/platform_win.cpp
@@ -61,9 +66,9 @@ These are source responsibility groups, not five independent libraries. `reaweb_
 
 ## API boundaries / API 边界
 
-The public API consists of 730 REAPER Mirror bindings, thirteen Lua `ReaWeb_*` host APIs and fourteen JavaScript Runtime namespaces.
+The public API consists of 730 REAPER Mirror bindings, thirteen Lua `ReaWeb_*` host APIs and fifteen JavaScript Runtime namespaces.
 
-公开接口包含 730 项 REAPER Mirror、13 项 Lua `ReaWeb_*` 宿主 API 和 14 个 JavaScript Runtime 命名空间。
+公开接口包含 730 项 REAPER Mirror、13 项 Lua `ReaWeb_*` 宿主 API 和 15 个 JavaScript Runtime 命名空间。
 
 Namespace names do not require one C++ file each. `reaper.dialog.*` wraps the `GetUserFileName` Mirror in `runtime/reaper.js`. Clipboard operations use the common asynchronous dispatcher and the OS implementations in `platform/`.
 
@@ -76,3 +81,5 @@ Namespace names do not require one C++ file each. `reaper.dialog.*` wraps the `G
 - API Sync reads `src/core/core.cpp`; SDK batch checks read `src/core/batch.hpp`. Keep those source checks synchronized when moving the registries.
 - Keep build-generated `api_schema.hpp`, `native_api.cpp` and `bridge_script.hpp` in the build directory.
 - Run the existing API, native ABI, Runtime, Python/SDK and packaging checks after structural changes. See `docs/VALIDATION.md` in the repository and the [developer guide](development.md).
+
+Native Streams and platform additions: [English](native-streams.md) · [中文](native-streams.zh-CN.md).

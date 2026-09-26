@@ -30,7 +30,7 @@ bool small_message(const Json& value, size_t& budget) {
 Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock)
   : host_(std::move(host)), services_([this](auto handle, const auto& service, int window, const auto& name, Json data) {
       service_event(handle, service, window, name, std::move(data));
-    }), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), main_thread_(std::this_thread::get_id()) {
+    }), producers_(host_, streams_), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), main_thread_(std::this_thread::get_id()) {
   project_ = host_.current_project();
   host_generation_ = host_.project_generation ? host_.project_generation() : 0;
   project_epoch_ = 1;
@@ -46,8 +46,12 @@ Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::str
   services_.add("runtime", &builtin, &handle);
 }
 Runtime::~Runtime() {
+  services_.shutdown();
   try { finish_undo(); } catch (...) {}
   for (const auto& item : sessions_) {
+    streams_.detach_window(item.first);
+    producers_.close_window(item.first);
+    tasks_.cancel_window(item.first);
     services_.cancel_window(item.first);
     try { persist(*item.second, true); detach(*item.second); } catch (...) {}
   }
@@ -64,6 +68,50 @@ Json Runtime::web_runtime(const Session& session) const {
 }
 Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   auto& s = *sessions_.at(id);
+  if (method == "ReaWeb_AnalysisOpen") {
+    if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected analysis stream kind");
+    return producers_.audio(args[0].get<std::string>(), args[1], id);
+  }
+  if (method == "ReaWeb_MIDIOpen") {
+    if (!args[0].is_number_integer() || args[0].get<double>() < -1 || args[0].get<double>() > 65535) throw Error("INVALID_ARGUMENT", "Expected MIDI device index");
+    return producers_.midi(args[0].get<int>(), id);
+  }
+  if (method == "ReaWeb_GetDevices") return producers_.devices();
+  if (method == "ReaWeb_StreamOpen") {
+    if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected a stream name");
+    auto descriptor = streams_.attach(args[0].get<std::string>(), id, s.generation, s.app->origin);
+    producers_.attached(args[0].get<std::string>());
+    return descriptor;
+  }
+  if (method == "ReaWeb_StreamDetach") {
+    if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected a consumer token");
+    streams_.detach(args[0].get<std::string>(), id); return true;
+  }
+  if (method == "ReaWeb_StreamDiagnostics") return streams_.info();
+  if (method == "ReaWeb_WatchBegin") {
+    if (!args[0].is_string() || !args[1].is_object() || !args[1].value("recursive", Json(false)).is_boolean())
+      throw Error("INVALID_ARGUMENT", "Expected a path and watch options");
+    const auto path = args[0].get<std::string>();
+    if (path.empty() || path.size() > 32768 || path.find('\0') != std::string::npos) throw Error("INVALID_PATH", "Invalid watch path");
+    return tasks_.watch(fs::absolute(s.entry.parent_path() / fs::u8path(path)).lexically_normal(), args[1].value("recursive", false), id);
+  }
+  if (method == "ReaWeb_WatchEnd" || method == "ReaWeb_TimerStop") {
+    if (!args[0].is_number_unsigned()) throw Error("INVALID_ARGUMENT", "Expected a native task id");
+    if (method == "ReaWeb_WatchEnd") tasks_.unwatch(args[0].get<uint64_t>(), id); else tasks_.cancel(args[0].get<uint64_t>(), id);
+    return true;
+  }
+  if (method == "ReaWeb_TimerStart") {
+    if (!args[0].is_object()) throw Error("INVALID_ARGUMENT", "Expected timer options");
+    for (const auto& option : args[0].items()) if (option.key() != "delay" && option.key() != "interval")
+      throw Error("INVALID_ARGUMENT", "Unknown timer option");
+    const auto delay = args[0].value("delay", Json(0)), interval = args[0].value("interval", Json(0));
+    for (const auto& value : {delay, interval}) if (!value.is_number_integer() || value.get<double>() < 0 || value.get<double>() > 86400000)
+      throw Error("INVALID_ARGUMENT", "Timer delay/interval must be 0..86400000 milliseconds");
+    uint64_t timer = 0;
+    const auto status = tasks_.timer(delay.get<uint32_t>(), interval.get<uint32_t>(), 0, nullptr, nullptr, &timer, id);
+    if (status) throw Error(ServiceRegistry::code(status), "Cannot create native timer");
+    return timer;
+  }
   if (method == "ReaWeb_HostSend") {
     if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected a host message string");
     enqueue_message(s, args[0].get_ref<const std::string&>(), false);
@@ -258,7 +306,8 @@ bool Runtime::start_async(Session& session, const Work& request) {
     return true;
   }
   const bool drag = method == "ReaWeb_DragFiles" || method == "ReaWeb_DragText";
-  if (!drag && method != "ReaWeb_RevealPath" && method != "ReaWeb_ClipboardReadText" && method != "ReaWeb_ClipboardWriteText" && method != "ReaWeb_OpenExternal") return false;
+  const bool binary_clipboard = method == "ReaWeb_ClipboardReadBinary" || method == "ReaWeb_ClipboardWriteBinary";
+  if (!drag && !binary_clipboard && method != "ReaWeb_GetDisplays" && method != "ReaWeb_RevealPath" && method != "ReaWeb_ClipboardReadText" && method != "ReaWeb_ClipboardWriteText" && method != "ReaWeb_OpenExternal") return false;
   std::weak_ptr<Session> weak = sessions_.at(session.id);
   auto complete = [this, weak, request](Json result) mutable {
     auto s = weak.lock();
@@ -284,6 +333,20 @@ bool Runtime::start_async(Session& session, const Work& request) {
     auto path = existing_local_path(session.entry.parent_path(), args[0]);
     session.app->platform->desktop(method, Json::array({path.u8string()}), std::move(complete));
     return true;
+  }
+  if (method == "ReaWeb_GetDisplays") {
+    if (!args.empty()) throw Error("INVALID_ARGUMENT", "GetDisplays takes no arguments");
+    session.app->platform->desktop(method, args, std::move(complete)); return true;
+  }
+  if (binary_clipboard) {
+    if (args.size() != (method == "ReaWeb_ClipboardReadBinary" ? 1u : 2u) || !args[0].is_string())
+      throw Error("INVALID_ARGUMENT", "Expected a binary clipboard format and optional bytes");
+    const auto format = args[0].get<std::string>();
+    if (format.empty() || format.size() > 128 || format.find('/') == std::string::npos ||
+        format.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._+-") != std::string::npos)
+      throw Error("INVALID_ARGUMENT", "Expected a MIME-style binary clipboard format");
+    if (args.size() == 2) (void)decode_binary(args[1]);
+    session.app->platform->desktop(method, args, std::move(complete)); return true;
   }
   {
     if (method == "ReaWeb_ClipboardReadText") {
@@ -335,6 +398,17 @@ void Runtime::tick() {
     else it = apps_.erase(it);
   }
   services_.tick(Clock::now(), Clock::now() + std::chrono::microseconds(500));
+  producers_.tick();
+  for (auto& event : tasks_.tick(Clock::now() + std::chrono::microseconds(250))) {
+    auto session = sessions_.find(event.window);
+    if (session == sessions_.end()) continue;
+    auto& s = *session->second;
+    if (!s.ready || s.closing || !s.subscriptions.count(event.name)) continue;
+    Work output; output.kind = Work::Encode; output.session = s.id; output.generation = s.generation; output.counted_output = true;
+    output.data = {{"document", s.document}, {"event", event.name}, {"sequence", ++s.event_sequence}, {"data", std::move(event.data)}};
+    if (s.output_pending >= 256 || !worker_.submit(std::move(output))) fail(s, "Native task event queue limit exceeded");
+    else ++s.output_pending;
+  }
   observe(deadline);
   observe_native(deadline);
   if (undo_owner_ && Clock::now() >= undo_deadline_) finish_undo();
@@ -473,6 +547,9 @@ void Runtime::tick() {
         if (response) { auto request = std::move(audio.request); s.audio.pop_front(); reply(s, std::move(request), *response); }
       }
       if (s.closing || s.window->closed()) {
+        streams_.detach_window(s.id);
+        producers_.close_window(s.id);
+        tasks_.cancel_window(s.id);
         services_.cancel_window(s.id);
         s.service_subscriptions.clear(); s.subscriptions.clear();
         clear_messages(s);

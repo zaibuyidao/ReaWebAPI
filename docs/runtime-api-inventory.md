@@ -1,16 +1,16 @@
 # Runtime API 完整清单 / Complete API inventory
 
-JavaScript Runtime 公开以下 **14 个命名空间、66 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
+JavaScript Runtime 公开以下 **15 个命名空间、76 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
 
-The JavaScript Runtime exposes fourteen namespaces: 66 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
+The JavaScript Runtime exposes fifteen namespaces: 76 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
 Lua 通过原生函数 `reaper.ReaWeb_Open(path)` 启动页面。JavaScript 使用本清单中的 Runtime 命名空间。内部通信命令是桥接协议的一部分。
 
-全部 14 个命名空间已有具体能力；`capabilities.runtime.reservedNamespaces` 现在为空数组。`app` 提供当前应用信息，`dragDrop` 提供原生文件／文本拖放；大小写统一为 `dragDrop`，没有 `dragdrop` 别名。
+全部 15 个命名空间已有具体能力；`capabilities.runtime.reservedNamespaces` 现在为空数组。`app` 提供当前应用信息，`dragDrop` 提供原生文件／文本拖放；大小写统一为 `dragDrop`，没有 `dragdrop` 别名。
 
-All fourteen namespaces have implemented members. App identity is shared with browser storage. Manifest metadata is read at App creation, and the validator checks complete manifests.
+All fifteen namespaces have implemented members. App identity is shared with browser storage. Manifest metadata is read at App creation, and the validator checks complete manifests.
 
 ## reaper.host
 
@@ -202,3 +202,20 @@ const childId = await reaper.window.open("other/index.html");
 ```
 
 `Size` / `Position` are the relevant fields of `ReaWebBounds` plus `mode` and `units`; `Capabilities` is `ReaWebCapabilities` plus `windowId` and `projectEpoch`. `string or null` / `string or Uint8Array` in the table denote unions; the declarations enforce overload-specific results. Except `reaper.lifecycle.ready`, every member is a method returning a Promise. Returned disposer functions also return Promises.
+
+## reaper.stream
+
+| API | 返回 / Result | 用途 |
+| --- | --- | --- |
+| `reaper.stream.open(name)` | `Promise<ReaWebStream>` | Attach a binary consumer. `latest()` reads local cached data |
+| `reaper.stream.getDiagnostics()` | `Promise<object>` | Stream allocations, consumers and producer counters |
+| `reaper.audio.openStream(kind, options)` | `Promise<ReaWebStream>` | PCM, FFT, Peak/RMS/LUFS or realtime waveform |
+| `reaper.fs.watch(path, callback, options)` | `Promise<ReaWebDispose>` | Native coalesced file/directory notifications |
+| `reaper.clipboard.readBinary(format)` | `Promise<Uint8Array>` | Read a custom binary clipboard format |
+| `reaper.clipboard.writeBinary(format, bytes)` | `Promise<boolean>` | Write a custom binary clipboard format |
+| `reaper.system.getDevices()` | `Promise<ReaWebDevices>` | Active audio hardware and MIDI devices |
+| `reaper.system.getDisplays()` | `Promise<ReaWebDisplay[]>` | Monitor bounds, work areas and effective DPI |
+| `reaper.system.openMIDIInput(device)` | `Promise<ReaWebStream>` | Selected input or all inputs (-1) |
+| `reaper.system.schedule(callback, options)` | `Promise<ReaWebDispose>` | One-shot or repeating native timer |
+
+See [Native Streams](native-streams.md) for buffer layouts, limits and lifecycle.

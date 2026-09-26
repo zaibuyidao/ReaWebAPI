@@ -38,12 +38,12 @@ type eventsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['events'], 'on' 
 type lifecycleSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['lifecycle'], 'ready' | 'on'>>;
 type lifecycleEvents = RuntimeAssert<RuntimeEqual<Parameters<ReaWebAPI['lifecycle']['on']>[0], 'before-close' | 'before-reload' | 'cleanup'>>;
 type debugSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['debug'], 'log' | 'warn' | 'error' | 'inspect' | 'getLogs' | 'getDiagnostics' | 'openDevTools' | 'setBufferSize'>>;
-type fsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['fs'], 'readText' | 'writeText' | 'readBinary' | 'writeBinary' | 'readFile' | 'writeFile' | 'stat' | 'readDirectory' | 'makeDirectory'>>;
-type audioSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['audio'], 'getFileInfo' | 'getWaveform' | 'getTrackMeter' | 'setTrackValueLatest'>>;
-type clipboardSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['clipboard'], 'readText' | 'writeText'>>;
+type fsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['fs'], 'readText' | 'writeText' | 'readBinary' | 'writeBinary' | 'readFile' | 'writeFile' | 'stat' | 'readDirectory' | 'makeDirectory' | 'watch'>>;
+type audioSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['audio'], 'getFileInfo' | 'getWaveform' | 'getTrackMeter' | 'setTrackValueLatest' | 'openStream'>>;
+type clipboardSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['clipboard'], 'readText' | 'writeText' | 'readBinary' | 'writeBinary'>>;
 type dragDropSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dragDrop'], 'startFiles' | 'startText'>>;
 type appSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['app'], 'getId' | 'getName' | 'getVersion' | 'getRootPath' | 'getDataPath'>>;
-type systemSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['system'], 'getPlatform' | 'getArchitecture' | 'revealInFileManager' | 'openExternal' | 'getCapabilities'>>;
+type systemSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['system'], 'getPlatform' | 'getArchitecture' | 'revealInFileManager' | 'openExternal' | 'getCapabilities' | 'getDevices' | 'getDisplays' | 'openMIDIInput' | 'schedule'>>;
 type transactionSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['transaction'], 'batch' | 'beginUndo' | 'endUndo' | 'withUndo'>>;
 
 async function contract(track: MediaTrackHandle, take: MediaItem_TakeHandle) {
@@ -211,4 +211,19 @@ async function batchBuilderContract(track: MediaTrackHandle, take: MediaItem_Tak
     // @ts-expect-error Ordinary Mirror calls do not accept builder references.
     reaper.GetTrackName(b.GetTrack(0, 0));
   });
+}
+
+async function streamContract() {
+  const stream: ReaWebStream = await reaper.stream.open('test.video');
+  const sequence: bigint | undefined = stream.latest()?.sequence;
+  stream.on('data', packet => { const bytes: Uint8Array = packet.bytes; });
+  await stream.close();
+  const meter = await reaper.audio.openStream('meter', {source: 'master', updateRate: 30});
+  const stop = await reaper.system.schedule(() => {}, {delay: 10, interval: 100});
+  const watch = await reaper.fs.watch('.', event => console.log(event.type), {recursive: true});
+  await reaper.clipboard.writeBinary('application/octet-stream', new Uint8Array([1]));
+  const devices: ReaWebDevices = await reaper.system.getDevices();
+  await stop(); await watch(); await meter.close();
+  // @ts-expect-error Native timers use delay and interval in milliseconds.
+  await reaper.system.schedule(() => {}, {delayMs: 10});
 }

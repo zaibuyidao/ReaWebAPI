@@ -2,6 +2,9 @@
 
 namespace reaweb {
 void Runtime::navigate(Session& session) {
+  streams_.detach_window(session.id);
+  producers_.close_window(session.id);
+  tasks_.cancel_window(session.id);
   services_.cancel_window(session.id);
   session.service_subscriptions.clear();
   if (session.window) session.window->set_drop_enabled(false);

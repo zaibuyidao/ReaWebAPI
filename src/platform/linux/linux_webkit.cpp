@@ -26,6 +26,25 @@ class Page {
   std::unique_ptr<GtkNativeDrag> drag_;
   std::unique_ptr<GtkDevTools> devtools_;
   std::unique_ptr<GtkDockMenu> dock_menu_;
+  bool focused_ = false;
+  void set_host_focus(bool focused) {
+    if (focused_ == focused) return;
+    focused_ = focused;
+    // SWELL is not a GtkSocket. Supply XEmbed focus notifications so GtkPlug
+    // propagates the host's focus and blur state to WebKit.
+    auto display = gdk_x11_display_get_xdisplay(gtk_widget_get_display(plug_));
+    XEvent message{};
+    message.xclient.type = ClientMessage; message.xclient.display = display;
+    message.xclient.window = gdk_x11_window_get_xid(gtk_widget_get_window(plug_));
+    message.xclient.format = 32;
+    message.xclient.message_type = XInternAtom(display, "_XEMBED", False);
+    message.xclient.data.l[0] = CurrentTime;
+    for (long opcode : {focused ? 1L : 2L, focused ? 4L : 5L}) {
+      message.xclient.data.l[1] = opcode;
+      XSendEvent(display, message.xclient.window, False, NoEventMask, &message);
+    }
+    XFlush(display);
+  }
   void fail(const std::string& error) {
     if (!failed_) {
       failed_ = true;
@@ -157,6 +176,7 @@ public:
       devtools_->restore(request.at("state"));
     } else if (op == "park") {
       // SWELL destroys its old X11 top-level when docking. Move out before that happens.
+      set_host_focus(false);
       gtk_widget_hide(plug_);
       auto display = gdk_x11_display_get_xdisplay(gtk_widget_get_display(plug_));
       XReparentWindow(display, gdk_x11_window_get_xid(gtk_widget_get_window(plug_)), DefaultRootWindow(display), 0, 0);
@@ -174,6 +194,7 @@ public:
       gdk_x11_display_error_trap_push(gtk_widget_get_display(plug_));
       if (parent != parent_) { XReparentWindow(display, xid, parent, x, y); parent_ = parent; }
       devtools_->owner(parent);
+      set_host_focus(request.value("focused", false));
       gtk_window_resize(GTK_WINDOW(plug_), width, height);
       // A foreign REAPER/X11 parent is not a GtkSocket, so allocate the client
       // viewport explicitly instead of relying on GTK socket size negotiation.
@@ -185,6 +206,7 @@ public:
       XFlush(display);
       gdk_x11_display_error_trap_pop_ignored(gtk_widget_get_display(plug_));
     } else if (op == "focus" && parent_) {
+      set_host_focus(true);
       gtk_widget_grab_focus(GTK_WIDGET(view_));
       auto display = gtk_widget_get_display(plug_);
       gdk_x11_display_error_trap_push(display);
@@ -216,6 +238,18 @@ struct Process {
     try {
       const auto method = request.at("method").get<std::string>();
       const auto& args = request.at("args");
+      if (method == "ReaWeb_GetDisplays") {
+        Json displays = Json::array(); auto display = gdk_display_get_default();
+        for (int i = 0; i < gdk_display_get_n_monitors(display); ++i) {
+          auto monitor = gdk_display_get_monitor(display, i); GdkRectangle bounds{}, work{};
+          gdk_monitor_get_geometry(monitor, &bounds); gdk_monitor_get_workarea(monitor, &work);
+          const auto rectangle = [](const GdkRectangle& r) { return Json{{"x", r.x}, {"y", r.y}, {"width", r.width}, {"height", r.height}}; };
+          const auto scale = gdk_monitor_get_scale_factor(monitor);
+          displays.push_back({{"id", std::to_string(i)}, {"bounds", rectangle(bounds)}, {"workArea", rectangle(work)},
+            {"scaleFactor", scale}, {"dpi", 96 * scale}, {"primary", monitor == gdk_display_get_primary_monitor(display)}, {"units", "native"}});
+        }
+        respond({{"result", displays}}); return;
+      }
       if (method == "ReaWeb_Drag") {
         auto it = pages.find(request.at("id").get<int>());
         if (it == pages.end()) throw Error("WINDOW_CLOSED", "Drag source window is closed");
@@ -268,6 +302,31 @@ struct Process {
         respond({{"result", true}}); return;
       }
       auto clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+      if (method == "ReaWeb_ClipboardWriteBinary") {
+        auto bytes = std::make_unique<std::string>(decode_binary(args.at(1)));
+        auto type = "ReaWebAPI.Binary:" + args.at(0).get<std::string>();
+        GtkTargetEntry target{type.data(), 0, 0};
+        if (!gtk_clipboard_set_with_data(clipboard, &target, 1,
+          +[](GtkClipboard*, GtkSelectionData* selection, guint, gpointer data) {
+            const auto& bytes = *static_cast<std::string*>(data);
+            gtk_selection_data_set(selection, gtk_selection_data_get_target(selection), 8,
+              reinterpret_cast<const guchar*>(bytes.data()), static_cast<gint>(bytes.size()));
+          }, +[](GtkClipboard*, gpointer data) { delete static_cast<std::string*>(data); }, bytes.get()))
+          throw Error("CLIPBOARD_ERROR", "Cannot write binary clipboard data");
+        bytes.release(); gtk_clipboard_set_can_store(clipboard, &target, 1); respond({{"result", true}}); return;
+      }
+      if (method == "ReaWeb_ClipboardReadBinary") {
+        struct BinaryRead { LinuxChannel* channel; std::string token; };
+        auto type = "ReaWebAPI.Binary:" + args.at(0).get<std::string>();
+        gtk_clipboard_request_contents(clipboard, gdk_atom_intern(type.c_str(), FALSE), +[](GtkClipboard*, GtkSelectionData* selection, gpointer data) {
+          std::unique_ptr<BinaryRead> pending(static_cast<BinaryRead*>(data));
+          const auto length = gtk_selection_data_get_length(selection);
+          Json result = length < 0 ? Json() : length <= static_cast<int>(value_limit) ?
+            encode_binary(reinterpret_cast<const char*>(gtk_selection_data_get_data(selection)), length) : Json();
+          Json response = length <= static_cast<int>(value_limit) ? Json{{"result", result}} : Json{{"error", {{"code", "BUFFER_LIMIT"}, {"message", "Clipboard exceeds 16 MiB"}}}};
+          try { pending->channel->send({{"op", "desktop-result"}, {"request", pending->token}, {"response", response}}); } catch (...) {}
+        }, new BinaryRead{&channel, token}); return;
+      }
       if (method == "ReaWeb_ClipboardWriteText") {
         const auto value = args.at(0).get<std::string>();
         if (value.size() > value_limit) throw Error("BUFFER_LIMIT", "Clipboard exceeds 16 MiB");

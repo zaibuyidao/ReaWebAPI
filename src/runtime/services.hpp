@@ -10,6 +10,7 @@ Json theme_colors(const Host& host);
 Json app_info(const fs::path& root, const fs::path& data, const std::string& id);
 std::string runtime_platform();
 std::string runtime_architecture();
+Json system_diagnostics();
 Json drag_payload(const fs::path& base, const std::string& method, const Json& args);
 
 // Owned sources and all REAPER calls stay on the main thread. Peak building is

@@ -1,6 +1,25 @@
 #include "runtime/services.hpp"
+#include <thread>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/resource.h>
+#endif
 
 namespace reaweb {
+Json system_diagnostics() {
+  double seconds = 0;
+#ifdef _WIN32
+  FILETIME created{}, exited{}, kernel{}, user{};
+  if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
+    seconds = (double((uint64_t(kernel.dwHighDateTime) << 32) | kernel.dwLowDateTime) +
+               double((uint64_t(user.dwHighDateTime) << 32) | user.dwLowDateTime)) / 10000000;
+#else
+  struct rusage usage{};
+  if (!getrusage(RUSAGE_SELF, &usage)) seconds = usage.ru_utime.tv_sec + usage.ru_stime.tv_sec + (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1000000.0;
+#endif
+  return {{"logicalProcessors", std::thread::hardware_concurrency()}, {"processCpuSeconds", seconds}};
+}
 std::string runtime_platform() {
 #if defined(_WIN32)
   return "windows";

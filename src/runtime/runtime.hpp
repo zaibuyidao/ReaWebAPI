@@ -5,6 +5,9 @@
 #include "runtime/services.hpp"
 #include "runtime/host_service.hpp"
 #include "runtime/native_monitor.hpp"
+#include "runtime/native_stream.hpp"
+#include "runtime/native_tasks.hpp"
+#include "runtime/native_producers.hpp"
 #include <deque>
 #include <optional>
 #include <set>
@@ -31,6 +34,9 @@ public:
   bool captures_keyboard(void* handle, const std::function<bool(void*, void*)>& is_child) const;
   void tick();
   ServiceRegistry& services() { return services_; }
+  StreamHub& streams() { return streams_; }
+  NativeTasks& tasks() { return tasks_; }
+  NativeProducers& producers() { return producers_; }
 private:
   struct App {
     std::string id, origin, mode;
@@ -82,6 +88,9 @@ private:
   };
   Host host_;
   ServiceRegistry services_;
+  StreamHub streams_;
+  NativeTasks tasks_;
+  NativeProducers producers_;
   NativeMonitorManager monitors_;
   DockApi dock_;
   fs::path resource_;
@@ -122,6 +131,7 @@ private:
   bool tracks_initialized_ = false;
   Json saved_project_state_;
   Clock::time_point next_theme_ = Clock::now();
+  Clock::time_point next_devices_ = Clock::now();
   uint64_t lifecycle_sequence_ = 0;
   bool ticking_ = false;
   std::thread::id main_thread_;

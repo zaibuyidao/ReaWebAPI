@@ -45,13 +45,41 @@ int ServiceRegistry::add(const char* name, const ReaWeb_ServiceCallbacks* cb, ui
   for (const auto& service : services_) if (service.second.name == name) return REAWEB_SERVICE_EXISTS;
   if (services_.size() >= 256) return REAWEB_QUEUE_LIMIT;
   *handle = ++next_service_;
-  services_.emplace(*handle, Service{name, *cb});
+  services_.emplace(*handle, Service{name, *cb, {}});
   return REAWEB_OK;
 }
 uint64_t ServiceRegistry::lookup(const std::string& name) const {
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto& service : services_) if (service.second.name == name) return service.first;
   throw Error("SERVICE_NOT_FOUND", "Host Service is not registered: " + name);
+}
+int ServiceRegistry::set_input(uint64_t handle, const char* method) {
+  if (std::this_thread::get_id() != main_thread_) return REAWEB_MAIN_THREAD_REQUIRED;
+  if (!valid_name(method)) return REAWEB_INVALID_ARGUMENT;
+  auto it = services_.find(handle);
+  if (it == services_.end()) return REAWEB_SERVICE_NOT_FOUND;
+  if (it->second.inputs.size() >= 8) return REAWEB_QUEUE_LIMIT;
+  it->second.inputs.insert(method);
+  return REAWEB_OK;
+}
+bool ServiceRegistry::is_input(const std::string& name, const std::string& method) const {
+  if (std::this_thread::get_id() != main_thread_) return false;
+  for (const auto& item : services_) if (item.second.name == name) return item.second.inputs.count(method) != 0;
+  return false;
+}
+bool ServiceRegistry::contains(uint64_t handle) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return services_.count(handle) != 0;
+}
+int ServiceRegistry::set_shutdown(uint64_t handle, ReaWeb_ServiceShutdown callback) {
+  if (std::this_thread::get_id() != main_thread_) return REAWEB_MAIN_THREAD_REQUIRED;
+  auto it = services_.find(handle);
+  if (it == services_.end()) return REAWEB_SERVICE_NOT_FOUND;
+  it->second.shutdown = callback;
+  return REAWEB_OK;
+}
+void ServiceRegistry::shutdown() {
+  while (!services_.empty()) remove(services_.begin()->first);
 }
 void ServiceRegistry::cancel(int window, uint64_t service, int status) {
   struct Cancelled { uint64_t id; Pending pending; };
@@ -94,6 +122,7 @@ int ServiceRegistry::remove(uint64_t handle) {
       if (o->service == handle) { output_bytes_ -= o->bytes; o = output_.erase(o); } else ++o;
     }
   }
+  if (service.shutdown) try { service.shutdown(service.callbacks.user_data); } catch (...) {}
   for (auto& item : cancelled) {
     if (service.callbacks.on_cancel) try { service.callbacks.on_cancel(service.callbacks.user_data, item.first); } catch (...) {}
     item.second.reply(failure(REAWEB_EXTENSION_UNLOADED));
@@ -107,6 +136,18 @@ void ServiceRegistry::call(const std::string& name, const std::string& method, c
     throw Error("INVALID_ARGUMENT", "Invalid service or method name");
   const auto text = payload.dump();
   if (text.size() > host_message_limit) throw Error("INVALID_ARGUMENT", "Service payload exceeds 1 MiB");
+  if (!reply && is_input(name, method)) {
+    // Registration and input dispatch share the main thread. Worker completions
+    // never mutate services, so input does not contend on the completion lock.
+    for (const auto& item : services_) if (item.second.name == name) {
+      const auto cb = item.second.callbacks;
+      int status;
+      try { status = cb.on_request(cb.user_data, item.first, 0, window, method.c_str(), text.c_str()); }
+      catch (...) { status = REAWEB_SERVICE_ERROR; }
+      if (status != REAWEB_OK) throw Error(code(status), "Host Service input failed: " + method);
+      return;
+    }
+  }
   const auto handle = lookup(name);
   ReaWeb_ServiceCallbacks cb;
   uint64_t request = 0;

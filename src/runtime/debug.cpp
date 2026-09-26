@@ -28,6 +28,9 @@ Json Runtime::diagnostics(int id) const {
   const auto& s = *it->second;
   Json result = s.window->diagnostics();
   result["webRuntime"] = web_runtime(s);
+  result["system"] = system_diagnostics();
+  result["streams"] = streams_.info();
+  result["audioCapture"] = producers_.diagnostics();
   result.update({{"version", REAWEB_VERSION}, {"protocol", 1}, {"window", window_state(s)},
     {"stage", s.closing ? "closing" : s.ready ? "ready" : "loading"}, {"documentGeneration", s.generation},
     {"projectEpoch", project_epoch_}, {"pendingCalls", s.outstanding}, {"queuedCalls", s.queue.size()},

@@ -196,5 +196,10 @@ void Runtime::observe_extra(Clock::time_point deadline, int changes) {
     auto theme = theme_colors(host_);
     if (!extra_events_.count("theme-changed") || extra_events_["theme-changed"] != theme) publish("theme-changed", std::move(theme));
   }
+  if (wanted("devicesChanged") && Clock::now() >= next_devices_ && Clock::now() < deadline) {
+    next_devices_ = Clock::now() + std::chrono::seconds(1);
+    auto devices = producers_.devices();
+    if (!extra_events_.count("devicesChanged") || extra_events_["devicesChanged"] != devices) publish("devicesChanged", std::move(devices));
+  }
 }
 }

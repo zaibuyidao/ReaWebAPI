@@ -501,6 +501,24 @@ public:
     if (com_) OleUninitialize();
   }
   void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
+    if (method == "ReaWeb_GetDisplays") {
+      Json displays = Json::array();
+      EnumDisplayMonitors(nullptr, nullptr, +[](HMONITOR monitor, HDC, LPRECT, LPARAM context) -> BOOL {
+        MONITORINFOEXW info{}; info.cbSize = sizeof(info);
+        if (!GetMonitorInfoW(monitor, reinterpret_cast<MONITORINFO*>(&info))) return TRUE;
+        UINT x = 96, y = 96;
+        auto library = LoadLibraryExW(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (library) {
+          auto dpi = reinterpret_cast<HRESULT (WINAPI*)(HMONITOR, int, UINT*, UINT*)>(GetProcAddress(library, "GetDpiForMonitor"));
+          if (dpi) dpi(monitor, 0, &x, &y); FreeLibrary(library);
+        }
+        const auto rectangle = [](const RECT& r) { return Json{{"x", r.left}, {"y", r.top}, {"width", r.right - r.left}, {"height", r.bottom - r.top}}; };
+        reinterpret_cast<Json*>(context)->push_back({{"id", utf8(info.szDevice)}, {"bounds", rectangle(info.rcMonitor)},
+          {"workArea", rectangle(info.rcWork)}, {"scaleFactor", x / 96.0}, {"dpi", x}, {"primary", (info.dwFlags & MONITORINFOF_PRIMARY) != 0}, {"units", "native"}});
+        return TRUE;
+      }, reinterpret_cast<LPARAM>(&displays));
+      reply({{"result", displays}}); return;
+    }
     if (method == "ReaWeb_RevealPath") {
       auto id = ILCreateFromPathW(wide(args.at(0).get<std::string>()).c_str());
       if (!id) throw Error("INVALID_PATH", "Cannot locate file in Explorer");
@@ -517,6 +535,25 @@ public:
     if (!clipboard_owner_) clipboard_owner_ = CreateWindowExW(0, L"STATIC", L"ReaWebAPI Clipboard", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, instance_, nullptr);
     if (!clipboard_owner_ || !OpenClipboard(clipboard_owner_)) throw Error("CLIPBOARD_BUSY", "The clipboard is busy; try again");
     struct Close { ~Close() { CloseClipboard(); } } close;
+    if (method == "ReaWeb_ClipboardReadBinary" || method == "ReaWeb_ClipboardWriteBinary") {
+      const auto format = RegisterClipboardFormatW(wide("ReaWebAPI.Binary:" + args.at(0).get<std::string>()).c_str());
+      if (!format) throw Error("CLIPBOARD_ERROR", "Cannot register binary clipboard format");
+      if (method == "ReaWeb_ClipboardReadBinary") {
+        auto handle = GetClipboardData(format); if (!handle) { reply({{"result", nullptr}}); return; }
+        const auto bytes = GlobalSize(handle); auto* data = static_cast<const char*>(GlobalLock(handle));
+        if (!data) throw Error("CLIPBOARD_ERROR", "Cannot read clipboard data");
+        uint64_t size = 0; if (bytes >= 8) std::memcpy(&size, data, 8);
+        if (bytes < 8 || size > value_limit || size > bytes - 8) { GlobalUnlock(handle); throw Error("CLIPBOARD_ERROR", "Invalid binary clipboard data"); }
+        auto result = encode_binary(data + 8, static_cast<size_t>(size)); GlobalUnlock(handle); reply({{"result", result}}); return;
+      }
+      const auto bytes = decode_binary(args.at(1)); auto handle = GlobalAlloc(GMEM_MOVEABLE, bytes.size() + 8);
+      if (!handle) throw Error("CLIPBOARD_ERROR", "Cannot allocate binary clipboard data");
+      auto* data = static_cast<char*>(GlobalLock(handle));
+      if (!data) { GlobalFree(handle); throw Error("CLIPBOARD_ERROR", "Cannot lock clipboard data"); }
+      const uint64_t length = bytes.size(); std::memcpy(data, &length, 8); std::memcpy(data + 8, bytes.data(), bytes.size()); GlobalUnlock(handle);
+      if (!EmptyClipboard() || !SetClipboardData(format, handle)) { GlobalFree(handle); throw Error("CLIPBOARD_ERROR", "Cannot write binary clipboard data"); }
+      reply({{"result", true}}); return;
+    }
     if (method == "ReaWeb_ClipboardReadText") {
       auto handle = GetClipboardData(CF_UNICODETEXT);
       if (!handle) { reply({{"result", ""}}); return; }

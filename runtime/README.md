@@ -27,3 +27,5 @@ The extension injects the browser runtime. Lua opens the page with `reaper.ReaWe
 [Developer guide](../docs/development.md) · [REAPER API](../docs/api-reference.md) · [Runtime API](../docs/runtime-api.md) · [API inventory](../docs/runtime-api-inventory.md) · [DevTools](../docs/devtools.md)
 
 Pure JavaScript apps use the REAPER Mirror and Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](../web/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
+
+[Native Stream Demo](../web/native-stream/README.md) · [Native Stream ABI and platform contracts](../docs/native-streams.md). The SDK includes `native/reaweb_stream.h`, `native/reaweb_tasks.h` and `native/stream_extension.cpp`.

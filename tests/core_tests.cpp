@@ -229,11 +229,11 @@ int main() {
     CHECK(f.call("ReaWeb_IsDocked")["result"] == true);
     CHECK(f.call("ReaWeb_SetDocked", {false})["result"] == false);
     CHECK(f.call("ReaWeb_SetDocked", {1})["error"]["code"] == "INVALID_ARGUMENT");
-    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["methods"].size() == 781);
+    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["methods"].size() == 794);
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["contract"] == 2);
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["namespaces"] ==
       Json({"window", "theme", "dialog", "events", "lifecycle", "debug", "fs", "audio",
-            "clipboard", "dragDrop", "app", "system", "transaction", "host"}));
+            "clipboard", "dragDrop", "app", "system", "transaction", "host", "stream"}));
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["reservedNamespaces"] == Json::array());
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["version"] == REAWEB_VERSION);
     CHECK(same_document("file:///a/index.html#x", "file:///a/index.html"));

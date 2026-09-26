@@ -8,7 +8,7 @@ ReaWebAPI is a native REAPER extension for building tools with HTML, CSS and Jav
 - Mirror-aware Batch Builder for 456 reviewed APIs, including transport queries and time conversions, with deferred references, tuple destructuring and typed results.
 - Lua backend + WebView UI through `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and `message` events.
 - [Native Events and Host Services](docs/native-services.md) with subscription-driven state monitoring and a C/C++ extension registry, independent of Lua loops.
-- 14 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
+- 15 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
 - Native WebView support for modules, local resources, Workers and persistent App storage.
 - Windows/Linux [DevTools](docs/devtools.md) with a resizable right-hand panel, floating mode and saved layout preferences. Ctrl+Shift+I toggles visibility. Windows offers a borderless embedded panel, native floating window and page context-menu controls.
 - macOS [Web Inspector](docs/devtools.md#macos) supports a right-hand embedded panel, native floating window and saved layout preferences. Option+Command+I and the page context menu control the same inspection session.
@@ -71,3 +71,5 @@ The extension version is defined by `project(ReaWebAPI VERSION …)` in `CMakeLi
 Licensed under [LGPL-3.0-or-later](LICENSE.md).
 
 Pure JavaScript apps use the REAPER Mirror and Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](web/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
+
+Native Streams, binary consumers, audio analysis and platform additions: [contract](docs/native-streams.md) · [Demo](web/native-stream/README.md).

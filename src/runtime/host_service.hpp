@@ -4,6 +4,7 @@
 #include <chrono>
 #include <mutex>
 #include <thread>
+#include <set>
 
 namespace reaweb {
 class ServiceRegistry {
@@ -14,6 +15,11 @@ public:
   explicit ServiceRegistry(Event event);
   int add(const char* name, const ReaWeb_ServiceCallbacks* callbacks, uint64_t* handle);
   int remove(uint64_t handle);
+  int set_input(uint64_t handle, const char* method);
+  int set_shutdown(uint64_t handle, ReaWeb_ServiceShutdown callback);
+  void shutdown();
+  bool is_input(const std::string& name, const std::string& method) const;
+  bool contains(uint64_t handle) const;
   int complete(uint64_t handle, uint64_t request, const char* json, int status, const char* message);
   int emit(uint64_t handle, int window, const char* event, const char* json);
   uint64_t lookup(const std::string& name) const;
@@ -22,7 +28,7 @@ public:
   void tick(Clock::time_point now = Clock::now(), Clock::time_point deadline = Clock::time_point::max());
   static const char* code(int status);
 private:
-  struct Service { std::string name; ReaWeb_ServiceCallbacks callbacks; };
+  struct Service { std::string name; ReaWeb_ServiceCallbacks callbacks; std::set<std::string> inputs; ReaWeb_ServiceShutdown shutdown = nullptr; };
   struct Pending { uint64_t service; int window; Reply reply; Clock::time_point deadline; bool completed = false; };
   struct Output { uint64_t service, request; int window; std::string event; Json data; size_t bytes; };
   std::thread::id main_thread_ = std::this_thread::get_id();

@@ -43,7 +43,7 @@ class SdkTests(unittest.TestCase):
         files = {p.relative_to(ROOT).as_posix(): p.read_bytes() for directory in ('docs', 'runtime', 'api', 'web')
                  for p in (ROOT / directory).rglob('*') if 'node_modules' not in p.parts and 'dist' not in p.parts and p.is_file() and p.suffix in ('.md', '.ts', '.js', '.json', '.lua', '.html', '.css')}
         files.update({n: (ROOT / n).read_bytes() for n in ('README.md', 'README.zh-CN.md', 'THIRD_PARTY.md', 'LICENSE.md', 'COPYING', 'COPYING.LESSER')})
-        files.update({n: (ROOT / n).read_bytes() for n in ('src/public/reaweb_service.h', 'tests/native_service_extension.cpp')})
+        files.update({n: (ROOT / n).read_bytes() for n in ('src/public/reaweb_service.h', 'src/public/reaweb_stream.h', 'src/public/reaweb_tasks.h', 'tests/native_service_extension.cpp', 'tests/native_stream_extension.cpp')})
         check_links(files)
 
     def test_batch_declarations_match_native_registry(self):

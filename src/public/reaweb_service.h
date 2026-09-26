@@ -38,6 +38,14 @@ typedef int (*ReaWeb_CompleteServiceCallFn)(ReaWeb_ServiceHandle, ReaWeb_Request
                                          int status, const char* message);
 /* window_id == 0 broadcasts to this service's subscribers. */
 typedef int (*ReaWeb_EmitServiceEventFn)(ReaWeb_ServiceHandle, int window_id, const char* event, const char* payload_json);
+/* Opt a send method into immediate main-thread input dispatch. The callback
+   must only replace bounded input state, never perform I/O or wait for work.
+   Small requests may overtake ordinary commands. ABI 1 callbacks are unchanged. */
+typedef int (*ReaWeb_SetServiceInputFn)(ReaWeb_ServiceHandle, const char* method);
+/* Main-thread teardown, before service removal or Runtime destruction. Stop and
+   join producers here while ReaWebAPI functions remain callable. */
+typedef void (*ReaWeb_ServiceShutdown)(void* user_data);
+typedef int (*ReaWeb_SetServiceShutdownFn)(ReaWeb_ServiceHandle, ReaWeb_ServiceShutdown);
 
 #ifdef __cplusplus
 }

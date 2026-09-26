@@ -4,6 +4,7 @@
   const pending = new Map();
   const subscriptions = new Map();
   const serviceSubscriptions = new Map();
+  const streamConsumers = new Set();
   const latest = new Map();
   const batchReferences = new WeakMap();
   const eventNames = ['projectchange', 'selectionchange', 'itemselectionchange', 'takeselectionchange',
@@ -11,7 +12,8 @@
     'item-changed', 'take-changed', 'playback-state-changed', 'tempo-changed', 'marker-changed',
     'fx-changed', 'project-loaded', 'project-saved', 'theme-changed', 'native-drop', 'message',
     'trackSelectionChanged', 'trackStateChanged', 'transportChanged', 'projectChanged', 'markersChanged',
-    'regionsChanged', 'currentRegionChanged', 'loopPointsChanged', 'timeSelectionChanged'];
+    'regionsChanged', 'currentRegionChanged', 'loopPointsChanged', 'timeSelectionChanged', 'file-change', 'native-timer'];
+  const discreteEvents = new Set(['native-drop', 'message', 'file-change', 'native-timer']);
   const lifecycleListeners = new Map();
   let cleanupToken = null;
   const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('-');
@@ -75,7 +77,7 @@
       if (message.event === 'projectchange') projectEpoch = message.data.projectEpoch;
       const entry = subscriptions.get(message.event);
       if (entry) {
-        if (message.event !== 'native-drop' && message.event !== 'message') entry.last = message.data;
+        if (!discreteEvents.has(message.event)) entry.last = message.data;
         for (const callback of [...entry.listeners]) notify(callback, message.data);
       }
       return;
@@ -295,7 +297,7 @@
     try {
       const initial = await entry.initial;
       if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
-      if (!disposed && name !== 'native-drop' && name !== 'message' && (entry.last ?? initial)) notify(listener, entry.last ?? initial);
+      if (!disposed && !discreteEvents.has(name) && (entry.last ?? initial)) notify(listener, entry.last ?? initial);
     } catch (error) {
       disposed = true;
       entry.listeners.delete(listener);
@@ -490,6 +492,108 @@
     };
     drain(request);
   });
+  const openStream = async name => {
+    if (typeof name !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(name)) throw failure('INVALID_ARGUMENT', 'Expected a native stream name');
+    const descriptor = await call('ReaWeb_StreamOpen', [name]);
+    let socket, active = true, last = null, status = null, consumerDrops = 0;
+    const listeners = new Map(), queue = [];
+    const ordered = ['audio', 'midi'].includes(descriptor.kind);
+    const announce = (event, data) => { for (const listener of listeners.get(event) || []) notify(listener, data); };
+    const finish = (code, message) => {
+      if (!active) return;
+      active = false; status = failure(code, message || code); queue.length = 0; last = null;
+      streamConsumers.delete(consumer); announce('close', status); listeners.clear();
+    };
+    const consumer = Object.freeze({
+      info: Object.freeze(Object.fromEntries(Object.entries(descriptor).filter(([key]) => key !== 'token' && key !== 'url'))),
+      latest: () => last,
+      read: () => ordered ? queue.shift() || null : last,
+      get closed() { return !active; },
+      get error() { return status; },
+      get dropped() { return consumerDrops; },
+      on: (event, callback) => {
+        if (!['data', 'close', 'error'].includes(event) || typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected data, close or error and a callback');
+        if (!active) { if (event === 'close') notify(callback, status); return () => {}; }
+        if (!listeners.has(event)) listeners.set(event, new Set());
+        listeners.get(event).add(callback); return () => listeners.get(event)?.delete(callback);
+      },
+      close: async () => {
+        if (!active) return;
+        finish('STREAM_CLOSED', 'Consumer detached'); socket?.close();
+        if (!closed) await call('ReaWeb_StreamDetach', [descriptor.token]);
+      }
+    });
+    streamConsumers.add(consumer);
+    try {
+      await new Promise((resolve, reject) => {
+        socket = new WebSocket(descriptor.url); socket.binaryType = 'arraybuffer';
+        const timeout = setTimeout(() => { socket.close(); reject(failure('TIMEOUT', 'Stream connection timed out')); }, 10000);
+        let connected = false;
+        socket.onopen = () => { connected = true; clearTimeout(timeout); resolve(); };
+        socket.onerror = () => {
+          const error = failure('TRANSPORT_ERROR', 'Native stream connection failed'); announce('error', error);
+          if (!connected) { clearTimeout(timeout); reject(error); }
+        };
+        socket.onclose = event => {
+          clearTimeout(timeout);
+          const code = ['STREAM_CLOSED', 'EXTENSION_UNLOADED', 'TIMEOUT', 'UNSUPPORTED_FORMAT', 'NATIVE_ERROR'].includes(event.reason) ? event.reason : 'TRANSPORT_ERROR';
+          finish(code, event.reason || 'Native stream connection closed');
+          if (!connected) reject(status || failure(code, code));
+        };
+        socket.onmessage = event => {
+          if (!active) return;
+          try {
+            const buffer = event.data, view = new DataView(buffer);
+            if (buffer.byteLength < 40 || view.getUint32(0, true) !== 0x01535752 ||
+                view.getUint8(4) !== ['', 'frame', 'audio', 'spectrum', 'meter', 'waveform', 'binary', 'midi'].indexOf(descriptor.kind) ||
+                Number(view.getBigUint64(32, true)) !== buffer.byteLength - 40 || buffer.byteLength - 40 > descriptor.maxBytes)
+              throw failure('UNSUPPORTED_FORMAT', 'Invalid stream packet');
+            const sequence = view.getBigUint64(8, true), timestamp = view.getFloat64(16, true), dropped = view.getBigUint64(24, true);
+            const bytes = new Uint8Array(buffer, 40);
+            const data = descriptor.format === 'float32' ? new Float32Array(buffer, 40) : bytes;
+            const packet = Object.freeze({ sequence, frameId: sequence, timestamp, producerDropped: dropped, data, bytes });
+            last = packet;
+            if (ordered) { if (queue.length < descriptor.capacity) queue.push(packet); else ++consumerDrops; }
+            announce('data', packet);
+            socket.send(new Uint8Array([1]));
+          } catch (error) { announce('error', error); finish(error.code || 'UNSUPPORTED_FORMAT', error.message); socket.close(); }
+        };
+      });
+      return consumer;
+    } catch (error) {
+      finish(error.code || 'TRANSPORT_ERROR', error.message);
+      socket?.close(); if (!closed) await call('ReaWeb_StreamDetach', [descriptor.token]).catch(() => {});
+      throw error;
+    }
+  };
+  api.stream = Object.freeze({ open: openStream, getDiagnostics: () => call('ReaWeb_StreamDiagnostics', []) });
+  const nativeTask = async (eventName, start, args, end, callback, waitReady) => {
+    if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected a task callback');
+    let id, stopped = false, initializedReady = false, resolveReady, rejectReady;
+    const early = [];
+    const initialized = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    initialized.catch(() => {});
+    const accept = event => {
+      if (id === undefined) { if (early.length < 256) early.push(event); return; }
+      if (event.id !== id || stopped) return;
+      if (event.type === 'ready') { initializedReady = true; resolveReady(); }
+      else if (event.type === 'error' && waitReady && !initializedReady) rejectReady(failure(event.code, event.message));
+      else {
+        notify(callback, event);
+        if (!waitReady && !args[0].interval) void dispose();
+      }
+    };
+    const off = await onEvent(eventName, accept);
+    const dispose = async () => { if (stopped) return; stopped = true; await off(); if (!closed && id !== undefined) await call(end, [id]); };
+    try {
+      id = await call(start, args); for (const event of early) accept(event);
+      if (waitReady) {
+        const timeout = setTimeout(() => rejectReady(failure('TIMEOUT', 'File watch initialization timed out')), 10000);
+        try { await initialized; } finally { clearTimeout(timeout); }
+      }
+      return dispose;
+    } catch (error) { await dispose(); throw error; }
+  };
   // Runtime namespaces share the existing bridge; the 730 REAPER methods retain
   // their names, argument order, typed handles and asynchronous results.
   api.events = Object.freeze({ on: onEvent, off: offEvent });
@@ -523,6 +627,7 @@
     close: host('ReaWeb_Close'), reload: host('ReaWeb_Reload')
   });
   api.fs = Object.freeze({
+    watch: (path, callback, options = {}) => nativeTask('file-change', 'ReaWeb_WatchBegin', [path, options], 'ReaWeb_WatchEnd', callback, true),
     readFile: host('ReaWeb_ReadFile'), writeFile: host('ReaWeb_WriteFile'),
     readText: path => call('ReaWeb_ReadFile', [path, { encoding: 'utf8' }]),
     writeText: (path, text, options = {}) => call('ReaWeb_WriteFile', [path, text, { ...options, encoding: 'utf8' }]),
@@ -531,9 +636,14 @@
     stat: host('ReaWeb_Stat'), readDirectory: host('ReaWeb_ReadDirectory'), makeDirectory: host('ReaWeb_MakeDirectory')
   });
   api.clipboard = Object.freeze({
-    readText: host('ReaWeb_ClipboardReadText'), writeText: host('ReaWeb_ClipboardWriteText')
+    readText: host('ReaWeb_ClipboardReadText'), writeText: host('ReaWeb_ClipboardWriteText'),
+    readBinary: host('ReaWeb_ClipboardReadBinary'), writeBinary: host('ReaWeb_ClipboardWriteBinary')
   });
   api.system = Object.freeze({
+    getDevices: host('ReaWeb_GetDevices'),
+    getDisplays: host('ReaWeb_GetDisplays'),
+    openMIDIInput: async (device = -1) => openStream(await call('ReaWeb_MIDIOpen', [device])),
+    schedule: (callback, options = {}) => nativeTask('native-timer', 'ReaWeb_TimerStart', [options], 'ReaWeb_TimerStop', callback, false),
     getCapabilities: host('ReaWeb_GetCapabilities'), openExternal: host('ReaWeb_OpenExternal'),
     getPlatform: host('ReaWeb_GetPlatform'), getArchitecture: host('ReaWeb_GetArchitecture'), revealInFileManager: host('ReaWeb_RevealPath')
   });
@@ -619,6 +729,7 @@
     }
   });
   api.audio = Object.freeze({
+    openStream: async (kind, options = {}) => openStream(await call('ReaWeb_AnalysisOpen', [kind, options])),
     getFileInfo: path => call('ReaWeb_AudioFileInfo', [path]),
     getWaveform: (path, options = {}) => call('ReaWeb_AudioWaveform', [path, options]),
     getTrackMeter: track => call('ReaWeb_GetTrackMeter', [track]),
@@ -665,6 +776,7 @@
     if (!cleanupToken) for (const callback of lifecycleListeners.get('cleanup') || [])
       notify(callback, Object.freeze({ reason: 'unload', timeoutMs: 0 }));
     closed = true;
+    for (const consumer of [...streamConsumers]) void consumer.close();
     for (const item of pending.values()) {
       clearTimeout(item.timer);
       item.reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));

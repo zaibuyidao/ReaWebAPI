@@ -19,3 +19,5 @@ Reference for building WebView tools in REAPER.
 | [Release notes](release-notes.md) | Current release |
 
 Extension maintainers can use the [API Sync guide](https://github.com/zaibuyidao/ReaWebAPI/tree/main/api) to update and verify the API catalogue.
+
+[Native Streams](native-streams.md) · [Native Stream 中文](native-streams.zh-CN.md)

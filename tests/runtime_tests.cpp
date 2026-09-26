@@ -149,6 +149,14 @@ int main() {
       CHECK(result(runtime, *first, first->send("CountTracks", {0}))["error"]["code"] == "DOCUMENT_STALE");
       CHECK(calls == 0);
       CHECK(result(runtime, *first, first->send("__reawebHello", {1}))["result"]["protocol"] == 1);
+      result(runtime, *first, first->send("ReaWeb_Subscribe", {"native-timer"}));
+      const auto timer = result(runtime, *first, first->send("ReaWeb_TimerStart", Json::array({Json{{"delay", 10}, {"interval", 20}}})))["result"];
+      auto timer_events = [&] { int count = 0; for (const auto& event : first->responses)
+        if (event.value("event", "") == "native-timer" && event["data"]["id"] == timer) ++count; return count; };
+      until(runtime, [&] { return timer_events() >= 3; });
+      result(runtime, *first, first->send("ReaWeb_TimerStop", Json::array({timer})));
+      CHECK(result(runtime, *first, first->send("ReaWeb_TimerStart", Json::array({Json{{"intervalMs", 20}}})))["error"]["code"] == "INVALID_ARGUMENT");
+      result(runtime, *first, first->send("ReaWeb_Unsubscribe", {"native-timer"}));
       CHECK(runtime.is_ready(id));
       CHECK(result(runtime, *first, first->send("ReaWeb_ServiceInvoke", {"runtime", "getInfo", nullptr}))["result"]["serviceABI"] == 1);
       CHECK(result(runtime, *first, first->send("ReaWeb_ServiceInvoke", {"missing", "ping", nullptr}))["error"]["code"] == "SERVICE_NOT_FOUND");
@@ -160,13 +168,23 @@ int main() {
       CHECK(result(runtime, *first, first->send("ReaWeb_ServiceUnsubscribe", {"runtime", "changed"})).contains("result"));
       CHECK(result(runtime, *first, first->send("ReaWeb_ServiceUnsubscribe", {"runtime", "changed"})).contains("result"));
       CHECK(result(runtime, *first, first->send("ReaWeb_ServiceInvoke", {"runtime", "getInfo"}))["error"]["code"] == "INVALID_ARGUMENT");
-      struct ServiceProbe { uint64_t request = 0; int cancelled = 0; } probe;
+      struct ServiceProbe { uint64_t request = 0; int cancelled = 0, inputs = 0, shutdowns = 0; } probe;
       ReaWeb_ServiceCallbacks callbacks{sizeof(callbacks), REAWEB_SERVICE_ABI, &probe,
-        [](void* context, uint64_t, uint64_t request, int, const char*, const char*) {
+        [](void* context, uint64_t, uint64_t request, int, const char* method, const char*) {
+          if (std::string(method) == "input") { ++static_cast<ServiceProbe*>(context)->inputs; return int(REAWEB_OK); }
           static_cast<ServiceProbe*>(context)->request = request; return int(REAWEB_OK);
         }, [](void* context, uint64_t) { ++static_cast<ServiceProbe*>(context)->cancelled; }};
       uint64_t service_handle = 0;
       CHECK(runtime.services().add("probe", &callbacks, &service_handle) == REAWEB_OK);
+      CHECK(runtime.services().set_input(service_handle, "input") == REAWEB_OK);
+      CHECK(runtime.services().set_shutdown(service_handle, [](void* context) { ++static_cast<ServiceProbe*>(context)->shutdowns; }) == REAWEB_OK);
+      const auto queued_slow = first->send("ReaWeb_ServiceInvoke", {"runtime", "getInfo", nullptr}, 0, 0, 5000);
+      const auto immediate = first->send("ReaWeb_ServiceSend", {"probe", "input", {{"mask", 1}}});
+      CHECK(probe.inputs == 1 && first->response(queued_slow).is_null());
+      CHECK(result(runtime, *first, immediate)["result"] == true);
+      CHECK(result(runtime, *first, queued_slow).contains("result"));
+      const auto expired_input = first->send("ReaWeb_ServiceSend", {"probe", "input", nullptr}, 0, 1);
+      CHECK(result(runtime, *first, expired_input)["error"]["code"] == "REQUEST_EXPIRED" && probe.inputs == 1);
       const auto service_window = runtime.open("Tool/index.html"); auto service_page = windows.back().lock();
       result(runtime, *service_page, service_page->send("__reawebHello", {1}));
       auto pending_service = service_page->send("ReaWeb_ServiceInvoke", {"probe", "pending", nullptr});
@@ -187,6 +205,7 @@ int main() {
       pending_service = first->send("ReaWeb_ServiceInvoke", {"probe", "pending", nullptr});
       until(runtime, [&] { return probe.request != 0; });
       CHECK(runtime.services().remove(service_handle) == REAWEB_OK);
+      CHECK(probe.shutdowns == 1);
       CHECK(result(runtime, *first, pending_service)["error"]["code"] == "EXTENSION_UNLOADED");
       CHECK(probe.cancelled == 3);
       CHECK(result(runtime, *first, first->send("ReaWeb_SetIconVisible", {false}))["result"] == true);

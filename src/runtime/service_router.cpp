@@ -44,6 +44,7 @@ bool Runtime::service_call(Session& session, const Work& request) {
   return true;
 }
 void Runtime::service_event(uint64_t handle, const std::string& service, int window, const std::string& name, Json data) {
+  if (name == "unloaded") { streams_.close_owner(handle); tasks_.cancel_owner(handle); }
   for (auto& item : sessions_) {
     auto& s = *item.second;
     if (!s.ready || s.closing || s.window->closed() || (window && window != s.id)) continue;

@@ -64,10 +64,10 @@ def receive_until(condition, timeout=20):
                 response = {'id': request['id'], 'document': request['document'], 'result': {'protocol': 1, 'projectEpoch': 1, 'methods': list(json.loads((root / 'api/bindings.json').read_text())['functions'])} if request['method'] == '__reawebHello' else '7.smoke'}
                 send({'id': message['id'], 'op': 'eval', 'script': 'window.__reawebReceive(' + json.dumps(response) + ');'})
             else: results.append((message.get('id', 0), message['op'], None))
-    assert condition(), results
+    assert condition(), [(row[0], row[1], str(row[2])[:200]) for row in results]
 
-def geometry(id, target):
-    send(dict(id=id, op='geometry', parent=target, x=0, y=0, width=350, height=250, visible=True))
+def geometry(id, target, focused=False):
+    send(dict(id=id, op='geometry', parent=target, x=0, y=0, width=350, height=250, visible=True, focused=focused))
 
 def children(window):
     root_return, parent_return, count = C.c_ulong(), C.c_ulong(), C.c_uint()
@@ -90,6 +90,11 @@ try:
     send(dict(id=1, op='eval', script='location.hash="fragment"; reaper.CountSelectedTracks(42);'))
     receive_until(lambda: (1, 'CountSelectedTracks', [42]) in results)
     assert sum(row[1] == 'navigating' for row in results) == navigations, 'Fragment invalidated document'
+    send(dict(id=1, op='focus'))
+    send(dict(id=1, op='eval', script='let focusSeen=false; const focusProbe=setInterval(()=>{if(document.hasFocus()&&!focusSeen){focusSeen=true;reaper.CountSelectedTracks(701);}if(focusSeen&&!document.hasFocus()){clearInterval(focusProbe);reaper.CountSelectedTracks(702);}},20);'))
+    receive_until(lambda: (1, 'CountSelectedTracks', [701]) in results)
+    geometry(1, parents[0], focused=False)
+    receive_until(lambda: (1, 'CountSelectedTracks', [702]) in results)
     first_children = children(parents[0])
     assert first_children, 'WebKit is not embedded'
     send(dict(id=1, op='park'))
@@ -121,7 +126,7 @@ try:
         receive_until(lambda: sum(row[1] == '__reawebHello' for row in results) > hellos)
         hellos += 1
     send(dict(id=2, op='close'))
-    print('WebKitGTK: JS round-trip, two windows, docking after old parent destruction, preserved page state, two host-gated reloads and independent close passed')
+    print('WebKitGTK: JS round-trip, host focus/blur, two windows, docking after old parent destruction, preserved page state, two host-gated reloads and independent close passed')
 finally:
     parent.close()
     deadline = time.monotonic() + 2
