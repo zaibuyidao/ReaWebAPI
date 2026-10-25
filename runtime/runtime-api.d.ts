@@ -150,8 +150,14 @@ interface ReaWebDiagnostics {
   system: { processCpuSeconds: number; logicalProcessors: number };
   streams: { allocatedBytes: number; consumers: number; streams: { name: string; published: number; dropped: number }[]; transport?: { connections: number; handshakeFailures: number; expiredTickets: number; lastHandshakeError: string } };
   audioCapture: { callbacks: number; users: number; sampleRate: number; published: number; dropped: number; unavailable: number; blockFrames: number; channels: number; bufferAvailable: boolean }[];
-  lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; devtools: ReaWebDevToolsState; }
+  lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; devtools: ReaWebDevToolsState;
+  /** Frame channel. `pushed` keeps rising while the page is idle; `luaFrameAgeMs` says how stale Lua's content is. */
+  frames?: { pushed: number; intervalMs: number; luaWrites: number; luaFrameAgeMs: number | null }; }
 interface ReaWebEvents {
+  /** Pushed by the extension on a fixed cadence, independent of how often Lua runs.
+   * `lua` is the JSON text Lua last wrote with ReaWeb_SetFrame, unchanged. */
+  frame: { sequence: number; playing?: number; position?: number; tempo?: number; cursor?: number;
+    lua?: string; luaAgeMs?: number };
   devicesChanged: ReaWebDevices;
   'file-change': ReaWebFileChange;
   'native-timer': { id: number };

@@ -7,13 +7,20 @@
   const streamConsumers = new Set();
   const latest = new Map();
   const batchReferences = new WeakMap();
-  const eventNames = ['projectchange', 'selectionchange', 'itemselectionchange', 'takeselectionchange',
-    'transportchange', 'fxchange', 'windowstatechange', 'track-added', 'track-deleted', 'track-selected',
-    'item-changed', 'take-changed', 'playback-state-changed', 'tempo-changed', 'marker-changed',
-    'fx-changed', 'project-loaded', 'project-saved', 'theme-changed', 'native-drop', 'message',
-    'trackSelectionChanged', 'trackStateChanged', 'transportChanged', 'projectChanged', 'markersChanged',
-    'regionsChanged', 'currentRegionChanged', 'loopPointsChanged', 'timeSelectionChanged', 'file-change', 'native-timer'];
-  const discreteEvents = new Set(['native-drop', 'message', 'file-change', 'native-timer']);
+  // Event names are NOT listed here on purpose. The native host owns the list and
+  // advertises it in the handshake; a second hardcoded copy in this file drifts
+  // silently and surfaces as "UNKNOWN_EVENT" in the page at runtime. Ask the host.
+  const eventName = async name => {
+    const capabilities = await ready;
+    if (!Array.isArray(capabilities.events))
+      throw failure('SCHEMA_MISMATCH', 'The native host does not advertise events');
+    if (!capabilities.events.includes(name)) throw failure('UNKNOWN_EVENT', 'Unknown host event');
+    return name;
+  };
+  // Events that are discrete pushes rather than queryable state. They have no
+  // snapshot, so a new listener must not receive the previous value. A frame is
+  // replaced every pass, so replaying the last one would show stale numbers.
+  const discreteEvents = new Set(['native-drop', 'message', 'file-change', 'native-timer', 'frame']);
   const lifecycleListeners = new Map();
   let cleanupToken = null;
   const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('-');
@@ -271,8 +278,7 @@
     return reawebApiVoidMethods.includes(name) ? undefined : result;
   });
   const onEvent = async (name, callback) => {
-    if (!eventNames.includes(name))
-      throw failure('UNKNOWN_EVENT', 'Unknown host event');
+    await eventName(name);
     if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an event callback');
     let entry = subscriptions.get(name);
     if (!entry) {
@@ -307,7 +313,7 @@
     return dispose;
   };
   const offEvent = async (name, callback) => {
-    if (!eventNames.includes(name)) throw failure('UNKNOWN_EVENT', 'Unknown host event');
+    await eventName(name);
     if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected an event callback');
     const listeners = subscriptions.get(name)?.listeners;
     if (listeners) await Promise.all([...listeners].filter(listener => listener.callback === callback).map(listener => listener.dispose()));

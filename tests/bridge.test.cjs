@@ -8,6 +8,67 @@ const methods = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '../
 const batchMethods = [...fs.readFileSync(path.join(__dirname, '../src/core/batch.hpp'), 'utf8').matchAll(/"([A-Za-z][A-Za-z0-9_]+)"/g)].map(match => match[1]);
 const script = '(() => {\n' + fs.readFileSync(path.join(__dirname, '../runtime/reaper-api.generated.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8') + '\n})();';
 const flush = () => new Promise(setImmediate);
+// The host owns the event list and advertises it in the handshake. A second
+// hardcoded copy in the browser used to drift from it, and the mismatch only
+// surfaced as "UNKNOWN_EVENT" in the page at runtime.
+const hostEvents = [...fs.readFileSync(path.join(__dirname, '../src/runtime/services.cpp'), 'utf8')
+  .match(/static const std::vector<std::string> names = \{([\s\S]*?)\};/)[1]
+  .matchAll(/"([^"]+)"/g)].map(match => match[1]);
+const bridgeSource = fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8');
+
+test('the browser holds no event list of its own', () => {
+  assert.ok(hostEvents.length > 30, 'the host event list was not parsed');
+  // A literal list here is the defect: it silently disagrees with the host.
+  assert.equal(/const eventNames = \[/.test(bridgeSource), false,
+    'runtime/reaper.js must not hardcode event names; read capabilities.events instead');
+  assert.match(bridgeSource, /capabilities\.events\.includes\(name\)/);
+});
+
+test('every event the host advertises is subscribable from the page', async () => {
+  const t = setup();
+  // Advertise the host's real list, then subscribe to every name in it.
+  t.reply(0, { result: { protocol: 1, projectEpoch: 1, methods, batchMethods, events: hostEvents } });
+  await t.window.reaper.lifecycle.ready;
+  for (const name of hostEvents) {
+    const before = t.messages.length;
+    // on() awaits the subscribe reply, so answer it before awaiting on().
+    const pending = t.window.reaper.events.on(name, () => {});
+    await flush();
+    const subscribe = t.messages.slice(before).find(message => message.method === 'ReaWeb_Subscribe');
+    assert.ok(subscribe, `no ReaWeb_Subscribe was sent for "${name}"`);
+    assert.deepEqual(subscribe.args, [name]);
+    t.reply(t.messages.indexOf(subscribe), { result: null });
+    const dispose = await pending;
+    // dispose() awaits the unsubscribe reply, so answer that one the same way.
+    const closing = dispose();
+    await flush();
+    const unsubscribe = t.messages.slice(before).find(message => message.method === 'ReaWeb_Unsubscribe');
+    assert.ok(unsubscribe, `no ReaWeb_Unsubscribe was sent for "${name}"`);
+    assert.deepEqual(unsubscribe.args, [name]);
+    t.reply(t.messages.indexOf(unsubscribe), { result: true });
+    await closing;
+  }
+  // A frame pushed by the host must reach a page listener with its payload intact.
+  const frames = [];
+  const framePending = t.window.reaper.events.on('frame', frame => frames.push(frame));
+  await flush();
+  const frameSubscribe = t.messages.slice(-1)[0];
+  assert.equal(frameSubscribe.method, 'ReaWeb_Subscribe');
+  assert.deepEqual(frameSubscribe.args, ['frame']);
+  t.reply(t.messages.indexOf(frameSubscribe), { result: null });
+  await framePending;
+  t.event('frame', 1, { sequence: 7, playing: 1, tempo: 120, lua: '{"track":null}' });
+  await flush();
+  assert.deepEqual(frames, [{ sequence: 7, playing: 1, tempo: 120, lua: '{"track":null}' }]);
+  // A name the host did not advertise is still rejected, so the check can fail.
+  await assert.rejects(t.window.reaper.events.on('not-an-event', () => {}), { code: 'UNKNOWN_EVENT' });
+  await assert.rejects(t.window.reaper.events.off('not-an-event', () => {}), { code: 'UNKNOWN_EVENT' });
+  // A host that advertises nothing is a schema mismatch, not an empty allow list.
+  const silent = setup();
+  silent.reply(0, { result: { protocol: 1, projectEpoch: 1, methods, batchMethods } });
+  await silent.window.reaper.lifecycle.ready;
+  await assert.rejects(silent.window.reaper.events.on('message', () => {}), { code: 'SCHEMA_MISMATCH' });
+});
 
 test('The public SDK has exactly 730 unchanged Mirror methods and fifteen frozen Runtime namespaces', async () => {
   const t = await connected();
@@ -250,6 +311,21 @@ test('off before the only subscription finishes suppresses its initial callback;
   await answer(t,'ReaWeb_Unsubscribe',['native-drop'],true,api.events.off('native-drop',callback));
   await second(); t.event('native-drop',3,{files:[],text:'ignored',x:0,y:0}); assert.equal(calls,3);
 });
+
+test('a frame never replays to a listener that subscribes later', async () => {
+  const t = await connected(), events = t.window.reaper.events;
+  const seen = [];
+  await answer(t, 'ReaWeb_Subscribe', ['frame'], null, events.on('frame', frame => seen.push(['first', frame.sequence])));
+  t.event('frame', 1, { sequence: 7, playing: 1 }); await flush();
+  assert.deepEqual(seen, [['first', 7]]);
+  // The second listener joins while that frame is still the newest one. Every pass
+  // replaces the frame, so handing it the previous one would show stale numbers.
+  await events.on('frame', frame => seen.push(['second', frame.sequence]));
+  await flush();
+  assert.deepEqual(seen, [['first', 7]]);
+  t.event('frame', 2, { sequence: 8, playing: 0 }); await flush();
+  assert.deepEqual(seen, [['first', 7], ['first', 8], ['second', 8]]);
+});
 function setup(engine = 'windows') {
   const messages = [], timers = new Map(), listeners = {};
   let timerId = 0;
@@ -267,7 +343,8 @@ function setup(engine = 'windows') {
 }
 async function connected(engine) {
   const t = setup(engine);
-  t.reply(0, { result: { protocol: 1, projectEpoch: 1, methods, batchMethods } });
+  // The real handshake dispatches ReaWeb_GetCapabilities, which advertises events.
+  t.reply(0, { result: { protocol: 1, projectEpoch: 1, methods, batchMethods, events: hostEvents } });
   await t.window.reaper.lifecycle.ready;
   return t;
 }

@@ -74,7 +74,7 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'runtime/modern' / name
     for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md',
                  'devtools.md', 'devtools.zh-CN.md', 'SMOKE_TEST.md',
-                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md'):
+                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reaper_api.json', 'bindings.json'):
         paths[f'ReaWebAPI/SDK/api/{name}'] = root / 'api' / name

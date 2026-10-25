@@ -1098,6 +1098,9 @@ int main() {
       window->options.on_navigation();
       runtime.tick();
       CHECK(window->response(stale).is_null() && latency_calls == before + 1);
+      // connect() points the shared adapter at this block's host. Leaving it
+      // there would hand every later block a pointer to a destroyed object.
+      adapter::host = &host;
     }
     {
       Runtime runtime(host, root, [](const std::string&) {}, docks);
@@ -1184,6 +1187,27 @@ int main() {
       auto next_id = runtime.open("Tool/index.html");
       CHECK(runtime.receive(next_id).empty());
       CHECK(runtime.is_open(other_id));
+    }
+    {
+      // A request the page posted between two timer passes must reach Lua in the
+      // next ReaWeb_Receive call itself. When only tick() pumped the WebView IPC
+      // and dispatched, the reply had to wait for the pass after that, which made
+      // page to Lua one whole pass slower than Lua to page.
+      Runtime runtime(host, root, [](const std::string&) {}, docks);
+      const auto id = runtime.open("Tool/index.html");
+      auto window = windows.back().lock();
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      const auto pumps_before = platform_pumps;
+      window->send("ReaWeb_HostSend", {"posted between passes"});
+      CHECK(runtime.receive(id) == "posted between passes");
+      CHECK(platform_pumps == pumps_before + 1);
+      // A Lua pass polls up to 32 times in a row. Only the first of them may
+      // pump, or the platform would repeat its window synchronisation 32 times
+      // in one pass.
+      CHECK(runtime.receive(id).empty());
+      CHECK(platform_pumps == pumps_before + 1);
+      runtime.tick();
+      CHECK(platform_pumps == pumps_before + 2);
     }
     {
       Runtime runtime(host, root, [](const std::string&) {}, docks);

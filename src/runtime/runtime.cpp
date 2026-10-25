@@ -438,6 +438,8 @@ void Runtime::tick() {
   if (ticking_) return;
   ticking_ = true;
   struct Reset { bool& value; ~Reset() { value = false; } } reset{ticking_};
+  // A new pass starts here, so the next ReaWeb_Receive may pump and dispatch.
+  receive_dispatched_ = false;
   if (platform_warmup_pending_) {
     platform_warmup_pending_ = false;
     // The host timer runs on the STA UI thread, after extension registration.
@@ -471,6 +473,9 @@ void Runtime::tick() {
   }
   observe(deadline);
   observe_native(deadline);
+  // Push page frames here, on REAPER's extension timer callback. This runs
+  // whether or not Lua sent anything, which is the whole point.
+  pump_frames();
   if (undo_owner_ && Clock::now() >= undo_deadline_) finish_undo();
   Work work;
   for (int n = 0; n < 128 && Clock::now() < deadline && worker_.take(work); ++n) {
@@ -524,82 +529,7 @@ void Runtime::tick() {
       if (work.counted_output && s.output_pending) --s.output_pending;
     }
   }
-  // One request per window per pass. The next tick resumes after the last serviced window.
-  for (int n = 0, idle = 0; n < 64 && (!sessions_.empty() || !external_sessions_.empty()) && Clock::now() < deadline; ++n) {
-    if (external_turn_ || sessions_.empty()) {
-      external_turn_ = false;
-      if (dispatch_external()) continue;
-    }
-    if (sessions_.empty()) break;
-    auto it = sessions_.upper_bound(cursor_);
-    if (it == sessions_.end()) it = sessions_.begin();
-    cursor_ = it->first;
-    auto s = it->second;
-    if (s->closing || s->window->closed() || s->queue.empty()) {
-      if (++idle >= static_cast<int>(sessions_.size()) && !dispatch_external()) break;
-      continue;
-    }
-    idle = 0;
-    external_turn_ = true;
-    if (host_.current_project() != project_ || (host_.project_generation && host_.project_generation() != host_generation_))
-      observe(deadline);
-    auto request = std::move(s->queue.front()); s->queue.pop_front();
-    const auto& data = request.data;
-    Json response;
-    try {
-      const auto method = data.at("method").get<std::string>();
-      const auto document = data.value("document", std::string());
-      if (document.empty()) throw Error("INVALID_REQUEST", "A document token is required");
-      if (Clock::now() - request.received > std::chrono::seconds(25)) throw Error("REQUEST_EXPIRED", "Request expired before native execution");
-      if (data.contains("expiresAt")) {
-        const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        if (!data["expiresAt"].is_number_integer()) throw Error("INVALID_REQUEST", "Invalid request deadline");
-        if (data["expiresAt"].get<double>() <= static_cast<double>(now))
-          throw Error("REQUEST_EXPIRED", "Request expired before native execution");
-      }
-      if (method == "__reawebHello") {
-        if (data["args"] != Json::array({1})) throw Error("PROTOCOL_MISMATCH", "Unsupported bridge protocol");
-        if (s->ready && s->document != document) throw Error("DOCUMENT_STALE", "Reload the page to start a new document");
-        if (!s->ready) {
-          s->daw_keyboard = daw_keyboard_default(*s);
-          if (dock_.daw_space)
-            s->window->evaluate(std::string("window.__reawebSetDawKeyboard?.(") + (s->daw_keyboard ? "true" : "false") + ");");
-        }
-        s->document = document; s->ready = true;
-        s->startup_timing->mark(StartupTiming::Handshake);
-        auto query = data; query["method"] = "ReaWeb_GetCapabilities"; query["args"] = Json::array();
-        response = s->bridge->dispatch_request(query);
-        response["result"]["webRuntime"] = web_runtime(*s);
-        response["result"]["runtime"]["window"] = s->window->window_capabilities();
-        if (jsfx_service_) response["result"]["runtime"]["jsfx"] = {{"protocolVersion", 1}};
-        response["result"]["windowId"] = s->id;
-        response["result"]["projectEpoch"] = project_epoch_;
-      } else {
-        if (!s->ready || s->document != document) throw Error("DOCUMENT_STALE", "The bridge document is no longer active");
-        const bool project_call = method.rfind("ReaWeb", 0) != 0 || method == "ReaWeb_Batch" ||
-          method == "ReaWeb_BeginUndo" || method == "ReaWeb_GetTrackMeter";
-        if (project_call && (request.project != project_epoch_ || data.value("project", project_epoch_) != project_epoch_))
-          throw Error("PROJECT_CHANGED", "The current project changed. Refresh the tool state before trying again.", {{"projectEpoch", project_epoch_}});
-        // Deliver directly before entering a potentially modal native call.
-        // Queuing this on the worker would defer delivery until the call returns.
-        s->window->evaluate("window.__reawebReceive(" + Json{{"id", data["id"]}, {"document", document}, {"started", true}}.dump() + ");");
-        if (undo_owner_ && (method == "ReaWeb_Batch" ||
-            (project_call && undo_owner_ != s->id) || method.rfind("Undo_", 0) == 0 || method == "PreventUIRefresh"))
-          throw Error("UNDO_BUSY", "End the managed Undo gesture before batching or using another page");
-        if (undo_owner_ && project_call) s->bridge->validate_managed_call(method, data.at("args"));
-        if (start_async(*s, request)) { ++s->processed; continue; }
-        response = s->bridge->dispatch_request(data);
-        if (method == "ReaWeb_GetCapabilities" && response.contains("result")) {
-          response["result"]["webRuntime"] = web_runtime(*s);
-          response["result"]["runtime"]["window"] = s->window->window_capabilities();
-          if (jsfx_service_) response["result"]["runtime"]["jsfx"] = {{"protocolVersion", 1}};
-        }
-      }
-    } catch (const Error& e) { response = error_response(data, e.code, e.what(), e.details); }
-    catch (const std::exception& e) { response = error_response(data, "INVALID_REQUEST", e.what()); }
-    ++s->processed;
-    reply(*s, std::move(request), std::move(response));
-  }
+  dispatch_requests(deadline);
   flush_external_events();
   for (auto it = sessions_.begin(); it != sessions_.end();) {
     auto& s = *it->second;
@@ -676,6 +606,85 @@ void Runtime::tick() {
           (s.window->presentation_pending() && s.window->visibility_requested());
       })) {
     if (auto platform = platform_.lock()) platform->idle();
+  }
+}
+
+void Runtime::dispatch_requests(Clock::time_point deadline) {
+  // One request per window per pass. The next tick resumes after the last serviced window.
+  for (int n = 0, idle = 0; n < 64 && (!sessions_.empty() || !external_sessions_.empty()) && Clock::now() < deadline; ++n) {
+    if (external_turn_ || sessions_.empty()) {
+      external_turn_ = false;
+      if (dispatch_external()) continue;
+    }
+    if (sessions_.empty()) break;
+    auto it = sessions_.upper_bound(cursor_);
+    if (it == sessions_.end()) it = sessions_.begin();
+    cursor_ = it->first;
+    auto s = it->second;
+    if (s->closing || s->window->closed() || s->queue.empty()) {
+      if (++idle >= static_cast<int>(sessions_.size()) && !dispatch_external()) break;
+      continue;
+    }
+    idle = 0;
+    external_turn_ = true;
+    if (host_.current_project() != project_ || (host_.project_generation && host_.project_generation() != host_generation_))
+      observe(deadline);
+    auto request = std::move(s->queue.front()); s->queue.pop_front();
+    const auto& data = request.data;
+    Json response;
+    try {
+      const auto method = data.at("method").get<std::string>();
+      const auto document = data.value("document", std::string());
+      if (document.empty()) throw Error("INVALID_REQUEST", "A document token is required");
+      if (Clock::now() - request.received > std::chrono::seconds(25)) throw Error("REQUEST_EXPIRED", "Request expired before native execution");
+      if (data.contains("expiresAt")) {
+        const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        if (!data["expiresAt"].is_number_integer()) throw Error("INVALID_REQUEST", "Invalid request deadline");
+        if (data["expiresAt"].get<double>() <= static_cast<double>(now))
+          throw Error("REQUEST_EXPIRED", "Request expired before native execution");
+      }
+      if (method == "__reawebHello") {
+        if (data["args"] != Json::array({1})) throw Error("PROTOCOL_MISMATCH", "Unsupported bridge protocol");
+        if (s->ready && s->document != document) throw Error("DOCUMENT_STALE", "Reload the page to start a new document");
+        if (!s->ready) {
+          s->daw_keyboard = daw_keyboard_default(*s);
+          if (dock_.daw_space)
+            s->window->evaluate(std::string("window.__reawebSetDawKeyboard?.(") + (s->daw_keyboard ? "true" : "false") + ");");
+        }
+        s->document = document; s->ready = true;
+        s->startup_timing->mark(StartupTiming::Handshake);
+        auto query = data; query["method"] = "ReaWeb_GetCapabilities"; query["args"] = Json::array();
+        response = s->bridge->dispatch_request(query);
+        response["result"]["webRuntime"] = web_runtime(*s);
+        response["result"]["runtime"]["window"] = s->window->window_capabilities();
+        if (jsfx_service_) response["result"]["runtime"]["jsfx"] = {{"protocolVersion", 1}};
+        response["result"]["windowId"] = s->id;
+        response["result"]["projectEpoch"] = project_epoch_;
+      } else {
+        if (!s->ready || s->document != document) throw Error("DOCUMENT_STALE", "The bridge document is no longer active");
+        const bool project_call = method.rfind("ReaWeb", 0) != 0 || method == "ReaWeb_Batch" ||
+          method == "ReaWeb_BeginUndo" || method == "ReaWeb_GetTrackMeter";
+        if (project_call && (request.project != project_epoch_ || data.value("project", project_epoch_) != project_epoch_))
+          throw Error("PROJECT_CHANGED", "The current project changed. Refresh the tool state before trying again.", {{"projectEpoch", project_epoch_}});
+        // Deliver directly before entering a potentially modal native call.
+        // Queuing this on the worker would defer delivery until the call returns.
+        s->window->evaluate("window.__reawebReceive(" + Json{{"id", data["id"]}, {"document", document}, {"started", true}}.dump() + ");");
+        if (undo_owner_ && (method == "ReaWeb_Batch" ||
+            (project_call && undo_owner_ != s->id) || method.rfind("Undo_", 0) == 0 || method == "PreventUIRefresh"))
+          throw Error("UNDO_BUSY", "End the managed Undo gesture before batching or using another page");
+        if (undo_owner_ && project_call) s->bridge->validate_managed_call(method, data.at("args"));
+        if (start_async(*s, request)) { ++s->processed; continue; }
+        response = s->bridge->dispatch_request(data);
+        if (method == "ReaWeb_GetCapabilities" && response.contains("result")) {
+          response["result"]["webRuntime"] = web_runtime(*s);
+          response["result"]["runtime"]["window"] = s->window->window_capabilities();
+          if (jsfx_service_) response["result"]["runtime"]["jsfx"] = {{"protocolVersion", 1}};
+        }
+      }
+    } catch (const Error& e) { response = error_response(data, e.code, e.what(), e.details); }
+    catch (const std::exception& e) { response = error_response(data, "INVALID_REQUEST", e.what()); }
+    ++s->processed;
+    reply(*s, std::move(request), std::move(response));
   }
 }
 }

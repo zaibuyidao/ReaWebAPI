@@ -149,6 +149,7 @@ add_library(reaweb_runtime STATIC
   src/runtime/window.cpp
   src/runtime/events.cpp
   src/runtime/messages.cpp
+  src/runtime/frames.cpp
   src/runtime/lifecycle.cpp
   src/runtime/debug.cpp
   src/runtime/transaction.cpp)

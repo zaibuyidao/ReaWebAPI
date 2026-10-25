@@ -61,6 +61,17 @@
 | `transportchange` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }` |
 | `fxchange` | `{ projectEpoch, available, focused, touched, changeCount }` |
 | `windowstatechange` | `ReaWebWindowState` |
+| `frame` | `{ sequence, playing?, position?, tempo?, cursor?, lua?, luaAgeMs? }` |
+
+`frame` 和上面这些事件不一样。它由扩展主动推送，不等 Lua，走的是扩展注册给 REAPER 的定时器回调。
+
+最快每 8 毫秒一帧。这个通道的节奏本来就由定时器定，所以这个值只是一个防止突发的下限；下限定得比定时器自己的间隔还大，就会把定时器送来的帧删掉。25 次探针运行实测：定时器间隔中位数 31.7 毫秒，最小值 10.16 毫秒，最小值出现在卡顿 130 到 141 毫秒之后那一次追赶。8 毫秒低于 25 次运行里出现过的所有间隔，所以一帧都不会被删。
+
+所以正常帧率来自定时器，不来自这个值：REAPER 调定时器的间隔约 31.7 毫秒（中位数，不同系统和 REAPER 版本会有差异），每叫醒一次推一帧，页面大约每秒 31 帧。8 毫秒只在某次叫醒比这更快时才起作用，而实测里除了卡顿后的追赶，没有出现过更快的。
+
+其中 `playing`、`position`、`tempo`、`cursor` 由扩展每帧直接从 REAPER 读，所以 Lua 的 `defer` 循环还没轮到下一轮时，这四个值照样是新的。`lua` 是 Lua 最近一次用 `ReaWeb_SetFrame` 写进去的 JSON 文本，一个字节都不改；`luaAgeMs` 表示那份内容是多少毫秒前写的。帧不排队、也没有初始快照，页面只会看到最新的那一帧。某个 REAPER 函数取不到时，只是少那一个字段，帧照发。
+
+分工是这样的：定时器决定什么时候画，Lua 决定画什么。于是 Lua 慢一点或者抖动，只是新内容晚一点到，不会把窗口卡住。
 
 工程变化和原生轨道选择通知在每个主线程调度周期检查。轨道选择保留 100 ms 兜底检查，以覆盖没有通知的修改。工程切换或加载会更新 `projectEpoch`，应据此刷新依赖工程对象的界面。关闭文档会清理订阅。`ReaWeb_Subscribe`、`ReaWeb_Unsubscribe`、`__reawebHello` 和 `__reawebReceive` 是桥接内部实现，不作为应用接口使用。
 
@@ -193,6 +204,7 @@ const results = await reaper.transaction.batch([
 | `reaper.ReaWeb_IsReady(id)` | 文档握手完成后为 true |
 | `reaper.ReaWeb_Send(id, message)` | 接受当前已就绪文档的消息返回 `true`，失败返回 `false` |
 | `reaper.ReaWeb_Receive(id)` | 非阻塞弹出下一条 UTF-8 文本，无消息或失败返回 `""` |
+| `reaper.ReaWeb_SetFrame(id, text)` | 存住则 `true`，否则 `false` 并设置 `ReaWeb_GetLastError()`；替换下一帧的 `lua` 字段 |
 | `reaper.ReaWeb_Focus(id)` | 布尔值 |
 | `reaper.ReaWeb_DevTools(id)` | 布尔值 |
 | `reaper.ReaWeb_SetDocked(id, docked)` | 实际停靠状态 |
@@ -232,11 +244,13 @@ JavaScript 的 `reaper.window.open(path, options?)` 和 `ReaWeb_OpenDev(url)` �
 
 `await reaper.host.send(message)` 原样发送字符串，其他 JSON 值先通过 `JSON.stringify` 序列化。不可序列化的值、循环对象、非有限数值和含原始 NUL 的文本以 `INVALID_ARGUMENT` 拒绝。返回 `true` 表示原生队列已接受，不代表 Lua 已处理。Lua 通过 `ReaWeb_Receive(id)` 获取文本。
 
+`ReaWeb_SetFrame(id, text)` 不是发消息。它只替换每个窗口里存着的那一个字符串，所以既不排队，慢页面也不会重放旧内容。扩展会把这份字符串挂到下一次推给页面的帧上。每轮 `defer` 里先比较内容，变了才调用；在更新的内容到来之前，上一份会一直显示。限制是 1 MiB UTF-8 文本、不含 NUL。超长或非法文本返回 `false`，保留上一份内容。失败原因用 `ReaWeb_GetLastError()` 读，是说明文字：超长是 `Frame content exceeds 1 MiB of UTF-8 text`，含 NUL 是 `Frame content cannot contain NUL`，不是合法 UTF-8 是 `Frame content must be valid UTF-8`。
+
 每个窗口的两个方向各自保持 FIFO。单条消息最多 1 MiB UTF-8，每方向最多 256 条待处理消息，窗口双向队列合计最多 16 MiB，包括等待原生输出分发的消息。单条超限返回 `MESSAGE_LIMIT`，队列满返回 `QUEUE_LIMIT`。原有传输限制仍适用，可通过 `capabilities.runtime.host` 查询消息上限。
 
 Lua 延续 `ReaWeb_GetLastError()` 错误约定。未就绪时 Send 失败，错误为 `NOT_READY`。窗口关闭或 ID 无效时为 `WINDOW_CLOSED`。Receive 在无消息或失败时返回 `""`。允许空字符串消息，但其出队结果与空队列无法区分。需要区分时可使用 `null` 等 JSON 文本。文本 ABI 不支持原始 NUL。成功调用不会清除之前的错误。
 
-关闭窗口或导航到新文档会丢弃双向队列，旧文档消息不会进入新页面。Host API 必须在 REAPER 主线程调用，不等待消息到达。只有持续接收消息才需要 Lua `defer` 循环，窗口存活不依赖该循环：
+关闭窗口或导航到新文档会丢弃双向队列，并丢弃 Lua 上次用 `ReaWeb_SetFrame` 存入的帧内容，旧文档的消息和帧内容都不会进入新页面。Host API 必须在 REAPER 主线程调用，不等待消息到达。只有持续接收消息才需要 Lua `defer` 循环，窗口存活不依赖该循环：
 
 ```lua
 local function loop()

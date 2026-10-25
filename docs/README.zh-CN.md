@@ -16,6 +16,7 @@
 | [External Client](external-clients.zh-CN.md) | 带认证的本机 Native API、Service、Event 和 Stream 接入 |
 | [接口清单](runtime-api-inventory.md) | Runtime 命名空间和方法索引 |
 | [宿主 API](host-api.zh-CN.md) | Lua 入口、原生桥接行为和错误码 |
+| [画面刷新验证](frame-timer-verification.zh-CN.md) | 怎么确认刷新节奏由扩展控制、内容由 Lua 提供 |
 | [Web 运行环境](frontend.zh-CN.md) | 资源、存储、Worker 和平台要求 |
 | [源码结构](source-layout.md) | 原生模块与构建目标 |
 | [版本更新](release-notes.md) | 当前版本说明 |

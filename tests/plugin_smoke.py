@@ -413,7 +413,7 @@ entry.restype = C.c_int
 info = Info(0x20E, owner_window, register, get_func)
 assert entry(None, C.byref(info)) == 1
 try:
-    assert len(registrations) == 73 + (sys.platform == 'darwin'), list(registrations)
+    assert len(registrations) == 76 + (sys.platform == 'darwin'), list(registrations)
     assert (b'accelerator' in registrations) == (sys.platform == 'darwin')
     assert b'prefpage' in registrations
     for name in (b'ReaWeb_RegisterService', b'ReaWeb_UnregisterService', b'ReaWeb_CompleteServiceCall', b'ReaWeb_EmitServiceEvent'):
@@ -472,6 +472,14 @@ try:
     send_vararg = C.CFUNCTYPE(C.c_void_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Send'])
     receive_vararg = C.CFUNCTYPE(C.c_char_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_Receive'])
     assert not send_vararg(send_args, 2) and receive_vararg(send_args, 1) == b''
+    # Frame content is written by Lua and read by the extension's timer.
+    for prefix in (b'API_', b'APIvararg_', b'APIdef_'):
+        assert prefix + b'ReaWeb_SetFrame' in registrations
+    set_frame = C.CFUNCTYPE(C.c_bool, C.c_int, C.c_char_p)(registrations[b'API_ReaWeb_SetFrame'])
+    assert not set_frame(999, b'{}') and b'closed or unknown' in get_error()
+    set_frame_args = (C.c_void_p * 2)(999, C.addressof(missing))
+    set_frame_vararg = C.CFUNCTYPE(C.c_void_p, C.POINTER(C.c_void_p), C.c_int)(registrations[b'APIvararg_ReaWeb_SetFrame'])
+    assert not set_frame_vararg(set_frame_args, 2)
     saved_error = get_error()
     if args.webview and args.titles:
         from window_title_smoke import run_windows

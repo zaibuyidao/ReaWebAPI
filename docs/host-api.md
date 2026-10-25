@@ -61,6 +61,17 @@ Window placement and docking are persisted by entry file and instance slot. At m
 | `transportchange` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }` |
 | `fxchange` | `{ projectEpoch, available, focused, touched, changeCount }` |
 | `windowstatechange` | `ReaWebWindowState` |
+| `frame` | `{ sequence, playing?, position?, tempo?, cursor?, lua?, luaAgeMs? }` |
+
+`frame` works differently from the rest. The extension pushes it on its own, without waiting for Lua, from the timer callback the extension registers with REAPER.
+
+At most one frame every 8 ms. The timer paces this channel already, so this value is only a floor against a burst, and a floor set above the timer's own period would delete frames the timer delivered. A timer probe over 25 runs measured a median period of 31.7 ms and a minimum of 10.16 ms, that minimum being the pass REAPER runs right after a 130 to 141 ms stall. 8 ms is below every period in all 25 runs, so it never drops a frame.
+
+The normal rate therefore comes from the timer, not from this value: REAPER calls the timer about every 31.7 ms (median; other systems and REAPER versions differ), and each pass pushes one frame, so the page gets about 31 frames per second. 8 ms only applies to a pass that comes faster than that, which none of the measured runs did outside the catch-up pass after a stall.
+
+`playing`, `position`, `tempo` and `cursor` are read by the extension straight from REAPER on every frame, so they stay current even while a Lua `defer` loop is between passes. `lua` is the JSON text Lua last wrote with `ReaWeb_SetFrame`, byte for byte, and `luaAgeMs` says how long ago that was. Frames are never queued and have no snapshot: the page always sees the newest one. A REAPER function that is missing drops that one field and keeps the frame.
+
+The split is this: the timer decides when a frame is drawn, Lua decides what it contains. A slow or jittery `defer` then delays new content instead of freezing the window.
 
 Project changes and native track-selection notifications are observed on each main-thread tick. Selection retains a 100 ms fallback poll for edits without a notification. `projectEpoch` changes on a project switch or load. Refresh object-dependent UI when it changes. A document close clears its subscriptions. `ReaWeb_Subscribe`, `ReaWeb_Unsubscribe`, `__reawebHello` and `__reawebReceive` are bridge internals, not application APIs.
 
@@ -193,6 +204,7 @@ These native extension functions are called synchronously from Lua. First use `r
 | `reaper.ReaWeb_IsReady(id)` | Boolean, true after document handshake |
 | `reaper.ReaWeb_Send(id, message)` | `true` when queued for the ready document, otherwise `false` |
 | `reaper.ReaWeb_Receive(id)` | Next UTF-8 text without blocking, or `""` for empty queue/error |
+| `reaper.ReaWeb_SetFrame(id, text)` | `true` when stored, otherwise `false` with `ReaWeb_GetLastError()` set; replaces the `lua` field of the next frame |
 | `reaper.ReaWeb_Focus(id)` | Boolean |
 | `reaper.ReaWeb_DevTools(id)` | Boolean |
 | `reaper.ReaWeb_SetDocked(id, docked)` | Actual docked state |
@@ -232,11 +244,13 @@ Two workflows coexist: pure JavaScript uses the REAPER Mirror and Runtime APIs. 
 
 `await reaper.host.send(message)` queues a string unchanged. Other JSON values are serialized with `JSON.stringify` before native dispatch. Unsupported values, cyclic objects, non-finite numbers and raw NUL text reject with `INVALID_ARGUMENT`. Success resolves to `true` when accepted, not when Lua processes it. Lua receives the serialized text with `ReaWeb_Receive(id)`.
 
+`ReaWeb_SetFrame(id, text)` is not a message. It only replaces the single string stored for that window, so nothing is queued and a slow page never replays stale content. The extension attaches that string to the next frame it pushes. Compare the content each pass and call it only when the content changed; the previous content stays on screen until newer content arrives. Limit 1 MiB of UTF-8 text, no NUL. Oversized or invalid text returns `false` and keeps the previous content. Read the reason with `ReaWeb_GetLastError()`, which holds descriptive text: `Frame content exceeds 1 MiB of UTF-8 text`, `Frame content cannot contain NUL`, or `Frame content must be valid UTF-8`.
+
 Each window preserves FIFO independently in each direction. Limits are 1 MiB of UTF-8 per message, 256 pending messages per direction, and 16 MiB of queued payload across both directions, including native output awaiting dispatch. Oversized messages fail with `MESSAGE_LIMIT`, full queues with `QUEUE_LIMIT`. Native transport limits also apply. Limits are reported in `capabilities.runtime.host`.
 
 Lua calls follow the existing `ReaWeb_GetLastError()` convention. Send fails before readiness (`NOT_READY`) or for a closed/unknown window (`WINDOW_CLOSED`). Receive returns `""` on empty queue or error. An empty string message is allowed and consumes its queue entry, but is indistinguishable from an empty queue in Lua. Use JSON text such as `null` when that distinction matters. Raw NUL is outside the text ABI. Successful calls do not clear previous errors.
 
-Close and document navigation discard queued messages in both directions. No old-generation message is delivered to a replacement page. All Host API calls run on REAPER's main thread without waiting for a message. A Lua `defer` loop is needed only to poll continuously, not to keep a window open:
+Close and document navigation discard queued messages in both directions, and discard the frame content Lua last stored with `ReaWeb_SetFrame`. No old-generation message or frame content is delivered to a replacement page. All Host API calls run on REAPER's main thread without waiting for a message. A Lua `defer` loop is needed only to poll continuously, not to keep a window open:
 
 ```lua
 local function loop()

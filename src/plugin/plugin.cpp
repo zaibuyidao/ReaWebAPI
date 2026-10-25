@@ -92,6 +92,12 @@ const char* ReaWeb_Receive(int id) {
   static std::string value;
   return guarded([&]() -> const char* { value = runtime->receive(id); return value.c_str(); }, "");
 }
+bool ReaWeb_SetFrame(int id, const char* content) {
+  return guarded([&] {
+    if (!content) throw Error("INVALID_ARGUMENT", "Expected frame content as text");
+    return runtime->set_frame(id, content);
+  }, false);
+}
 const char* ReaWeb_GetDiagnostics(int id) {
   static std::string value;
   return guarded([&]() -> const char* { value = runtime->diagnostics(id).dump(); return value.c_str(); }, "{}");
@@ -170,6 +176,11 @@ void* send_vararg(void** args, int count) {
 }
 void* receive_vararg(void** args, int count) {
   return const_cast<char*>(ReaWeb_Receive(count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0));
+}
+void* set_frame_vararg(void** args, int count) {
+  return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_SetFrame(
+    count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0,
+    count >= 2 ? static_cast<const char*>(args[1]) : nullptr)));
 }
 void* diagnostics_vararg(void** args, int count) {
   return const_cast<char*>(ReaWeb_GetDiagnostics(count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0));
@@ -464,6 +475,8 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       "bool\0int,const char*\0windowId,message\0Queue UTF-8 text for the ready document's message event. Returns true when accepted. Limit 1 MiB, no NUL.\0");
     add_api("ReaWeb_Receive", reinterpret_cast<void*>(ReaWeb_Receive), reinterpret_cast<void*>(receive_vararg),
       "const char*\0int\0windowId\0Pop the next WebView message without blocking. Empty queue or error returns an empty string.\0");
+    add_api("ReaWeb_SetFrame", reinterpret_cast<void*>(ReaWeb_SetFrame), reinterpret_cast<void*>(set_frame_vararg),
+      "bool\0int,const char*\0windowId,content\0Replace the JSON content the page shows on the next frame. Overwritten, never queued. Limit 1 MiB, no NUL.\0");
     add_api("ReaWeb_OpenDev", reinterpret_cast<void*>(ReaWeb_OpenDev), reinterpret_cast<void*>(dev_vararg),
       "int\0const char*\0url\0Open an explicitly trusted loopback HTTP development server.\0");
     add_registration("hwnd_info", reinterpret_cast<void*>(window_info));

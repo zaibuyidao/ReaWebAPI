@@ -15,7 +15,7 @@ const project = { name: 'Test project', cursor: 0, position: 0, playState: 0, te
 
 async function fixture(connect = true) {
   const elements = new Map(), requests = [], copies = [], consoleLogs = [], timers = new Map(), listeners = {};
-  let timerId = 0, receive, session, unsubscribed = false;
+  let timerId = 0, receive, receiveFrame, session, unsubscribed = false, frameUnsubscribed = false, frameCallback = null;
   const node = () => ({
     value: '', disabled: false, checked: false, hidden: false, listeners: {}, children: [], attributes: new Map(),
     scrollHeight: 100, scrollTop: 0, clientHeight: 100, text: '',
@@ -40,9 +40,10 @@ async function fixture(connect = true) {
   const element = id => elements.get(id);
   const document = { getElementById: element, createElement: node, activeElement: null,
     querySelectorAll(selector) { assert.equal(selector, '[id]'); return [...elements.values()]; } };
-  // The demo now uses Lua messages, not direct REAPER API calls.
+  // The demo uses Lua messages for commands and the frame event for display.
   const reaper = {
     events: { on: async (name, handler) => {
+      if (name === 'frame') { receiveFrame = handler; return () => { frameUnsubscribed = true; }; }
       assert.equal(name, 'message'); receive = handler;
       return () => { unsubscribed = true; };
     } },
@@ -57,7 +58,10 @@ async function fixture(connect = true) {
   const context = vm.createContext({ document, window: { reaper, addEventListener: (name, fn) => { listeners[name] = fn; } },
     navigator: { clipboard: { writeText: async text => { copies.push(text); } } },
     console: Object.fromEntries(['log', 'warn', 'error'].map(level => [level, (...values) => consoleLogs.push({ level, values })])),
-    setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id) });
+    setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id),
+    // The page draws from its own refresh loop. Run it on demand so a test can
+    // decide exactly when a frame becomes visible.
+    requestAnimationFrame: fn => { frameCallback = fn; return 1; } });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8'), context);
   await flush();
   const reply = (request, payload = {}) => receive(JSON.stringify({ type: 'response', session: request.session,
@@ -70,8 +74,17 @@ async function fixture(connect = true) {
     assert.equal(element('error').hidden, true);
     element('clear-log').listeners.click(); consoleLogs.length = 0;
   }
-  return { context, element, document, reaper, requests, reply, sendState, copies, consoleLogs, timers, listeners,
-    get unsubscribed() { return unsubscribed; } };
+  // Hand a frame to the page the way the extension does, then let the refresh
+  // loop draw it. Returns false when the page has no frame subscription.
+  const pushFrame = async frame => {
+    if (!receiveFrame) return false;
+    receiveFrame(frame); await flush();
+    if (frameCallback) { const next = frameCallback; frameCallback = null; next(0); }
+    await flush();
+    return true;
+  };
+  return { context, element, document, reaper, requests, reply, sendState, pushFrame, copies, consoleLogs, timers, listeners,
+    get unsubscribed() { return unsubscribed; }, get frameUnsubscribed() { return frameUnsubscribed; } };
 }
 
 test('startup subscribes before ready and waits for Lua confirmation before enabling controls', async () => {
@@ -178,21 +191,24 @@ test('host Pan changes are coalesced, retain final values and do not repeat unch
   assert.equal(f.element('activity').textContent, '');
 });
 
-test('slider sends only the latest queued value and logs confirmed Lua readback', async () => {
+test('every drag step is sent at once and logs confirmed Lua readback', async () => {
   const f = await fixture();
   for (const value of ['0.6', '0.7', '0.8']) {
     f.element('pan').value = value; f.element('pan').listeners.input();
   }
-  assert.equal(f.requests.length, 1);
-  const first = f.requests.shift();
-  assert.equal(first.command, 'pan'); assert.equal(first.value, '0.6');
+  // Nothing waits for the previous reply: holding a step back cost a whole
+  // round trip per step and made REAPER's own fader trail behind the pointer.
+  assert.deepEqual(f.requests.map(r => r.value), ['0.6', '0.7', '0.8']);
+  const [first, middle, latest] = f.requests.splice(0);
+  assert.equal(first.command, 'pan');
   assert.equal(first.epoch, 1); assert.equal(first.selection, 1);
   assert.equal(f.element('pan-value').textContent, '0.80');
   assert.doesNotMatch(f.element('activity').textContent, /\[PAN\]/);
   f.reply(first, { state: state({ pan: 0.6 }), data: { pan: 0.6 } }); await flush();
-  assert.equal(f.requests.length, 1);
-  const latest = f.requests.shift(); assert.equal(latest.value, '0.8');
+  // A reply that lands mid-gesture never repaints the control under the pointer.
+  assert.equal(f.element('pan').value, 0.8);
   f.element('pan').listeners.change();
+  f.reply(middle, { state: state({ pan: 0.7 }), data: { pan: 0.7 } });
   f.reply(latest, { state: state({ pan: 0.8 }), data: { pan: 0.8 } }); await flush();
   assert.match(f.element('activity').textContent, /\+0\.800.*Lua readback/);
   assert.doesNotMatch(f.element('activity').textContent, /\+0\.700/);
@@ -201,6 +217,17 @@ test('slider sends only the latest queued value and logs confirmed Lua readback'
   assert.match(f.element('activity').textContent, /\[ERROR\] ERROR: REAPER rejected the Pan update/);
   assert.equal(f.element('pan').value, 0.8);
   assert.equal(f.requests.length, 0); assert.equal(f.timers.size, 0);
+  // The next gesture starts clean: one failure report, and its own success is
+  // never repainted from a stale snapshot afterwards.
+  f.element('pan').value = '0.3'; f.element('pan').listeners.input();
+  const retry = f.requests.shift();
+  f.reply(retry, { ok: false, error: 'REAPER rejected the Pan update.' }); await flush();
+  assert.equal(f.element('activity').textContent.match(/REAPER rejected the Pan update/g).length, 2);
+  f.element('pan').value = '0.4'; f.element('pan').listeners.input();
+  const settled = f.requests.shift();
+  f.element('pan').listeners.change();
+  f.reply(settled, { ok: true, data: { pan: 0.4 } }); await flush();
+  assert.equal(f.element('pan').value, 0.4);
 });
 
 test('debug log is bounded, copies visible history and mirrors only when requested', async () => {
@@ -263,7 +290,41 @@ test('page close cancels pending commands, clears timers and unsubscribes from L
   assert.equal(f.timers.size, 2);
   f.listeners.pagehide(); await pending;
   assert.equal(f.timers.size, 0); assert.equal(f.unsubscribed, true);
+  assert.equal(f.frameUnsubscribed, true);
   f.sendState(state({ name: 'Ignored after close' }));
   assert.equal(f.element('track-name').textContent, 'Track A');
   assert.doesNotMatch(f.element('activity').textContent, /\[ERROR\]/);
+});
+
+test('frames drive the page: transport comes from the extension and content from Lua', async () => {
+  const f = await fixture();
+  assert.equal(f.element('track-name').textContent, 'Track A');
+  // The extension reads these itself, so they must appear without any Lua message.
+  assert.equal(await f.pushFrame({ sequence: 1, playing: 1, position: 12.5, tempo: 128, cursor: 3.25,
+    lua: JSON.stringify(state({ name: 'From frame', volume: 0.25 })) }), true);
+  assert.equal(f.element('track-name').textContent, 'From frame');
+  assert.equal(f.element('volume-value').textContent, '-12.0 dB'); // 0.25 linear, as the page always formats it.
+  assert.match(f.element('play-state').textContent, /Playing · 12\.50 s/);
+  assert.equal(f.element('tempo').textContent, '128.00 BPM');
+  assert.equal(f.element('cursor-position').textContent, '3.250 s');
+  // A frame with unchanged Lua content still refreshes transport but redraws nothing.
+  await f.pushFrame({ sequence: 2, playing: 0, position: 0, tempo: 128,
+    lua: JSON.stringify(state({ name: 'From frame', volume: 0.25 })) });
+  assert.match(f.element('play-state').textContent, /Stopped · 0\.00 s/);
+  assert.equal(f.element('track-name').textContent, 'From frame');
+  // A frame without Lua content is legal: the previous content stays.
+  await f.pushFrame({ sequence: 3, playing: 2, position: 40, tempo: 128 });
+  assert.match(f.element('play-state').textContent, /Paused · 40\.00 s/);
+  assert.equal(f.element('track-name').textContent, 'From frame');
+});
+
+test('a frame never overwrites an active slider drag, and unreadable content is reported', async () => {
+  const f = await fixture();
+  const slider = f.element('volume');
+  slider.listeners.input(); // Mark the control as being edited by the user.
+  await f.pushFrame({ sequence: 1, lua: JSON.stringify(state({ name: 'Frame during drag', volume: 0.9 })) });
+  assert.notEqual(slider.value, '0.9');
+  // Malformed Lua content is reported instead of silently swallowed.
+  await f.pushFrame({ sequence: 2, lua: 'not json' });
+  assert.match(f.element('error').textContent, /ERROR|Unexpected/);
 });

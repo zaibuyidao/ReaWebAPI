@@ -53,6 +53,13 @@ Json Runtime::diagnostics(int id) const {
     {"stage", s.closing ? "closing" : s.ready ? "ready" : "loading"}, {"documentGeneration", s.generation},
     {"projectEpoch", project_epoch_}, {"pendingCalls", s.outstanding}, {"queuedCalls", s.queue.size()},
     {"processedCalls", s.processed}, {"lastError", s.last_error}, {"schedulerBudgetMs", 2},
+    // Frame channel. framesPushed keeps rising even when the page is idle and
+    // Lua is between defers; that is the property this change adds.
+    // luaFrameAgeMs reports how stale Lua's own content is.
+    {"frames", {{"pushed", s.frames_pushed}, {"intervalMs", frame_interval.count()},
+      {"luaWrites", s.lua_frame_writes},
+      {"luaFrameAgeMs", s.lua_frame.empty() ? Json() :
+        Json(std::chrono::duration<double, std::milli>(Clock::now() - s.lua_frame_at).count())}}},
     {"lifecycleAction", s.lifecycle_action}, {"audioJobs", s.audio.size()}, {"recentLogs", s.logs}});
   return result;
 }

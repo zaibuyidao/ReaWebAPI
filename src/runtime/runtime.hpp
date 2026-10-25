@@ -18,6 +18,18 @@
 #include <thread>
 
 namespace reaweb {
+// A frame is pushed on this cadence, independent of how often the timer runs and
+// of how often Lua updates its content. Lua owns what a frame contains; the
+// extension owns when the page sees it. Diagnostics report this same value.
+//
+// Why 8: the timer already paces this channel, so the value is only a floor
+// against a burst, and a floor above the timer's own period deletes real frames.
+// A timer probe over 25 runs measured a median period of 31.7 ms and a minimum
+// of 10.16 ms, the minimum being the pass REAPER runs right after a 130 to 141 ms
+// stall. 16 ms sat above that minimum and dropped exactly those passes, which are
+// the first frames after a stall. 8 ms is below every period in all 25 runs, so
+// it drops nothing the timer delivered, and it still bounds a faster burst.
+constexpr auto frame_interval = std::chrono::milliseconds(8);
 class Runtime {
 public:
   Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock = {});
@@ -38,6 +50,7 @@ public:
   bool show(int id);
   bool send(int id, const std::string& message);
   std::string receive(int id);
+  bool set_frame(int id, const std::string& text);
   Json diagnostics(int id) const;
   bool captures_keyboard(void* handle, const std::function<bool(void*, void*)>& is_child, bool daw_only = false) const;
   void tick();
@@ -103,6 +116,12 @@ private:
     std::map<uint64_t, std::set<std::string>> service_subscriptions;
     std::map<std::string, Json> events;
     Json last_state, saved_state, pending_state;
+    // Frame channel. The extension pushes on its own cadence; Lua only supplies
+    // the content it owns. Keeping these separate is what stops a slow defer
+    // from stalling the page.
+    std::string lua_frame;
+    Clock::time_point lua_frame_at = Clock::now(), next_frame = Clock::now();
+    uint64_t frame_sequence = 0, frames_pushed = 0, lua_frame_writes = 0;
     Clock::time_point started = Clock::now(), state_changed = Clock::now();
     Clock::time_point closing_since = Clock::now();
     uint64_t generation = 0, event_sequence = 0, processed = 0;
@@ -205,6 +224,10 @@ private:
   Clock::time_point next_devices_ = Clock::now();
   uint64_t lifecycle_sequence_ = 0;
   bool ticking_ = false;
+  // Set by receive() when it pumped the WebView IPC and dispatched requests,
+  // cleared when a new timer pass starts. A Lua pass polls up to 32 times, and
+  // only the first of those may pay for a pump and a dispatch.
+  bool receive_dispatched_ = false;
   std::thread::id main_thread_;
   JsfxDiscovery jsfx_discovery_;
   std::shared_ptr<Platform> jsfx_platform_;
@@ -261,5 +284,7 @@ private:
   void append_log(Session& session, Json entry);
   void persist(Session& session, bool force = false);
   void fail(Session& session, const std::string& message);
+  void pump_frames();
+  void dispatch_requests(Clock::time_point deadline);
 };
 }

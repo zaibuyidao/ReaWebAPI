@@ -16,6 +16,7 @@ Reference for building WebView tools in REAPER.
 | [External Clients](external-clients.md) | Authenticated localhost access to native APIs, services, events and streams |
 | [API inventory](runtime-api-inventory.md) | Runtime namespace and method index |
 | [Host API](host-api.md) | Lua entry points, native bridge behavior and error codes |
+| [Frame timer verification](frame-timer-verification.md) | How to confirm the extension drives the refresh and Lua supplies the content |
 | [Web runtime](frontend.md) | Resources, storage, Workers and platform requirements |
 | [Source layout](source-layout.md) | Native modules and build targets |
 | [Release notes](release-notes.md) | Current release |

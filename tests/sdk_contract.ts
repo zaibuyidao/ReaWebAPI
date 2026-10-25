@@ -18,6 +18,8 @@ async function nativeServices() {
   const dispose = await service.on('changed', callback);
   await service.off('changed', callback);
   await dispose();
+  // The frame event is what drives the page; Lua's content arrives as text.
+  await reaper.events.on('frame', frame => console.log(frame.sequence, frame.lua?.length, frame.luaAgeMs));
   await reaper.events.on('trackSelectionChanged', event => console.log(event.count, event.revision));
   await reaper.events.on('transportChanged', event => console.log(event.rate, event.recording));
   await reaper.events.on('projectChanged', event => console.log(event.projects));

@@ -32,6 +32,9 @@ void Runtime::navigate(Session& session) {
   session.queue.clear();
   clear_messages(session);
   session.events.clear();
+  // The replacement document starts with no Lua content. Leaving the previous
+  // document's text here would attach it to the next frame it receives.
+  session.lua_frame.clear();
   session.subscriptions.clear();
   session.outstanding = session.output_pending = 0;
   session.capture_keyboard = true;
