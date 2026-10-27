@@ -421,6 +421,11 @@ try:
         assert b'APIvararg_' + name not in registrations
     assert b'csurf_inst' in registrations
     native_open = C.CFUNCTYPE(C.c_int, C.c_char_p, C.c_char_p, C.c_char_p, C.POINTER(C.c_bool))(registrations[b'API_ReaWeb_Open'])
+    definition = registrations[b'APIdef_ReaWeb_Open']
+    assert C.string_at(definition) == b'int'
+    types = C.string_at(definition + 4)
+    assert types == b'const char*,const char*,const char*,bool*'
+    assert C.string_at(definition + 5 + len(types)) == b'path,instanceKeyInOptional,idInOptional,multipleInOptional'
     def open_window(path, instance_key=None, name=None, multiple=None):
         flag = C.c_bool(multiple) if multiple is not None else None
         return native_open(path, instance_key, name, C.byref(flag) if flag is not None else None)

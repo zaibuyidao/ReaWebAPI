@@ -55,6 +55,9 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/SDK/native-service/{name}'] = root / 'web/native-service' / name
     for name in ('reawebapi-lua-backend.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
         paths[f'ReaWebAPI/SDK/lua-backend/{name}'] = root / 'web/lua-backend' / name
+    for demo in ('eel-backend', 'eel-mixer'):
+        for name in (f'reawebapi-{demo}.eel', 'index.html', 'app.js', 'style.css', 'README.md', 'README.zh-CN.md', 'app.json'):
+            paths[f'ReaWebAPI/SDK/{demo}/{name}'] = root / 'web' / demo / name
     for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'app.json'):
         paths[f'ReaWebAPI/SDK/runtime-demo/{name}'] = root / 'runtime/runtime-demo' / name
     for name in ('Open.lua', 'index.html', 'app.json', 'README.md'):
@@ -72,7 +75,7 @@ def payload(root, version, revision):
                  'package.json', 'package-lock.json', 'tsconfig.json', 'build.mjs',
                  'src/main.ts', 'src/worker.ts', 'src/style.css', 'public/data.json', 'public/app.json'):
         paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'runtime/modern' / name
-    for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md',
+    for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md', 'eel-backend-compatibility.md', 'eel-backend-compatibility.zh-CN.md', 'release-notes.zh-CN.md',
                  'devtools.md', 'devtools.zh-CN.md', 'diagnostics.md', 'diagnostics.zh-CN.md', 'SMOKE_TEST.md',
                  'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
@@ -89,6 +92,8 @@ def payload(root, version, revision):
             text = content.decode('utf-8-sig')
             text = text.replace('](../runtime/', '](../SDK/').replace('](runtime/', '](SDK/')
             text = text.replace('](../web/lua-backend/', '](../SDK/lua-backend/').replace('](web/lua-backend/', '](SDK/lua-backend/')
+            text = text.replace('](../web/eel-backend/', '](../SDK/eel-backend/').replace('](web/eel-backend/', '](SDK/eel-backend/')
+            text = text.replace('](../web/eel-mixer/', '](../SDK/eel-mixer/').replace('](web/eel-mixer/', '](SDK/eel-mixer/')
             text = text.replace('](../web/native-service/', '](../SDK/native-service/').replace('](web/native-service/', '](SDK/native-service/')
             text = text.replace('](../src/public/reaweb_service.h)', '](../SDK/native/reaweb_service.h)')
             for header in ('reaweb_stream.h', 'reaweb_tasks.h'):
@@ -99,7 +104,7 @@ def payload(root, version, revision):
             text = text.replace('](../web/transparent/', '](../SDK/transparent/').replace('](web/transparent/', '](SDK/transparent/')
             text = text.replace('](../tests/native_stream_extension.cpp)', '](../SDK/native/stream_extension.cpp)')
             text = text.replace('](../tests/native_service_extension.cpp)', '](../SDK/native/test_extension.cpp)')
-            if name == 'ReaWebAPI/docs/release-notes.md':
+            if name in ('ReaWebAPI/docs/release-notes.md', 'ReaWebAPI/docs/release-notes.zh-CN.md'):
                 text = re.sub(r'\A# ReaWebAPI[ \t]*\r?\n', f'# ReaWebAPI v{version}\n', text, count=1)
             content = text.encode('utf-8')
         files[name] = content

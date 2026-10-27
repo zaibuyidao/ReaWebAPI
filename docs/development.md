@@ -25,6 +25,12 @@ Use relative paths for bundled assets and a deferred classic script (`<script sr
 
 The starter's `jsconfig.json` enables JavaScript type checking without compilation. See the [TypeScript checkJs documentation](https://www.typescriptlang.org/tsconfig/checkJs.html). For TypeScript, include all three `.d.ts` files and compile your `.ts` files to browser JavaScript. The SDK declares a global object, so do not `import reaper`.
 
+## EEL2 backend
+
+The SDK includes a [minimal EEL2 backend](../web/eel-backend/README.md) and a [bidirectional track mixer](../web/eel-mixer/README.md). Load their `.eel` scripts in the Action List. No Lua launcher or additional dependencies are needed. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
+
+Since v0.3.9.14, `ReaWeb_Open` argument four accepts EEL2 `0/1` and Lua `false/true`, with unchanged omission behavior. Native string returns use the first EEL2 output parameter, such as `ReaWeb_Receive(#message, id)`. Both direct and `extension_api` calls work. Stop `defer` after window closure and clean up with `atexit`. See [EEL2 support](eel-backend-compatibility.md) for the full interface, string limits and verification commands.
+
 ## Calling conventions
 
 ```javascript

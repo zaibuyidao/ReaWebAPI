@@ -193,6 +193,8 @@ Error objects follow `ReaWebError`. Treat caught JavaScript values as unknown un
 
 These native extension functions are called synchronously from Lua. First use `reaper.APIExists("ReaWeb_Open")` to detect installation.
 
+These functions also support EEL2. Since v0.3.9.14, the optional fourth `ReaWeb_Open` argument accepts Lua `false/true` and EEL2 `0/1`. Omission still means false. String returns use the first EEL2 output parameter, for example `ReaWeb_Receive(#message, id)`. The message bridge and `frame.lua` field are shared with Lua. See [EEL2 calling conventions](eel-backend-compatibility.md).
+
 | Lua call | Return |
 | --- | --- |
 | `reaper.ReaWeb_OpenDev(url)` | Positive window ID, or 0 |
@@ -216,7 +218,7 @@ Lua relative HTML paths resolve from REAPER's `Scripts/` directory. The starter 
 
 [v0.1.8 Runtime namespaces](runtime-api.md) · [v0.1.8 命名空间接口](runtime-api.zh-CN.md)
 
-JavaScript opens pages with `reaper.window.open(path, options?)` and waits on `reaper.lifecycle.ready`. Lua bootstrap uses `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains Lua-only native functions. The 730 standard REAPER mirror names are unchanged.
+JavaScript opens pages with `reaper.window.open(path, options?)` and waits on `reaper.lifecycle.ready`. Lua bootstrap uses `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains native ReaScript functions. The 730 standard REAPER mirror names are unchanged.
 
 `reaper.events.off(name, callback)` removes all matching registrations of that callback. Subscribe to `native-drop` through `reaper.events.on('native-drop', callback)`; it carries files/text/x/y and has neither coalescing nor an initial snapshot. See [Runtime API](runtime-api.md).
 

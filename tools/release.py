@@ -44,12 +44,13 @@ def version_notes(version):
 
 
 def release_body(repo, version):
+    chinese = (Path(__file__).resolve().parents[1] / 'docs/release-notes.zh-CN.md').read_text(encoding='utf-8').split('\n', 1)[1].strip()
     base = f'https://github.com/{repo}/releases/download/v{version}'
     platforms = [('Windows x64', 'windows-x64'), ('macOS ARM64', 'macos-arm64'),
                  ('macOS Intel', 'macos-x86_64'), ('Linux x64', 'linux-x86_64'),
                  ('Linux ARM64', 'linux-aarch64')]
     downloads = '\n'.join(f'- [{label}]({base}/ReaWebAPI-{target}-v{version}.zip)' for label, target in platforms)
-    return (version_notes(version) + '\n\n## Downloads / 下载\n\n' + downloads + '\n\n' +
+    return (version_notes(version) + '\n\n## 简体中文\n\n' + chinese + '\n\n## Downloads / 下载\n\n' + downloads + '\n\n' +
             f'[SDK]({base}/ReaWebAPI-SDK-v{version}.zip) · '
             f'[ReaPack]({base}/ReaWebAPI-ReaPack-v{version}.zip) · '
             f'[SHA-256]({base}/SHA256SUMS.txt)\n\n'
@@ -88,6 +89,8 @@ def descriptor(version, demo_directory=None):
         options = 'script main' if name in (
             'ReaWebAPI_Demo.lua',
             'lua-backend/reawebapi-lua-backend.lua',
+            'eel-backend/reawebapi-eel-backend.eel',
+            'eel-mixer/reawebapi-eel-mixer.eel',
             'native-service/reawebapi-native-service.lua',
             'native-service/Coexist.lua',
             'native-stream/reawebapi-native-stream.lua',

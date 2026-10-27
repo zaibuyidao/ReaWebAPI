@@ -14,6 +14,8 @@ expected = demo_files.map { |name| "web/#{name}" }.sort
 launchers = %w[
   web/ReaWebAPI_Demo.lua
   web/lua-backend/reawebapi-lua-backend.lua
+  web/eel-backend/reawebapi-eel-backend.eel
+  web/eel-mixer/reawebapi-eel-mixer.eel
   web/native-service/reawebapi-native-service.lua
   web/native-service/Coexist.lua
   web/native-stream/reawebapi-native-stream.lua

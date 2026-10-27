@@ -193,6 +193,8 @@ const results = await reaper.transaction.batch([
 
 这些原生扩展函数在 Lua 中同步调用，先使用 `reaper.APIExists("ReaWeb_Open")` 检查是否安装。
 
+v0.3.9.14 起，这些函数也支持 EEL2，`ReaWeb_Open` 可选第四参数在 Lua 中使用 `false/true`，在 EEL2 中使用 `0/1`。省略时仍为 false。EEL2 的字符串返回值使用第一个输出参数，例如 `ReaWeb_Receive(#message, id)`。消息桥和 `frame.lua` 字段与 Lua 共用。参见 [EEL2 调用约定](eel-backend-compatibility.zh-CN.md)。
+
 | Lua 调用 | 返回 |
 | --- | --- |
 | `reaper.ReaWeb_OpenDev(url)` | 正数窗口 ID，失败返回 0 |

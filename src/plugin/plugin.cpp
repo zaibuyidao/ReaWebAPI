@@ -449,8 +449,9 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     for (const auto& api : stream_api) add_registration(std::string("API_ReaWeb_") + api.first, api.second);
     add_registration("API_ReaWeb_CreateTimer", reinterpret_cast<void*>(ReaWeb_CreateTimer));
     add_registration("API_ReaWeb_CancelTimer", reinterpret_cast<void*>(ReaWeb_CancelTimer));
+    // ReaScript marshals optional bool* inputs; const bool* is treated as an opaque pointer.
     add_api("ReaWeb_Open", reinterpret_cast<void*>(ReaWeb_Open), reinterpret_cast<void*>(open_vararg),
-      "int\0const char*,const char*,const char*,const bool*\0path,instanceKeyInOptional,idInOptional,multipleInOptional\0Open local HTML. Relative paths resolve under resource/Scripts. An instanceKey reuses and focuses its window, optionally scoped by id. Omit the key or set multiple=true to create a new window. Returns a window id, or 0 on failure.\0");
+      "int\0const char*,const char*,const char*,bool*\0path,instanceKeyInOptional,idInOptional,multipleInOptional\0Open local HTML. Relative paths resolve under resource/Scripts. An instanceKey reuses and focuses its window, optionally scoped by id. Omit the key or set multiple=true to create a new window. Returns a window id, or 0 on failure.\0");
     add_api("ReaWeb_Close", reinterpret_cast<void*>(ReaWeb_Close), reinterpret_cast<void*>(id_vararg<ReaWeb_Close>),
       "bool\0int\0windowId\0Close a ReaWebAPI window.\0");
     add_api("ReaWeb_OpenEx", reinterpret_cast<void*>(ReaWeb_OpenEx), reinterpret_cast<void*>(open_ex_vararg),

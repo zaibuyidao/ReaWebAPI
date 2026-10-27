@@ -16,6 +16,7 @@ Reference for building WebView tools in REAPER.
 | [JSFX Web UI](jsfx-webui.md) | Native JSFX editor hosting and bound parameter service / 原生 JSFX 编辑器托管与参数服务 |
 | [External Clients](external-clients.md) | Authenticated localhost access to native APIs, services, events and streams |
 | [API inventory](runtime-api-inventory.md) | Runtime namespace and method index |
+| [EEL2 backend](eel-backend-compatibility.md) | Calling conventions, optional parameters, limits and examples |
 | [Host API](host-api.md) | Lua entry points, native bridge behavior and error codes |
 | [Frame timer verification](frame-timer-verification.md) | How to confirm the extension drives the refresh and Lua supplies the content |
 | [Web runtime](frontend.md) | Resources, storage, Workers and platform requirements |

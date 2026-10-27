@@ -78,6 +78,8 @@ Thumbs.db
 !/tests/*.cjs
 !/tests/*.ts
 !/tests/*.lua
+!/tests/*.eel
+!/tests/eel_mixer_smoke.js
 !/tests/reapack_check.rb
 !/tests/CMakeLists.txt
 /tests/native_abi_generated.cpp

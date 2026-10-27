@@ -16,6 +16,7 @@
 | [JSFX Web UI](jsfx-webui.md) | Native JSFX editor hosting and bound parameter service / 原生 JSFX 编辑器托管与参数服务 |
 | [External Client](external-clients.zh-CN.md) | 带认证的本机 Native API、Service、Event 和 Stream 接入 |
 | [接口清单](runtime-api-inventory.md) | Runtime 命名空间和方法索引 |
+| [EEL2 后端](eel-backend-compatibility.zh-CN.md) | 调用约定、可选参数、限制和示例 |
 | [宿主 API](host-api.zh-CN.md) | Lua 入口、原生桥接行为和错误码 |
 | [画面刷新验证](frame-timer-verification.zh-CN.md) | 怎么确认刷新节奏由扩展控制、内容由 Lua 提供 |
 | [Web 运行环境](frontend.zh-CN.md) | 资源、存储、Worker 和平台要求 |

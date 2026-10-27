@@ -9,7 +9,7 @@ Space routing starts from ordinary Apps’ `app.json.dawKeyboard` (default `fals
 - [Frame channel](docs/frame-timer-verification.md) with native transport samples and replaceable Lua content, independent of Lua polling frequency on Windows, macOS and Linux.
 - 730 standard REAPER 7.80 API bindings with TypeScript declarations.
 - Mirror-aware Batch Builder for 456 reviewed APIs, including transport queries and time conversions, with deferred references, tuple destructuring and typed results.
-- Lua backend + WebView UI through `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and `message` events.
+- Lua or EEL2 backend + WebView UI through `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and `message` events.
 - Optional [External Clients](docs/external-clients.md) over authenticated localhost WebSocket, sharing the Native API, Batch, Service, Event and binary Stream capabilities.
 - [Native Events and Host Services](docs/native-services.md) with subscription-driven state monitoring and a C/C++ extension registry, independent of Lua loops.
 - [JSFX Web UI](docs/jsfx-webui.md) hosts associated JSFX in track, master, take, input, monitoring and nested container FX, with instance-bound `params`, host parameter metadata, loaded-instance enum choices in `enum` (unavailable fields are `null`), normalized writes and grouped Undo gestures. `editor` provides persistent, shared content sizing. The optional EEL SDK adds DSP streams, structured state, commands and binary resources. The [native channel](docs/jsfx-native-channel.md) uses bounded staging programs to reduce EEL compilation overhead during initialization. Initial capability and state reads avoid an additional host scheduling cycle on Windows, macOS and Linux. SDK-managed DSP streams preserve subscriptions across session replacement and transport recovery.
@@ -97,6 +97,8 @@ The extension version is defined by `project(ReaWebAPI VERSION …)` in `CMakeLi
 Licensed under [LGPL-3.0-or-later](LICENSE.md).
 
 Pure JavaScript apps use the REAPER Mirror and Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](web/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
+
+EEL2 backends use the same message bridge. The SDK includes a [minimal example](web/eel-backend/README.md) and a [bidirectional track mixer](web/eel-mixer/README.md), installed under `eel-backend/` and `eel-mixer/`. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
 
 Native Streams share track sampling across analysis views and support `aggregate: true` for synchronized pre-FX source analysis of folders and receive buses: [contract](docs/native-streams.md) · [Demo](web/native-stream/README.md).
 

@@ -25,6 +25,12 @@ SDK/
 
 模板的 `jsconfig.json` 开启 JavaScript 类型检查，不生成编译产物，配置含义见 [TypeScript checkJs 文档](https://www.typescriptlang.org/tsconfig/checkJs.html)。使用 TypeScript 时，包含全部三个 `.d.ts` 文件，并先将 `.ts` 编译为浏览器 JavaScript。SDK 声明的是全局对象，不需要 `import reaper`。
 
+## EEL2 Backend
+
+SDK 提供[最简 EEL2 后端](../web/eel-backend/README.zh-CN.md)和[双向轨道混音示例](../web/eel-mixer/README.zh-CN.md)。在 Action List 加载相应 `.eel` 脚本，无需 Lua 启动器或额外依赖。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入包含执行确认、未确认请求限流和最终值保护。
+
+v0.3.9.14 起，`ReaWeb_Open` 第四参数支持 EEL2 `0/1` 和 Lua `false/true`，省略行为不变。EEL2 原生字符串返回值使用第一个输出参数，例如 `ReaWeb_Receive(#message, id)`。直接调用和 `extension_api` 均可用，窗口关闭后应停止 `defer` 并通过 `atexit` 清理。完整接口、字符串限制和验证命令见 [EEL2 支持说明](eel-backend-compatibility.zh-CN.md)。
+
 ## 调用约定
 
 ```javascript

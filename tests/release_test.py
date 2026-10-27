@@ -63,7 +63,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(len(entries), len(demo_files))
             self.assertEqual({target for _, target, _ in entries}, set(demo_files))
             self.assertCountEqual([target for mode, target, _ in entries if mode == 'main'],
-                             ['web/ReaWebAPI_Demo.lua', 'web/lua-backend/reawebapi-lua-backend.lua', 'web/native-service/reawebapi-native-service.lua', 'web/native-service/Coexist.lua', 'web/native-stream/reawebapi-native-stream.lua', 'web/frameless/reawebapi-frameless-fixed.lua', 'web/frameless/reawebapi-frameless-resizable.lua', 'web/transparent/reawebapi-transparent.lua'])
+                             ['web/ReaWebAPI_Demo.lua', 'web/eel-backend/reawebapi-eel-backend.eel', 'web/eel-mixer/reawebapi-eel-mixer.eel', 'web/lua-backend/reawebapi-lua-backend.lua', 'web/native-service/reawebapi-native-service.lua', 'web/native-service/Coexist.lua', 'web/native-stream/reawebapi-native-stream.lua', 'web/frameless/reawebapi-frameless-fixed.lua', 'web/frameless/reawebapi-frameless-resizable.lua', 'web/transparent/reawebapi-transparent.lua'])
             for _, target, url in entries:
                 self.assertEqual(unquote(url),
                                  'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/' + target)

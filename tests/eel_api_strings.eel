@@ -1,0 +1,48 @@
+// Isolated ReaScript string-size probe, not a JSFX string-limit assumption.
+function log(kind, actual) local(fp) (
+  fp=fopen(#log,"a"); fprintf(fp,"%s\t%d\t%d\n",kind,wanted,actual); fclose(fp);
+);
+function next_size() (
+  wanted = index==0 ? 1024 : index==1 ? 16384 : index==2 ? 65536 : 1048576;
+  wanted <= 65536 ? (
+    #out=""; str_setlen(#out,wanted);
+    log("BUILD",strlen(#out));
+    log("SEND_ACCEPTED",ReaWeb_Send(id,#out));
+  ) : (
+    // str_setlen above 65536 was separately observed to clamp and raise an error.
+    // Still test a large native string return without assuming the same limit.
+    sprintf(#command,"bytes:%d",wanted); ReaWeb_Send(id,#command);
+  );
+);
+function poll() local(i,actual,fp) (
+  time_precise()-started>30 ? (
+    log("TIMEOUT",0); ReaWeb_Close(id);
+  ) : (
+    loop(16,
+      ReaWeb_Receive(#message,id);
+      !strcmp(#message,"ready") ? next_size();
+      match("length:%d",#message,actual) ? (
+        wanted > 65536 ? (
+          log("OUTBOUND_RECEIVED_STRING",actual); finished=1;
+        ) : (
+          log("OUTBOUND",actual);
+          sprintf(#command,"bytes:%d",wanted); ReaWeb_Send(id,#command);
+        );
+      );
+      strlen(#message) && str_getchar(#message,0)=='x' ? (
+        log("INBOUND",strlen(#message));
+        wanted > 65536 ? log("SEND_RECEIVED_STRING",ReaWeb_Send(id,#message)) : (
+          index+=1; next_size();
+        );
+      );
+    );
+    finished ? (
+      ReaWeb_Close(id); fp=fopen(#log,"a"); fprintf(fp,"COMPLETE\n"); fclose(fp);
+    ) : defer("poll();");
+  );
+);
+GetResourcePath(#root);
+sprintf(#log,"%s/result.txt",#root);
+sprintf(#path,"%s/app/index.html",#root);
+id=ReaWeb_OpenEx(#path,"{\"hidden\":true}");
+started=time_precise(); poll();

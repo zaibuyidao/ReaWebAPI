@@ -92,8 +92,12 @@ class SdkTests(unittest.TestCase):
                 self.assertIn('ReaWebAPI/docs/runtime-api-inventory.md', files)
                 self.assertIn('ReaWebAPI/SDK/runtime-demo/app.js', files)
                 self.assertIn('ReaWebAPI/SDK/lua-backend/reawebapi-lua-backend.lua', files)
+                for demo in ('eel-backend', 'eel-mixer'):
+                    for name in (f'reawebapi-{demo}.eel', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md', 'README.zh-CN.md'):
+                        self.assertEqual(files[f'ReaWebAPI/SDK/{demo}/{name}'],
+                                         (ROOT / 'web' / demo / name).read_bytes())
                 self.assertIn('ReaWebAPI/SDK/tools/validate_app.py', files)
-                for app in ('starter', 'runtime-demo', 'web-runtime', 'modern/public', 'lua-backend', 'native-service', 'native-stream'):
+                for app in ('starter', 'runtime-demo', 'web-runtime', 'modern/public', 'lua-backend', 'eel-backend', 'eel-mixer', 'native-service', 'native-stream'):
                     manifest = json.loads(files[f'ReaWebAPI/SDK/{app}/app.json'])
                     self.assertRegex(manifest['id'], r'^[a-z0-9-]+$')
                 for name in ('LICENSE.md', 'COPYING', 'COPYING.LESSER', 'THIRD_PARTY.md'):

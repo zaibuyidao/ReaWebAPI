@@ -204,6 +204,7 @@ add_test(NAME favicon COMMAND "${NODE_EXECUTABLE}" --test "${CMAKE_CURRENT_SOURC
 add_test(NAME browser_files COMMAND "${NODE_EXECUTABLE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/browser_files.test.cjs")
 add_test(NAME window_title COMMAND "${NODE_EXECUTABLE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/window_title.test.cjs")
 add_test(NAME demo COMMAND "${NODE_EXECUTABLE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/demo.test.cjs")
+add_test(NAME eel_mixer COMMAND "${NODE_EXECUTABLE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/eel_mixer.test.cjs")
 if(REAWEB_BUILD_EXTENSION)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   add_test(NAME plugin_abi COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/plugin_smoke.py"
