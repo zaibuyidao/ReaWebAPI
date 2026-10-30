@@ -250,6 +250,8 @@ Two workflows coexist: pure JavaScript uses the REAPER Mirror and Runtime APIs. 
 
 Each window preserves FIFO independently in each direction. Limits are 1 MiB of UTF-8 per message, 256 pending messages per direction, and 16 MiB of queued payload across both directions, including native output awaiting dispatch. Oversized messages fail with `MESSAGE_LIMIT`, full queues with `QUEUE_LIMIT`. Native transport limits also apply. Limits are reported in `capabilities.runtime.host`.
 
+Outbound host messages rotate across windows. Worker output, request dispatch and host-message delivery have separate bounded turns after project sampling, so earlier work cannot consume a later stage's entire budget. This does not guarantee wall-clock latency when REAPER's main thread is blocked. Bound application requests in flight and check send failures.
+
 Lua calls follow the existing `ReaWeb_GetLastError()` convention. Send fails before readiness (`NOT_READY`) or for a closed/unknown window (`WINDOW_CLOSED`). Receive returns `""` on empty queue or error. An empty string message is allowed and consumes its queue entry, but is indistinguishable from an empty queue in Lua. Use JSON text such as `null` when that distinction matters. Raw NUL is outside the text ABI. Successful calls do not clear previous errors.
 
 Close and document navigation discard queued messages in both directions, and discard the frame content Lua last stored with `ReaWeb_SetFrame`. No old-generation message or frame content is delivered to a replacement page. All Host API calls run on REAPER's main thread without waiting for a message. A Lua `defer` loop is needed only to poll continuously, not to keep a window open:

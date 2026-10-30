@@ -250,6 +250,8 @@ JavaScript 的 `reaper.window.open(path, options?)` 和 `ReaWeb_OpenDev(url)` �
 
 每个窗口的两个方向各自保持 FIFO。单条消息最多 1 MiB UTF-8，每方向最多 256 条待处理消息，窗口双向队列合计最多 16 MiB，包括等待原生输出分发的消息。单条超限返回 `MESSAGE_LIMIT`，队列满返回 `QUEUE_LIMIT`。原有传输限制仍适用，可通过 `capabilities.runtime.host` 查询消息上限。
 
+后端消息跨窗口轮转投递。工程采样后，工作线程输出、请求分发和后端消息分别获得有界调度时间，避免前序工作耗尽后续阶段的预算。REAPER 主线程阻塞时不保证实际响应延迟。应用应限制未确认请求数量，并检查发送失败。
+
 Lua 延续 `ReaWeb_GetLastError()` 错误约定。未就绪时 Send 失败，错误为 `NOT_READY`。窗口关闭或 ID 无效时为 `WINDOW_CLOSED`。Receive 在无消息或失败时返回 `""`。允许空字符串消息，但其出队结果与空队列无法区分。需要区分时可使用 `null` 等 JSON 文本。文本 ABI 不支持原始 NUL。成功调用不会清除之前的错误。
 
 关闭窗口或导航到新文档会丢弃双向队列，并丢弃 Lua 上次用 `ReaWeb_SetFrame` 存入的帧内容，旧文档的消息和帧内容都不会进入新页面。Host API 必须在 REAPER 主线程调用，不等待消息到达。只有持续接收消息才需要 Lua `defer` 循环，窗口存活不依赖该循环：

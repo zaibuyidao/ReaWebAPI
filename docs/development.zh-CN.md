@@ -161,6 +161,8 @@ try {
 
 ## 分发工具
 
+多窗口回归使用 `python tests/multi_window_stress.py --reaper <可执行文件> --extension <扩展文件> --output <新目录> --counts 8,16,32 --seconds 30`。窗口总数包含一个官方 Demo。测试使用独立配置，覆盖空工程及 50 轨、80 个合成 JSFX 负载，运行独立 Lua 循环、有界持续通信、帧刷新和乱序关闭重开。`cases.tsv`、`windows.tsv` 及诊断快照记录延迟与各窗口通信进度。合成 DSP 负载不等同于第三方采样器工程。
+
 分发 Lua 启动器、HTML、编译后的 JavaScript、CSS 和所需资源，保持相对路径。将模板 Action 描述及 `index.html` 的 `<title>` 改为自己的工具名称。动态名称和显式覆盖见[窗口标题](runtime-api.zh-CN.md#窗口标题)。类型声明和编辑器配置只供开发使用。用户需要安装 ReaWebAPI 原生扩展，不需要 Python 或编译器。
 
 注明最低 REAPER 和 ReaWebAPI 版本，通过能力查询检查依赖的方法，并在界面解释缺失依赖。发布前检查空工程、没有选择、Unicode 路径、对象删除、工程切换、停靠、反复开关窗口及各目标系统。完整 Demo 可辅助桥接诊断，模拟 ABI 测试通过不代表已验证所有原生 API 对真实工程的影响。

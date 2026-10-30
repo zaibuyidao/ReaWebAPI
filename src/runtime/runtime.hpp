@@ -197,6 +197,7 @@ private:
   std::map<int, Json> closed_diagnostics_;
   int next_id_ = 0;
   int cursor_ = 0;
+  int message_cursor_ = 0;
   Worker worker_;
   int undo_owner_ = 0;
   int drag_owner_ = 0;

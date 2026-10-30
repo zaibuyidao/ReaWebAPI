@@ -12,7 +12,7 @@ ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩�
 - [JSFX Web UI](docs/jsfx-webui.zh-CN.md) 托管关联配置的轨道、主轨、Take、输入、监听及嵌套容器 JSFX，通过 `params` 提供实例绑定的参数同步、宿主参数元数据、`enum` 中的已加载实例枚举选项（不可用字段为 `null`）、归一化写入和参数组撤销。`editor` 提供持久保存的共享内容尺寸。可选 EEL SDK 提供 DSP 流、复杂状态、命令和二进制资源。[原生通道](docs/jsfx-native-channel.zh-CN.md) 使用固定大小的暂存程序，降低初始化时的 EEL 编译开销。Windows、macOS 和 Linux 的初始能力与状态读取无需额外等待一次宿主调度。SDK 管理的 DSP 流在 Session 更换或传输恢复时保留原有订阅。
 - 730 项 REAPER 7.80 标准 API 绑定及 TypeScript 类型声明。
 - Mirror-aware Batch Builder，支持 456 项已审核 API（含播放查询和时间换算）、延迟引用、多返回值解构和结果类型推导。
-- 支持 Lua 或 EEL2 后端 + WebView UI，通过 `ReaWeb_Send`、`ReaWeb_Receive`、`reaper.host.send` 和 `message` 事件通信。
+- 支持 Lua 或 EEL2 后端 + WebView UI，通过 `ReaWeb_Send`、`ReaWeb_Receive`、`reaper.host.send` 和 `message` 事件通信，多窗口公平轮转投递，通信调度预算独立于工程采样。
 - 可选 [External Client](docs/external-clients.zh-CN.md)，通过带认证的本机 WebSocket 复用 Native API、Batch、Service、Event 和二进制 Stream。服务默认关闭，可在 ReaWebAPI Preferences 中启用，默认地址为 `ws://127.0.0.1:9123`。
 - 可选[透明浮动窗口](docs/host-api.zh-CN.md#透明窗口)，支持桌面 Alpha、原生后端能力检测及原 Dock 偏好保留。
 - [无边框浮动窗口](docs/host-api.zh-CN.md#无边框窗口)支持动态切换标题栏、原生圆角和拖动区，覆盖 Windows、macOS 与 Linux X11/XWayland。

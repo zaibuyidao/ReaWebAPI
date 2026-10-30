@@ -484,8 +484,11 @@ void Runtime::tick() {
   // whether or not Lua sent anything, which is the whole point.
   pump_frames();
   if (undo_owner_ && Clock::now() >= undo_deadline_) finish_undo();
+  // Sampling may overrun. Give each bridge stage its own bounded turn so
+  // neither sampling nor a busy preceding stage can starve communication.
+  const auto worker_deadline = Clock::now() + std::chrono::microseconds(500);
   Work work;
-  for (int n = 0; n < 128 && Clock::now() < deadline && worker_.take(work); ++n) {
+  for (int n = 0; n < 128 && Clock::now() < worker_deadline && worker_.take(work); ++n) {
     auto it = sessions_.find(work.session);
     if (it == sessions_.end()) { if (work.kind == Work::Fault) log_(work.text); continue; }
     auto& s = *it->second;
@@ -536,7 +539,16 @@ void Runtime::tick() {
       if (work.counted_output && s.output_pending) --s.output_pending;
     }
   }
-  dispatch_requests(deadline);
+  dispatch_requests(Clock::now() + std::chrono::milliseconds(1));
+  const auto message_deadline = Clock::now() + std::chrono::microseconds(500);
+  for (size_t n = 0; n < sessions_.size() && Clock::now() < message_deadline; ++n) {
+    auto it = sessions_.upper_bound(message_cursor_);
+    if (it == sessions_.end()) it = sessions_.begin();
+    message_cursor_ = it->first;
+    auto session = it->second;
+    try { flush_messages(*session, message_deadline); }
+    catch (const std::exception& error) { fail(*session, error.what()); }
+  }
   flush_external_events();
   for (auto it = sessions_.begin(); it != sessions_.end();) {
     auto& s = *it->second;
@@ -602,7 +614,6 @@ void Runtime::tick() {
       auto state = window_state(s);
       if (state != s.last_state) { s.last_state = state; emit(s, "windowstatechange", std::move(state)); }
       persist(s);
-      flush_messages(s, deadline);
       if (s.output_pending < 16) {
         for (auto& event : s.events) {
           Work output; output.kind = Work::Encode; output.session = s.id; output.generation = s.generation;

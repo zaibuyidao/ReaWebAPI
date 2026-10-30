@@ -75,7 +75,7 @@ void Runtime::clear_messages(Session& s) {
 }
 
 void Runtime::flush_messages(Session& s, Clock::time_point deadline) {
-  if (!s.ready || s.closing || !s.subscriptions.count("message")) return;
+  if (!s.ready || s.closing || s.window->closed() || !s.subscriptions.count("message")) return;
   for (int n = 0; n < 16 && !s.to_web.empty() && s.output_pending < 16 && Clock::now() < deadline; ++n) {
     Work output; output.kind = Work::Encode; output.session = s.id; output.generation = s.generation;
     output.host_message = output.counted_output = true;

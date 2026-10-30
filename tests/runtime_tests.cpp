@@ -57,6 +57,8 @@ struct FakeWindow : Window {
   void focus() override { if (!presentation_cancelled) { ++focuses; wants_visible = shown = true; const bool pending = deferred; deferred = false; if (pending && options.on_present) options.on_present(); } }
   void show() override { if (!presentation_cancelled) { deferred = false; wants_visible = shown = true; } }
   std::vector<Json> responses;
+  std::chrono::milliseconds message_delay{0}, tick_delay{0};
+  void tick() override { std::this_thread::sleep_for(tick_delay); }
   int sequence = 0;
   std::string document = "first";
   void set_title(const std::string& title) override { options.title = title; }
@@ -71,6 +73,7 @@ struct FakeWindow : Window {
     }
     const auto start = script.find('(') + 1;
     auto message = Json::parse(script.substr(start, script.size() - start - 2));
+    if (message.value("event", "") == "message") std::this_thread::sleep_for(message_delay);
     if (!message.value("started", false)) responses.push_back(std::move(message));
   }
   void devtools() override {}
@@ -1188,6 +1191,65 @@ int main() {
       auto next_id = runtime.open("Tool/index.html");
       CHECK(runtime.receive(next_id).empty());
       CHECK(runtime.is_open(other_id));
+    }
+    {
+      // Continuous traffic in older windows must not starve later windows.
+      Runtime runtime(host, root, [](const std::string&) {}, docks);
+      std::vector<int> ids;
+      std::vector<std::shared_ptr<FakeWindow>> views;
+      for (int i = 0; i < 32; ++i) {
+        ids.push_back(runtime.open("Tool/index.html")); views.push_back(windows.back().lock());
+        result(runtime, *views.back(), views.back()->send("__reawebHello", {1}));
+        result(runtime, *views.back(), views.back()->send("ReaWeb_Subscribe", {"message"}));
+        views.back()->message_delay = std::chrono::milliseconds(3);
+      }
+      auto count = [](const FakeWindow& view) {
+        return std::count_if(view.responses.begin(), view.responses.end(), [](const Json& r) { return r.value("event", "") == "message"; });
+      };
+      for (int pass = 0; pass < 96; ++pass) {
+        for (size_t i = 0; i < ids.size(); ++i) runtime.send(ids[i], std::to_string(ids[i]));
+        runtime.tick();
+      }
+      for (size_t i = 0; i < ids.size(); ++i) {
+        CHECK(count(*views[i]) > 0);
+        for (const auto& r : views[i]->responses)
+          if (r.value("event", "") == "message") CHECK(r.at("data") == std::to_string(ids[i]));
+      }
+      // Removal of the last serviced window must not invalidate the output cursor.
+      for (int i : {3, 0, 6, 1, 7, 2, 5, 4}) runtime.close(ids[i]);
+      for (size_t i = 8; i < ids.size(); ++i) runtime.close(ids[i]);
+      runtime.tick();
+      const auto fresh = runtime.open("Tool/index.html"); auto view = windows.back().lock();
+      result(runtime, *view, view->send("__reawebHello", {1}));
+      result(runtime, *view, view->send("ReaWeb_Subscribe", {"message"}));
+      view->tick_delay = std::chrono::milliseconds(3);
+      runtime.send(fresh, "fresh");
+      until(runtime, [&] { return count(*view) == 1; });
+      CHECK(runtime.receive(fresh).empty());
+    }
+    {
+      // Frame sampling can exceed the bridge budget on a busy host.
+      auto slow_host = host;
+      slow_host.native_function = [](const char* name) -> void* {
+        if (std::string(name) != "GetPlayState") return nullptr;
+        return reinterpret_cast<void*>(+[]() -> int {
+          std::this_thread::sleep_for(std::chrono::milliseconds(3)); return 0;
+        });
+      };
+      Runtime runtime(slow_host, root, [](const std::string&) {}, docks);
+      std::vector<int> ids, replies;
+      std::vector<std::shared_ptr<FakeWindow>> views;
+      for (int i = 0; i < 8; ++i) {
+        ids.push_back(runtime.open("Tool/index.html")); views.push_back(windows.back().lock());
+        result(runtime, *views.back(), views.back()->send("__reawebHello", {1}));
+      }
+      for (size_t i = 0; i < ids.size(); ++i)
+        replies.push_back(views[i]->send("ReaWeb_HostSend", {std::to_string(ids[i])}, 0, 0, 8192));
+      until(runtime, [&] {
+        for (size_t i = 0; i < ids.size(); ++i) if (views[i]->response(replies[i]).is_null()) return false;
+        return true;
+      });
+      for (auto id : ids) CHECK(runtime.receive(id) == std::to_string(id));
     }
     {
       // A request the page posted between two timer passes must reach Lua in the
