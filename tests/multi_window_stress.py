@@ -14,11 +14,13 @@ PAGE = '''<!doctype html><meta charset="utf-8"><title>Lua traffic</title>
 <style>body{background:#192331;color:#ddd;font:16px sans-serif}pre{white-space:pre-wrap}</style>
 <h2>Lua backend stress</h2><small id="frame"></small><pre id="state">Starting</pre><script>
 (async () => {
+  let latestFrame = null;
   await reaper.events.on('message', async text => {
     document.querySelector('#state').textContent = text.slice(0,100);
-    await reaper.host.send(text);
+    const written = latestFrame?.lua?.match(/:([0-9.]+)$/)?.[1] || '0';
+    await reaper.host.send(text + '\\t' + (latestFrame?.sequence || 0) + '\\t' + written);
   });
-  await reaper.events.on('frame', frame => { document.querySelector('#frame').textContent = 'Frame ' + frame.sequence; });
+  await reaper.events.on('frame', frame => { latestFrame = frame; document.querySelector('#frame').textContent = 'Frame ' + frame.sequence; });
   await reaper.host.send('ready');
 })();</script>'''
 DEMO_PROBE = '''
@@ -44,6 +46,7 @@ def main():
     parser.add_argument('--counts', default='8,16,32')
     parser.add_argument('--seconds', type=int, default=30)
     parser.add_argument('--heavy-only', action='store_true')
+    parser.add_argument('--no-frames', action='store_true', help='Measure message traffic without frame subscriptions')
     args = parser.parse_args()
     counts = [int(value) for value in args.counts.split(',')]
     if not counts or min(counts) < 2 or max(counts) > 32 or args.seconds < 4:
@@ -54,7 +57,10 @@ def main():
         config = root / 'reaper.ini'
         config.write_text(config.read_text().replace('[reaper]', '[reaper]\naudiomode=4').replace(
             '[audioconfig]\nmode=0', '[audioconfig]\nmode=4\nwaveout_devicein=-1\nwaveout_deviceout=0\nwaveout_srate=48000\nwaveout_bps=16\nwaveout_bs=256\nwaveout_numblocks=4\nwaveout_nch_out=2'))
-    (root / 'app/index.html').write_text(PAGE, encoding='utf-8')
+    page = PAGE
+    if args.no_frames:
+        page = '\n'.join(line for line in page.splitlines() if "await reaper.events.on('frame'" not in line)
+    (root / 'app/index.html').write_text(page, encoding='utf-8')
     (root / 'app/app.json').write_text('{"id":"multi-window-stress","width":360,"height":240}')
     demo = root / 'demo'
     demo.mkdir()
@@ -81,11 +87,13 @@ spl1=spl0;
     script = (ROOT / 'tests/multi_window_stress.lua').read_text(encoding='utf-8')
     script = script.replace('STRESS_COUNTS', ','.join(map(str, counts))).replace('STRESS_SECONDS', str(args.seconds))
     script = script.replace('STRESS_HEAVY', 'true' if args.heavy_only else 'false')
+    script = script.replace('STRESS_FRAMES', 'false' if args.no_frames else 'true')
     (root / 'runner.lua').write_text(script, encoding='utf-8')
     (root / 'metadata.json').write_text(json.dumps({
         'extensionSha256': hashlib.sha256(args.extension.read_bytes()).hexdigest(),
         'counts': counts, 'secondsPerCase': args.seconds,
         'heavyOnly': args.heavy_only,
+        'frameSubscriptions': not args.no_frames,
         'load': '50 tracks, 80 JSFX instances, playback, frame subscriptions, official Demo',
     }, indent=2), encoding='utf-8')
     process = launch(root, root / 'runner.lua')

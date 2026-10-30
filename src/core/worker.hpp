@@ -20,6 +20,7 @@ struct Work {
   fs::path path;
   bool reply = false;
   bool counted_output = false;
+  bool coalesced_event = false;
   bool host_message = false;
   size_t message_bytes = 0;
   bool icon_from_page = false;

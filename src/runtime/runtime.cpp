@@ -416,8 +416,10 @@ bool Runtime::start_async(Session& session, const Work& request) {
   return true;
 }
 bool Runtime::deliver_inline(Session& session, const Work& work, const Json& response) {
-  // Do not overtake an older encoded reply/event, or reply to a replaced page.
-  if (session.output_pending || work.generation != session.generation || session.window->closed()) return false;
+  // Replaceable frames have their own receive sequence. Reliable output keeps
+  // its FIFO order, even when a newer frame bypasses queued worker output.
+  if ((session.output_pending && response.value("event", "") != "frame") ||
+      work.generation != session.generation || session.window->closed()) return false;
   size_t budget = 16 * 1024;
   if (!small_message(response, budget)) return false;
   try {
@@ -537,6 +539,7 @@ void Runtime::tick() {
       }
       if (work.reply && s.outstanding) --s.outstanding;
       if (work.counted_output && s.output_pending) --s.output_pending;
+      if (work.coalesced_event && s.events_pending) --s.events_pending;
     }
   }
   dispatch_requests(Clock::now() + std::chrono::milliseconds(1));
@@ -614,13 +617,21 @@ void Runtime::tick() {
       auto state = window_state(s);
       if (state != s.last_state) { s.last_state = state; emit(s, "windowstatechange", std::move(state)); }
       persist(s);
-      if (s.output_pending < 16) {
+      auto frame = s.events.find("frame");
+      if (frame != s.events.end()) {
+        Work output; output.session = s.id; output.generation = s.generation;
+        output.data = {{"document", s.document}, {"event", "frame"}, {"sequence", s.event_sequence + 1}, {"data", frame->second}};
+        if (deliver_inline(s, output, output.data)) { ++s.event_sequence; s.events.erase(frame); }
+      }
+      // Keep replacements in the per-name map until the previous event batch
+      // drains. Encoded frames must not accumulate ahead of replies/messages.
+      if (!s.events_pending && s.output_pending < 16) {
         for (auto& event : s.events) {
           Work output; output.kind = Work::Encode; output.session = s.id; output.generation = s.generation;
-          output.counted_output = true;
+          output.counted_output = output.coalesced_event = true;
           output.data = {{"document", s.document}, {"event", event.first}, {"sequence", ++s.event_sequence}, {"data", event.second}};
           if (Clock::now() < deadline && deliver_inline(s, output, output.data)) continue;
-          if (worker_.submit(std::move(output))) ++s.output_pending;
+          if (worker_.submit(std::move(output))) { ++s.output_pending; ++s.events_pending; }
           else { fail(s, "Bridge event queue limit exceeded"); break; }
         }
         s.events.clear();

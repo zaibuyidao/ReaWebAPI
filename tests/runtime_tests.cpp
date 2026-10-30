@@ -57,7 +57,7 @@ struct FakeWindow : Window {
   void focus() override { if (!presentation_cancelled) { ++focuses; wants_visible = shown = true; const bool pending = deferred; deferred = false; if (pending && options.on_present) options.on_present(); } }
   void show() override { if (!presentation_cancelled) { deferred = false; wants_visible = shown = true; } }
   std::vector<Json> responses;
-  std::chrono::milliseconds message_delay{0}, tick_delay{0};
+  std::chrono::milliseconds message_delay{0}, frame_delay{0}, tick_delay{0};
   void tick() override { std::this_thread::sleep_for(tick_delay); }
   int sequence = 0;
   std::string document = "first";
@@ -74,6 +74,7 @@ struct FakeWindow : Window {
     const auto start = script.find('(') + 1;
     auto message = Json::parse(script.substr(start, script.size() - start - 2));
     if (message.value("event", "") == "message") std::this_thread::sleep_for(message_delay);
+    if (message.value("event", "") == "frame") std::this_thread::sleep_for(frame_delay);
     if (!message.value("started", false)) responses.push_back(std::move(message));
   }
   void devtools() override {}
@@ -1250,6 +1251,49 @@ int main() {
         return true;
       });
       for (auto id : ids) CHECK(runtime.receive(id) == std::to_string(id));
+    }
+    for (size_t payload : {size_t{0}, size_t{8192}}) {
+      // Replaceable frames must not build a FIFO backlog ahead of host messages.
+      auto owner = std::make_unique<Runtime>(host, root, [](const std::string&) {}, docks);
+      auto& runtime = *owner;
+      std::vector<int> ids;
+      std::vector<std::shared_ptr<FakeWindow>> views;
+      for (int i = 0; i < 8; ++i) {
+        ids.push_back(runtime.open("Tool/index.html")); views.push_back(windows.back().lock());
+        result(runtime, *views.back(), views.back()->send("__reawebHello", {1}));
+        result(runtime, *views.back(), views.back()->send("ReaWeb_Subscribe", {"message"}));
+      }
+      for (auto& view : views) result(runtime, *view, view->send("ReaWeb_Subscribe", {"frame"}));
+      views.front()->tick_delay = std::chrono::milliseconds(3);
+      for (auto& view : views) view->frame_delay = std::chrono::milliseconds(1);
+      const std::string block(payload, 'x'), latest = block + "latest";
+      for (int pass = 0; pass < 32; ++pass) {
+        for (auto id : ids) runtime.set_frame(id, block + std::to_string(pass));
+        runtime.tick(); std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      for (auto id : ids) runtime.send(id, "latency-probe");
+      for (int pass = 0; pass < 32; ++pass) {
+        for (auto id : ids) runtime.set_frame(id, latest);
+        runtime.tick(); std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      for (auto& view : views) {
+        CHECK(std::any_of(view->responses.begin(), view->responses.end(), [](const Json& r) {
+          return r.value("event", "") == "message" && r.at("data") == "latency-probe";
+        }));
+        CHECK(std::any_of(view->responses.begin(), view->responses.end(), [&](const Json& r) {
+          return r.value("event", "") == "frame" && r.at("data").value("lua", "") == latest;
+        }));
+      }
+      auto view = views.back();
+      view->options.on_navigation(); view->document = "frame-reloaded";
+      result(runtime, *view, view->send("__reawebHello", {1}));
+      result(runtime, *view, view->send("ReaWeb_Subscribe", {"frame"}));
+      runtime.set_frame(ids.back(), latest);
+      until(runtime, [&] {
+        return std::any_of(view->responses.begin(), view->responses.end(), [&](const Json& r) {
+          return r.value("document", "") == view->document && r.value("event", "") == "frame" && r.at("data").value("lua", "") == latest;
+        });
+      });
     }
     {
       // A request the page posted between two timer passes must reach Lua in the

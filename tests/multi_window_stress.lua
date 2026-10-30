@@ -1,6 +1,8 @@
 local root = debug.getinfo(1, 'S').source:sub(2):match('^(.*[/\\])')
 local counts, duration = {STRESS_COUNTS}, STRESS_SECONDS
 local views, retired, samples, stopped = {}, {}, {}, false
+local steady, defers, frame_ages = {}, {}, {}
+local frames_enabled = STRESS_FRAMES
 local case, heavy, phase, opened, demo, deadline, run_at, replaced = 0, STRESS_HEAVY, 'next', 0, 0, 0, 0, false
 local function log(name, text)
   local f = assert(io.open(root .. name, 'a')); f:write(text .. '\n'); f:close()
@@ -37,6 +39,8 @@ local function open_view(slot)
     if not v.active then return end
     check(reaper.ReaWeb_IsOpen(id), 'Unexpected window closure ' .. id)
     local now = reaper.time_precise()
+    if phase == 'run' and v.last_poll then defers[#defers+1] = (now-v.last_poll)*1000 end
+    v.last_poll = now
     for _ = 1, 32 do
       local text = reaper.ReaWeb_Receive(id)
       if text == '' then break end
@@ -44,6 +48,10 @@ local function open_view(slot)
         check(not v.ready and reaper.ReaWeb_IsReady(id), 'Invalid readiness ' .. id)
         v.ready = true; v.ready_ms = (now-v.born)*1000
       else
+        local payload, frame, written = text:match('^(.*)\t(%d+)\t([%d%.]+)$')
+        check(payload, 'Missing frame receipt metadata')
+        text = payload; v.frame = tonumber(frame)
+        if phase == 'run' and tonumber(written) > 0 then frame_ages[#frame_ages+1] = (now-tonumber(written))*1000 end
         local owner, serial = text:match('^(%d+):(%d+):')
         serial = tonumber(serial)
         check(tonumber(owner) == id and serial == v.received+1, 'Window/FIFO mismatch ' .. id)
@@ -51,6 +59,7 @@ local function open_view(slot)
         check(flight and flight.text == text, 'Payload mismatch ' .. id)
         local ms = (now-flight.at)*1000
         samples[#samples+1] = ms; v.max_ms = math.max(v.max_ms, ms)
+        if phase == 'run' and flight.phase == 'run' then steady[#steady+1] = ms end
         v.flights[serial] = nil; v.pending = v.pending-1; v.received = serial
       end
     end
@@ -61,7 +70,7 @@ local function open_view(slot)
         v.sent = v.sent+1
         local text = id .. ':' .. v.sent .. ':' .. string.rep('x', v.sent%8 == 0 and 8192 or 128)
         check(reaper.ReaWeb_Send(id, text))
-        v.flights[v.sent] = {at=now, text=text}; v.pending = v.pending+1
+        v.flights[v.sent] = {at=now, text=text, phase=phase}; v.pending = v.pending+1
       end
       if now >= v.next_frame then
         local state = {}
@@ -109,6 +118,7 @@ local function step()
       heavy = true; case = 1; load_project()
     end
     views, retired, samples, opened, replaced = {}, {}, {}, 0, false
+    steady, defers, frame_ages = {}, {}, {}
     reaper.DeleteExtState('MultiWindowStress','demo',false)
     local script = root .. 'demo/ReaWebAPI_Demo.lua'
     dofile(script)
@@ -150,7 +160,10 @@ local function step()
   elseif phase == 'drain' then
     check(now < deadline, 'Drain timeout')
     local drained = true
-    for _, v in ipairs(views) do drained = drained and v.pending == 0; check(v.received > 5, 'Window did not sustain traffic ' .. v.id) end
+    for _, v in ipairs(views) do
+      drained = drained and v.pending == 0; check(v.received > 5, 'Window did not sustain traffic ' .. v.id)
+      check(not frames_enabled or (v.frame and v.frame > 5), 'Frame delivery stalled ' .. v.id)
+    end
     if drained then
       if heavy then
         check(reaper.GetPlayState()&1 == 1, 'Stress project is not playing')
@@ -160,6 +173,9 @@ local function step()
       for i = #views%2 == 1 and #views or #views-1, 1, -2 do close_view(views[i]) end
       check(reaper.ReaWeb_Close(demo)); demo = 0
       table.sort(samples)
+      table.sort(steady); table.sort(defers); table.sort(frame_ages)
+      local function p95(values) return values[math.max(1,math.ceil(#values*.95))] or 0 end
+      log('latency.tsv',table.concat({heavy and 'heavy' or 'empty',counts[case],p95(steady),p95(defers),#steady,p95(frame_ages)},'\t'))
       local total = 0
       for _, v in ipairs(retired) do
         total = total+v.received
@@ -182,5 +198,6 @@ while reaper.CountTracks(0) > 0 do reaper.DeleteTrack(reaper.GetTrack(0,0)) end
 log('cases.tsv','load\twindows\ttracks\techoes\tp95_ms\tmax_ms\tplay_state\tfx_blocks')
 log('windows.tsv','load\twindows\tid\tsent\treceived\tready_ms\tmax_ms')
 log('host.txt',reaper.GetAppVersion())
+log('latency.tsv','load\twindows\tsteady_p95_ms\tdefer_p95_ms\tsteady_echoes\tframe_age_p95_ms')
 if heavy then load_project() end
 protect(step)()

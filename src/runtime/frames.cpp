@@ -45,8 +45,8 @@ void Runtime::pump_frames() {
       frame["luaAgeMs"] = std::chrono::duration<double, std::milli>(now - s.lua_frame_at).count();
     }
     ++s.frames_pushed;
-    // Overwritten per name, never queued, so a slow page cannot build a backlog
-    // out of frames and this loop never has to wait for one.
+    // Keep the latest snapshot while the previous encoded event batch drains.
+    // Repeated frames must not accumulate in the worker output queue.
     emit(s, "frame", std::move(frame));
   }
 }

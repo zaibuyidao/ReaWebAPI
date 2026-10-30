@@ -8,6 +8,8 @@ Before, Lua sent a whole snapshot from its loop at most every 100 ms, and only w
 
 Two things must both be true for this to work: the extension must be pushing frames, and Lua must be writing content. Check them separately.
 
+Since v0.3.9.16, bounded small frames can bypass queued output and an exhausted observation budget. Frames use an independent receive sequence, so late frames are discarded without suppressing reliable messages. There is no shared delivery order between frames and reliable events. Larger frames use the worker. Each window admits only one encoded batch of coalescible events at a time, retaining the latest pending state per event name. Commands and acknowledgements retain their FIFO order and still require Lua polling. The frame timer does not make a blocked REAPER main thread responsive.
+
 ## Install
 
 Each platform installs a different set of files:

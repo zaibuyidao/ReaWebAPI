@@ -128,7 +128,7 @@ private:
     Clock::time_point started = Clock::now(), state_changed = Clock::now();
     Clock::time_point closing_since = Clock::now();
     uint64_t generation = 0, event_sequence = 0, processed = 0;
-    size_t outstanding = 0, output_pending = 0;
+    size_t outstanding = 0, output_pending = 0, events_pending = 0;
     bool diagnostic_host_connected = false, diagnostic_jsfx_released = false;
     bool ready = false, capture_keyboard = true;
     bool daw_keyboard = false, space_down = false;

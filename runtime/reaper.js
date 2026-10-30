@@ -24,7 +24,7 @@
   const lifecycleListeners = new Map();
   let cleanupToken = null;
   const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('-');
-  let sequence = 0, eventSequence = 0, projectEpoch = 0, waiting = 0, closed = false;
+  let sequence = 0, eventSequence = 0, frameSequence = 0, projectEpoch = 0, waiting = 0, closed = false;
   const post = window.chrome?.webview
     ? message => window.chrome.webview.postMessage(message)
     : window.webkit?.messageHandlers?.reaweb
@@ -79,8 +79,16 @@
       return;
     }
     if (message.event) {
-      if (!Number.isSafeInteger(message.sequence) || message.sequence <= eventSequence) return;
-      eventSequence = message.sequence;
+      if (!Number.isSafeInteger(message.sequence)) return;
+      // Frames may bypass older reliable output. A late frame must neither
+      // replace a newer frame nor suppress an ordered message/event.
+      if (message.event === 'frame') {
+        if (message.sequence <= frameSequence) return;
+        frameSequence = message.sequence;
+      } else {
+        if (message.sequence <= eventSequence) return;
+        eventSequence = message.sequence;
+      }
       if (message.event === 'projectchange') projectEpoch = message.data.projectEpoch;
       const entry = subscriptions.get(message.event);
       if (entry) {

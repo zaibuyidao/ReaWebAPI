@@ -628,6 +628,33 @@ test('message events preserve text and FIFO without snapshot replay or cross-doc
   assert.deepEqual(seen.slice(1), values);
 });
 
+for (const engine of ['windows', 'webkit']) {
+  test(`${engine}: replaceable frames and reliable events order independently`, async () => {
+    const t = await connected(engine), messages = [], frames = [], states = [];
+    for (const [name, seen] of [['message', messages], ['frame', frames], ['windowstatechange', states]]) {
+      const pending = t.window.reaper.events.on(name, value => seen.push(value));
+      await flush(); t.reply(t.messages.length - 1, {result:null}); await pending;
+      seen.length = 0;
+    }
+    t.event('frame', 20, 'new frame');
+    t.event('message', 19, 'queued message');
+    t.event('windowstatechange', 21, 'queued state');
+    t.event('frame', 18, 'obsolete worker frame');
+    t.event('frame', 22, 'latest frame');
+    t.event('message', 23, 'next message');
+    t.event('message', 19, 'duplicate message');
+    t.event('frame', 22, 'duplicate frame');
+    t.event('frame', 22.5, 'invalid sequence');
+    t.window.__reawebReceive({document:'old',event:'frame',sequence:100,data:'old document'});
+    t.event('frame', 24, 'current document');
+    t.event('windowstatechange', 30, 'new state');
+    t.event('frame', 29, 'frame after newer reliable event');
+    assert.deepEqual(messages, ['queued message', 'next message']);
+    assert.deepEqual(states, ['queued state', 'new state']);
+    assert.deepEqual(frames, ['new frame', 'latest frame', 'current document', 'frame after newer reliable event']);
+  });
+}
+
 test('subscriptions share native registration, order events and dispose independently', async () => {
   const t = await connected(), states = [], more = [];
   const off1 = t.window.reaper.events.on('windowstatechange', s => states.push(s.docked));

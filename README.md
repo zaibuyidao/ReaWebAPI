@@ -6,7 +6,7 @@ ReaWebAPI is a native REAPER extension for building tools with HTML, CSS and Jav
 
 Space routing starts from ordinary Apps’ `app.json.dawKeyboard` (default `false`) or JSFX’s `JSFX_WebUI.dawKeyboard` (default `true`). Both support [`reaper.window.setDawKeyboard()`](docs/runtime-api.md#space-routing) for runtime overrides. Reload restores JSON configuration without writing it.
 
-- [Frame channel](docs/frame-timer-verification.md) with native transport samples and replaceable Lua content, independent of Lua polling frequency on Windows, macOS and Linux.
+- [Frame channel](docs/frame-timer-verification.md) with native transport samples and replaceable Lua content, independent of Lua polling frequency on Windows, macOS and Linux. Small frames avoid worker round-trips, and pending state updates coalesce behind one encoded event batch.
 - 730 standard REAPER 7.80 API bindings with TypeScript declarations.
 - Mirror-aware Batch Builder for 456 reviewed APIs, including transport queries and time conversions, with deferred references, tuple destructuring and typed results.
 - Lua or EEL2 backend + WebView UI through `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and `message` events, with fair multi-window delivery and bounded communication turns independent of project sampling.

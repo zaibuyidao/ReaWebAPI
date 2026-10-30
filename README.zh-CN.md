@@ -8,7 +8,7 @@ Space 路由的初始值由普通 App 的 `app.json.dawKeyboard` 或 JSFX 的 `J
 
 ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩展，提供可停靠的 WebView 窗口，并通过 `reaper` 对象异步调用 REAPER API。
 
-- [帧通道](docs/frame-timer-verification.zh-CN.md)支持原生播放状态采样和可替换的 Lua 内容，在 Windows、macOS、Linux 上独立于 Lua 轮询频率运行。
+- [帧通道](docs/frame-timer-verification.zh-CN.md)支持原生播放状态采样和可替换的 Lua 内容，在 Windows、macOS、Linux 上独立于 Lua 轮询频率运行。小帧无需工作线程轮转，上一批编码事件投递期间，后续状态更新只保留最新值。
 - [JSFX Web UI](docs/jsfx-webui.zh-CN.md) 托管关联配置的轨道、主轨、Take、输入、监听及嵌套容器 JSFX，通过 `params` 提供实例绑定的参数同步、宿主参数元数据、`enum` 中的已加载实例枚举选项（不可用字段为 `null`）、归一化写入和参数组撤销。`editor` 提供持久保存的共享内容尺寸。可选 EEL SDK 提供 DSP 流、复杂状态、命令和二进制资源。[原生通道](docs/jsfx-native-channel.zh-CN.md) 使用固定大小的暂存程序，降低初始化时的 EEL 编译开销。Windows、macOS 和 Linux 的初始能力与状态读取无需额外等待一次宿主调度。SDK 管理的 DSP 流在 Session 更换或传输恢复时保留原有订阅。
 - 730 项 REAPER 7.80 标准 API 绑定及 TypeScript 类型声明。
 - Mirror-aware Batch Builder，支持 456 项已审核 API（含播放查询和时间换算）、延迟引用、多返回值解构和结果类型推导。

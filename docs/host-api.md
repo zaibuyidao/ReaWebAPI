@@ -69,7 +69,7 @@ The frame scheduler uses an 8 ms interval. The timer paces this channel already,
 
 The normal rate therefore comes from the timer, not from this value: REAPER calls the timer about every 31.7 ms (median; other systems and REAPER versions differ), and each pass pushes one frame, so the page gets about 31 frames per second. 8 ms only applies to a pass that comes faster than that, which none of the measured runs did outside the catch-up pass after a stall.
 
-`playing`, `position`, `tempo` and `cursor` are read by the extension straight from REAPER on every frame, so they stay current even while a Lua `defer` loop is between passes. `lua` is the nonempty UTF-8 text Lua last wrote with `ReaWeb_SetFrame`, byte for byte, and `luaAgeMs` says how long ago that was. Pending frames are coalesced and have no initial snapshot. The Demo renders only the newest received frame. A REAPER function that is missing drops that one field and keeps the frame.
+`playing`, `position`, `tempo` and `cursor` are read by the extension straight from REAPER on every frame, so they stay current even while a Lua `defer` loop is between passes. `lua` is the nonempty UTF-8 text Lua last wrote with `ReaWeb_SetFrame`, byte for byte, and `luaAgeMs` says how long ago that was. Pending frames are coalesced and have no initial snapshot. Frame ordering is independent of reliable events, including `message`, and late frames are discarded. The Demo renders only the newest received frame. A REAPER function that is missing drops that one field and keeps the frame.
 
 The split is this: the timer decides when a frame is drawn, Lua decides what it contains. Delays between `defer` passes affect Lua content independently of frame production. Blocking the REAPER main thread still delays the timer.
 

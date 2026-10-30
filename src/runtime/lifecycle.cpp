@@ -37,7 +37,7 @@ void Runtime::navigate(Session& session) {
   // document's text here would attach it to the next frame it receives.
   session.lua_frame.clear();
   session.subscriptions.clear();
-  session.outstanding = session.output_pending = 0;
+  session.outstanding = session.output_pending = session.events_pending = 0;
   session.capture_keyboard = true;
   session.daw_keyboard = false;
   session.audio.clear();
