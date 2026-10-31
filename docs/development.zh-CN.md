@@ -165,6 +165,8 @@ try {
 
 `latency.tsv` 分别记录稳定阶段的消息往返时间、Lua 轮询间隔，以及收到页面回显时的帧内容年龄。帧内容年龄包含回传耗时。`--no-frames` 关闭通信测试窗口的帧订阅以便对照，官方 Demo 保持不变。新旧版本对比应使用相同的 REAPER 可执行文件和负载。
 
+Linux 几何失效逻辑由 CTest 中的 `linux_geometry` 覆盖。在 X11 显示环境中构建并运行 `linux_geometry_live`，可验证原生移动缩放、隐藏显示及窗口重建。WSL 未提供 DRI3 时，仅 WebKit 辅助进程默认使用 `GDK_RENDERING=image`，已有设置保持不变。该设置选择 GTK 软件后备缓冲，不修改 WebKit 的加速设置。参见 [GTK 绘制模式](https://docs.gtk.org/gtk3/running#environment-variables)。
+
 分发 Lua 启动器、HTML、编译后的 JavaScript、CSS 和所需资源，保持相对路径。将模板 Action 描述及 `index.html` 的 `<title>` 改为自己的工具名称。动态名称和显式覆盖见[窗口标题](runtime-api.zh-CN.md#窗口标题)。类型声明和编辑器配置只供开发使用。用户需要安装 ReaWebAPI 原生扩展，不需要 Python 或编译器。
 
 注明最低 REAPER 和 ReaWebAPI 版本，通过能力查询检查依赖的方法，并在界面解释缺失依赖。发布前检查空工程、没有选择、Unicode 路径、对象删除、工程切换、停靠、反复开关窗口及各目标系统。完整 Demo 可辅助桥接诊断，模拟 ABI 测试通过不代表已验证所有原生 API 对真实工程的影响。

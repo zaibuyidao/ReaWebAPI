@@ -77,7 +77,13 @@ def receive_until(condition, timeout=20):
             if message['op'] == 'message':
                 request = json.loads(message['message'])
                 results.append((message['id'], request['method'], request.get('args')))
-                response = {'id': request['id'], 'document': request['document'], 'result': {'protocol': 1, 'projectEpoch': 1, 'methods': list(json.loads((root / 'api/bindings.json').read_text())['functions'])} if request['method'] == '__reawebHello' else '7.smoke'}
+                value = '7.smoke'
+                if request['method'] == '__reawebHello':
+                    value = dict(protocol=1, projectEpoch=1, events=['windowstatechange'],
+                                 methods=list(json.loads((root / 'api/bindings.json').read_text())['functions']))
+                elif request['method'] in ('ReaWeb_GetWindowState', 'ReaWeb_Subscribe'):
+                    value = dict(framelessActive=False)
+                response = {'id': request['id'], 'document': request['document'], 'result': value}
                 send({'id': message['id'], 'op': 'eval', 'script': 'window.__reawebReceive(' + json.dumps(response) + ');'})
             else: results.append((message.get('id', 0), message['op'], message.get('prewarmed') if message['op'] == 'container' else message.get('color')))
     assert condition(), [(row[0], row[1], str(row[2])[:200]) for row in results]
@@ -117,8 +123,18 @@ try:
         receive_until(lambda: (1, 'background', expected) in results)
     for step in range(40):
         send(dict(id=1, op='geometry', parent=parents[0], x=0, y=0,
-                  width=220 + step * 3, height=120 + step * 2, visible=True, focused=False))
-    send(dict(id=1, op='eval', script='requestAnimationFrame(()=>requestAnimationFrame(()=>reaper.CountSelectedTracks(innerWidth===337 && innerHeight===198 && window.token==="kept" ? 801 : 999)));'))
+                  width=220 + step * 3, height=220 + step * 2, visible=True, focused=False))
+    send(dict(id=1, op='eval', script='''(() => {
+      const deadline = performance.now() + 5000;
+      const check = () => {
+        if (innerWidth === 337 && innerHeight === 298 && window.token === "kept") reaper.CountSelectedTracks(801);
+        else if (performance.now() >= deadline) {
+          reaper.debug.inspect({width: innerWidth, height: innerHeight, token: window.token});
+          reaper.CountSelectedTracks(999);
+        } else requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    })();'''))
     receive_until(lambda: (1, 'CountSelectedTracks', [801]) in results)
     geometry(1, parents[0])
     send(dict(id=1, op='eval', script='reaper.fs.writeFile("large.txt", "x".repeat(100000));'))

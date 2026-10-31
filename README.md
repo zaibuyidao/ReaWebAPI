@@ -53,6 +53,8 @@ Quit REAPER and extract the platform ZIP into its resource directory, available 
 
 For manual installation, place the native binary in `UserPlugins/`. On Linux, place the matching `reawebapi-webview-<arch>` helper in the same directory and grant it execute permission.
 
+Linux reuses unchanged X11 geometry and reads incoming WebKit messages through the host event loop. In WSL without DRI3, the helper uses GTK image backing surfaces to reduce drawing stalls. An explicit `GDK_RENDERING` setting takes precedence.
+
 Run `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` from the Action List to open the example.
 
 **Preferences > Plug-ins > ReaWebAPI** provides **Use sRGB for WebView rendering on Windows**, unchecked by default. On Windows, checking it requests an sRGB display profile for all ReaWebAPI WebViews after restarting REAPER. **Restore defaults** clears the checkbox. Apply/OK saves changes. The checkbox is disabled on macOS and Linux. See [color profiles](docs/frontend.md#webview-color-profile).

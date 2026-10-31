@@ -54,6 +54,8 @@ Windows FX 链中的 JSFX Web UI 请使用 v0.3.8.28 或更高版本，避免切
 
 手动安装时，将原生扩展放入 `UserPlugins/`。Linux 的同架构 `reawebapi-webview-<arch>` 辅助程序也放在该目录，并赋予执行权限。
 
+Linux 复用未变化的 X11 几何信息，通过宿主事件循环读取 WebKit 入站消息。WSL 未提供 DRI3 时，辅助进程使用 GTK 图像后备缓冲以减少绘制停顿。显式设置的 `GDK_RENDERING` 优先。
+
 在 Action List 运行 `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` 即可打开示例。
 
 **Preferences > Plug-ins > ReaWebAPI** 提供 **Use sRGB for WebView rendering on Windows** 复选框，默认不勾选。Windows 上勾选后重启 REAPER，将为全部 ReaWebAPI WebView 请求固定 sRGB 显示配置。**Restore defaults** 取消勾选，通过 Apply/OK 保存修改。macOS 和 Linux 上该复选框禁用。参见[色彩配置](docs/frontend.zh-CN.md#webview-色彩配置)。

@@ -4,6 +4,7 @@
 #include "platform/shared/drag_regions.hpp"
 #include "platform/shared/idle_pool.hpp"
 #include <gtk/gtk.h>
+#include <sys/utsname.h>
 #include <gtk/gtkx.h>
 #include <gdk/gdkx.h>
 #include <webkit2/webkit2.h>
@@ -794,7 +795,21 @@ struct Process {
 }
 }
 int main(int argc, char** argv) {
-  if (argc != 2 || !gtk_init_check(nullptr, nullptr) || !GDK_IS_X11_DISPLAY(gdk_display_get_default())) return 1;
+  if (argc != 2) return 1;
+  // WSL's X11 path without DRI3 can spend a frame waiting for server-side
+  // backing pixmaps. Keep the fallback local to this helper and respect overrides.
+  if (!g_getenv("GDK_RENDERING")) {
+    struct utsname system{};
+    if (uname(&system) == 0 && (strstr(system.release, "microsoft") || strstr(system.release, "Microsoft"))) {
+      if (auto display = XOpenDisplay(nullptr)) {
+        int opcode = 0, event = 0, error = 0;
+        const bool dri3 = XQueryExtension(display, "DRI3", &opcode, &event, &error);
+        XCloseDisplay(display);
+        if (!dri3) g_setenv("GDK_RENDERING", "image", FALSE);
+      }
+    }
+  }
+  if (!gtk_init_check(nullptr, nullptr) || !GDK_IS_X11_DISPLAY(gdk_display_get_default())) return 1;
   try {
     reaweb::Process process(argv[1]);
     gdk_event_handler_set(+[](GdkEvent* event, gpointer data) {

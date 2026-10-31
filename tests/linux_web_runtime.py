@@ -71,8 +71,9 @@ try:
                         if message['op'] != 'message': continue
                         request = json.loads(message['message']); method = request['method']
                         value = None
-                        if method == '__reawebHello': value = dict(protocol=1, projectEpoch=1, methods=methods)
+                        if method == '__reawebHello': value = dict(protocol=1, projectEpoch=1, methods=methods, events=['windowstatechange'])
                         elif method == 'GetAppVersion': value = '7.smoke'
+                        elif method in ('ReaWeb_GetWindowState', 'ReaWeb_Subscribe'): value = dict(framelessActive=False)
                         elif method in ('ReaWeb_DocumentTitle', 'ReaWeb_Favicon'): value = True
                         elif method == 'ReaWeb_GetCapabilities':
                             value = dict(webRuntime=dict(contract=1, origin=origins[app], mode='app-virtual', storageIsolation='origin'))

@@ -5,6 +5,7 @@
 #include "platform/linux/linux_icon.hpp"
 #include "platform/linux/linux_alpha.hpp"
 #include "platform/linux/linux_corners.hpp"
+#include "platform/linux/linux_geometry.hpp"
 #include "platform/shared/transparency.hpp"
 #include "platform/shared/idle_pool.hpp"
 #include <chrono>
@@ -33,6 +34,9 @@ fs::path helper_path() {
 }
 class LinuxProcess {
   pid_t pid_ = -1;
+  unsigned input_source_ = 0;
+  using RemoveSource = int (*)(unsigned);
+  RemoveSource remove_source_ = reinterpret_cast<RemoveSource>(dlsym(RTLD_DEFAULT, "g_source_remove"));
   std::unique_ptr<LinuxChannel> channel_;
   std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
   bool ready_ = false;
@@ -77,8 +81,21 @@ public:
     posix_spawn_file_actions_destroy(&actions);
     ::close(source);
     if (result) throw std::runtime_error("Cannot start WebKit process: " + std::string(strerror(result)));
+    // Feed the bridge from REAPER's existing GLib loop as soon as IPC arrives.
+    // The platform timer still covers buffered input and housekeeping.
+    using AddSource = unsigned (*)(int, int, unsigned, int (*)(int, unsigned, void*), void*, void (*)(void*));
+    const auto add_source = reinterpret_cast<AddSource>(dlsym(RTLD_DEFAULT, "g_unix_fd_add_full"));
+    if (add_source && remove_source_) input_source_ = add_source(0, channel_->fd(), 1 | 8 | 16 | 32,
+      +[](int, unsigned, void* data) -> int {
+        auto self = static_cast<LinuxProcess*>(data);
+        self->pump();
+        if (self->error.empty()) return 1;
+        self->input_source_ = 0;
+        return 0;
+      }, this, nullptr);
   }
   ~LinuxProcess() {
+    if (input_source_) remove_source_(input_source_);
     channel_.reset();
     if (pid_ > 0) {
       for (int n = 0; n < 25; ++n) {
@@ -182,6 +199,10 @@ class LinuxWindow final : public Window, public std::enable_shared_from_this<Lin
   std::unique_ptr<SwellWindow> window_;
   Json geometry_;
   mutable Json normal_;
+  mutable LinuxGeometry native_geometry_;
+  mutable uint64_t placement_revision_ = 0;
+  uint64_t origin_revision_ = 0;
+  int native_x_ = 0, native_y_ = 0;
   bool maximized_ = false;
   LinuxIcon icon_;
   std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
@@ -278,6 +299,7 @@ public:
     // A floating window must mirror the native resize without waiting for the
     // next platform timer tick, so sync it here and let the timer cover the rest.
     window_->resize = [this] {
+      native_geometry_.invalidate();
       try {
         update_corners();
         // GDK writes the _NET_WM_SYNC_REQUEST acknowledgement counter back to the
@@ -322,6 +344,7 @@ public:
     };
   }
   ~LinuxWindow() override {
+    native_geometry_.watch(nullptr);
     alpha_.detach();
     process_->alpha_frames.erase(id_);
     immediate_resize_enabled_ = false;
@@ -380,8 +403,9 @@ public:
     // X11 embedding is relative to the GDK window, including REAPER's menu area.
     using GetOrigin = int (*)(void*, int*, int*);
     static auto get_origin = reinterpret_cast<GetOrigin>(dlsym(RTLD_DEFAULT, "gdk_window_get_origin"));
-    int native_x = 0, native_y = 0;
-    if (get_origin && get_origin(native, &native_x, &native_y)) { origin.x -= native_x; origin.y -= native_y; }
+    const auto revision = native_geometry_.watch(native);
+    if (revision != origin_revision_ && get_origin && get_origin(native, &native_x_, &native_y_)) origin_revision_ = revision;
+    if (origin_revision_ == revision) { origin.x -= native_x_; origin.y -= native_y_; }
     else ScreenToClient(ancestor, &origin);
     const auto& options = process_->listeners.at(id_);
     const int raw_x = origin.x, raw_y = origin.y;
@@ -467,6 +491,7 @@ public:
   }
   void prepare_dock() override {
     if (transparent_) throw Error("DOCK_UNAVAILABLE", "Transparent windows require a standalone floating host");
+    native_geometry_.invalidate();
     corners_.reset(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow"));
     frame_window_ = nullptr;
     immediate_resize_enabled_ = false;
@@ -643,12 +668,20 @@ public:
   Json placement() const override {
     if (initial_hidden_ && !normal_.is_null()) return normal_;
     const bool maximized = (native_state() & 4) != 0;
-    if (!maximized) normal_ = window_->placement();
+    const auto handle = static_cast<HWND>(window_->handle());
+    // Child placement also depends on its SWELL ancestors. Cache only floating
+    // native windows, whose move/resize and decoration changes are observed.
+    const auto native = (GetWindowLong(handle, GWL_STYLE) & WS_CHILD) ? nullptr : SWELL_GetOSWindow(handle, "GdkWindow");
+    const auto revision = native_geometry_.watch(native);
+    if (!maximized && (cancelled_ || normal_.is_null() || placement_revision_ != revision)) {
+      normal_ = window_->placement(); placement_revision_ = revision;
+    }
     auto value = normal_.is_null() ? window_->placement() : normal_;
     if (!value.is_null()) value["maximized"] = maximized;
     return value;
   }
   void restore_placement(const Json& value) override {
+    native_geometry_.invalidate();
     normal_ = value;
     window_->restore_placement(value);
     maximized_ = value.value("maximized", false);

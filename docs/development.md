@@ -165,6 +165,8 @@ For multi-window regression, run `python tests/multi_window_stress.py --reaper <
 
 `latency.tsv` separates steady-phase message RTT, Lua polling intervals and frame-content age at receipt of the page's echo. Frame age includes return transport. `--no-frames` disables frame subscriptions in the traffic windows for comparison, leaving the official Demo unchanged. Use the same REAPER executable and workload for before/after comparisons.
 
+Linux geometry invalidation is covered by `linux_geometry` in CTest. On an X11 display, build and run `linux_geometry_live` for native move/resize, hide/show and window recreation. In WSL without DRI3, only the WebKit helper defaults to `GDK_RENDERING=image`. An existing value is preserved. This selects GTK software backing surfaces without changing WebKit's acceleration settings. See [GTK rendering modes](https://docs.gtk.org/gtk3/running#environment-variables).
+
 Ship the Lua launcher, HTML, built JavaScript, CSS and required assets, preserving relative paths. Rename the starter's action description and `<title>` in `index.html` for your tool. See [window titles](runtime-api.md#window-titles) for dynamic names and explicit overrides. The `.d.ts` files and editor configuration are only needed by developers. Users need the native ReaWebAPI extension, not Python or a compiler.
 
 State your minimum REAPER and ReaWebAPI versions. Feature-detect required methods and explain missing dependencies in the UI. Test empty projects, missing selection, Unicode paths, deleted objects, project switches, docking, repeated open/close and each supported OS. Use the larger bundled Demo for bridge diagnostics. A passing simulated ABI test is not proof of all native side effects on real projects.
