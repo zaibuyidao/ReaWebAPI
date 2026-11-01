@@ -5,6 +5,10 @@
 
 namespace reaweb {
 namespace {
+std::string diagnostic_name(const Json& request, const char* field) {
+  const auto found = request.find(field);
+  return !request.contains("args") && found != request.end() && found->is_string() ? found->get<std::string>() : std::string();
+}
 // Bound both serialization work and escaped output size. Stop inspecting large
 // arrays/objects as soon as the budget is exhausted; they stay on the worker.
 bool small_message(const Json& value, size_t& budget) {
@@ -429,10 +433,21 @@ bool Runtime::deliver_inline(Session& session, const Work& work, const Json& res
   return true;
 }
 void Runtime::reply(Session& session, Work work, Json response) {
+  const auto now = session.diagnostic_enabled ? Clock::now() : Clock::time_point{};
+  if (session.diagnostic_enabled && now - work.received >= std::chrono::milliseconds(500) && now >= session.diagnostic_slow_at) {
+    session.diagnostic_slow_at = now + std::chrono::seconds(30);
+    trace(session, "api.slow", Diagnostics::Level::Warn, "SLOW_COMPLETION", Diagnostics::Scope::Runtime,
+      {{"method", work.data.value("method", std::string())},
+       {"service", diagnostic_name(work.data, "diagnosticService")},
+       {"operation", diagnostic_name(work.data, "diagnosticOperation")},
+       {"durationMs", std::chrono::duration<double, std::milli>(now - work.received).count()}});
+  }
   if (response.contains("error")) {
     session.last_error = response["error"].value("message", "Native error");
     append_log(session, {{"level", "error"}, {"source", "native"}, {"message", session.last_error.substr(0, 8192)},
-      {"code", response["error"].value("code", "NATIVE_ERROR")}, {"method", work.data.value("method", "")}, {"requestId", response.value("id", Json())}});
+      {"code", response["error"].value("code", "NATIVE_ERROR")}, {"method", work.data.value("method", "")},
+      {"service", diagnostic_name(work.data, "diagnosticService")}, {"operation", diagnostic_name(work.data, "diagnosticOperation")},
+      {"requestId", response.value("id", Json())}});
   }
   if (deliver_inline(session, work, response)) return;
   work.kind = Work::Encode;
@@ -447,6 +462,24 @@ void Runtime::tick() {
   if (ticking_) return;
   ticking_ = true;
   struct Reset { bool& value; ~Reset() { value = false; } } reset{ticking_};
+  const bool diagnostic_active = std::any_of(sessions_.begin(), sessions_.end(), [](const auto& item) {
+    return item.second->diagnostic_enabled && !item.second->closing;
+  });
+  const auto diagnostic_now = diagnostic_active ? Clock::now() : Clock::time_point{};
+  if (diagnostic_active && diagnostic_tick_at != Clock::time_point{} && diagnostic_now - diagnostic_tick_at >= std::chrono::seconds(2)) {
+    for (auto& item : sessions_) {
+      auto& s = *item.second;
+      if (!s.diagnostic_enabled) continue;
+      if (!s.closing && diagnostic_now >= diagnostic_tick_warning)
+        trace(s, "runtime.tick.delayed", Diagnostics::Level::Warn, "HOST_TICK_GAP", Diagnostics::Scope::Runtime,
+          {{"durationMs", std::chrono::duration<double, std::milli>(diagnostic_now - diagnostic_tick_at).count()}});
+      // Sleep, modal dialogs and host stalls cannot establish renderer failure.
+      s.diagnostic_pending = 0; s.diagnostic_unresponsive = false;
+      s.diagnostic_next = diagnostic_now + std::chrono::seconds(5);
+    }
+    if (diagnostic_now >= diagnostic_tick_warning) diagnostic_tick_warning = diagnostic_now + std::chrono::seconds(30);
+  }
+  diagnostic_tick_at = diagnostic_now;
   // A new pass starts here, so the next ReaWeb_Receive may pump and dispatch.
   receive_dispatched_ = false;
   if (platform_warmup_pending_) {
@@ -562,6 +595,7 @@ void Runtime::tick() {
         catch (const std::exception& error) { s.last_error = error.what(); log_(s.last_error); }
       }
       s.window->tick();
+      if (s.diagnostic_enabled || s.diagnostic_config_pending) diagnostic_tick(s, Clock::now());
 #ifdef __linux__
       if (!s.jsfx && !s.closing && !s.window->closed() && s.window->visible())
         s.startup_timing->mark(StartupTiming::Revealed);
@@ -692,6 +726,8 @@ void Runtime::dispatch_requests(Clock::time_point deadline) {
             s->window->evaluate(std::string("window.__reawebSetDawKeyboard?.(") + (s->daw_keyboard ? "true" : "false") + ");");
         }
         s->document = document; s->ready = true;
+        s->diagnostic_next = Clock::now() + std::chrono::seconds(5);
+        update_diagnostics(*s);
         trace(*s, "webview.load.end", Diagnostics::Level::Info);
         s->startup_timing->mark(StartupTiming::Handshake);
         auto query = data; query["method"] = "ReaWeb_GetCapabilities"; query["args"] = Json::array();

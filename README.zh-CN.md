@@ -64,7 +64,7 @@ Linux 复用未变化的 X11 几何信息，通过宿主事件循环读取 WebKi
 
 ## 开发
 
-同页 **Diagnostics** 提供独立的 App 与 Runtime 调试开关、精确 Target App ID 和日志目录入口，设置应用后即时生效。参见[运行时诊断](docs/diagnostics.zh-CN.md)。
+同页 **Diagnostics** 提供独立的 App 与 Runtime 调试开关、精确 Target App ID 和日志目录入口，设置应用后即时生效。普通 App 与 JSFX 的主动健康监测仅对这些设置覆盖的实例运行，辅助定位页面无响应、队列积压、JavaScript 异常及流中断。被动错误记录继续保留。参见[运行时诊断](docs/diagnostics.zh-CN.md)。
 
 Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开应用。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。JavaScript 等待 `reaper.lifecycle.ready` 后，可调用 REAPER Mirror 和 `reaper.window`、`reaper.events` 等 Runtime 接口。API 以 Promise 返回结果，参数和返回值顺序遵循 REAPER 的 Lua 签名。
 

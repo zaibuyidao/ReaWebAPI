@@ -150,12 +150,15 @@ void Diagnostics::event(Level level, Scope scope, const char* event_name, const 
       {"scope", scope == Scope::Runtime ? "runtime" : "app"}, {"event", event_name}, {"sessionId", session_},
       {"appId", app}, {"windowId", window}, {"result", result}, {"threadId", thread.str()}};
     // Only structured, explicitly selected metadata is accepted. Never persist free-form messages or payloads.
-    for (const auto* field : {"generation", "fxGuid", "fxIndex", "fxLocation", "fxSessionId", "activation", "durationMs", "count", "revision", "method"})
+    for (const auto* field : {"generation", "fxGuid", "fxIndex", "fxLocation", "fxSessionId", "activation", "durationMs", "count", "revision", "method",
+        "pendingCalls", "queuedCalls", "outputPending", "hostMessages", "webMessages", "pagePending", "oldestAgeMs", "oldestStarted", "streamPackets", "activeStreams",
+        "timeouts", "queueRejected", "sendFailures", "scriptErrors", "promiseErrors", "callbackErrors", "streamErrors", "streamCloses", "service", "operation",
+        "scriptLine", "scriptColumn", "timeoutMethod"})
       if (fields.is_object() && fields.contains(field)) entry[field] = fields[field];
     if (rate.suppressed) { entry["suppressed"] = rate.suppressed; rate.suppressed = 0; }
-    if (entry.contains("method")) {
-      const auto method = entry["method"].get<std::string>();
-      if (method.size() > 128 || method.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != std::string::npos) entry.erase("method");
+    for (const auto* field : {"method", "service", "operation", "timeoutMethod"}) if (entry.contains(field)) {
+      const auto value = entry[field].get<std::string>();
+      if (value.empty() || value.size() > 128 || value.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-") != std::string::npos) entry.erase(field);
     }
     if (std::string(result).size() > 64 || std::string(result).find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
       entry["result"] = "error";

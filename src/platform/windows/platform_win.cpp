@@ -649,7 +649,7 @@ public:
       }).Get(), &token), "add_PermissionRequested");
     check(webview_->add_ProcessFailed(Callback<ICoreWebView2ProcessFailedEventHandler>(
       [weak](ICoreWebView2*, ICoreWebView2ProcessFailedEventArgs*) -> HRESULT {
-        if (auto self = weak.lock()) self->fail("WebView2 process failed; reopen the tool");
+        if (auto self = weak.lock()) self->fail("WEBVIEW_PROCESS_FAILED: WebView2 process failed; reopen the tool");
         return S_OK;
       }).Get(), &token), "add_ProcessFailed");
     check(webview_->add_NavigationCompleted(Callback<ICoreWebView2NavigationCompletedEventHandler>(

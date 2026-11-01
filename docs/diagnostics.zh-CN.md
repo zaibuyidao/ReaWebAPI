@@ -23,3 +23,24 @@ Windows、macOS、Linux 上的普通 App 与 JSFX WebUI 共用持久化诊断日
 REAPER 没有公开 JSFX 编译回调。原生通道会话变化、宿主 FX 修订通知、参数数量变化及绑定失效均为观测结果，不能据此断言发生了编译。Runtime 也无法直接观察任意 Lua 脚本启停。`lua.channel.begin/end` 表示现有宿主消息通道的可观测使用及释放，不代表 Lua 进程生命周期。Lua 轮询停止但窗口仍打开时，没有可靠的退出信号。已刷新的记录可在进程强制结束后读取，不保证断电持久性。
 
 Demo 的 Diagnostics 面板及 `reaper.debug.getDiagnostics()` 继续提供状态快照。自动记录持久化日志无需保持任何查看窗口打开。
+
+主动诊断仅在 Runtime 调试开启，或 App 调试开启且 Target App ID 匹配时运行。Runtime 调试覆盖全部实例，App 调试仅覆盖目标 App。这些设置控制探测、未完成请求跟踪、浏览器计数、宿主调度间隔及慢请求检查。关闭后停止对应监测并清空健康快照。已有被动 WARN/ERROR 记录继续保留，包括 API 失败和平台报告的 WebView 进程故障。
+
+受监测且可见、就绪的普通 App 与 JSFX WebUI 共用每 5 秒一次的探测，同时最多保留一个未应答探测。隐藏窗口、停放中的 JSFX、导航和生命周期清理暂停探测。正常报告仅记录 DEBUG。启用监测或文档导航时重置浏览器计数。启用前已存在的请求从启用时开始计时，方法名可能为空。
+
+| 事件 | 含义 |
+| --- | --- |
+| `bridge.unresponsive` / `bridge.responsive` | 探测超过 15 秒未应答 / 应答恢复。可能是页面事件循环或任一通信方向受阻，不能据此断言崩溃。 |
+| `bridge.slow` | 探测往返耗时至少 1 秒。 |
+| `bridge.probe.fail` | 诊断探测发送失败，不因此关闭 App。 |
+| `bridge.request.stalled` | 页面仍能应答探测，但最早未完成请求已超过 30 秒。模态窗口或异步工作可能正常等待。仅记录一次，直至报告低于阈值或监测重置。 |
+| `runtime.tick.delayed` | 宿主定时回调在至少 2 秒的间隔后恢复。模态窗口、系统休眠或宿主停顿均可能触发。此时丢弃未完成探测，避免将宿主停顿归因于页面。 |
+| `api.slow` | 从原生端收到请求到准备回复至少 500 ms，包含排队及异步工作，不等同于执行耗时。 |
+| `javascript.health.warning` | 浏览器超时、队列拒绝、发送或编码失败、脚本异常、Promise 拒绝、回调异常或意外流关闭的累计计数增加。 |
+| `webview.process.fail` | 平台报告 WebView 进程故障。 |
+
+慢探测、探测发送失败与慢请求警告共用每窗口 30 秒冷却时间。宿主调度停顿警告采用 Runtime 级别的 30 秒冷却时间。探测超时仅记录一次，直至收到应答或监测状态重置。检查复用 UI 定时回调，不增加看门狗线程，不在音频线程写日志。
+
+页面报告包含 `pagePending`、`oldestAgeMs`、`oldestStarted`、最早未完成请求的 `method`、最近超时的 `timeoutMethod`、累计异常计数、`scriptLine`/`scriptColumn`、`activeStreams` 和 `streamPackets`。原生上下文包含 `pendingCalls`、`queuedCalls`、`outputPending`、`hostMessages` 和 `webMessages`。应结合传输状态比较连续的流计数，音频停止或生产者空闲时没有新数据可能是正常情况。已开始的请求可能正在等待原生对话框或异步操作。`api.fail` 包含方法名，服务完成记录包含 `service`/`operation`，不记录参数或流正文。快照中的 `bridgeHealth` 包含 `enabled`、最后一次有效页面报告与当前探测标志，不是即时采样。查询快照不会开启监测。
+
+REAPER UI 线程永久阻塞时无法写入新日志或运行探测。受限流影响的 DEBUG API begin/end 记录可缩小最后一次原生调用的范围，不能替代崩溃堆栈。宿主停顿只能在 UI 恢复后观测。隐藏页面不检测存活状态，脚本坐标不含源 URL。日志不足以定位时仍需进程转储或调试器。

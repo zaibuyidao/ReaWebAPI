@@ -100,7 +100,7 @@ void open_external(const std::string& url) {
 - (void)webViewWebContentProcessDidTerminate:(WKWebView*)webView {
   (void)webView;
   isClosed = true;
-  options.on_error("WKWebView content process terminated; reopen the tool");
+  options.on_error("WEBVIEW_PROCESS_FAILED: WKWebView content process terminated; reopen the tool");
 }
 - (void)webView:(WKWebView*)webView didStartProvisionalNavigation:(WKNavigation*)navigation {
   (void)webView; (void)navigation;

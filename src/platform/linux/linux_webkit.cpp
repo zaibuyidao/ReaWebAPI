@@ -364,7 +364,7 @@ public:
       webkit_permission_request_deny(request); return TRUE;
     }), nullptr);
     g_signal_connect(view_, "web-process-terminated", G_CALLBACK(+[](WebKitWebView*, WebKitWebProcessTerminationReason, gpointer data) {
-      static_cast<Page*>(data)->fail("WebKitGTK content process terminated. Reopen the tool.");
+      static_cast<Page*>(data)->fail("WEBVIEW_PROCESS_FAILED: WebKitGTK content process terminated. Reopen the tool.");
     }), this);
     g_signal_connect(view_, "load-failed", G_CALLBACK(+[](WebKitWebView*, WebKitLoadEvent, const char*, GError* error, gpointer data) -> gboolean {
       if (!g_error_matches(error, WEBKIT_NETWORK_ERROR, WEBKIT_NETWORK_ERROR_CANCELLED))

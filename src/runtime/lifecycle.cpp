@@ -29,6 +29,9 @@ void Runtime::navigate(Session& session) {
   session.icon_dirty = true;
   if (!session.title_explicit && session.title != session.default_title) set_title(session, session.default_title);
   session.ready = false;
+  session.diagnostic_pending = 0; session.diagnostic_unresponsive = false;
+  session.diagnostic_enabled = session.diagnostic_config_pending = false;
+  session.diagnostic_page = Json::object(); session.diagnostic_next = {};
   session.document.clear();
   session.queue.clear();
   clear_messages(session);

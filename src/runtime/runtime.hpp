@@ -59,7 +59,7 @@ public:
   StreamHub& streams() { return streams_; }
   NativeTasks& tasks() { return tasks_; }
   NativeProducers& producers() { return producers_; }
-  void configure_diagnostics(const DiagnosticSettings& settings) { check_thread(); diagnostic_log_.configure(settings); }
+  void configure_diagnostics(const DiagnosticSettings& settings);
   void open_diagnostics_folder();
   void configure_external(const ExternalSettings& settings);
   void initialize_jsfx(JsfxDiscovery discovery);
@@ -130,6 +130,10 @@ private:
     uint64_t generation = 0, event_sequence = 0, processed = 0;
     size_t outstanding = 0, output_pending = 0, events_pending = 0;
     bool diagnostic_host_connected = false, diagnostic_jsfx_released = false;
+    Clock::time_point diagnostic_next{}, diagnostic_probe_at{}, diagnostic_slow_at{};
+    uint64_t diagnostic_sequence = 0, diagnostic_pending = 0;
+    bool diagnostic_unresponsive = false, diagnostic_enabled = false, diagnostic_config_pending = false;
+    Json diagnostic_page = Json::object();
     bool ready = false, capture_keyboard = true;
     bool daw_keyboard = false, space_down = false;
     std::deque<char> space_events;
@@ -230,6 +234,7 @@ private:
   Clock::time_point next_devices_ = Clock::now();
   uint64_t lifecycle_sequence_ = 0;
   bool ticking_ = false;
+  Clock::time_point diagnostic_tick_at{}, diagnostic_tick_warning{};
   // Set by receive() when it pumped the WebView IPC and dispatched requests,
   // cleared when a new timer pass starts. A Lua pass polls up to 32 times, and
   // only the first of those may pay for a pump and a dispatch.
@@ -288,10 +293,13 @@ private:
   bool defer_reload(int id);
   void complete_lifecycle(Session& session);
   void trace(const Session& session, const char* event, Diagnostics::Level level = Diagnostics::Level::Debug,
-    const char* result = "ok", Diagnostics::Scope scope = Diagnostics::Scope::Runtime) noexcept;
+    const char* result = "ok", Diagnostics::Scope scope = Diagnostics::Scope::Runtime, const Json& fields = Json()) noexcept;
+  void update_diagnostics(Session& session) noexcept;
+  void diagnostic_tick(Session& session, Clock::time_point now) noexcept;
+  void diagnostic_receive(Session& session, const std::string& message) noexcept;
   void append_log(Session& session, Json entry);
   void persist(Session& session, bool force = false);
-  void fail(Session& session, const std::string& message);
+  void fail(Session& session, const std::string& message, const char* code = "RUNTIME_ERROR");
   void pump_frames();
   void dispatch_requests(Clock::time_point deadline);
 };

@@ -63,7 +63,7 @@ Run `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` from the Action List to open 
 
 ## Development
 
-**Diagnostics** on the same Preferences page provides independent App and Runtime debug logging, an exact Target App ID and a log-folder shortcut. Settings apply immediately. See [Runtime Diagnostics](docs/diagnostics.md).
+**Diagnostics** on the same Preferences page provides independent App and Runtime debug logging, an exact Target App ID and a log-folder shortcut. Settings apply immediately. Shared health monitoring runs only for instances covered by these settings, helping diagnose unresponsive pages, queue pressure, JavaScript failures and interrupted streams. Passive error records remain enabled. See [Runtime Diagnostics](docs/diagnostics.md).
 
 External programs can enable **External Clients** in the same Preferences page and connect to `ws://127.0.0.1:9123`. The server is disabled by default. See the [protocol](docs/external-clients.md) and [standalone browser Demo](web/external-client/README.md).
 

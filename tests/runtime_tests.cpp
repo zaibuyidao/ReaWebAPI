@@ -57,6 +57,9 @@ struct FakeWindow : Window {
   void focus() override { if (!presentation_cancelled) { ++focuses; wants_visible = shown = true; const bool pending = deferred; deferred = false; if (pending && options.on_present) options.on_present(); } }
   void show() override { if (!presentation_cancelled) { deferred = false; wants_visible = shown = true; } }
   std::vector<Json> responses;
+  std::vector<Json> diagnostic_probes;
+  std::vector<bool> diagnostic_modes;
+  bool reject_probe = false;
   std::chrono::milliseconds message_delay{0}, frame_delay{0}, tick_delay{0};
   void tick() override { std::this_thread::sleep_for(tick_delay); }
   int sequence = 0;
@@ -73,6 +76,12 @@ struct FakeWindow : Window {
     }
     const auto start = script.find('(') + 1;
     auto message = Json::parse(script.substr(start, script.size() - start - 2));
+    if (message.contains("diagnosticEnabled")) { diagnostic_modes.push_back(message["diagnosticEnabled"]); return; }
+    if (message.contains("diagnosticProbe")) {
+      diagnostic_probes.push_back(std::move(message));
+      if (reject_probe) throw std::runtime_error("Injected diagnostic transport failure");
+      return;
+    }
     if (message.value("event", "") == "message") std::this_thread::sleep_for(message_delay);
     if (message.value("event", "") == "frame") std::this_thread::sleep_for(frame_delay);
     if (!message.value("started", false)) responses.push_back(std::move(message));
@@ -151,6 +160,107 @@ Json result(Runtime& runtime, FakeWindow& window, int request) {
 }
 namespace reaweb {
 std::unique_ptr<Platform> make_platform(const fs::path& profile) { ++platform_count; profiles.push_back(profile); return std::make_unique<FakePlatform>(); }
+}
+void test_bridge_health(const fs::path& root, const fs::path& entry) {
+  Host host;
+  host.current_project = []() -> void* { return nullptr; };
+  host.native_function = [](const char* name) -> void* {
+    if (std::string(name) == "CountTracks") return reinterpret_cast<void*>(+[](void*) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(550)); return 0;
+    });
+    return nullptr;
+  };
+  {
+    const auto profile = root / "health-profile";
+    auto owner = std::make_unique<Runtime>(host, profile, [](const std::string&) {});
+    auto& runtime = *owner;
+    const auto id = runtime.open(entry.u8string()); auto window = windows.back().lock();
+    result(runtime, *window, window->send("__reawebHello", {1}));
+    auto pump = [&](int milliseconds) {
+      const auto end = Clock::now() + std::chrono::milliseconds(milliseconds);
+      do { runtime.tick(); std::this_thread::sleep_for(std::chrono::milliseconds(10)); } while (Clock::now() < end);
+    };
+    const auto target = "test-" + state_key(entry.parent_path().u8string(), 0);
+    const auto other_entry = profile / "Other" / "index.html";
+    fs::create_directories(other_entry.parent_path()); std::ofstream(other_entry) << "<html></html>";
+    std::ofstream(other_entry.parent_path() / "app.json") << "{\"id\":\"diagnostic-other\"}";
+    const auto other_id = runtime.open(other_entry.u8string()); auto other = windows.back().lock();
+    result(runtime, *other, other->send("__reawebHello", {1}));
+    pump(5100);
+    CHECK(window->diagnostic_probes.empty() && window->diagnostic_modes.empty());
+    CHECK(runtime.diagnostics(id)["bridgeHealth"]["enabled"] == false);
+    result(runtime, *window, window->send("CountTracks", {0}));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2100)); runtime.tick();
+    runtime.configure_diagnostics({true, false, "unmatched"});
+    CHECK(window->diagnostic_modes.empty() && other->diagnostic_modes.empty());
+    runtime.configure_diagnostics({true, false, target});
+    CHECK(window->diagnostic_modes.back() && other->diagnostic_modes.empty());
+    pump(5100);
+    CHECK(window->diagnostic_probes.size() == 1);
+    Json report{{"document", window->document}, {"probe", window->diagnostic_probes.back()["diagnosticProbe"]}};
+    for (const auto* key : {"pagePending", "oldestAgeMs", "oldestStarted", "streamPackets", "activeStreams", "timeouts", "queueRejected", "sendFailures",
+        "scriptErrors", "promiseErrors", "callbackErrors", "streamErrors", "streamCloses", "scriptLine", "scriptColumn"}) report[key] = 0;
+    auto stale = report; stale["document"] = "stale";
+    window->options.on_message("__reawebDiagnostic:" + stale.dump());
+    window->options.on_message("__reawebDiagnostic:{invalid");
+    CHECK(runtime.diagnostics(id)["bridgeHealth"]["probePending"] == true);
+    pump(15100);
+    CHECK(window->diagnostic_probes.size() == 1);
+    CHECK(runtime.diagnostics(id)["bridgeHealth"]["unresponsive"] == true);
+    report["callbackErrors"] = 2;
+    report["pagePending"] = 1; report["oldestAgeMs"] = 31000; report["oldestStarted"] = 1;
+    report["method"] = "private/url?token=secret";
+    report["message"] = "secret-body";
+    window->options.on_message("__reawebDiagnostic:" + report.dump());
+    CHECK(runtime.diagnostics(id)["bridgeHealth"]["unresponsive"] == false);
+    CHECK(runtime.diagnostics(id)["bridgeHealth"]["callbackErrors"] == 2);
+    window->reject_probe = true;
+    runtime.tick();
+    CHECK(window->diagnostic_probes.size() == 2);
+    CHECK(runtime.is_open(id) && runtime.diagnostics(id)["bridgeHealth"]["probePending"] == false);
+    window->reject_probe = false;
+    window->set_visible(false); runtime.tick();
+    CHECK(runtime.diagnostics(id)["bridgeHealth"]["probePending"] == false);
+    pump(100);
+    CHECK(window->diagnostic_probes.size() == 2);
+    window->set_visible(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2100)); runtime.tick();
+    CHECK(runtime.diagnostics(id)["bridgeHealth"]["unresponsive"] == false);
+    runtime.configure_diagnostics({});
+    runtime.configure_diagnostics({false, true, ""});
+    CHECK(runtime.diagnostics(other_id)["bridgeHealth"]["enabled"] == true);
+    CHECK(other->diagnostic_modes.back());
+    result(runtime, *window, window->send("CountTracks", {0}));
+    runtime.configure_diagnostics({true, false, "diagnostic-other"});
+    CHECK(!window->diagnostic_modes.back() && runtime.diagnostics(id)["bridgeHealth"]["enabled"] == false);
+    CHECK(!runtime.diagnostics(id)["bridgeHealth"].contains("callbackErrors"));
+    runtime.configure_diagnostics({});
+    CHECK(!other->diagnostic_modes.back());
+    const auto probes = window->diagnostic_probes.size();
+    window->options.on_message("__reawebDiagnostic:" + report.dump());
+    pump(5100);
+    CHECK(window->diagnostic_probes.size() == probes && other->diagnostic_probes.empty());
+    CHECK(!runtime.diagnostics(id)["bridgeHealth"].contains("callbackErrors"));
+    result(runtime, *window, window->send("CountTracks", {0}));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2100)); runtime.tick();
+    const auto invalid = ++window->sequence;
+    window->options.on_message(Json{{"id", invalid}, {"document", window->document}, {"method", "NotAnAPI"},
+      {"args", Json::array()}, {"diagnosticService", 42}, {"diagnosticOperation", "secret-operation"}}.dump());
+    result(runtime, *window, invalid);
+    window->options.on_error("WEBVIEW_PROCESS_FAILED: secret browser details"); runtime.tick();
+    std::ifstream file(profile / "ReaWebAPI" / "Diagnostics" / "runtime.log");
+    std::string text{std::istreambuf_iterator<char>(file), {}};
+    CHECK(text.find("secret") == std::string::npos && text.find("private/") == std::string::npos);
+    std::map<std::string, int> events;
+    std::istringstream input(text); std::string line;
+    while (std::getline(input, line)) {
+      const auto record = Json::parse(line); ++events[record["event"].get<std::string>()];
+      if (record["event"] == "api.fail") CHECK(record["method"] == "NotAnAPI");
+    }
+    for (const auto* event : {"bridge.unresponsive", "bridge.responsive", "bridge.probe.fail", "bridge.request.stalled", "javascript.health.warning", "runtime.tick.delayed", "api.slow", "webview.process.fail", "api.fail"})
+      CHECK(events[event] == 1);
+    CHECK(!events.count("bridge.health"));
+  }
 }
 int main() {
   try {
@@ -1634,6 +1744,7 @@ int main() {
       for (const auto* event : {"webview.create.begin", "webview.create.end", "webview.load.end", "lua.channel.begin",
           "javascript.log", "webview.load.fail", "instance.unbind", "webview.release.end"}) CHECK(events.count(event));
     }
+    test_bridge_health(root, entry);
     fs::remove_all(root);
     std::cout << "Runtime: handshake, worker dispatch, project/reload isolation, subscriptions, keyboard capture, queue limits and persistent docking passed\n";
     return 0;

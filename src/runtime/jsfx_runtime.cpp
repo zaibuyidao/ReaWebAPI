@@ -148,7 +148,8 @@ Json Runtime::jsfx_result(int window, const std::string& method, const Json& pay
   if (it != sessions_.end() && it->second->jsfx) result["sessionId"] = it->second->jsfx->instance->session_id;
   try { result["data"] = jsfx_call(window, method, payload); result["ok"] = true; }
   catch (const Error& error) {
-    if (it != sessions_.end()) trace(*it->second, "jsfx.api.fail", Diagnostics::Level::Error, error.code.c_str());
+    if (it != sessions_.end()) trace(*it->second, "jsfx.api.fail", Diagnostics::Level::Error, error.code.c_str(),
+      Diagnostics::Scope::Runtime, {{"method", method}});
     result["ok"] = false; result["error"] = {{"code", error.code}, {"message", error.what()}};
     if (!error.details.is_null()) result["error"]["details"] = error.details;
   } catch (const std::exception& error) {
@@ -431,7 +432,7 @@ void Runtime::tick_jsfx() {
         jsfx_instances_.erase(std::remove(jsfx_instances_.begin(), jsfx_instances_.end(), ui.instance), jsfx_instances_.end());
         release_jsfx(s); s.closing = true;
       }
-      else fail(s, error.what());
+      else fail(s, error.what(), error.code.c_str());
     } catch (const std::exception& error) { fail(s, error.what()); }
   }
   for (auto it = jsfx_blocked_.begin(); it != jsfx_blocked_.end();) {

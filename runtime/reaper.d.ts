@@ -89,6 +89,15 @@ interface ReaWebEvents {
   windowstatechange: ReaWebWindowState;
 }
 interface ReaWebDiagnostics {
+    /** Last accepted page report. Collection requires matching diagnostic settings and resets on enable/navigation. */
+  bridgeHealth: {
+      enabled: boolean; probePending: boolean; unresponsive: boolean;
+    pagePending?: number; oldestAgeMs?: number; oldestStarted?: number; method?: string; timeoutMethod?: string;
+    durationMs?: number; activeStreams?: number; streamPackets?: number;
+    timeouts?: number; queueRejected?: number; sendFailures?: number;
+    scriptErrors?: number; scriptLine?: number; scriptColumn?: number;
+    promiseErrors?: number; callbackErrors?: number; streamErrors?: number; streamCloses?: number;
+  };
   webRuntime: ReaWebRuntimeInfo;
   version: string;
   protocol: number;

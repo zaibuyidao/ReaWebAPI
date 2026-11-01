@@ -16,6 +16,8 @@ bool Runtime::service_call(Session& session, const Work& request) {
   const auto service = args[0].get<std::string>(), name = args[1].get<std::string>();
   std::weak_ptr<Session> weak = sessions_.at(session.id);
   Work response_work = request;
+  response_work.data["diagnosticService"] = service;
+  response_work.data["diagnosticOperation"] = name;
   response_work.data.erase("args"); response_work.text.clear();
   auto complete = [this, weak, request = std::move(response_work)](Json value) {
     auto s = weak.lock();

@@ -327,9 +327,10 @@ test('a frame never replays to a listener that subscribes later', async () => {
   assert.deepEqual(seen, [['first', 7], ['first', 8], ['second', 8]]);
 });
 function setup(engine = 'windows') {
-  const messages = [], timers = new Map(), listeners = {};
+  const messages = [], reports = [], timers = new Map(), listeners = {};
   let timerId = 0;
-  const post = message => messages.push(JSON.parse(message));
+  const post = message => message.startsWith('__reawebDiagnostic:')
+    ? reports.push(JSON.parse(message.slice(19))) : messages.push(JSON.parse(message));
   const window = { addEventListener: (event, handler) => { listeners[event] = handler; } };
   window.top = window;
   if (engine === 'windows') window.chrome = { webview: { postMessage: post } };
@@ -339,7 +340,7 @@ function setup(engine = 'windows') {
   vm.runInContext(script, context);
   const reply = (index, payload) => window.__reawebReceive({ id: messages[index].id, document: messages[index].document, ...payload });
   const event = (name, sequence, data) => window.__reawebReceive({ document: messages[0].document, event: name, sequence, data });
-  return { window, messages, timers, listeners, reply, event, context };
+  return { window, messages, reports, timers, listeners, reply, event, context };
 }
 async function connected(engine) {
   const t = setup(engine);
@@ -958,4 +959,59 @@ test('Built-in Meter decodes exact uint64 counts without changing Float32 measur
   assert.deepEqual(data, original);
   assert.throws(() => decode(new Float32Array(5), channels), /built-in meter/);
   data[base + 14] = NaN; assert.throws(() => decode(data, channels), /counter/);
+});
+
+for (const engine of ['windows', 'webkit']) test(`Diagnostics probes bypass API queues and preserve privacy (${engine})`, async () => {
+  const t = await connected(engine);
+  const probe = n => t.window.__reawebReceive({ document: t.messages[0].document, diagnosticProbe: n });
+  const mode = enabled => t.window.__reawebReceive({ document: t.messages[0].document, diagnosticEnabled: enabled });
+  probe(0); probe(1);
+  assert.equal(t.reports.length, 0);
+  mode(true);
+  const request = t.window.reaper.CountTracks();
+  await flush();
+  const index = t.messages.length - 1;
+  t.reply(index, { started: true });
+  probe(1);
+  assert.equal(t.reports[0].pagePending, 1);
+  assert.equal(t.reports[0].oldestStarted, 1);
+  assert.equal(t.reports[0].method, 'CountTracks');
+  assert.equal(t.timers.size, 0);
+  t.window.__reawebReceive({ document: 'stale', diagnosticProbe: 2 });
+  assert.equal(t.reports.length, 1);
+  t.reply(index, { result: 0 }); await request;
+  t.listeners.error({ message: 'secret error', filename: 'secret-url', lineno: 42, colno: 9 });
+  await flush();
+  t.reply(t.messages.length - 1, { result: true }); await flush();
+  probe(3);
+  assert.equal(t.reports[1].scriptErrors, 1);
+  assert.equal(t.reports[1].scriptLine, 42);
+  assert.equal(t.reports[1].scriptColumn, 9);
+  assert.equal(JSON.stringify(t.reports).includes('secret'), false);
+  const timeout = assert.rejects(t.window.reaper.CountTracks(), { code: 'TIMEOUT' });
+  await flush();
+  for (const timer of [...t.timers.values()]) timer();
+  await timeout; t.timers.clear();
+  probe(4);
+  assert.equal(t.reports[2].timeouts, 1);
+  assert.equal(t.reports[2].timeoutMethod, 'CountTracks');
+  assert.equal(t.reports[2].pagePending, 0);
+  const outstanding = t.window.reaper.CountTracks(); await flush();
+  const outstandingIndex = t.messages.length - 1;
+  t.reply(outstandingIndex, { started: true });
+  mode(false); probe(5);
+  assert.equal(t.reports.length, 3);
+  t.listeners.error({ message: 'disabled error', lineno: 99 }); await flush();
+  t.reply(t.messages.length - 1, { result: true }); await flush();
+  t.window.__reawebReceive({ document: 'stale', diagnosticEnabled: true }); probe(6);
+  assert.equal(t.reports.length, 3);
+  mode(true); probe(7);
+  assert.equal(t.reports[3].scriptErrors, 0);
+  assert.equal(t.reports[3].timeouts, 0);
+  assert.equal(t.reports[3].pagePending, 1);
+  assert.equal(t.reports[3].oldestStarted, 1);
+  assert.equal(t.reports[3].method, '');
+  t.reply(outstandingIndex, { result: 3 }); assert.equal(await outstanding, 3);
+  t.listeners.pagehide(); probe(8);
+  assert.equal(t.reports.length, 4);
 });

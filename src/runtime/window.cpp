@@ -152,6 +152,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     (dock_.daw_space ? std::string(daw_keyboard_script) : ""), session->title,
     [this, weak](std::string message) {
       if (auto s = weak.lock(); s && !s->closing) {
+        if (message.rfind("__reawebDiagnostic:", 0) == 0) { diagnostic_receive(*s, message); return; }
         if (message.rfind("__reawebDawKey:", 0) == 0) {
           if (s->ready && s->daw_keyboard_enabled() &&
               message.size() == 16 && (message.back() == 'd' || message.back() == 'r' || message.back() == 'u')) {
@@ -167,7 +168,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
         work.session = s->id; work.generation = s->generation; work.project = project_epoch_;
         work.text = std::move(message); work.reply = true;
         if (work.text.size() > message_limit || s->outstanding >= 256) {
-          fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.");
+          fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.", "BRIDGE_QUEUE_LIMIT");
           return;
         }
         if (s->ready && work.text.size() <= 4096) {
@@ -213,7 +214,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
           // Preserve the worker's existing malformed-request error handling.
         }
         if (!worker_.submit(std::move(work)))
-          fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.");
+          fail(*s, "Bridge queue limit exceeded. Reduce the number or size of pending calls.", "WORKER_QUEUE_LIMIT");
         else ++s->outstanding;
       }
     }, [this, weak](std::string error) {
@@ -223,7 +224,9 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
           try { active = s->jsfx->instance->binding->editor_matches(s->jsfx->editor); } catch (...) {}
           if (s->closing || !active) { release_jsfx(*s); s->closing = true; return; }
         }
-        trace(*s, "webview.load.fail", Diagnostics::Level::Error, "WEBVIEW_ERROR");
+        const bool process_failed = error.rfind("WEBVIEW_PROCESS_FAILED:", 0) == 0;
+        trace(*s, process_failed ? "webview.process.fail" : "webview.load.fail", Diagnostics::Level::Error,
+          process_failed ? "WEBVIEW_PROCESS_FAILED" : "WEBVIEW_ERROR");
         fail(*s, error);
       }
     }, session->jsfx ? session->jsfx->editor.host->parent() : dock_.parent, [this, weak] { if (auto s = weak.lock()) navigate(*s); }, app->resources ? app->resources->entry_url(entry) : dev_url,

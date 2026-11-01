@@ -1,4 +1,4 @@
 # ReaWebAPI
 
-- Reduce Linux multi-window latency by reading WebKit input on arrival and caching X11 geometry until native window changes.
-- Reduce GTK drawing stalls in WSL without DRI3 using image backing surfaces in the helper. Preserve explicit GDK_RENDERING settings.
+- Add shared App and JSFX WebUI health probes, host tick delay and slow completion diagnostics, enabled by matching App or Runtime debug settings.
+- Record bridge queue context, browser error and stream counters, failed API/service names and WebView process failures without persisting payloads.

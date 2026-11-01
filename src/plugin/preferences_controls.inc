@@ -20,6 +20,6 @@ BEGIN
   EDITTEXT 1022, 84, 196, 220, 14, ES_AUTOHSCROLL | WS_TABSTOP
   CONTROL "Enable Runtime debug logging", 1023, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 216, 285, 12
   PUSHBUTTON "Open diagnostics log folder", 1024, 20, 235, 140, 16
-  LTEXT "Apply to activate. Detailed logging is off by default.", -1, 20, 258, 285, 12
+  LTEXT "Apply to activate logging and health monitoring.", -1, 20, 258, 285, 12
   PUSHBUTTON "Restore defaults", 1003, 250, 282, 70, 14
 END

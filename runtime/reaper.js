@@ -31,6 +31,26 @@
       ? message => window.webkit.messageHandlers.reaweb.postMessage(message)
       : null;
   const failure = (code, message, details) => Object.assign(new Error(message), { code, ...(details ? { details } : {}) });
+  const health = { timeouts: 0, queueRejected: 0, sendFailures: 0, scriptErrors: 0,
+    promiseErrors: 0, callbackErrors: 0, streamErrors: 0, streamCloses: 0, streamPackets: 0, scriptLine: 0, scriptColumn: 0 };
+  let diagnosticEnabled = false, timeoutMethod = '';
+  const configureHealth = enabled => {
+    if (diagnosticEnabled === enabled) return;
+    diagnosticEnabled = enabled;
+    for (const key of Object.keys(health)) health[key] = 0;
+    timeoutMethod = '';
+    const now = enabled ? Date.now() : 0;
+    for (const item of pending.values()) {
+      if (enabled) item.at = now;
+      else { delete item.at; delete item.method; }
+    }
+  };
+  const reportHealth = probe => {
+    const oldest = pending.values().next().value;
+    try { post('__reawebDiagnostic:' + JSON.stringify({ document: documentId, probe, ...health,
+      pagePending: pending.size, activeStreams: streamConsumers.size, oldestAgeMs: oldest ? Math.max(0, Date.now() - oldest.at) : 0,
+      oldestStarted: oldest?.timer === null ? 1 : 0, method: oldest?.method || '', timeoutMethod })); } catch { if (diagnosticEnabled) ++health.sendFailures; }
+  };
   const byteString = value => {
     let binary = '';
     for (let i = 0; i < value.length; i += 8192) binary += String.fromCharCode(...value.subarray(i, i + 8192));
@@ -60,11 +80,16 @@
     return value;
   };
   const notify = (callback, data) => {
-    try { Promise.resolve(callback(data)).catch(error => console.error('[ReaWebAPI event]', error)); }
-    catch (error) { console.error('[ReaWebAPI event]', error); }
+    try { Promise.resolve(callback(data)).catch(error => { if (diagnosticEnabled) ++health.callbackErrors; console.error('[ReaWebAPI event]', error); }); }
+    catch (error) { if (diagnosticEnabled) ++health.callbackErrors; console.error('[ReaWebAPI event]', error); }
   };
   const receive = message => {
     if (closed || message?.document !== documentId) return;
+    if (typeof message.diagnosticEnabled === 'boolean') { configureHealth(message.diagnosticEnabled); return; }
+    if (Number.isSafeInteger(message.diagnosticProbe) && message.diagnosticProbe > 0) {
+      if (diagnosticEnabled) reportHealth(message.diagnosticProbe);
+      return;
+    }
     if (message.lifecycle) { runCleanup(message.lifecycle); return; }
     if (message.serviceEvent) {
       const entries = serviceSubscriptions.get(message.service);
@@ -100,7 +125,7 @@
     const item = pending.get(message?.id);
     if (!item) return;
     // Native dialogs and renders can legitimately outlive the queue timeout.
-    if (message.started === true) { clearTimeout(item.timer); return; }
+    if (message.started === true) { clearTimeout(item.timer); item.timer = null; return; }
     pending.delete(message.id);
     clearTimeout(item.timer);
     if (message.error) {
@@ -113,18 +138,22 @@
   const send = (method, args) => new Promise((resolve, reject) => {
     if (closed) return reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));
     if (!post) return reject(failure('NO_RUNTIME', 'Open this page with ReaWebAPI inside REAPER'));
-    if (pending.size >= 256) return reject(failure('QUEUE_LIMIT', 'Too many pending API calls'));
+    if (pending.size >= 256) { if (diagnosticEnabled) ++health.queueRejected; return reject(failure('QUEUE_LIMIT', 'Too many pending API calls')); }
     const id = ++sequence;
     const timer = setTimeout(() => {
       pending.delete(id);
+      if (diagnosticEnabled) { ++health.timeouts; timeoutMethod = method; }
       reject(failure('TIMEOUT', `${method} timed out; check the tool state before repeating a write`));
     }, 30000);
-    pending.set(id, { resolve, reject, timer, service: method === 'ReaWeb_ServiceInvoke' });
+    const item = { resolve, reject, timer, service: method === 'ReaWeb_ServiceInvoke' };
+    if (diagnosticEnabled) { item.method = method; item.at = Date.now(); }
+    pending.set(id, item);
     try {
       const message = JSON.stringify({ id, document: documentId, project: projectEpoch, expiresAt: Date.now() + 25000, method, args }, encodeValue);
       if (new TextEncoder().encode(message).length > 64 * 1024 * 1024) throw failure('MESSAGE_LIMIT', 'Bridge message exceeds 64 MiB');
       post(message);
     } catch (error) {
+      if (diagnosticEnabled) ++health.sendFailures;
       clearTimeout(timer);
       pending.delete(id);
       reject(error);
@@ -141,7 +170,7 @@
   ready.catch(() => {});
   const call = (method, args) => {
     if (closed) return Promise.reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));
-    if (waiting >= 256) return Promise.reject(failure('QUEUE_LIMIT', 'Too many pending API calls'));
+    if (waiting >= 256) { if (diagnosticEnabled) ++health.queueRejected; return Promise.reject(failure('QUEUE_LIMIT', 'Too many pending API calls')); }
     ++waiting;
     return ready.then(() => send(method, args)).finally(() => --waiting);
   };
@@ -545,10 +574,12 @@
         let connected = false;
         socket.onopen = () => { connected = true; clearTimeout(timeout); resolve(); };
         socket.onerror = () => {
+          if (diagnosticEnabled) ++health.streamErrors;
           const error = failure('TRANSPORT_ERROR', 'Native stream connection failed'); announce('error', error);
           if (!connected) { clearTimeout(timeout); reject(error); }
         };
         socket.onclose = event => {
+          if (diagnosticEnabled && active && event.code !== 1000) ++health.streamCloses;
           clearTimeout(timeout);
           const code = ['STREAM_CLOSED', 'EXTENSION_UNLOADED', 'TIMEOUT', 'UNSUPPORTED_FORMAT', 'NATIVE_ERROR'].includes(event.reason) ? event.reason : 'TRANSPORT_ERROR';
           finish(code, event.reason || 'Native stream connection closed');
@@ -572,10 +603,11 @@
             const packet = Object.freeze({ sequence, frameId: sequence, timestamp, producerDropped: dropped, data, bytes,
               ...(timing ? { timing } : {}) });
             last = packet;
+            if (diagnosticEnabled) ++health.streamPackets;
             if (ordered) { if (queue.length < descriptor.capacity) queue.push(packet); else ++consumerDrops; }
             announce('data', packet);
             socket.send(new Uint8Array([1]));
-          } catch (error) { announce('error', error); finish(error.code || 'UNSUPPORTED_FORMAT', error.message); socket.close(); }
+          } catch (error) { if (diagnosticEnabled) ++health.streamErrors; announce('error', error); finish(error.code || 'UNSUPPORTED_FORMAT', error.message); socket.close(); }
         };
       });
       return consumer;
@@ -737,8 +769,15 @@
     getDiagnostics: host('ReaWeb_GetDiagnostics'), openDevTools: host('ReaWeb_DevTools'),
     setBufferSize: host('ReaWeb_SetBufferSize')
   });
-  window.addEventListener('error', event => { log('error', [event.error || event.message || 'JavaScript error']).catch(() => {}); });
-  window.addEventListener('unhandledrejection', event => { log('error', [event.reason || 'Unhandled promise rejection']).catch(() => {}); });
+  window.addEventListener('error', event => {
+    if (diagnosticEnabled) {
+      ++health.scriptErrors;
+      health.scriptLine = Number.isSafeInteger(event.lineno) && event.lineno > 0 ? event.lineno : 0;
+      health.scriptColumn = Number.isSafeInteger(event.colno) && event.colno > 0 ? event.colno : 0;
+    }
+    log('error', [event.error || event.message || 'JavaScript error']).catch(() => {});
+  });
+  window.addEventListener('unhandledrejection', event => { if (diagnosticEnabled) ++health.promiseErrors; log('error', [event.reason || 'Unhandled promise rejection']).catch(() => {}); });
   api.theme = Object.freeze({
     getColors: () => call('ReaWeb_GetTheme', []),
     apply: async (element = window.document?.documentElement) => {
