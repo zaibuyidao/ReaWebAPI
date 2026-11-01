@@ -64,7 +64,7 @@ def main():
     (root / 'app/app.json').write_text('{"id":"multi-window-stress","width":360,"height":240}')
     demo = root / 'demo'
     demo.mkdir()
-    for path in (ROOT / 'web').iterdir():
+    for path in (ROOT / 'examples/main-demo').iterdir():
         if path.is_file():
             shutil.copy2(path, demo / path.name)
     with (demo / 'app.js').open('a', encoding='utf-8') as stream:

@@ -4,7 +4,7 @@
 
 ## Start a tool
 
-Install the extension for your REAPER architecture, then copy the SDK directory to a writable development location. Load its `starter/Open.lua` in the Action List. This opens `index.html` next to the Lua file. The starter reads the selected track. Right-click the page and toggle **Dock <App> in Docker**. The checked state indicates docking.
+Install the extension for your REAPER architecture, then copy the SDK directory to a writable development location. Load its `starter/reawebapi-starter.lua` in the Action List. This opens `index.html` next to the Lua file. The starter reads the selected track. Right-click the page and toggle **Dock <App> in Docker**. The checked state indicates docking.
 
 ```text
 SDK/
@@ -12,7 +12,7 @@ SDK/
   reaper-api.generated.d.ts
   runtime-api.d.ts
   starter/
-    Open.lua
+    reawebapi-starter.lua
     index.html
     app.js
     style.css
@@ -27,7 +27,7 @@ The starter's `jsconfig.json` enables JavaScript type checking without compilati
 
 ## EEL2 backend
 
-The SDK includes a [minimal EEL2 backend](../web/eel-backend/README.md) and a [bidirectional track mixer](../web/eel-mixer/README.md). Load their `.eel` scripts in the Action List. No Lua launcher or additional dependencies are needed. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
+The SDK includes a [minimal EEL2 backend](../examples/backends/eel-backend/README.md) and a [bidirectional track mixer](../examples/backends/eel-mixer/README.md). Load their `.eel` scripts in the Action List. No Lua launcher or additional dependencies are needed. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
 
 Since v0.3.9.14, `ReaWeb_Open` argument four accepts EEL2 `0/1` and Lua `false/true`, with unchanged omission behavior. Native string returns use the first EEL2 output parameter, such as `ReaWeb_Receive(#message, id)`. Both direct and `extension_api` calls work. Stop `defer` after window closure and clean up with `atexit`. See [EEL2 support](eel-backend-compatibility.md) for the full interface, string limits and verification commands.
 

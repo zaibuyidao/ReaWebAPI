@@ -90,4 +90,4 @@ Control requests and responses are bounded to 64 MiB, with at most 128 pending r
 
 ## Demo
 
-Open [the standalone Demo](../web/external-client/README.md) in a browser. It covers authentication, discovery, calls, Batch, Events, Service invocation and existing binary streams without a build step.
+Open [the standalone Demo](../examples/integrations/external-client/README.md) in a browser. It covers authentication, discovery, calls, Batch, Events, Service invocation and existing binary streams without a build step.

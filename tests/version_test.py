@@ -56,7 +56,7 @@ class VersionTests(unittest.TestCase):
             binary = stage / 'UserPlugins/reaper_reawebapi-x64.dll'
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b'TEST FIXTURE - NOT A NATIVE EXTENSION')
-            shutil.copytree(ROOT / 'web', stage / 'Scripts/ReaWebAPI/Example')
+            shutil.copytree(ROOT / 'examples/main-demo', stage / 'Scripts/ReaWebAPI/Example')
             stage_sdk(stage, version)
             # Reusing an old staging directory must not publish local validation notes.
             (stage / 'ReaWebAPI/docs/VALIDATION.md').write_text('LOCAL VALIDATION NOTES', encoding='utf-8')

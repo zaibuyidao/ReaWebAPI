@@ -66,15 +66,19 @@ def release_body(repo, version):
 def demo_entries(directory):
     if not directory.is_dir():
         raise ValueError(f'Missing Demo directory: {directory}')
-    return sorted(directory.rglob('*'))
+    # ReaPack ships only the main Demo, not the other example applications.
+    names = ('ReaWebAPI_Demo.lua', 'app.js', 'app.json', 'index.html', 'logo.svg', 'style.css')
+    entries = [directory / name for name in names]
+    for path in entries:
+        if not path.is_file():
+            raise ValueError(f'Missing Demo file: {path.name}')
+    return entries
 
 
 def descriptor(version, demo_directory=None):
     if demo_directory is None:
-        demo_directory = Path(__file__).resolve().parents[1] / 'web'
+        demo_directory = Path(__file__).resolve().parents[1] / 'examples/main-demo'
     entries = demo_entries(demo_directory)
-    if not (demo_directory / 'ReaWebAPI_Demo.lua').is_file():
-        raise ValueError('Missing Demo launcher: ReaWebAPI_Demo.lua')
     lines = ['@description ReaWebAPI: Web Runtime for REAPER', f'@version {version}', '@author zaibuyidao',
              '@link https://github.com/zaibuyidao/ReaWebAPI', '@provides']
     for platform, name in native_files():
@@ -86,18 +90,7 @@ def descriptor(version, demo_directory=None):
         name = path.relative_to(demo_directory).as_posix()
         # An .ext package defaults to extension targets, so the launcher also
         # needs an explicit script type for Action List registration.
-        options = 'script main' if name in (
-            'ReaWebAPI_Demo.lua',
-            'lua-backend/reawebapi-lua-backend.lua',
-            'eel-backend/reawebapi-eel-backend.eel',
-            'eel-mixer/reawebapi-eel-mixer.eel',
-            'native-service/reawebapi-native-service.lua',
-            'native-service/Coexist.lua',
-            'native-stream/reawebapi-native-stream.lua',
-            'frameless/reawebapi-frameless-resizable.lua',
-            'frameless/reawebapi-frameless-fixed.lua',
-            'transparent/reawebapi-transparent.lua',
-        ) else 'script nomain'
+        options = 'script main' if name == 'ReaWebAPI_Demo.lua' else 'script nomain'
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/web/{quote(name, safe="/")}'
         lines.append(f'  [{options}] web/{name} {url}')
     changes = re.split(r'^## (?:更新|简体中文)\s*$', version_notes(version), maxsplit=1, flags=re.MULTILINE)[0]
@@ -131,7 +124,7 @@ def assemble(directory, version, revision):
     reapack = directory / f'ReaWebAPI-ReaPack-v{version}.zip'
     with zipfile.ZipFile(reapack, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('ReaWebAPI.ext', descriptor(version).encode('utf-8'))
-        add_demo(archive, Path(__file__).resolve().parents[1] / 'web')
+        add_demo(archive, Path(__file__).resolve().parents[1] / 'examples/main-demo')
         for _, name in native_files():
             # Preserve executable permission even when Actions normalized downloaded files to 0644.
             info = zipfile.ZipInfo(f'extension/{name}')

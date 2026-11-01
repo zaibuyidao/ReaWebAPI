@@ -173,11 +173,11 @@ await dispose(); // Still safe after off.
 
 ## Manifest validation and example
 
-`SDK/app-manifest.schema.json` defines name/version/entry with optional id, schemaVersion, author and dawKeyboard. Run `python tools/validate_app.py runtime/runtime-demo/app.json` in source, or `python tools/validate_app.py runtime-demo/app.json` inside the SDK. Validation is read-only and checks field types, existence and resolved entry containment.
+`SDK/app-manifest.schema.json` defines name/version/entry with optional id, schemaVersion, author and dawKeyboard. Run `python tools/validate_app.py examples/runtime-features/runtime-demo/app.json` in source, or `python tools/validate_app.py runtime-demo/app.json` inside the SDK. Validation is read-only and checks field types, existence and resolved entry containment.
 
 Manifest files do not automatically launch/install an App; existing HTML launchers remain the entry point. No app manager, updater, installer or permission enforcement is included. Unsupported permissions fields are rejected. Apps remain trusted; the resource-server root is not a native API sandbox.
 
-Run Open.lua beside [Runtime Studio](../runtime/runtime-demo/index.html) for an unbundled example covering windows, events, theme, dialogs, audio waveform, manual meters, diagnostics and cleanup-state persistence.
+Run reawebapi-runtime-demo.lua beside [Runtime Studio](../examples/runtime-features/runtime-demo/index.html) for an unbundled example covering windows, events, theme, dialogs, audio waveform, manual meters, diagnostics and cleanup-state persistence.
 
 ## Host messages
 
@@ -191,7 +191,7 @@ await reaper.events.on('message', text => {
 await reaper.host.send({ type: 'setVolume', value: 0.5 });
 ```
 
-Messages are FIFO, without coalescing, initial snapshots or replay. The current document owns both queues. Close/reload clears them. Limits: 1 MiB UTF-8 per message, 256 pending messages per direction, 16 MiB total queued payload per window. See the [Lua contract](host-api.md#lua-message-bridge) and [Lua backend example](../web/lua-backend/README.md). The existing pure JavaScript Mirror/Runtime workflow remains available.
+Messages are FIFO, without coalescing, initial snapshots or replay. The current document owns both queues. Close/reload clears them. Limits: 1 MiB UTF-8 per message, 256 pending messages per direction, 16 MiB total queued payload per window. See the [Lua contract](host-api.md#lua-message-bridge) and [Lua backend example](../examples/backends/lua-backend/README.md). The existing pure JavaScript Mirror/Runtime workflow remains available.
 
 Native Streams and platform additions: [English](native-streams.md) · [中文](native-streams.zh-CN.md).
 

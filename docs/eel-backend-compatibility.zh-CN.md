@@ -44,7 +44,7 @@ ReaWeb_GetLastError(#error);
 - EEL2 帧内容仍使用 `frame.lua` 字段。仅供原生调用的 service、stream、task C API 不会自动成为 ReaScript 函数。
 - WebView、停靠和 DevTools 的平台限制与 Lua 相同。EEL2 不提供 Lua table 或内置 JSON 处理设施。
 
-SDK 包含[最简请求响应示例](../web/eel-backend/README.zh-CN.md)和[双向轨道混音示例](../web/eel-mixer/README.zh-CN.md)，仅使用 EEL2、HTML、CSS 和 JavaScript。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入具有执行确认和未确认请求限流。帧状态可以被新状态替换，执行确认仍通过消息通道传递。
+SDK 包含[最简请求响应示例](../examples/backends/eel-backend/README.zh-CN.md)和[双向轨道混音示例](../examples/backends/eel-mixer/README.zh-CN.md)，仅使用 EEL2、HTML、CSS 和 JavaScript。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入具有执行确认和未确认请求限流。帧状态可以被新状态替换，执行确认仍通过消息通道传递。
 
 ## 验证
 

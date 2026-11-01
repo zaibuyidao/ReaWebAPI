@@ -41,7 +41,7 @@ class SdkTests(unittest.TestCase):
         headings = re.findall(r'^### (\w+)$', doc, re.M)
         self.assertEqual(set(headings), set(schema['functions']))
         self.assertEqual(len(headings), 730)
-        files = {p.relative_to(ROOT).as_posix(): p.read_bytes() for directory in ('docs', 'runtime', 'api', 'web')
+        files = {p.relative_to(ROOT).as_posix(): p.read_bytes() for directory in ('docs', 'runtime', 'api', 'examples')
                  for p in (ROOT / directory).rglob('*') if p != ROOT / 'docs/VALIDATION.md'
                  and not p.is_relative_to(ROOT / 'docs/proposals')
                  and 'node_modules' not in p.parts and 'dist' not in p.parts and p.is_file() and p.suffix in ('.md', '.ts', '.mts', '.js', '.mjs', '.json', '.lua', '.html', '.css')}
@@ -94,8 +94,10 @@ class SdkTests(unittest.TestCase):
                 self.assertIn('ReaWebAPI/SDK/lua-backend/reawebapi-lua-backend.lua', files)
                 for demo in ('eel-backend', 'eel-mixer'):
                     for name in (f'reawebapi-{demo}.eel', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md', 'README.zh-CN.md'):
-                        self.assertEqual(files[f'ReaWebAPI/SDK/{demo}/{name}'],
-                                         (ROOT / 'web' / demo / name).read_bytes())
+                        content = (ROOT / 'examples/backends' / demo / name).read_bytes()
+                        if name.endswith('.md'):
+                            content = content.replace(b'../../../docs/', b'../../docs/')
+                        self.assertEqual(files[f'ReaWebAPI/SDK/{demo}/{name}'], content)
                 self.assertIn('ReaWebAPI/SDK/tools/validate_app.py', files)
                 for app in ('starter', 'runtime-demo', 'web-runtime', 'modern/public', 'lua-backend', 'eel-backend', 'eel-mixer', 'native-service', 'native-stream'):
                     manifest = json.loads(files[f'ReaWebAPI/SDK/{app}/app.json'])
@@ -106,9 +108,12 @@ class SdkTests(unittest.TestCase):
                     digest, name = line.split('  ', 1)
                     self.assertEqual(hashlib.sha256(files[name]).hexdigest(), digest)
                 check_links(files)
-                self.assertEqual(files['ReaWebAPI/SDK/starter/app.js'], (ROOT / 'runtime/starter/app.js').read_bytes())
+                self.assertEqual(files['ReaWebAPI/SDK/starter/app.js'], (ROOT / 'examples/templates/starter/app.js').read_bytes())
                 config = json.loads(files['ReaWebAPI/SDK/starter/jsconfig.json'])
                 self.assertIn('../*.d.ts', config['include'])
+                modern = json.loads(files['ReaWebAPI/SDK/modern/tsconfig.json'])
+                self.assertIn('../*.d.ts', modern['include'])
+                self.assertIn(b'path="../reaper.d.ts"', files['ReaWebAPI/SDK/runtime-demo/app.js'])
 
 
 if __name__ == '__main__':

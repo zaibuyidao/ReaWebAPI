@@ -604,7 +604,7 @@ try:
 });
 '''.replace('EXPECTED', expected_name), encoding='utf-8')
         if args.studio:
-            source = Path(__file__).resolve().parents[1] / 'runtime/runtime-demo'
+            source = Path(__file__).resolve().parents[1] / 'examples/runtime-features/runtime-demo'
             for name in ('index.html', 'app.js', 'style.css'):
                 shutil.copyfile(source / name, folder / name)
             driver = r'''
@@ -643,7 +643,7 @@ try:
             with (folder / 'app.js').open('a', encoding='utf-8') as stream:
                 stream.write(driver)
         if args.demo:
-            source = Path(__file__).resolve().parents[1] / 'web'
+            source = Path(__file__).resolve().parents[1] / 'examples/main-demo'
             for name in ('index.html', 'app.js', 'style.css', 'logo.svg'):
                 shutil.copyfile(source / name, folder / name)
             driver = r'''
@@ -785,7 +785,7 @@ try:
             with (folder / 'app.js').open('a', encoding='utf-8') as stream:
                 stream.write(driver.replace('EMPTY_PROJECT', 'true' if args.empty else 'false'))
         if args.starter:
-            source = Path(__file__).resolve().parents[1] / 'runtime/starter'
+            source = Path(__file__).resolve().parents[1] / 'examples/templates/starter'
             for name in ('index.html', 'app.js', 'style.css'):
                 shutil.copyfile(source / name, folder / name)
             driver = r'''
@@ -823,7 +823,7 @@ try:
             with (folder / 'app.js').open('a', encoding='utf-8') as stream:
                 stream.write(driver.replace('EXPECTED', json.dumps('No track selected') if args.empty else expected_name))
         if args.modern:
-            source = Path(__file__).resolve().parents[1] / 'runtime/modern/dist'
+            source = Path(__file__).resolve().parents[1] / 'examples/templates/modern/dist'
             for name in ('index.html', 'app.js', 'style.css', 'data.json'):
                 shutil.copyfile(source / name, folder / name)
             driver = r'''
@@ -859,7 +859,7 @@ try:
 })().catch(async error => { await reaper.window.setTitle('MODERN FAIL: ' + error.message.slice(0,160)); });
 '''
             if args.dev:
-                source = Path(__file__).resolve().parents[1] / 'runtime/modern'
+                source = Path(__file__).resolve().parents[1] / 'examples/templates/modern'
                 shutil.copytree(source / 'src', folder / 'src', dirs_exist_ok=True)
                 shutil.copytree(source / 'public', folder / 'public', dirs_exist_ok=True)
                 html = (source / 'index.html').read_text(encoding='utf-8')

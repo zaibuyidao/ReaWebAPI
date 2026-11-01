@@ -25,10 +25,13 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(validate(self.path)[1], self.root.resolve() / 'index.html')
         self.assertEqual(before, (self.path.read_bytes(), self.path.stat().st_mtime_ns))
 
-    def test_shipped_web_manifests(self):
-        web = Path(__file__).resolve().parents[1] / 'web'
-        for path in sorted(web.rglob('app.json')):
-            with self.subTest(app=path.relative_to(web).as_posix()):
+    def test_shipped_example_manifests(self):
+        examples = Path(__file__).resolve().parents[1] / 'examples'
+        paths = sorted(path for group in ('main-demo', 'backends', 'integrations', 'windows')
+                       for path in (examples / group).rglob('app.json'))
+        self.assertTrue(paths)
+        for path in paths:
+            with self.subTest(app=path.relative_to(examples).as_posix()):
                 validate(path)
 
     def test_daw_keyboard_boolean(self):

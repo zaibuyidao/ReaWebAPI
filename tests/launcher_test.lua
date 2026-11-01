@@ -1,8 +1,8 @@
 local root = arg[1] or '.'
 local launchers = {
-  'web/ReaWebAPI_Demo.lua', 'runtime/starter/Open.lua', 'runtime/runtime-demo/Open.lua',
-  'runtime/modern/Open.lua', 'runtime/modern/OpenDev.lua', 'runtime/web-runtime/Open.lua',
-  'web/lua-backend/reawebapi-lua-backend.lua', 'web/native-service/reawebapi-native-service.lua'
+  'examples/main-demo/ReaWebAPI_Demo.lua', 'examples/templates/starter/reawebapi-starter.lua', 'examples/runtime-features/runtime-demo/reawebapi-runtime-demo.lua',
+  'examples/templates/modern/reawebapi-modern.lua', 'examples/templates/modern/reawebapi-modern-dev.lua', 'examples/runtime-features/web-runtime/reawebapi-web-runtime.lua',
+  'examples/backends/lua-backend/reawebapi-lua-backend.lua', 'examples/integrations/native-service/reawebapi-native-service.lua'
 }
 for _, path in ipairs(launchers) do
   local ext, windows, deferred, exits, sent, instances = {}, {}, {}, {}, {}, {}
@@ -21,7 +21,7 @@ for _, path in ipairs(launchers) do
   reaper = {
     APIExists = function() return true end,
     GetExtState = function(section, key)
-      assert(path == 'runtime/modern/OpenDev.lua' or section == 'ReaWebAPI.Backends', 'Window reuse belongs to Runtime')
+      assert(path == 'examples/templates/modern/reawebapi-modern-dev.lua' or section == 'ReaWebAPI.Backends', 'Window reuse belongs to Runtime')
       return ext[section .. key] or ''
     end,
     SetExtState = function(section, key, value, persist)
@@ -59,7 +59,7 @@ for _, path in ipairs(launchers) do
   windows[1] = nil -- Native Docker close makes IsOpen false.
   run()
   assert(created == 2 and windows[2], 'Relaunch failed: ' .. path)
-  if path == 'web/lua-backend/reawebapi-lua-backend.lua' then
+  if path == 'examples/backends/lua-backend/reawebapi-lua-backend.lua' then
     assert(sent[1] == [=[{"type":"state","track":{"name":"鼓组 \"A\"\u000a\u0009\\","volume":1.0000000000}}]=], sent[1])
     local old = deferred[1]; deferred[1] = nil; current = 1; old()
     assert(not deferred[1], 'Closed Docker must stop the Lua receive loop')
@@ -87,13 +87,13 @@ for _, name in ipairs({'reawebapi-frameless-resizable.lua', 'reawebapi-frameless
     end,
     MB = function(message) error(message) end,
   }
-  assert(loadfile(root .. '/web/frameless/' .. name))()
+  assert(loadfile(root .. '/examples/windows/frameless/' .. name))()
   assert(called, name)
 end
 do
   local message
   reaper = { MB = function(text) message = text end }
-  assert(loadfile(root .. '/web/frameless/launch.lua'))()
+  assert(loadfile(root .. '/examples/windows/frameless/launch.lua'))()
   assert(message and message:find('reawebapi-frameless-resizable.lua', 1, true) and message:find('reawebapi-frameless-fixed.lua', 1, true),
     'Running the shared helper directly must explain which launcher to use')
 end

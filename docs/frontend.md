@@ -36,7 +36,7 @@ Use ordinary HTML, CSS and JavaScript directories. No bundler or npm is required
 
 ```text
 MyApp/
-  Open.lua
+  reawebapi-my-app.lua
   index.html
   app.js
   ui.js
@@ -59,7 +59,7 @@ const track = await reaper.GetTrack(0, 0);
 render(config, track);
 ```
 
-The [unbundled check App](../runtime/web-runtime/README.md) demonstrates modules, local fetch, browser storage, Canvas, file objects, DOM drop events and Workers. Run its `Open.lua` in REAPER. The extension injects the bridge into the top-level page; do not import `reaper.js`.
+The [unbundled check App](../examples/runtime-features/web-runtime/README.md) demonstrates modules, local fetch, browser storage, Canvas, file objects, DOM drop events and Workers. Run its `reawebapi-web-runtime.lua` in REAPER. The extension injects the bridge into the top-level page; do not import `reaper.js`.
 
 ## Guaranteed baseline and optional capabilities
 
@@ -139,11 +139,11 @@ await reaper.window.open('other.html');
 
 ## TypeScript and development servers
 
-The [modern starter](../runtime/modern/README.md) supplies Vite/TypeScript as optional **build-time** tooling. Run `npm ci`, `npm run dev`, then `OpenDev.lua`. The default URL is `http://localhost:5173/`. `reaper.window.openDev` accepts explicit-port HTTP URLs on 127.0.0.1, localhost or [::1]. Start the server yourself. ReaWebAPI does not embed Vite, Node or npm.
+The [modern starter](../examples/templates/modern/README.md) supplies Vite/TypeScript as optional **build-time** tooling. Run `npm ci`, `npm run dev`, then `reawebapi-modern-dev.lua`. The default URL is `http://localhost:5173/`. `reaper.window.openDev` accepts explicit-port HTTP URLs on 127.0.0.1, localhost or [::1]. Start the server yourself. ReaWebAPI does not embed Vite, Node or npm.
 
 Development App identities are keyed by the exact URL. Browser storage is isolated by origin in the shared profile, so different entry URLs on the same origin share storage. Use a stable entry URL and port. Hash navigation is allowed; navigation to a different document is blocked. Avoid entry redirects. HMR uses the browser's native WebSocket and has been exercised with Vite.
 
-Run `npm run build` and `Open.lua` for production; ship `Open.lua` and `dist/`. The current template emits an IIFE and inline Blob Worker as one packaging choice; ordinary ES module Apps work as well. Both modes use native `fetch('./data.json')`. Native host file paths resolve from the local HTML directory (`dist/` here); a Lua-opened development page uses REAPER's Scripts directory. A browser fetch URL and a native file path are different namespaces.
+Run `npm run build` and `reawebapi-modern.lua` for production; ship `reawebapi-modern.lua` and `dist/`. The current template emits an IIFE and inline Blob Worker as one packaging choice; ordinary ES module Apps work as well. Both modes use native `fetch('./data.json')`. Native host file paths resolve from the local HTML directory (`dist/` here); a Lua-opened development page uses REAPER's Scripts directory. A browser fetch URL and a native file path are different namespaces.
 
 A page CSP must allow its scripts/styles, `connect-src 'self'` for local fetch and the appropriate `worker-src`. The modern template's Blob Worker needs `worker-src blob:`. Development additionally needs its Vite HTTP/WebSocket URLs. Host clipboard and external-link helpers provide the cross-platform native operations.
 
@@ -167,7 +167,7 @@ Implementation: `src/web/web_resources.*` handles local resources; `src/runtime/
 
 Native behavior references: [WebView2 local content](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/working-with-local-content), [WebKitGTK persistent cookies](https://webkitgtk.org/reference/webkit2gtk/2.42.5/method.CookieManager.set_persistent_storage.html). Native cookie persistence is explicitly enabled on Linux.
 
-Hidden startup loads the same resources and Runtime without showing the native window. Readiness remains a document handshake, independent of rendering or App data. See [hidden startup](host-api.md#hidden-startup) and the [preload example](../runtime/hidden-start/README.md).
+Hidden startup loads the same resources and Runtime without showing the native window. Readiness remains a document handshake, independent of rendering or App data. See [hidden startup](host-api.md#hidden-startup) and the [preload example](../examples/runtime-features/hidden-start/README.md).
 
 ## Native drag regions
 
@@ -184,8 +184,8 @@ For a window using `{frameless:true}` or `window.setFrameless(true)`, add `data-
 </script>
 ```
 
-Windows uses WebView2 native non-client regions. macOS and Linux cache clipped DOM rectangles before the press and consume the native mouse event directly. They do not start native movement from an asynchronous Runtime call. Keep title regions stable during interaction. Layout snapshots have a 32 ms sampling interval, with at most 512 rectangles in each drag/exclusion list. Oversized snapshots disable dragging. Arbitrary shapes and animated hit regions are outside this contract. Drag regions are inactive inside Docker containers. Right-click outside a drag region retains the existing page context-menu behavior. See the [Demo](../web/frameless/README.md).
+Windows uses WebView2 native non-client regions. macOS and Linux cache clipped DOM rectangles before the press and consume the native mouse event directly. They do not start native movement from an asynchronous Runtime call. Keep title regions stable during interaction. Layout snapshots have a 32 ms sampling interval, with at most 512 rectangles in each drag/exclusion list. Oversized snapshots disable dragging. Arbitrary shapes and animated hit regions are outside this contract. Drag regions are inactive inside Docker containers. Right-click outside a drag region retains the existing page context-menu behavior. See the [Demo](../examples/windows/frameless/README.md).
 
 ## Transparent backgrounds
 
-Open with `{transparent:true}` and explicitly set `html, body { background:transparent; }`. The host does not rewrite App CSS. Use translucent panels, rounded corners and CSS shadows within transparent page margins. Keep a visible close control in frameless tools. Visual transparency retains rectangular mouse hit testing. See the [transparent Demo](../web/transparent/README.md) and [native requirements](host-api.md#transparent-windows).
+Open with `{transparent:true}` and explicitly set `html, body { background:transparent; }`. The host does not rewrite App CSS. Use translucent panels, rounded corners and CSS shadows within transparent page margins. Keep a visible close control in frameless tools. Visual transparency retains rectangular mouse hit testing. See the [transparent Demo](../examples/windows/transparent/README.md) and [native requirements](host-api.md#transparent-windows).

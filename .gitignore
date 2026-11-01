@@ -15,7 +15,7 @@
 /docs/*
 !/docs/*.md
 /docs/VALIDATION.md
-!/web/
+!/examples/
 !/api/
 /api/*
 !/api/reaper_api.json
@@ -84,4 +84,4 @@ Thumbs.db
 !/tests/CMakeLists.txt
 /tests/native_abi_generated.cpp
 node_modules/
-/runtime/modern/dist/
+/examples/templates/modern/dist/

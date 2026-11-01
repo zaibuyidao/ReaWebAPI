@@ -32,7 +32,7 @@ source = Path(__file__).resolve().parents[1]
 script = root / 'message_bridge_smoke.lua'
 shutil.copy2(source / 'tests/message_bridge_smoke.lua', script)
 demo = root / 'example'
-shutil.copytree(source / 'web/lua-backend', demo)
+shutil.copytree(source / 'examples/backends/lua-backend', demo)
 with (demo / 'index.html').open('a', encoding='utf-8') as page:
     page.write('''<script>
 const probe = setInterval(() => {

@@ -7,21 +7,11 @@ abort 'Incorrect project link' unless text.lines.grep(/^@link /).map(&:strip) ==
 items = ReaPack::Index::Provides.parse_each(header[:provides]).to_a
 native, scripts = items.partition { |item| item.type == :extension }
 abort 'Expected seven native files' unless native.size == 7 && native.all?(&:platform)
-demo_root = File.expand_path('../web', __dir__)
-demo_files = Dir.glob('**/*', File::FNM_DOTMATCH, base: demo_root)
-  .select { |name| File.file?(File.join(demo_root, name)) }
+demo_root = File.expand_path('../examples/main-demo', __dir__)
+demo_files = %w[ReaWebAPI_Demo.lua app.js app.json index.html logo.svg style.css]
 expected = demo_files.map { |name| "web/#{name}" }.sort
 launchers = %w[
   web/ReaWebAPI_Demo.lua
-  web/lua-backend/reawebapi-lua-backend.lua
-  web/eel-backend/reawebapi-eel-backend.eel
-  web/eel-mixer/reawebapi-eel-mixer.eel
-  web/native-service/reawebapi-native-service.lua
-  web/native-service/Coexist.lua
-  web/native-stream/reawebapi-native-stream.lua
-  web/frameless/reawebapi-frameless-resizable.lua
-  web/frameless/reawebapi-frameless-fixed.lua
-  web/transparent/reawebapi-transparent.lua
 ].sort
 abort 'Missing Demo files' unless scripts.map(&:file_pattern).sort == expected
 scripts.each do |item|

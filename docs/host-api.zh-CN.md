@@ -240,7 +240,7 @@ JavaScript 的 `reaper.window.open(path, options?)` 和 `ReaWeb_OpenDev(url)` �
 
 ## Lua 消息桥接
 
-支持两种开发方式。纯 JavaScript 应用使用 REAPER Mirror 和 Runtime API。Lua 后端使用普通 REAPER/ReaScript API，通过消息与 WebView UI 通信。参见[示例](../web/lua-backend/README.md)。
+支持两种开发方式。纯 JavaScript 应用使用 REAPER Mirror 和 Runtime API。Lua 后端使用普通 REAPER/ReaScript API，通过消息与 WebView UI 通信。参见[示例](../examples/backends/lua-backend/README.md)。
 
 `ReaWeb_Send(id, message)` 在 `ReaWeb_IsReady(id)` 为真后接受 UTF-8 文本，不序列化 Lua table，也不自动识别 JSON。`reaper.events.on("message", callback)` 接收原始字符串。未订阅时，消息保留在当前文档队列中。消息不合并，不向新监听器回放已投递内容。
 
@@ -306,7 +306,7 @@ const id = await reaper.window.open('other/index.html', {frameless:true, resizab
 
 `getState()` 和 `windowstatechange` 增加 `frameless`、`resizable` 与 `framelessActive`。`frameless` 表示当前会话配置，`resizable` 表示创建配置，`framelessActive` 仅在独立无边框宿主内为 `true`。所有 Docker、浮动 Docker 和待恢复的保存停靠状态均为 `false`。Dock/Undock 保留 WebView 文档、句柄和订阅，原生标题和图标 API 的含义不变。
 
-使用 `data-reaweb-drag` 与 `data-reaweb-no-drag` 声明[原生拖动区](frontend.zh-CN.md#原生拖动区)。`setFrameless(boolean)` 保留宿主、文档、窗口外部尺寸位置、可见状态和停靠关系。客户区随原生标题栏调整，不触发导航。`resizable` 仍仅在创建时设置。[可运行示例](../web/frameless/README.md)提供可缩放与固定尺寸启动脚本，以及使用既有生命周期的关闭按钮。
+使用 `data-reaweb-drag` 与 `data-reaweb-no-drag` 声明[原生拖动区](frontend.zh-CN.md#原生拖动区)。`setFrameless(boolean)` 保留宿主、文档、窗口外部尺寸位置、可见状态和停靠关系。客户区随原生标题栏调整，不触发导航。`resizable` 仍仅在创建时设置。[可运行示例](../examples/windows/frameless/README.md)提供可缩放与固定尺寸启动脚本，以及使用既有生命周期的关闭按钮。
 
 `capabilities.runtime.window` 和诊断中的 `windowFeatures` 报告 `frameless`、`resizable`、`dragRegions` 及 `windowSystem`（`win32`、`appkit` 或 `x11`）。Windows 要求 WebView2 非客户区支持，Linux 要求 X11/XWayland 和支持 `_NET_WM_MOVERESIZE` 的窗口管理器，不支持原生 Wayland。不支持的创建选项明确失败，异步 WebView 初始化失败沿用既有错误报告和清理流程，不退化为带装饰的可见窗口。
 
@@ -347,4 +347,4 @@ const id = await reaper.window.open('panel.html', {frameless:true, transparent:t
 
 透明功能仅适用于独立浮动窗口。首次呈现前临时跳过已保存的 Dock 恢复，继续保存位置和尺寸，并保留原来的 `docked` 与 `dockId` 偏好。关闭后不带 `transparent:true` 重新打开时恢复原 Dock 偏好。透明选项本身不持久化。所有 Dock 请求均以 `DOCK_UNAVAILABLE` 拒绝，包括 Lua 和上下文菜单。对已浮动窗口取消停靠仍保持幂等。
 
-选项类型错误返回 `INVALID_ARGUMENT`，缺少原生支持使用 `TRANSPARENCY_UNAVAILABLE`，Alpha 初始化失败使用 `TRANSPARENCY_FAILED`。Lua 同步失败返回 `0`，通过 `ReaWeb_GetLastError()` 获取原因。JavaScript 沿用 Promise 错误合同。原生异步失败关闭待创建窗口，并写入诊断和日志，正数窗口 ID 不代表已就绪。不提供动态透明切换、鼠标穿透或 Docker 透明。参见[可运行示例](../web/transparent/README.md)。
+选项类型错误返回 `INVALID_ARGUMENT`，缺少原生支持使用 `TRANSPARENCY_UNAVAILABLE`，Alpha 初始化失败使用 `TRANSPARENCY_FAILED`。Lua 同步失败返回 `0`，通过 `ReaWeb_GetLastError()` 获取原因。JavaScript 沿用 Promise 错误合同。原生异步失败关闭待创建窗口，并写入诊断和日志，正数窗口 ID 不代表已就绪。不提供动态透明切换、鼠标穿透或 Docker 透明。参见[可运行示例](../examples/windows/transparent/README.md)。

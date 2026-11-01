@@ -66,12 +66,12 @@ def prepare():
     (dest/'app.json').write_text('{"id":"latency-minimal","name":"Latency minimal","version":"1.0.0"}',encoding='utf-8')
     (dest/'index.html').write_text(MINIMAL,encoding='utf-8');(dest/'probe.js').write_text(PROBE,encoding='utf-8')
     shutil.copy2(FX/'.webui/jsfx-webui.mjs',dest)
-    dest=PORT/'Scripts/starter';shutil.copytree(ROOT/'runtime/starter',dest,dirs_exist_ok=True)
+    dest=PORT/'Scripts/starter';shutil.copytree(ROOT/'examples/templates/starter',dest,dirs_exist_ok=True)
     (dest/'probe.js').write_text(PROBE,encoding='utf-8')
     p=dest/'index.html';p.write_text(p.read_text(encoding='utf-8').replace('<head>','<head><script src="probe.js"></script>'),encoding='utf-8')
     with (dest/'app.js').open('a',encoding='utf-8') as f:
         f.write("\n{const b=document.getElementById('refresh');const ob=new MutationObserver(()=>{if(!b.disabled){ob.disconnect();window.__latencyDone();}});ob.observe(b,{attributes:true,attributeFilter:['disabled']});}\n")
-    dest=PORT/'Scripts/demo';shutil.copytree(ROOT/'web',dest,dirs_exist_ok=True)
+    dest=PORT/'Scripts/demo';shutil.copytree(ROOT/'examples/main-demo',dest,dirs_exist_ok=True)
     (dest/'probe.js').write_text(PROBE,encoding='utf-8')
     p=dest/'index.html';p.write_text(p.read_text(encoding='utf-8').replace('<head>','<head><script src="probe.js"></script>'),encoding='utf-8')
     with (dest/'app.js').open('a',encoding='utf-8') as f:

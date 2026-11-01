@@ -65,11 +65,13 @@ Run `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` from the Action List to open 
 
 **Diagnostics** on the same Preferences page provides independent App and Runtime debug logging, an exact Target App ID and a log-folder shortcut. Settings apply immediately. Shared health monitoring runs only for instances covered by these settings, helping diagnose unresponsive pages, queue pressure, JavaScript failures and interrupted streams. Passive error records remain enabled. See [Runtime Diagnostics](docs/diagnostics.md).
 
-External programs can enable **External Clients** in the same Preferences page and connect to `ws://127.0.0.1:9123`. The server is disabled by default. See the [protocol](docs/external-clients.md) and [standalone browser Demo](web/external-client/README.md).
+External programs can enable **External Clients** in the same Preferences page and connect to `ws://127.0.0.1:9123`. The server is disabled by default. See the [protocol](docs/external-clients.md) and [standalone browser Demo](examples/integrations/external-client/README.md).
 
 Lua opens an App with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. In JavaScript, await `reaper.lifecycle.ready`, then call the REAPER Mirror or Runtime namespaces such as `reaper.window` and `reaper.events`. API calls return Promises, with arguments and results following REAPER's Lua signatures.
 
-Start with `SDK/starter/Open.lua` or use `SDK/modern/` for Vite and TypeScript. `SDK/runtime-demo/Open.lua` opens Runtime Studio.
+Start with `SDK/starter/reawebapi-starter.lua` or use `SDK/modern/` for Vite and TypeScript. `SDK/runtime-demo/reawebapi-runtime-demo.lua` opens Runtime Studio.
+
+In the source repository, App examples are grouped under `examples/` as `main-demo`, `templates`, `runtime-features`, `backends`, `integrations` and `windows`; see the [example directory guide](docs/source-layout.md#app-examples--应用示例). Release installation paths remain unchanged.
 
 Set the window name with HTML `<title>` or `document.title`, including Docker labels and single-tab floating Docker captions after restoring a closed docked window. `reaper.window.setTitle(title)` explicitly overrides it. `instanceKey` controls reuse only. See [window titles](docs/runtime-api.md#window-titles).
 
@@ -98,14 +100,14 @@ The extension version is defined by `project(ReaWebAPI VERSION …)` in `CMakeLi
 
 Licensed under [LGPL-3.0-or-later](LICENSE.md).
 
-Pure JavaScript apps use the REAPER Mirror and Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](web/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
+Pure JavaScript apps use the REAPER Mirror and Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](examples/backends/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
 
-EEL2 backends use the same message bridge. The SDK includes a [minimal example](web/eel-backend/README.md) and a [bidirectional track mixer](web/eel-mixer/README.md), installed under `eel-backend/` and `eel-mixer/`. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
+EEL2 backends use the same message bridge. The SDK includes a [minimal example](examples/backends/eel-backend/README.md) and a [bidirectional track mixer](examples/backends/eel-mixer/README.md), installed under `eel-backend/` and `eel-mixer/`. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
 
-Native Streams share track sampling across analysis views and support `aggregate: true` for synchronized pre-FX source analysis of folders and receive buses: [contract](docs/native-streams.md) · [Demo](web/native-stream/README.md).
+Native Streams share track sampling across analysis views and support `aggregate: true` for synchronized pre-FX source analysis of folders and receive buses: [contract](docs/native-streams.md) · [Demo](examples/integrations/native-stream/README.md).
 
 Aggregate RMS/LUFS history continues accumulating when routed folders, buses or upstream tracks contain no media.
 
 The built-in Meter provides Sample/True Peak, separate sample/True Peak clip counts, per-channel and global peak maxima, RMS-M/I, LUFS-M/S/I and LRA bounds, with reset and mono calibration. Meter supports 1–32 source channels, exact integer clip counts and selectable integrated history. Analysis is independent of publication rate.
 
-Native [hidden startup](docs/host-api.md#hidden-startup) supports background preloading on Windows, macOS and Linux. See the [example](runtime/hidden-start/README.md).
+Native [hidden startup](docs/host-api.md#hidden-startup) supports background preloading on Windows, macOS and Linux. See the [example](examples/runtime-features/hidden-start/README.md).

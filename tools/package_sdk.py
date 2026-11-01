@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import posixpath
 import re
 import sys
 import zipfile
@@ -43,38 +44,38 @@ def payload(root, version, revision):
     for name in ('native-streams.md', 'native-streams.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reawebapi-native-stream.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
-        paths[f'ReaWebAPI/SDK/native-stream/{name}'] = root / 'web/native-stream' / name
+        paths[f'ReaWebAPI/SDK/native-stream/{name}'] = root / 'examples/integrations/native-stream' / name
     paths['ReaWebAPI/SDK/native/test_extension.cpp'] = root / 'tests/native_service_extension.cpp'
     for name in ('external-clients.md', 'external-clients.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('index.html', 'app.js', 'style.css', 'README.md'):
-        paths[f'ReaWebAPI/SDK/external-client/{name}'] = root / 'web/external-client' / name
+        paths[f'ReaWebAPI/SDK/external-client/{name}'] = root / 'examples/integrations/external-client' / name
     paths['ReaWebAPI/docs/native-services.md'] = root / 'docs/native-services.md'
     paths['ReaWebAPI/docs/native-services.zh-CN.md'] = root / 'docs/native-services.zh-CN.md'
-    for name in ('reawebapi-native-service.lua', 'Coexist.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
-        paths[f'ReaWebAPI/SDK/native-service/{name}'] = root / 'web/native-service' / name
+    for name in ('reawebapi-native-service.lua', 'reawebapi-native-service-coexist.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
+        paths[f'ReaWebAPI/SDK/native-service/{name}'] = root / 'examples/integrations/native-service' / name
     for name in ('reawebapi-lua-backend.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
-        paths[f'ReaWebAPI/SDK/lua-backend/{name}'] = root / 'web/lua-backend' / name
+        paths[f'ReaWebAPI/SDK/lua-backend/{name}'] = root / 'examples/backends/lua-backend' / name
     for demo in ('eel-backend', 'eel-mixer'):
         for name in (f'reawebapi-{demo}.eel', 'index.html', 'app.js', 'style.css', 'README.md', 'README.zh-CN.md', 'app.json'):
-            paths[f'ReaWebAPI/SDK/{demo}/{name}'] = root / 'web' / demo / name
-    for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'app.json'):
-        paths[f'ReaWebAPI/SDK/runtime-demo/{name}'] = root / 'runtime/runtime-demo' / name
-    for name in ('Open.lua', 'index.html', 'app.json', 'README.md'):
-        paths[f'ReaWebAPI/SDK/hidden-start/{name}'] = root / 'runtime/hidden-start' / name
+            paths[f'ReaWebAPI/SDK/{demo}/{name}'] = root / 'examples/backends' / demo / name
+    for name in ('reawebapi-runtime-demo.lua', 'index.html', 'app.js', 'style.css', 'app.json'):
+        paths[f'ReaWebAPI/SDK/runtime-demo/{name}'] = root / 'examples/runtime-features/runtime-demo' / name
+    for name in ('reawebapi-hidden-start.lua', 'index.html', 'app.json', 'README.md'):
+        paths[f'ReaWebAPI/SDK/hidden-start/{name}'] = root / 'examples/runtime-features/hidden-start' / name
     for name in ('reawebapi-frameless-resizable.lua', 'reawebapi-frameless-fixed.lua', 'launch.lua', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md'):
-        paths[f'ReaWebAPI/SDK/frameless/{name}'] = root / 'web/frameless' / name
+        paths[f'ReaWebAPI/SDK/frameless/{name}'] = root / 'examples/windows/frameless' / name
     for name in ('reawebapi-transparent.lua', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md'):
-        paths[f'ReaWebAPI/SDK/transparent/{name}'] = root / 'web/transparent' / name
-    for name in ('Open.lua', 'index.html', 'app.js', 'style.css', 'jsconfig.json', 'app.json'):
-        paths[f'ReaWebAPI/SDK/starter/{name}'] = root / 'runtime/starter' / name
-    for name in ('Open.lua', 'index.html', 'app.js', 'ui.js', 'style.css', 'README.md', 'README.zh-CN.md', 'app.json',
+        paths[f'ReaWebAPI/SDK/transparent/{name}'] = root / 'examples/windows/transparent' / name
+    for name in ('reawebapi-starter.lua', 'index.html', 'app.js', 'style.css', 'jsconfig.json', 'app.json'):
+        paths[f'ReaWebAPI/SDK/starter/{name}'] = root / 'examples/templates/starter' / name
+    for name in ('reawebapi-web-runtime.lua', 'index.html', 'app.js', 'ui.js', 'style.css', 'README.md', 'README.zh-CN.md', 'app.json',
                  'data/config.json', 'modules/空 格#%.js', 'workers/classic.js', 'workers/module.js'):
-        paths[f'ReaWebAPI/SDK/web-runtime/{name}'] = root / 'runtime/web-runtime' / name
-    for name in ('README.md', 'README.zh-CN.md', 'Open.lua', 'OpenDev.lua', 'index.html',
+        paths[f'ReaWebAPI/SDK/web-runtime/{name}'] = root / 'examples/runtime-features/web-runtime' / name
+    for name in ('README.md', 'README.zh-CN.md', 'reawebapi-modern.lua', 'reawebapi-modern-dev.lua', 'index.html',
                  'package.json', 'package-lock.json', 'tsconfig.json', 'build.mjs',
                  'src/main.ts', 'src/worker.ts', 'src/style.css', 'public/data.json', 'public/app.json'):
-        paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'runtime/modern' / name
+        paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'examples/templates/modern' / name
     for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md', 'eel-backend-compatibility.md', 'eel-backend-compatibility.zh-CN.md', 'release-notes.zh-CN.md',
                  'devtools.md', 'devtools.zh-CN.md', 'diagnostics.md', 'diagnostics.zh-CN.md', 'SMOKE_TEST.md',
                  'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
@@ -85,28 +86,33 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/api/{name}'] = root / 'api' / name
     for name in ('README.md', 'README.zh-CN.md', 'THIRD_PARTY.md', 'LICENSE.md', 'COPYING', 'COPYING.LESSER'):
         paths[f'ReaWebAPI/{name}'] = root / name
+    # Resolve documentation links from source locations to their installed paths.
+    installed_paths = {}
+    for name, path in paths.items():
+        installed_paths.setdefault(path.resolve(), name)
     files = {}
     for name, path in paths.items():
         content = path.read_bytes()
         if path.suffix == '.md':
             text = content.decode('utf-8-sig')
-            text = text.replace('](../runtime/', '](../SDK/').replace('](runtime/', '](SDK/')
-            text = text.replace('](../web/lua-backend/', '](../SDK/lua-backend/').replace('](web/lua-backend/', '](SDK/lua-backend/')
-            text = text.replace('](../web/eel-backend/', '](../SDK/eel-backend/').replace('](web/eel-backend/', '](SDK/eel-backend/')
-            text = text.replace('](../web/eel-mixer/', '](../SDK/eel-mixer/').replace('](web/eel-mixer/', '](SDK/eel-mixer/')
-            text = text.replace('](../web/native-service/', '](../SDK/native-service/').replace('](web/native-service/', '](SDK/native-service/')
-            text = text.replace('](../src/public/reaweb_service.h)', '](../SDK/native/reaweb_service.h)')
-            for header in ('reaweb_stream.h', 'reaweb_tasks.h'):
-                text = text.replace(f'](../src/public/{header})', f'](../SDK/native/{header})')
-            text = text.replace('](../web/native-stream/', '](../SDK/native-stream/').replace('](web/native-stream/', '](SDK/native-stream/')
-            text = text.replace('](../web/external-client/', '](../SDK/external-client/').replace('](web/external-client/', '](SDK/external-client/')
-            text = text.replace('](../web/frameless/', '](../SDK/frameless/').replace('](web/frameless/', '](SDK/frameless/')
-            text = text.replace('](../web/transparent/', '](../SDK/transparent/').replace('](web/transparent/', '](SDK/transparent/')
-            text = text.replace('](../tests/native_stream_extension.cpp)', '](../SDK/native/stream_extension.cpp)')
-            text = text.replace('](../tests/native_service_extension.cpp)', '](../SDK/native/test_extension.cpp)')
+            def installed_link(match):
+                target = match.group(1)
+                if re.match(r'\w+://', target) or target.startswith('#'):
+                    return match.group(0)
+                page, separator, anchor = target.partition('#')
+                installed = installed_paths.get((path.parent / page).resolve())
+                if installed is None:
+                    return match.group(0)
+                relative = posixpath.relpath(installed, posixpath.dirname(name))
+                return '](' + relative + separator + anchor + ')'
+            text = re.sub(r'\]\(([^)]+)\)', installed_link, text)
             if name in ('ReaWebAPI/docs/release-notes.md', 'ReaWebAPI/docs/release-notes.zh-CN.md'):
                 text = re.sub(r'\A# ReaWebAPI[ \t]*\r?\n', f'# ReaWebAPI v{version}\n', text, count=1)
             content = text.encode('utf-8')
+        elif name in ('ReaWebAPI/SDK/starter/jsconfig.json', 'ReaWebAPI/SDK/modern/tsconfig.json',
+                      'ReaWebAPI/SDK/runtime-demo/app.js'):
+            # Source examples are nested; packaged examples remain beside the SDK declarations.
+            content = content.replace(b'../../../runtime/', b'../')
         files[name] = content
     metadata = dict(version=version, revision=revision, reaperVersion=schema['source']['reaperVersion'],
                     catalogueHash=schema['catalogueHash'], bindings=len(bindings['functions']))

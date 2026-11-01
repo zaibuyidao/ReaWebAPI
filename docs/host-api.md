@@ -240,7 +240,7 @@ JavaScript `reaper.window.open(path, options?)` and `ReaWeb_OpenDev(url)` retain
 
 ## Lua message bridge
 
-Two workflows coexist: pure JavaScript uses the REAPER Mirror and Runtime APIs. A Lua backend uses normal REAPER/ReaScript APIs and exchanges text with a WebView UI. See the [example](../web/lua-backend/README.md).
+Two workflows coexist: pure JavaScript uses the REAPER Mirror and Runtime APIs. A Lua backend uses normal REAPER/ReaScript APIs and exchanges text with a WebView UI. See the [example](../examples/backends/lua-backend/README.md).
 
 `ReaWeb_Send(id, message)` accepts UTF-8 text after `ReaWeb_IsReady(id)` is true. It does not serialize Lua tables or inspect JSON. The original string reaches `reaper.events.on("message", callback)`. Messages wait for a subscription in that document. Each subscribed callback sees subsequent messages without coalescing or replay.
 
@@ -306,7 +306,7 @@ const id = await reaper.window.open('other/index.html', {frameless:true, resizab
 
 `getState()` and `windowstatechange` include `frameless`, `resizable` and `framelessActive`. `frameless` is the current session preference and `resizable` is the creation flag. The last identifies an independently hosted frameless window and is false in all Docker containers, including floating Dockers and pending saved Dock restoration. Dock/Undock retains the WebView document, handles and subscriptions. Native title and icon APIs keep their existing meaning.
 
-Use `data-reaweb-drag` and `data-reaweb-no-drag` for [native drag regions](frontend.md#native-drag-regions). `setFrameless(boolean)` retains the host, document, outer bounds, visibility and Docker membership. The client viewport adjusts to the native title bar without navigation. `resizable` remains creation-only. The [runnable Demo](../web/frameless/README.md) includes resizable/fixed launchers and a lifecycle-aware close button.
+Use `data-reaweb-drag` and `data-reaweb-no-drag` for [native drag regions](frontend.md#native-drag-regions). `setFrameless(boolean)` retains the host, document, outer bounds, visibility and Docker membership. The client viewport adjusts to the native title bar without navigation. `resizable` remains creation-only. The [runnable Demo](../examples/windows/frameless/README.md) includes resizable/fixed launchers and a lifecycle-aware close button.
 
 `capabilities.runtime.window` and diagnostics `windowFeatures` report `frameless`, `resizable`, `dragRegions` and `windowSystem` (`win32`, `appkit` or `x11`). Windows requires WebView2 non-client region support. Linux requires X11/XWayland with `_NET_WM_MOVERESIZE` support. Native Wayland is unsupported. Unsupported creation fails explicitly. Asynchronous WebView initialization failures follow the existing error and cleanup path. No fallback to a decorated visible window is performed.
 
@@ -347,4 +347,4 @@ const id = await reaper.window.open('panel.html', {frameless:true, transparent:t
 
 Transparency is restricted to standalone floating windows. Saved Dock placement is temporarily bypassed before presentation. Position and size are still saved, while the previous `docked` and `dockId` preferences are retained. Closing a transparent window and reopening it without `transparent:true` restores the prior Dock preference. The transparency option itself is not persisted. All Dock requests reject with `DOCK_UNAVAILABLE`, including Lua and the context menu. Undocking an already floating window remains idempotent.
 
-Invalid options reject with `INVALID_ARGUMENT`. Missing native support uses `TRANSPARENCY_UNAVAILABLE`, and Alpha setup failures use `TRANSPARENCY_FAILED`. Synchronous Lua failures return `0` and set `ReaWeb_GetLastError()`. JavaScript uses the existing Promise error contract. Asynchronous native failures close the pending window and enter diagnostics/logs. A returned window ID is not proof of readiness. There is no dynamic transparency setter, click-through mode or Docker transparency. See the [runnable example](../web/transparent/README.md).
+Invalid options reject with `INVALID_ARGUMENT`. Missing native support uses `TRANSPARENCY_UNAVAILABLE`, and Alpha setup failures use `TRANSPARENCY_FAILED`. Synchronous Lua failures return `0` and set `ReaWeb_GetLastError()`. JavaScript uses the existing Promise error contract. Asynchronous native failures close the pending window and enter diagnostics/logs. A returned window ID is not proof of readiness. There is no dynamic transparency setter, click-through mode or Docker transparency. See the [runnable example](../examples/windows/transparent/README.md).

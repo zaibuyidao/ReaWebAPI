@@ -83,7 +83,7 @@ def main():
     executable = (root / 'executable.txt').read_text(encoding='utf-8')
     source = Path(__file__).resolve().parents[1]
     demo = root / '示例 空格' / args.demo
-    shutil.copytree(source / 'web' / args.demo, demo)
+    shutil.copytree(source / 'examples/backends' / args.demo, demo)
     probe = PROBE if args.demo == 'eel-backend' else (source / 'tests/eel_mixer_smoke.js').read_text(encoding='utf-8')
     (demo / 'probe.js').write_text(probe, encoding='utf-8')
     page = demo / 'index.html'
@@ -96,7 +96,7 @@ def main():
     runner = 'eel_backend_smoke.lua' if args.demo == 'eel-backend' else 'eel_mixer_smoke.lua'
     shutil.copy2(source / 'tests' / runner, root / 'runner.lua')
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-              for p in (source / 'web' / args.demo).iterdir() if p.is_file()}
+              for p in (source / 'examples/backends' / args.demo).iterdir() if p.is_file()}
     hashes['extension'] = hashlib.sha256(args.extension.read_bytes()).hexdigest()
     (root / 'inputs.json').write_text(json.dumps(hashes, indent=2), encoding='utf-8')
     command = [str(executable), '-newinst', '-cfgfile', str(root / 'reaper.ini'),

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const flush = () => new Promise(resolve => setImmediate(resolve));
-const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '../examples/main-demo/index.html'), 'utf8');
 const state = (track = {}, overrides = {}) => ({
   epoch: 1, selection: 1, changeCount: 0, count: 2, version: '7.0',
   track: track === false ? false : { id: 'A', name: 'Track A', volume: 1, pan: 0, color: 0, hex: '#b7f58a', ...track },
@@ -62,7 +62,7 @@ async function fixture(connect = true) {
     // The page draws from its own refresh loop. Run it on demand so a test can
     // decide exactly when a frame becomes visible.
     requestAnimationFrame: fn => { frameCallback = fn; return 1; } });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../examples/main-demo/app.js'), 'utf8'), context);
   await flush();
   const reply = (request, payload = {}) => receive(JSON.stringify({ type: 'response', session: request.session,
     id: request.id, ok: true, ...payload }));
@@ -142,7 +142,7 @@ test('Runtime Studio keeps the latest selection when name responses arrive out o
       GetTrackName: () => new Promise(resolve => names.push(resolve))
     }
   });
-  const source = fs.readFileSync(path.join(__dirname, '../runtime/runtime-demo/app.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '../examples/runtime-features/runtime-demo/app.js'), 'utf8');
   vm.runInContext(source.slice(0, source.indexOf("action('open'")), context);
   const first = context.selectedTrack(); await flush();
   const second = context.selectedTrack(); await flush();

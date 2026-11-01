@@ -40,9 +40,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual({line.split('  ', 1)[1] for line in checksums.splitlines()},
                          {asset.name for asset in assets if asset.name != 'SHA256SUMS.txt'})
         with zipfile.ZipFile(self.directory / f'ReaWebAPI-ReaPack-v{self.version}.zip') as bundle:
-            demo = Path(__file__).parents[1] / 'web'
-            demo_files = {f'web/{path.relative_to(demo).as_posix()}': path.read_bytes()
-                          for path in demo.rglob('*') if path.is_file()}
+            demo = Path(__file__).parents[1] / 'examples/main-demo'
+            demo_files = {f'web/{name}': (demo / name).read_bytes() for name in
+                          ('ReaWebAPI_Demo.lua', 'app.js', 'app.json', 'index.html', 'logo.svg', 'style.css')}
             files = {entry.filename for entry in bundle.infolist() if not entry.is_dir()}
             self.assertEqual(files, {'ReaWebAPI.ext'} | demo_files.keys() |
                              {f'extension/{name}' for _, name in release.native_files()})
@@ -63,7 +63,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(len(entries), len(demo_files))
             self.assertEqual({target for _, target, _ in entries}, set(demo_files))
             self.assertCountEqual([target for mode, target, _ in entries if mode == 'main'],
-                             ['web/ReaWebAPI_Demo.lua', 'web/eel-backend/reawebapi-eel-backend.eel', 'web/eel-mixer/reawebapi-eel-mixer.eel', 'web/lua-backend/reawebapi-lua-backend.lua', 'web/native-service/reawebapi-native-service.lua', 'web/native-service/Coexist.lua', 'web/native-stream/reawebapi-native-stream.lua', 'web/frameless/reawebapi-frameless-fixed.lua', 'web/frameless/reawebapi-frameless-resizable.lua', 'web/transparent/reawebapi-transparent.lua'])
+                                 ['web/ReaWebAPI_Demo.lua'])
             for _, target, url in entries:
                 self.assertEqual(unquote(url),
                                  'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/' + target)
@@ -81,18 +81,23 @@ class ReleaseTests(unittest.TestCase):
         links = release.re.findall(r'https://github.com/test/repo/releases/download/v[^/]+/([^\s)]+)', body)
         expected = {asset.name for asset in assets if asset.suffix == '.zip' or asset.name == 'SHA256SUMS.txt'}
         self.assertEqual(set(links), expected)
-    def test_demo_includes_nested_hidden_and_binary_resources(self):
+    def test_demo_excludes_unlisted_files_and_other_applications(self):
         demo = self.directory / 'source-demo'
         (demo / 'assets/empty').mkdir(parents=True)
-        resources = {'index.html': b'<html>Demo</html>', '.config': b'hidden',
-                     'assets/音频.wav': bytes(range(256))}
+        resources = {name: ('Demo ' + name).encode() for name in
+                     ('ReaWebAPI_Demo.lua', 'app.js', 'app.json', 'index.html', 'logo.svg', 'style.css')}
         for name, data in resources.items():
             (demo / name).write_bytes(data)
+        (demo / '.config').write_bytes(b'hidden')
+        (demo / 'assets/音频.wav').write_bytes(bytes(range(256)))
+        for name in ('eel-backend', 'lua-backend', 'future-demo'):
+            (demo / name).mkdir()
+            (demo / name / 'index.html').write_bytes(b'Other Demo')
         output = self.directory / 'demo-test.zip'
         with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as bundle:
             release.add_demo(bundle, demo)
         with zipfile.ZipFile(output) as bundle:
-            self.assertEqual(set(bundle.namelist()), {'web/', 'web/assets/', 'web/assets/empty/'} |
+            self.assertEqual(set(bundle.namelist()), {'web/'} |
                              {f'web/{name}' for name in resources})
             for name, data in resources.items():
                 self.assertEqual(bundle.read(f'web/{name}'), data)
@@ -100,23 +105,23 @@ class ReleaseTests(unittest.TestCase):
         with zipfile.ZipFile(self.directory / 'demo-test.zip', 'w') as bundle:
             with self.assertRaisesRegex(ValueError, 'Missing Demo directory'):
                 release.add_demo(bundle, self.directory / 'missing-demo')
-    def test_descriptor_includes_new_nested_resources(self):
+    def test_descriptor_excludes_unlisted_resources(self):
         demo = self.directory / 'demo'
         (demo / 'assets').mkdir(parents=True)
-        (demo / 'ReaWebAPI_Demo.lua').write_text('-- @noindex\n', encoding='utf-8')
+        for name in ('ReaWebAPI_Demo.lua', 'app.js', 'app.json', 'index.html', 'logo.svg', 'style.css'):
+            (demo / name).write_bytes(b'Demo')
         (demo / 'assets/音频 #%.wav').write_bytes(bytes(range(256)))
         (demo / '.config').write_text('hidden', encoding='utf-8')
         descriptor = release.descriptor(self.version, demo)
-        self.assertIn('[script nomain] web/.config ', descriptor)
-        self.assertIn('[script nomain] web/assets/音频 #%.wav '
-                      'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/web/'
-                      'assets/%E9%9F%B3%E9%A2%91%20%23%25.wav\n', descriptor)
+        self.assertNotIn('web/.config', descriptor)
+        self.assertNotIn('web/assets/', descriptor)
+        self.assertEqual(descriptor.count('[script nomain]'), 5)
         self.assertEqual(descriptor.count('[script main]'), 1)
     def test_missing_demo_launcher_blocks_descriptor(self):
         demo = self.directory / 'demo'
         demo.mkdir()
         (demo / 'index.html').write_text('<html>Demo</html>', encoding='utf-8')
-        with self.assertRaisesRegex(ValueError, 'Missing Demo launcher'):
+        with self.assertRaisesRegex(ValueError, 'Missing Demo file: ReaWebAPI_Demo.lua'):
             release.descriptor(self.version, demo)
     def test_descriptor_changelog_uses_only_selected_english_notes(self):
         for english_heading, chinese_heading in [('English', '简体中文'), ('Changes', '更新')]:

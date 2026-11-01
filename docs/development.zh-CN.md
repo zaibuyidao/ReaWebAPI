@@ -4,7 +4,7 @@
 
 ## 开始一个工具
 
-安装与 REAPER 架构对应的扩展，将整个 SDK 复制到可写的开发目录。在 Action List 加载并运行其中的 `starter/Open.lua`，它会打开同目录的 `index.html`。模板展示当前选中轨道，在页面右键菜单中切换 **Dock <App> in Docker** 的勾选状态以停靠或取消停靠。
+安装与 REAPER 架构对应的扩展，将整个 SDK 复制到可写的开发目录。在 Action List 加载并运行其中的 `starter/reawebapi-starter.lua`，它会打开同目录的 `index.html`。模板展示当前选中轨道，在页面右键菜单中切换 **Dock <App> in Docker** 的勾选状态以停靠或取消停靠。
 
 ```text
 SDK/
@@ -12,7 +12,7 @@ SDK/
   reaper-api.generated.d.ts
   runtime-api.d.ts
   starter/
-    Open.lua
+    reawebapi-starter.lua
     index.html
     app.js
     style.css
@@ -27,7 +27,7 @@ SDK/
 
 ## EEL2 Backend
 
-SDK 提供[最简 EEL2 后端](../web/eel-backend/README.zh-CN.md)和[双向轨道混音示例](../web/eel-mixer/README.zh-CN.md)。在 Action List 加载相应 `.eel` 脚本，无需 Lua 启动器或额外依赖。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入包含执行确认、未确认请求限流和最终值保护。
+SDK 提供[最简 EEL2 后端](../examples/backends/eel-backend/README.zh-CN.md)和[双向轨道混音示例](../examples/backends/eel-mixer/README.zh-CN.md)。在 Action List 加载相应 `.eel` 脚本，无需 Lua 启动器或额外依赖。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入包含执行确认、未确认请求限流和最终值保护。
 
 v0.3.9.14 起，`ReaWeb_Open` 第四参数支持 EEL2 `0/1` 和 Lua `false/true`，省略行为不变。EEL2 原生字符串返回值使用第一个输出参数，例如 `ReaWeb_Receive(#message, id)`。直接调用和 `extension_api` 均可用，窗口关闭后应停止 `defer` 并通过 `atexit` 清理。完整接口、字符串限制和验证命令见 [EEL2 支持说明](eel-backend-compatibility.zh-CN.md)。
 

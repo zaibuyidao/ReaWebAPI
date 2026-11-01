@@ -29,7 +29,7 @@ else:
     (root / 'EmptyPlugins').mkdir()
     (root / 'reaper.ini').write_text('[REAPER]\naudiomode=4\nnewprojdo=0\nloadlastproj=0\nshowlastproj=0\nsplash=0\nverchk=0\nhasrecentlyopened=1\n'
         f'vstpath64={root / "EmptyPlugins"}\nvstfullstate=49989\n', encoding='utf-8')
-source = Path(__file__).resolve().parents[1] / 'runtime/web-runtime'
+source = Path(__file__).resolve().parents[1] / 'examples/runtime-features/web-runtime'
 identities = {'A': 'timefold', 'B': 'reagba', 'Fallback': 'zaibuyidao-reagba'}
 folders = {name: root / name for name in identities}
 for name, folder in folders.items():

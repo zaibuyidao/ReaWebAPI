@@ -69,7 +69,7 @@ Existing events retain their original names and payloads. Clipboard, native drag
 
 ## Verification
 
-With `BUILD_TESTING=ON`, CTest includes registry lifecycle/error/worker tests, monitor state comparisons, JavaScript bridge tests and Runtime session regressions. `native_service_extension` builds on Windows, macOS and Linux. Run the [Native Service Demo](../web/native-service/README.md) for real-host checks. The five-platform CI matrix runs the same contracts. Records of platforms actually exercised are maintained locally and are not included in the repository or release bundles.
+With `BUILD_TESTING=ON`, CTest includes registry lifecycle/error/worker tests, monitor state comparisons, JavaScript bridge tests and Runtime session regressions. `native_service_extension` builds on Windows, macOS and Linux. Run the [Native Service Demo](../examples/integrations/native-service/README.md) for real-host checks. The five-platform CI matrix runs the same contracts. Records of platforms actually exercised are maintained locally and are not included in the repository or release bundles.
 
 
 ## Stream lifecycle and input

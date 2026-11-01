@@ -161,6 +161,6 @@ MIDI selects an input index or `-1` for all inputs. Each packet starts with 16 l
 
 File watch creation resolves after its baseline. File watchers and timers release on navigation/window close. Native timer callbacks use [reaweb_tasks.h](../src/public/reaweb_tasks.h), with optional service ownership. Timers are for delayed/background work, never a substitute for the producer's frame clock. Existing text clipboard, native drag/drop, window geometry, title/icon, focus, visibility and dock APIs retain their behavior.
 
-The [Native Stream Demo](../web/native-stream/README.md) consumes built-in analysis and third-party streams. ReaGBA integration belongs to its separate extension repository: `reaper.host.service('reagba')` provides controls/input and `reaper.stream.open('reagba.video')` provides frames. The emulator publishes at its own ~59.73 Hz cadence; the Lua launcher only opens the WebView.
+The [Native Stream Demo](../examples/integrations/native-stream/README.md) consumes built-in analysis and third-party streams. ReaGBA integration belongs to its separate extension repository: `reaper.host.service('reagba')` provides controls/input and `reaper.stream.open('reagba.video')` provides frames. The emulator publishes at its own ~59.73 Hz cadence; the Lua launcher only opens the WebView.
 
 A page with a Content Security Policy must allow `connect-src ws://127.0.0.1:*` for the native stream socket. Authorization remains bound to the page origin and a single-use native attachment ticket.

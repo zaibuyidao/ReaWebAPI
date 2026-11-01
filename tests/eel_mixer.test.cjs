@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../web/eel-mixer/app.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../examples/backends/eel-mixer/app.js'), 'utf8');
 const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 async function fixture(demo = 'eel-mixer') {
@@ -27,7 +27,7 @@ async function fixture(demo = 'eel-mixer') {
     cancelAnimationFrame: id => frames.delete(id),
     reaper: {events: {on: async (name, fn) => { events[name] = fn; }}, host: {send: text => { sent.push(text.split(' ')); return transport(); }}},
   });
-  vm.runInContext(demo === 'eel-mixer' ? source : fs.readFileSync(path.join(__dirname, '../web/eel-backend/app.js'), 'utf8'), context);
+  vm.runInContext(demo === 'eel-mixer' ? source : fs.readFileSync(path.join(__dirname, '../examples/backends/eel-backend/app.js'), 'utf8'), context);
   await settle();
   const receive = text => events.message(text);
   const draw = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(fn => fn()); };
@@ -149,9 +149,9 @@ for (const demo of ['eel-backend', 'eel-mixer']) {
     f.close(); await settle();
     assert.equal(f.frames.size, 0); assert.equal(f.timers.size, 0);
     assert.equal(f.elements.volume.value, '3.5');
-    const eel = fs.readFileSync(path.join(__dirname, `../web/${demo}/reawebapi-${demo}.eel`), 'utf8');
+    const eel = fs.readFileSync(path.join(__dirname, `../examples/backends/${demo}/reawebapi-${demo}.eel`), 'utf8');
     assert.match(eel, /ReaWeb_SetFrame\(window_id, #out\)/);
     assert.doesNotMatch(eel, /extension_api\(|next_poll/);
-    assert.match(fs.readFileSync(path.join(__dirname, `../web/${demo}/index.html`), 'utf8'), /min="0" max="4"/);
+    assert.match(fs.readFileSync(path.join(__dirname, `../examples/backends/${demo}/index.html`), 'utf8'), /min="0" max="4"/);
   });
 }

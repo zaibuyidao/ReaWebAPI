@@ -56,7 +56,7 @@ callback 应及时返回。不依赖 REAPER 的耗时工作放入扩展工作线
 
 ## 验证
 
-`BUILD_TESTING=ON` 包含 Service 生命周期、错误、工作线程完成、状态变化、JS 路由与 Runtime 回归测试。`native_service_extension` 可在 Windows、macOS、Linux 构建。实际 REAPER 验证使用 [Native Service Demo](../web/native-service/README.md)，验证记录仅在本地维护，不包含在仓库或发布包中。
+`BUILD_TESTING=ON` 包含 Service 生命周期、错误、工作线程完成、状态变化、JS 路由与 Runtime 回归测试。`native_service_extension` 可在 Windows、macOS、Linux 构建。实际 REAPER 验证使用 [Native Service Demo](../examples/integrations/native-service/README.md)，验证记录仅在本地维护，不包含在仓库或发布包中。
 
 
 ## Stream 生命周期与输入

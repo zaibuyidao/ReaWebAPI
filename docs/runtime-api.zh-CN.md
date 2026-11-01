@@ -218,11 +218,11 @@ await dispose(); // off 后仍可安全调用
 
 ## Manifest 校验与示例
 
-`SDK/app-manifest.schema.json` 定义最小 Manifest。源码执行 `python tools/validate_app.py runtime/runtime-demo/app.json`；独立 SDK 执行 `python tools/validate_app.py runtime-demo/app.json`。校验器只读，检查字段、文件存在及符号链接解析后的目录边界，不启动页面。
+`SDK/app-manifest.schema.json` 定义最小 Manifest。源码执行 `python tools/validate_app.py examples/runtime-features/runtime-demo/app.json`；独立 SDK 执行 `python tools/validate_app.py runtime-demo/app.json`。校验器只读，检查字段、文件存在及符号链接解析后的目录边界，不启动页面。
 
 本版 Manifest 不参与自动安装或启动；应用继续通过 `reaper.window.open` 打开 HTML。没有 App 管理器、自动更新、安装系统或权限执行机制，未实施的 `permissions` 字段会被校验器拒绝。可信应用仍拥有标准镜像及已有文件服务能力，不能将 Web 资源根目录限制误认为 Native API 权限沙箱。
 
-运行 [Runtime Studio](../runtime/runtime-demo/index.html) 对应目录的 `Open.lua` 可体验窗口、事件、主题、对话框、音频波形、手动电平、诊断和清理状态保存。示例不需要构建。
+运行 [Runtime Studio](../examples/runtime-features/runtime-demo/index.html) 对应目录的 `reawebapi-runtime-demo.lua` 可体验窗口、事件、主题、对话框、音频波形、手动电平、诊断和清理状态保存。示例不需要构建。
 
 ## Host 消息
 
@@ -236,7 +236,7 @@ await reaper.events.on('message', text => {
 await reaper.host.send({ type: 'setVolume', value: 0.5 });
 ```
 
-消息保持 FIFO，不合并、不提供初始快照、不回放。队列归当前文档所有，关闭或重载时清空。单条消息最多 1 MiB UTF-8，每方向最多 256 条，窗口双向合计最多 16 MiB。参见 [Lua 契约](host-api.zh-CN.md#lua-消息桥接)与 [Lua 后端示例](../web/lua-backend/README.md)。纯 JavaScript 的 Mirror/Runtime 开发方式保持可用。
+消息保持 FIFO，不合并、不提供初始快照、不回放。队列归当前文档所有，关闭或重载时清空。单条消息最多 1 MiB UTF-8，每方向最多 256 条，窗口双向合计最多 16 MiB。参见 [Lua 契约](host-api.zh-CN.md#lua-消息桥接)与 [Lua 后端示例](../examples/backends/lua-backend/README.md)。纯 JavaScript 的 Mirror/Runtime 开发方式保持可用。
 
 Native Streams and platform additions: [English](native-streams.md) · [中文](native-streams.zh-CN.md).
 

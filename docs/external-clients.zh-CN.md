@@ -90,4 +90,4 @@ Service Event 额外包含 `service`。Service 卸载时拒绝待完成 invoke�
 
 ## Demo
 
-在浏览器打开[独立 Demo](../web/external-client/README.md)，无需构建即可验证认证、能力查询、调用、Batch、Event、Service 和已有二进制 Stream。
+在浏览器打开[独立 Demo](../examples/integrations/external-client/README.md)，无需构建即可验证认证、能力查询、调用、Batch、Event、Service 和已有二进制 Stream。

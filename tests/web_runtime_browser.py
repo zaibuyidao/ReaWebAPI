@@ -19,7 +19,7 @@ def run_windows(host):
 def run_checks(host, endpoints):
     import web_runtime_network
     root, user32 = host['root'], host['user32']
-    source = Path(__file__).resolve().parents[1] / 'runtime/web-runtime'
+    source = Path(__file__).resolve().parents[1] / 'examples/runtime-features/web-runtime'
     app_a, app_b = root / 'Scripts/空 格#%/AppA', root / 'Scripts/AppB'
     for folder in (app_a, app_b):
         shutil.copytree(source, folder, dirs_exist_ok=True)

@@ -38,9 +38,9 @@ jobs:
           node-version: '24'
       - name: Check SDK types and build modern example
         run: |
-          npm ci --prefix runtime/modern
-          npm run build --prefix runtime/modern
-          node runtime/modern/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --lib ES2022,DOM tests/sdk_contract.ts
+          npm ci --prefix examples/templates/modern
+          npm run build --prefix examples/templates/modern
+          node examples/templates/modern/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --lib ES2022,DOM tests/sdk_contract.ts
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: |

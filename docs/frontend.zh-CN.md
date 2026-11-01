@@ -36,7 +36,7 @@ Windows、macOS 和 Linux 的非透明窗口共用此背景同步路径。计算
 
 ```text
 MyApp/
-  Open.lua
+  reawebapi-my-app.lua
   index.html
   app.js
   ui.js
@@ -59,7 +59,7 @@ const track = await reaper.GetTrack(0, 0);
 render(config, track);
 ```
 
-[无需构建的检查 App](../runtime/web-runtime/README.zh-CN.md) 演示模块、本地 fetch、存储、Canvas、文件对象、DOM 拖放和 Worker。在 REAPER 中运行其 `Open.lua`。桥接自动注入顶层页面，无需导入 `reaper.js`。镜像调用继续使用 `await`。
+[无需构建的检查 App](../examples/runtime-features/web-runtime/README.zh-CN.md) 演示模块、本地 fetch、存储、Canvas、文件对象、DOM 拖放和 Worker。在 REAPER 中运行其 `reawebapi-web-runtime.lua`。桥接自动注入顶层页面，无需导入 `reaper.js`。镜像调用继续使用 `await`。
 
 ## v1 保证范围与可选能力
 
@@ -139,11 +139,11 @@ await reaper.window.open('other.html');
 
 ## TypeScript 与开发服务器
 
-[现代模板](../runtime/modern/README.zh-CN.md) 提供可选的 Vite/TypeScript **构建工具**。运行 `npm ci`、`npm run dev`，然后在 REAPER 运行 `OpenDev.lua`，默认地址 `http://localhost:5173/`。`reaper.window.openDev` 只接受 127.0.0.1、localhost 或 [::1] 上带明确端口的 HTTP URL。开发服务器由开发者启动，扩展不内置 Vite、Node 或 npm。
+[现代模板](../examples/templates/modern/README.zh-CN.md) 提供可选的 Vite/TypeScript **构建工具**。运行 `npm ci`、`npm run dev`，然后在 REAPER 运行 `reawebapi-modern-dev.lua`，默认地址 `http://localhost:5173/`。`reaper.window.openDev` 只接受 127.0.0.1、localhost 或 [::1] 上带明确端口的 HTTP URL。开发服务器由开发者启动，扩展不内置 Vite、Node 或 npm。
 
 开发入口按完整 URL 分配 App 身份，浏览器存储在共享 profile 内按 origin 隔离，因此同一 origin 下的不同入口共享存储。应保持 URL 和端口稳定。允许 hash 导航，禁止切换到其他文档，入口应避免重定向。HMR 使用浏览器原生 WebSocket，已用 Vite 验证。
 
-运行 `npm run build`、`Open.lua` 验证生产模式，一起分发 `Open.lua` 和 `dist/`。现有模板输出 IIFE 与 Blob Worker，这只是一种打包选择，普通 ES module 目录同样可用。两种模式均使用原生 `fetch('./data.json')`。宿主文件 API 以本地 HTML 目录为基准，此例是 `dist/`；由 Lua 打开的开发页以 REAPER Scripts 目录为基准。浏览器 URL 和原生文件路径是两个不同命名空间。
+运行 `npm run build`、`reawebapi-modern.lua` 验证生产模式，一起分发 `reawebapi-modern.lua` 和 `dist/`。现有模板输出 IIFE 与 Blob Worker，这只是一种打包选择，普通 ES module 目录同样可用。两种模式均使用原生 `fetch('./data.json')`。宿主文件 API 以本地 HTML 目录为基准，此例是 `dist/`；由 Lua 打开的开发页以 REAPER Scripts 目录为基准。浏览器 URL 和原生文件路径是两个不同命名空间。
 
 页面 CSP 需允许实际脚本/样式、本地 fetch 的 `connect-src 'self'` 和对应 `worker-src`；现代模板的 Blob Worker 需要 `worker-src blob:`，开发还需 Vite HTTP/WebSocket 地址。统一剪贴板与外链操作使用宿主 API。
 
@@ -167,7 +167,7 @@ WebView2 取决于已安装运行时，WKWebView 跟随系统更新，WebKitGTK 
 
 原生行为参考：[WebView2 本地内容](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/working-with-local-content)、[WebKitGTK 持久化 cookie](https://webkitgtk.org/reference/webkit2gtk/2.42.5/method.CookieManager.set_persistent_storage.html)。Linux 已明确开启原生 cookie 持久化。
 
-隐藏启动沿用相同资源加载和 Runtime 通道，原生窗口保持不可见。就绪仍表示文档握手，与渲染和业务数据独立。参见[隐藏启动](host-api.zh-CN.md#隐藏启动)和[预加载示例](../runtime/hidden-start/README.md)。
+隐藏启动沿用相同资源加载和 Runtime 通道，原生窗口保持不可见。就绪仍表示文档握手，与渲染和业务数据独立。参见[隐藏启动](host-api.zh-CN.md#隐藏启动)和[预加载示例](../examples/runtime-features/hidden-start/README.md)。
 
 ## 原生拖动区
 
@@ -184,8 +184,8 @@ WebView2 取决于已安装运行时，WKWebView 跟随系统更新，WebKitGTK 
 </script>
 ```
 
-Windows 使用 WebView2 原生非客户区。macOS 和 Linux 在按下前缓存经过裁剪的 DOM 矩形，直接消费原生鼠标事件，不通过异步 Runtime 调用开始拖动。交互期间应保持标题区布局稳定。布局快照采样间隔为 32 ms，拖动矩形和排除矩形各最多 512 个，超限时停用拖动。任意形状和动画命中区域不在此合同内。Docker 内停用拖动区，拖动区外的右键操作保留既有页面菜单行为。参见[示例](../web/frameless/README.md)。
+Windows 使用 WebView2 原生非客户区。macOS 和 Linux 在按下前缓存经过裁剪的 DOM 矩形，直接消费原生鼠标事件，不通过异步 Runtime 调用开始拖动。交互期间应保持标题区布局稳定。布局快照采样间隔为 32 ms，拖动矩形和排除矩形各最多 512 个，超限时停用拖动。任意形状和动画命中区域不在此合同内。Docker 内停用拖动区，拖动区外的右键操作保留既有页面菜单行为。参见[示例](../examples/windows/frameless/README.md)。
 
 ## 透明背景
 
-以 `{transparent:true}` 打开，并显式设置 `html, body { background:transparent; }`。宿主不改写 App CSS。可在透明页面留白内使用半透明面板、圆角和 CSS 阴影，无边框工具应保留可见关闭控件。视觉透明仍采用矩形鼠标命中区域。参见[透明 Demo](../web/transparent/README.md)及[原生要求](host-api.zh-CN.md#透明窗口)。
+以 `{transparent:true}` 打开，并显式设置 `html, body { background:transparent; }`。宿主不改写 App CSS。可在透明页面留白内使用半透明面板、圆角和 CSS 阴影，无边框工具应保留可见关闭控件。视觉透明仍采用矩形鼠标命中区域。参见[透明 Demo](../examples/windows/transparent/README.md)及[原生要求](host-api.zh-CN.md#透明窗口)。

@@ -19,7 +19,7 @@ fixture.mkdir()
 apps = [fixture / name for name in ('空 格#% AppA', 'AppB')]
 network, endpoints = web_runtime_network.start()
 for app in apps:
-    shutil.copytree(root / 'runtime/web-runtime', app)
+    shutil.copytree(root / 'examples/runtime-features/web-runtime', app)
     web_runtime_network.configure(app, endpoints)
     with (app / 'app.js').open('a', encoding='utf-8') as stream:
         stream.write("\nwindow.runtimeCheck.then(report => reaper.ShowConsoleMsg('RUNTIME_REPORT:' + JSON.stringify(report)));\n")

@@ -68,7 +68,9 @@ Linux 复用未变化的 X11 几何信息，通过宿主事件循环读取 WebKi
 
 Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开应用。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。JavaScript 等待 `reaper.lifecycle.ready` 后，可调用 REAPER Mirror 和 `reaper.window`、`reaper.events` 等 Runtime 接口。API 以 Promise 返回结果，参数和返回值顺序遵循 REAPER 的 Lua 签名。
 
-基础模板位于 `SDK/starter/`，Vite 与 TypeScript 模板位于 `SDK/modern/`。运行 `SDK/runtime-demo/Open.lua` 可打开 Runtime Studio。
+基础模板位于 `SDK/starter/`，Vite 与 TypeScript 模板位于 `SDK/modern/`。运行 `SDK/runtime-demo/reawebapi-runtime-demo.lua` 可打开 Runtime Studio。
+
+仓库源码中的应用示例统一放在 `examples/`，按 `main-demo`、`templates`、`runtime-features`、`backends`、`integrations`、`windows` 分类，参见[示例目录说明](docs/source-layout.md#app-examples--应用示例)。发布包的安装路径保持不变。
 
 使用 HTML `<title>` 或 `document.title` 设置窗口名称，关闭后恢复停靠的 Docker 标签和单标签浮动 Docker 标题栏同样适用。`reaper.window.setTitle(title)` 可显式覆盖。`instanceKey` 仅控制实例复用。详见[窗口标题](docs/runtime-api.zh-CN.md#窗口标题)。
 
@@ -97,14 +99,14 @@ Windows 使用 MSVC x64，并添加 `-A x64`。macOS 使用 `-DCMAKE_OSX_ARCHITE
 
 采用 [LGPL-3.0-or-later](LICENSE.md) 许可。
 
-纯 JavaScript 应用使用 REAPER Mirror 和 Runtime API。需要由 Lua 管理工程逻辑时，参见 [Lua 后端 + WebView 示例](web/lua-backend/README.md)。平台安装包将其放在 `Scripts/ReaWebAPI/Example/lua-backend`，SDK 提供 `lua-backend/`。
+纯 JavaScript 应用使用 REAPER Mirror 和 Runtime API。需要由 Lua 管理工程逻辑时，参见 [Lua 后端 + WebView 示例](examples/backends/lua-backend/README.md)。平台安装包将其放在 `Scripts/ReaWebAPI/Example/lua-backend`，SDK 提供 `lua-backend/`。
 
-EEL2 后端使用同一消息桥。SDK 提供[最简示例](web/eel-backend/README.zh-CN.md)和[双向轨道混音示例](web/eel-mixer/README.zh-CN.md)，分别安装于 `eel-backend/` 和 `eel-mixer/`。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入包含执行确认、未确认请求限流和最终值保护。
+EEL2 后端使用同一消息桥。SDK 提供[最简示例](examples/backends/eel-backend/README.zh-CN.md)和[双向轨道混音示例](examples/backends/eel-mixer/README.zh-CN.md)，分别安装于 `eel-backend/` 和 `eel-mixer/`。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入包含执行确认、未确认请求限流和最终值保护。
 
-Native Stream 在多路分析间复用轨道采样，支持 `aggregate: true`，用于 Folder 和 Receive Bus 的 pre-FX 源内容同步聚合分析。见 [接口契约](docs/native-streams.zh-CN.md) 和 [Demo](web/native-stream/README.md)。
+Native Stream 在多路分析间复用轨道采样，支持 `aggregate: true`，用于 Folder 和 Receive Bus 的 pre-FX 源内容同步聚合分析。见 [接口契约](docs/native-streams.zh-CN.md) 和 [Demo](examples/integrations/native-stream/README.md)。
 
 路由中的父轨、总线或上游轨道不含媒体时，聚合 RMS/LUFS 历史仍会持续累计。
 
 内置 Meter 提供 Sample/True Peak、独立的 Sample/True Peak 削波计数、每通道及全局峰值最大值、RMS-M/I、LUFS-M/S/I 和 LRA 上下界，支持复位及 Mono 标定，支持 1–32 源通道、精确整数削波计数和可选历史累计策略，分析独立于发布频率。
 
-Windows、macOS 和 Linux 支持原生[隐藏启动](docs/host-api.zh-CN.md#隐藏启动)与后台预加载，参见[示例](runtime/hidden-start/README.md)。
+Windows、macOS 和 Linux 支持原生[隐藏启动](docs/host-api.zh-CN.md#隐藏启动)与后台预加载，参见[示例](examples/runtime-features/hidden-start/README.md)。

@@ -83,7 +83,7 @@ local function start()
       reaper.SetOnlyTrackSelected(track)
       reaper.GetSetMediaTrackInfo_String(track, 'P_NAME', '鼓组 "A"\n\t🎛', true)
       reaper.SetMediaTrackInfo_Value(track, 'D_VOL', 1)
-      dofile(root .. 'example/Open.lua')
+      dofile(root .. 'example/reawebapi-lua-backend.lua')
       stage = 'example'
     end
   end

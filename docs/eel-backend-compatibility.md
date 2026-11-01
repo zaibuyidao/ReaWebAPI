@@ -44,7 +44,7 @@ The `const char*` return convention adds an output string **before** the native 
 - `frame.lua` remains the field name for EEL2 content too. Native-only service, stream and task C APIs are not automatically ReaScript functions.
 - Platform WebView, docking and DevTools constraints are the same as for Lua. EEL2 provides no built-in Lua table/JSON facilities.
 
-The SDK includes a [minimal request/reply example](../web/eel-backend/README.md) and a [bidirectional track mixer](../web/eel-mixer/README.md). Both use only EEL2, HTML, CSS and JavaScript, with `ReaWeb_SetFrame` state refresh, `0..4` gain and acknowledged, bounded slider writes. Frame state is replaceable. Execution acknowledgements remain on the message channel.
+The SDK includes a [minimal request/reply example](../examples/backends/eel-backend/README.md) and a [bidirectional track mixer](../examples/backends/eel-mixer/README.md). Both use only EEL2, HTML, CSS and JavaScript, with `ReaWeb_SetFrame` state refresh, `0..4` gain and acknowledged, bounded slider writes. Frame state is replaceable. Execution acknowledgements remain on the message channel.
 
 ## Validation
 

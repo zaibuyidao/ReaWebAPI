@@ -60,6 +60,25 @@ src/
    └─ plugin.cpp
 ```
 
+## App examples / 应用示例
+
+App examples live under `examples/`, separate from the SDK in `runtime/` and the native implementation in `src/`. Launchers use `reawebapi-<example>[-purpose].lua` or `.eel`; the main Demo keeps `ReaWebAPI_Demo.lua`.
+
+应用示例统一放在 `examples/`，与 `runtime/` 中的 SDK 和 `src/` 中的原生实现分开。启动文件采用 `reawebapi-<示例名>[-用途].lua` 或 `.eel`，主 Demo 保留 `ReaWebAPI_Demo.lua`。
+
+| Source directory / 源码目录 | Examples and purpose / 示例与用途 |
+| --- | --- |
+| `examples/main-demo/` | Main Demo / 完整体验入口 |
+| `examples/templates/` | `starter`, `modern`: development templates / 开发模板 |
+| `examples/runtime-features/` | `runtime-demo`, `web-runtime`, `hidden-start`: runtime APIs, browser capabilities and hidden startup / 运行时接口、浏览器能力和隐藏启动 |
+| `examples/backends/` | `lua-backend`, `eel-backend`, `eel-mixer`: Lua/EEL integration / Lua 与 EEL 后端接入 |
+| `examples/integrations/` | `native-service`, `native-stream`, `external-client`: native extensions and external clients / 原生扩展及外部客户端接入 |
+| `examples/windows/` | `frameless`, `transparent`: window appearance and behavior / 窗口样式和行为 |
+
+Release installation paths remain unchanged. ReaPack packages only the six main Demo files under `web/`. SDK examples retain their individual directories under `ReaWebAPI/SDK/`; platform packages retain `Scripts/ReaWebAPI/Example/`. The JSFX helper examples remain with the helper under `runtime/jsfx/examples/`.
+
+发布包安装路径保持不变：ReaPack 的 `web/` 只包含主 Demo 的六个文件；SDK 示例保留在 `ReaWebAPI/SDK/` 下各自的目录；平台安装包保留 `Scripts/ReaWebAPI/Example/`。JSFX helper 配套示例继续随 helper 放在 `runtime/jsfx/examples/`。
+
 ## Responsibilities / 职责
 
 | Directory | Responsibility / 职责 |
