@@ -329,7 +329,7 @@ class ResourceTests(unittest.TestCase):
         for text in ('APP_ID_CONFLICT', 'timefold', 'old Root exists', 'original entry is valid',
                      'origin.json', 'remove its directory and retry'):
             self.assertIn(text, result.stdout)
-        self.assertIn(other.as_posix().lower(), result.stdout.replace('\\', '/').lower())
+        self.assertIn(other.resolve().as_posix().lower(), result.stdout.replace('\\', '/').lower())
 
     def test_invalid_new_entry_does_not_change_binding(self):
         self.stop()

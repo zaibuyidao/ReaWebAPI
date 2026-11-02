@@ -183,6 +183,8 @@ add_test(NAME native_abi COMMAND native_abi)
 if(MSVC)
   target_compile_options(core_tests PRIVATE /utf-8)
   target_compile_options(runtime_tests PRIVATE /utf-8)
+  # MSVC retains a large main() frame for the Runtime fixtures and JSON assertions.
+  target_link_options(runtime_tests PRIVATE /STACK:4194304)
 endif()
 find_program(NODE_EXECUTABLE node REQUIRED)
 add_test(NAME jsfx_webui_js COMMAND "${NODE_EXECUTABLE}" --test "${CMAKE_CURRENT_SOURCE_DIR}/jsfx_webui.test.cjs")
