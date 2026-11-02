@@ -1627,6 +1627,47 @@ int main() {
       runtime.open_instance((duplicate / "index.html").u8string(), "opaque key", "", true);
       CHECK(windows.back().lock()->options.url == "reaweb://manifest-wins/index.html");
     }
+    {
+      const auto resource = root / "BindingRecovery";
+      const auto old_root = resource / "Old";
+      const auto new_root = resource / "New";
+      for (const auto& folder : {old_root, new_root}) {
+        fs::create_directories(folder);
+        std::ofstream(folder / "launch.htm") << "<html></html>";
+        std::ofstream(folder / "app.json") << R"({"id":"binding-recovery","entry":"launch.htm"})";
+      }
+      const auto record = resource / "ReaWebAPI" / "Apps" / "binding-recovery" / "origin.json";
+      auto read_binding = [&] { std::ifstream input(record); return Json::parse(input); };
+      {
+        Runtime runtime(host, resource, [](const std::string&) {});
+        defer_next_presentation = true;
+        const auto pending = runtime.open((old_root / "launch.htm").u8string());
+        const auto before = read_binding();
+        fs::remove(old_root / "launch.htm");
+        auto blocked = [&] {
+          bool conflict = false;
+          try { runtime.open((new_root / "launch.htm").u8string()); }
+          catch (const Error& error) {
+            conflict = error.code == "APP_ID_CONFLICT" && std::string(error.what()).find("active or initializing") != std::string::npos;
+          }
+          CHECK(conflict && read_binding() == before);
+        };
+        blocked();
+        auto window = windows.back().lock();
+        result(runtime, *window, window->send("__reawebHello", {1}));
+        blocked();
+        runtime.close(pending); runtime.tick();
+        const auto opened = runtime.open((new_root / "launch.htm").u8string());
+        CHECK(runtime.is_open(opened));
+        CHECK(read_binding()["entry"] == "launch.htm" && read_binding()["schema"] == 2);
+        CHECK(fs::equivalent(fs::u8path(read_binding()["root"].get<std::string>()), new_root));
+        CHECK(windows.back().lock()->options.url == "reaweb://binding-recovery/launch.htm");
+      }
+      {
+        Runtime restarted(host, resource, [](const std::string&) {});
+        CHECK(restarted.open((new_root / "launch.htm").u8string()) > 0);
+      }
+    }
     fs::create_directories(metadata_root);
     std::ofstream(metadata_root / "app.json") << R"({"id":"sendflow","name":"SendFlow","version":"1.2.3-beta.1"})";
     const auto metadata = app_info(metadata_root, root / "MetadataData", "stable-id");

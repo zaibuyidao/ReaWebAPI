@@ -91,13 +91,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
   const auto profile = resource_ / "ReaWebAPI" / "Apps" / app_id;
   const auto app_key = (dev_url.empty() ? "app:" : "dev:") + app_id;
   auto app = apps_[app_key].lock();
-  if (dev_url.empty()) {
-    if (app) {
-      std::error_code error;
-      if (!fs::equivalent(entry.parent_path(), app->resources->root(), error))
-        throw Error("APP_ID_CONFLICT", "APP_ID_CONFLICT: App ID '" + app_id + "' is already open from another root");
-    }
-  }
+  if (app && dev_url.empty()) bind_app_identity(entry.parent_path(), profile, app_id, entry);
   if (!app) {
     app = std::make_shared<App>();
     app->id = app_id;
@@ -105,7 +99,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     app->launcher_source = launcher_source;
     app->info = app_info(fs::canonical(entry.parent_path()), profile / "Data", app_id);
     if (dev_url.empty()) {
-      bind_app_identity(entry.parent_path(), profile, app_id);
+      app->binding = bind_app_identity(entry.parent_path(), profile, app_id, entry);
       app->resources = std::make_shared<WebResources>(entry.parent_path(), app_id);
       app->origin = app->resources->origin();
     } else app->origin = dev_url.substr(0, dev_url.find('/', 7));

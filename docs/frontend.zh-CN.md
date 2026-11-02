@@ -98,7 +98,9 @@ render(config, track);
 
 未定义 `id` 时，启动器必须将自身的 `debug.getinfo(1, "S").source` 作为 `ReaWeb_Open` 的 `instanceKey`。回退 ID 去掉启动脚本文件名的 `.lua`，转为小写，并将分隔符转换为 `-`。例如 `zaibuyidao_ReaGBA.lua` 对应 `zaibuyidao-reagba`。不扫描目录猜测启动脚本。缺少清单 ID 和有效启动脚本 source 时返回 `APP_ID_REQUIRED`。App 打开的子窗口继承启动脚本 source，其自身的清单 ID 仍优先。
 
-两个仍存在的目录不能绑定同一 ID，即使先前窗口已关闭。第二个目录返回 `APP_ID_CONFLICT`。移动或重命名原目录后，旧路径不存在即可保留身份。修改 ID 会创建新的 origin 和数据目录。
+两个有效安装不能绑定同一 ID，即使先前窗口已关闭。第二个目录返回 `APP_ID_CONFLICT`。旧根目录不存在，或记录的原入口 HTML 已缺失、不再是常规文件时，只要没有活动或初始化中窗口使用旧绑定，即可自动恢复绑定。根目录按平台路径规则比较。无法确认文件系统状态时安全失败，冲突诊断包含新旧根目录及身份记录路径。修改 ID 会创建新的 origin 和数据目录。
+
+继续兼容没有 `entry` 的旧 Schema 2 记录。旧根目录不存在且未被使用时可自动恢复。旧根目录仍存在时，可通过其 `app.json.entry` 确定原入口。缺少可靠入口元数据时保留 `APP_ID_CONFLICT`，不根据其他 HTML 文件或新请求猜测原入口。成功正常打开后补齐实际入口。恢复绑定保留 App ID、origin、私有数据、窗口状态文件和共享浏览器 profile。
 
 所有 App 继续共享现有浏览器 profile。localStorage 和 IndexedDB 按 `reaweb://<appId>` 隔离，重启后保留。Cookie 由浏览器原生规则决定，自定义协议可能不支持 Cookie。App 持久状态应使用 localStorage 或 IndexedDB。Bridge 文档仍分别持有 handles 和 subscriptions。
 
@@ -112,7 +114,7 @@ render(config, track);
       WindowState/
 ```
 
-Windows 共享一个 WebView2 Environment。Linux 共享一个 WebKitGTK context 与辅助进程。macOS 在 `WebViewData/` 保留共享 WKWebsiteDataStore UUID，实际数据库由 WebKit 管理。`origin.json` schema 2 仅记录 App ID、根目录与虚拟 origin，不包含端口。同一身份路径上的旧 schema 1 记录可升级。旧哈希 App 目录和浏览器数据继续保留，HTTP origin 的存储不自动迁移到虚拟 origin。身份元数据损坏时返回 `APP_ORIGIN_INVALID`。
+Windows 共享一个 WebView2 Environment。Linux 共享一个 WebKitGTK context 与辅助进程。macOS 在 `WebViewData/` 保留共享 WKWebsiteDataStore UUID，实际数据库由 WebKit 管理。`origin.json` schema 2 记录 App ID、根目录与虚拟 origin，不包含端口。新建或更新的绑定还保存 `entry`，值为规范化的相对 HTML/HTM 路径，解析符号链接和目录联接后仍须位于根目录内。同一身份路径上的旧 schema 1 记录可升级。旧哈希 App 目录和浏览器数据继续保留，HTTP origin 的存储不自动迁移到虚拟 origin。身份元数据损坏时返回 `APP_ORIGIN_INVALID`。
 
 备份时应同时保留共享 profile 与相关 `Apps/<appId>/` 目录。浏览器配额与用户清理数据的规则仍然适用。开发页面保留显式 HTTP origin，不创建生产 origin 记录。External Client 的监听器、配置与认证完全独立。
 

@@ -63,25 +63,99 @@ struct IdentityLock {
 #ifdef _WIN32
   HANDLE file = INVALID_HANDLE_VALUE;
   OVERLAPPED overlapped{};
-  explicit IdentityLock(const fs::path& path) {
+  explicit IdentityLock(const fs::path& path, bool exclusive = true, bool wait = true) {
     file = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
       nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) throw Error("APP_DATA_UNAVAILABLE", "Cannot lock App identity");
-    if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &overlapped)) {
-      CloseHandle(file); throw Error("APP_DATA_UNAVAILABLE", "Cannot lock App identity");
+    if (!LockFileEx(file, (exclusive ? LOCKFILE_EXCLUSIVE_LOCK : 0) | (wait ? 0 : LOCKFILE_FAIL_IMMEDIATELY), 0, 1, 0, &overlapped)) {
+      const auto error = GetLastError();
+      CloseHandle(file);
+      if (!wait && error == ERROR_LOCK_VIOLATION)
+        throw Error("APP_ID_CONFLICT", "Old binding has active or initializing windows");
+      throw Error("APP_DATA_UNAVAILABLE", "Cannot lock App identity");
     }
   }
   ~IdentityLock() { UnlockFileEx(file, 0, 1, 0, &overlapped); CloseHandle(file); }
 #else
   int file = -1;
-  explicit IdentityLock(const fs::path& path) {
+  explicit IdentityLock(const fs::path& path, bool exclusive = true, bool wait = true) {
     file = ::open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
     if (file < 0) throw Error("APP_DATA_UNAVAILABLE", "Cannot lock App identity");
-    if (flock(file, LOCK_EX) != 0) { ::close(file); throw Error("APP_DATA_UNAVAILABLE", "Cannot lock App identity"); }
+    if (flock(file, (exclusive ? LOCK_EX : LOCK_SH) | (wait ? 0 : LOCK_NB)) != 0) {
+      const auto error = errno;
+      ::close(file);
+      if (!wait && (error == EWOULDBLOCK || error == EAGAIN))
+        throw Error("APP_ID_CONFLICT", "Old binding has active or initializing windows");
+      throw Error("APP_DATA_UNAVAILABLE", "Cannot lock App identity");
+    }
   }
   ~IdentityLock() { flock(file, LOCK_UN); ::close(file); }
 #endif
 };
+
+bool same_binding_path(const fs::path& left, const fs::path& right) {
+#ifdef _WIN32
+  return CompareStringOrdinal(left.c_str(), -1, right.c_str(), -1, TRUE) == CSTR_EQUAL;
+#else
+  return left == right;
+#endif
+}
+bool binding_contains(const fs::path& root, const fs::path& path) {
+  auto child = path.begin();
+  for (const auto& part : root) {
+    if (child == path.end() || !same_binding_path(part, *child++)) return false;
+  }
+  return child != path.end();
+}
+fs::path binding_entry(const Json& value) {
+  if (!value.is_string()) throw std::runtime_error("Identity entry must be a relative HTML path");
+  const auto text = value.get<std::string>();
+  const auto path = fs::u8path(text);
+  auto extension = path.extension().u8string();
+  std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  if (text.empty() || text.find_first_of(":\\") != std::string::npos || text.find('\0') != std::string::npos ||
+      path.has_root_path() || (extension != ".html" && extension != ".htm"))
+    throw std::runtime_error("Identity entry must be a relative HTML path");
+  for (const auto& part : path) if (part == "..") throw std::runtime_error("Identity entry escapes App root");
+  return path.lexically_normal();
+}
+fs::file_status binding_status(const fs::path& path) {
+  std::error_code error;
+  const auto status = fs::status(path, error);
+  if (error && error != std::errc::no_such_file_or_directory && error != std::errc::not_a_directory)
+    throw fs::filesystem_error("Cannot confirm path status", path, error);
+  if (!fs::exists(status)) {
+    // A missing drive/share must not be mistaken for a removed installation.
+    const auto anchor = fs::status(path.root_path(), error);
+    if (error || !fs::is_directory(anchor))
+      throw fs::filesystem_error("Cannot confirm volume status", path.root_path(),
+        error ? error : std::make_error_code(std::errc::no_such_device));
+  }
+  return status;
+}
+bool binding_entry_valid(const fs::path& root, const fs::path& entry) {
+  auto target = root;
+  auto status = binding_status(root);
+  for (const auto& part : entry) {
+    if (part == ".") continue;
+    if (!fs::is_directory(status)) return false;
+    target /= part;
+    status = binding_status(target);
+    if (!fs::exists(status)) {
+      // Do not accept a dangling link to an external path as a missing local file.
+      if (fs::is_symlink(fs::symlink_status(target))) {
+        auto link = fs::read_symlink(target);
+        if (link.is_relative()) link = target.parent_path() / link;
+        if (!binding_contains(root, fs::weakly_canonical(link)))
+          throw Error("APP_ORIGIN_INVALID", "Identity entry escapes App root");
+      }
+      return false;
+    }
+    target = fs::canonical(target);
+    if (!binding_contains(root, target)) throw Error("APP_ORIGIN_INVALID", "Identity entry escapes App root");
+  }
+  return fs::is_regular_file(status);
+}
 }
 
 std::string app_identity(const fs::path& root, const std::string& launcher_source) {
@@ -116,32 +190,93 @@ std::string app_identity(const fs::path& root, const std::string& launcher_sourc
   return id;
 }
 
-void bind_app_identity(const fs::path& root, const fs::path& profile, const std::string& app_id) {
+std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& profile,
+    const std::string& app_id, const fs::path& entry) {
+  if (!valid_id(app_id)) throw Error("APP_MANIFEST_INVALID", "Invalid App ID");
+  const auto canonical_root = fs::canonical(root);
+  const auto html = resolve_html(canonical_root, entry.u8string());
+  if (!binding_contains(canonical_root, html)) throw Error("INVALID_PATH", "HTML entry escapes App root");
+  const auto relative_entry = fs::relative(html, canonical_root).generic_u8string();
   fs::create_directories(profile);
   IdentityLock lock(profile / ".identity.lock");
   const auto record = profile / "origin.json";
+  const auto active = profile / ".identity.active";
   const auto identity = root_identity(root);
-  if (fs::exists(record)) {
-    try {
-      const auto data = read_record(record);
+  Json data{{"schema", 2}, {"root", identity}, {"appId", app_id}, {"origin", "reaweb://" + app_id}};
+  std::shared_ptr<IdentityLock> replacement;
+  try {
+    // Inspect the directory entry too, so a dangling metadata link is not overwritten.
+    if (fs::exists(fs::symlink_status(record))) {
+      data = read_record(record);
+      if (!data.at("schema").is_number_integer() || (data["schema"] != 1 && data["schema"] != 2))
+        throw std::runtime_error("Invalid identity schema");
       const int schema = data.at("schema").get<int>();
       if ((schema != 1 && schema != 2) || !data.at("root").is_string() ||
           (schema == 2 && (data.at("appId") != app_id || data.at("origin") != "reaweb://" + app_id)))
         throw std::runtime_error("Identity record does not match this App");
       const auto previous = data.at("root").get<std::string>();
-      if (previous != identity) {
-        std::error_code error;
-        const bool exists = fs::exists(fs::u8path(previous), error);
-        if (error || (exists && !fs::equivalent(fs::u8path(previous), root)))
-          throw Error("APP_ID_CONFLICT", "APP_ID_CONFLICT: App ID '" + app_id + "' is already bound to " + previous);
-      } else if (schema == 2) return;
-    } catch (const Error&) { throw; }
-    catch (const std::exception& error) { throw Error("APP_ORIGIN_INVALID", error.what()); }
-  }
+      const auto old_root = fs::u8path(previous);
+      if (!old_root.is_absolute() || previous.find('\0') != std::string::npos)
+        throw std::runtime_error("Identity root must be an absolute path");
+      auto old_entry = data.contains("entry") ? binding_entry(data["entry"]) : fs::path();
+      std::string state = "old Root and original entry status unconfirmed";
+      const auto conflict = [&](const std::string& reason) {
+        return Error("APP_ID_CONFLICT", "APP_ID_CONFLICT: App ID '" + app_id + "', bound Root '" + previous +
+          "', requested Root '" + identity + "', " + state + ". " + reason + ". Identity record: " +
+          fs::absolute(record).u8string() + ". After confirming the old installation is no longer in use, remove its directory and retry.");
+      };
+      bool same = false;
+      try {
+        const auto status = binding_status(old_root);
+        const bool exists = fs::exists(status);
+        state = exists ? "old Root exists, original entry status unconfirmed" : "old Root is missing, original entry is unavailable";
+        const auto normalized = exists ? fs::canonical(old_root) : old_root.lexically_normal();
+        same = exists && (same_binding_path(normalized, canonical_root) || fs::equivalent(old_root, canonical_root));
+        if (!same && exists && old_entry.empty()) {
+          const auto manifest_path = normalized / "app.json";
+          if (fs::exists(binding_status(manifest_path))) {
+            if (!binding_contains(normalized, fs::canonical(manifest_path)))
+              throw conflict("Cannot confirm original entry: manifest escapes old Root");
+            try {
+              const auto manifest = read_record(manifest_path);
+              if (!manifest.is_object() || (manifest.contains("id") && manifest["id"] != app_id) ||
+                  (manifest.contains("schemaVersion") && (!manifest["schemaVersion"].is_number_integer() || manifest["schemaVersion"] != 1)))
+                throw std::runtime_error("Manifest identity or schema does not match");
+              if (manifest.contains("entry")) old_entry = binding_entry(manifest["entry"]);
+            } catch (const fs::filesystem_error&) { throw; }
+            catch (const std::exception& error) { throw conflict(std::string("Cannot confirm original entry from app.json: ") + error.what()); }
+          }
+        }
+        bool entry_valid = false;
+        if (exists && !old_entry.empty()) {
+          entry_valid = binding_entry_valid(normalized, old_entry);
+          state = entry_valid ? "old Root exists, original entry is valid" : "old Root exists, original entry is missing or not a regular file";
+        }
+        if (!same) {
+          if (exists && old_entry.empty())
+            throw conflict("Missing entry metadata, cannot safely determine the original entry. app.json does not define an authoritative entry");
+          if (exists && entry_valid) throw conflict("The old binding is still valid");
+          try { replacement = std::make_shared<IdentityLock>(active, true, false); }
+          catch (const Error& error) {
+            if (error.code == "APP_ID_CONFLICT") throw conflict(error.what());
+            throw;
+          }
+        }
+      } catch (const fs::filesystem_error& error) { throw conflict(std::string("Cannot confirm old Root or entry status: ") + error.what()); }
+      if (schema == 1) {
+        data["schema"] = 2; data["appId"] = app_id; data["origin"] = "reaweb://" + app_id; data.erase("port");
+      }
+      // Keep the original entry when opening another document in the same App.
+      if (same && schema == 2 && !old_entry.empty()) return std::make_shared<IdentityLock>(active, false);
+    }
+  } catch (const Error&) { throw; }
+  catch (const std::exception& error) { throw Error("APP_ORIGIN_INVALID", error.what()); }
+  data["root"] = identity;
+  data["entry"] = relative_entry;
   auto temporary = record; temporary += ".tmp";
   try {
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-    output << Json{{"schema", 2}, {"root", identity}, {"appId", app_id}, {"origin", "reaweb://" + app_id}}.dump(2) << '\n';
+    output << data.dump(2) << '\n';
     output.close();
     if (!output) throw Error("APP_DATA_UNAVAILABLE", "Cannot persist App identity");
 #ifdef _WIN32
@@ -151,6 +286,8 @@ void bind_app_identity(const fs::path& root, const fs::path& profile, const std:
     fs::rename(temporary, record);
 #endif
   } catch (...) { std::error_code ignored; fs::remove(temporary, ignored); throw; }
+  replacement.reset();
+  return std::make_shared<IdentityLock>(active, false);
 }
 
 WebResources::WebResources(const fs::path& root, const std::string& app_id)

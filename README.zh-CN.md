@@ -78,7 +78,7 @@ Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开应用。传入 `debug.
 
 [SDK](runtime/README.zh-CN.md) · [开发指南](docs/development.zh-CN.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.zh-CN.md) · [Lua 宿主 API](docs/host-api.zh-CN.md) · [Web 运行环境](docs/frontend.zh-CN.md) · [DevTools](docs/devtools.zh-CN.md)
 
-所有 App 共享 `ReaWebAPI/WebViewData/`，App 身份、私有数据和窗口状态保存在 `ReaWebAPI/Apps/<appId>/`。App ID、origin 隔离与原生 Cookie 规则见[存储约定](docs/frontend.zh-CN.md#资源来源与存储)。
+所有 App 共享 `ReaWebAPI/WebViewData/`，App 身份、私有数据和窗口状态保存在 `ReaWebAPI/Apps/<appId>/`。旧根目录或已知原入口 HTML 缺失时，未被使用的绑定可自动恢复，保留身份与存储。旧记录兼容边界、App ID、origin 隔离与原生 Cookie 规则见[存储约定](docs/frontend.zh-CN.md#资源来源与存储)。
 
 ## 构建
 

@@ -98,7 +98,9 @@ This produces `reaweb://timefold/index.html`, and `reaper.app.getId()` returns `
 
 When `id` is absent, pass the launcher's own `debug.getinfo(1, "S").source` as `ReaWeb_Open`'s `instanceKey`. The launcher filename loses `.lua`, becomes lowercase, and separators become `-`: `zaibuyidao_ReaGBA.lua` produces `zaibuyidao-reagba`. Launchers are never discovered by scanning directories. Without a manifest ID or a valid launcher source, opening fails with `APP_ID_REQUIRED`. Windows opened by an App inherit its launcher source, while their own manifest ID takes precedence.
 
-Two existing roots cannot bind the same ID, even after closing their windows. The second root fails with `APP_ID_CONFLICT`. Moving or renaming the original root preserves identity when its old path no longer exists. Changing an ID creates a different origin and data directory.
+Two valid installations cannot bind the same ID, even after closing their windows. The second root fails with `APP_ID_CONFLICT`. A binding can recover automatically when the old root is missing or its recorded HTML entry is missing or no longer a regular file, provided no active or initializing window uses it. Root comparisons follow platform path rules. Uncertain filesystem status fails safely, and conflict diagnostics include both roots and the identity record path. Changing an ID creates a different origin and data directory.
+
+Legacy schema 2 records without `entry` remain supported. A missing old root can be recovered when unused. If the old root still exists, its `app.json.entry` can identify the original entry. Without reliable entry metadata, the runtime retains `APP_ID_CONFLICT` rather than inferring the original entry from other HTML files or the new request. Successful normal opens backfill the actual entry. Recovery preserves App ID, origin, private data, window-state files and the shared browser profile.
 
 All Apps share the existing browser profile. localStorage and IndexedDB are isolated by `reaweb://<appId>` and persist across restarts. Cookie behavior remains native to each engine. Custom schemes may not support cookies, so use localStorage or IndexedDB for persistent App state. Each bridge document retains its own handles and subscriptions.
 
@@ -112,7 +114,7 @@ All Apps share the existing browser profile. localStorage and IndexedDB are isol
       WindowState/
 ```
 
-Windows shares one WebView2 Environment. Linux shares one WebKitGTK context and helper. macOS retains the shared WKWebsiteDataStore UUID in `WebViewData/`, with database locations managed by WebKit. `origin.json` schema 2 records the App ID, root and virtual origin, with no port. Existing schema 1 records at the same identity path can be upgraded. Old hashed App directories and browser data are retained, but HTTP-origin storage is not automatically transferred to the new virtual origin. Malformed identity metadata fails with `APP_ORIGIN_INVALID`.
+Windows shares one WebView2 Environment. Linux shares one WebKitGTK context and helper. macOS retains the shared WKWebsiteDataStore UUID in `WebViewData/`, with database locations managed by WebKit. `origin.json` schema 2 records the App ID, root and virtual origin, with no port. New or updated bindings also store `entry`, a normalized relative HTML/HTM path confined to the root, including resolved symlinks and junctions. Existing schema 1 records at the same identity path can be upgraded. Old hashed App directories and browser data are retained, but HTTP-origin storage is not automatically transferred to the new virtual origin. Malformed identity metadata fails with `APP_ORIGIN_INVALID`.
 
 Back up the shared profile and relevant `Apps/<appId>/` directories together. Normal browser quotas and user data clearing still apply. Development pages retain their explicit HTTP origin and create no production origin record. External Client listeners, configuration and authentication are independent.
 

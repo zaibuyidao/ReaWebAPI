@@ -55,5 +55,7 @@ private:
   std::string origin_;
 };
 std::string app_identity(const fs::path& root, const std::string& launcher_source = {});
-void bind_app_identity(const fs::path& root, const fs::path& profile, const std::string& app_id);
+// Retain the lease while windows use this binding, including asynchronous startup.
+std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& profile,
+  const std::string& app_id, const fs::path& entry);
 }

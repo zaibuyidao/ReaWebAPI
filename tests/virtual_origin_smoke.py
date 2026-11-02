@@ -44,10 +44,21 @@ duplicate = root / 'Duplicate'
 shutil.copytree(folders['A'], duplicate)
 launcher = root / 'zaibuyidao_ReaGBA.lua'
 reports = []
-for phase in ('initial', 'restart', 'moved'):
+phases = ('initial', 'restart', 'moved', 'entry-missing', 'rebound-restart')
+for phase in phases:
     if phase == 'moved':
+        record_path = root / 'ReaWebAPI/Apps' / identities['A'] / 'origin.json'
+        legacy = json.loads(record_path.read_text())
+        legacy.pop('entry')
+        record_path.write_text(json.dumps(legacy), encoding='utf-8')
         destination = root / 'Renamed App 音 # %'
         folders['A'].rename(destination)
+        folders['A'] = destination
+    if phase == 'entry-missing':
+        destination = root / 'Recovered Entry App'
+        shutil.copytree(folders['A'], destination)
+        (folders['A'] / 'index.html').unlink()
+        (folders['A'] / 'other.html').write_text('<html>Not the original entry</html>')
         folders['A'] = destination
     expected = []
     for index, (name, folder) in enumerate(folders.items()):
@@ -117,11 +128,11 @@ end
         assert report['origin'] == 'reaweb://' + identities[name], report
         assert report['appId'] == identities[name], report
         assert report['runtime']['mode'] == 'app-virtual' and report['runtime']['localResources'], report
-        visits = ('initial', 'restart', 'moved').index(phase) + 1
+        visits = phases.index(phase) + 1
         assert report['storageVisits'] == report['indexedDBVisits'] == visits, report
         assert report['origin'] + '/app.js' in report['sourceLocation'], report
         record = json.loads((root / 'ReaWebAPI/Apps' / identities[name] / 'origin.json').read_text())
-        assert record['schema'] == 2 and 'port' not in record, record
+        assert record['schema'] == 2 and record['entry'] == 'index.html' and 'port' not in record, record
         reports.append({'phase': phase, 'app': name, **report})
     print(phase + ': origins, fallback, conflict, storage, modules, Workers, CSP and source URLs passed'
         + (' (animation frames skipped in hidden host session)' if any(row['skippedChecks'] for row in reports[-3:]) else ''), flush=True)

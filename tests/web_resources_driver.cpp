@@ -1,11 +1,12 @@
 #include "web/web_resources.hpp"
 #include <iostream>
 int main(int argc, char** argv) {
-  if (argc != 3 && argc != 4) return 1;
+  if (argc < 3 || argc > 5) return 1;
   try {
     const auto root = reaweb::fs::u8path(argv[1]);
-    const auto id = reaweb::app_identity(root, argc == 4 ? argv[3] : "@zaibuyidao_ReaGBA.lua");
-    reaweb::bind_app_identity(root, reaweb::fs::u8path(argv[2]), id);
+    const auto id = reaweb::app_identity(root, argc >= 4 ? argv[3] : "@zaibuyidao_ReaGBA.lua");
+    const auto binding = reaweb::bind_app_identity(root, reaweb::fs::u8path(argv[2]), id,
+      reaweb::fs::u8path(argc == 5 ? argv[4] : "index.html"));
     reaweb::WebResources resources(root, id);
     std::cout << resources.origin() << std::endl;
     std::string line;

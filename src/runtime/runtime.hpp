@@ -90,6 +90,7 @@ private:
   struct App {
     std::string id, origin, mode, launcher_source;
     Json info;
+    std::shared_ptr<void> binding;
     std::shared_ptr<WebResources> resources;
     std::shared_ptr<Platform> platform;
   };

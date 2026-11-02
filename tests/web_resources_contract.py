@@ -170,14 +170,291 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(self.origin, initial)
         record = json.loads((self.profile / 'origin.json').read_text())
         self.assertEqual(record['schema'], 2)
+        self.assertEqual(record['entry'], 'index.html')
         self.assertNotIn('port', record)
         self.assertEqual(record['appId'], 'timefold')
         status, _, body = self.request('/binary.bin')
         self.assertEqual((status, len(body)), (200, 1048576))
 
-    def launch(self, root=None, profile=None, source='@zaibuyidao_ReaGBA.lua'):
-        return subprocess.run([BINARY, str(root or self.root), str(profile or self.profile), source],
+    def launch(self, root=None, profile=None, source='@zaibuyidao_ReaGBA.lua', entry='index.html'):
+        return subprocess.run([BINARY, str(root or self.root), str(profile or self.profile), source, entry],
             input='\n', capture_output=True, text=True, encoding='utf-8', timeout=8)
+
+    def record(self):
+        return json.loads((self.profile / 'origin.json').read_text(encoding='utf-8'))
+
+    def write_record(self, value):
+        (self.profile / 'origin.json').write_text(json.dumps(value), encoding='utf-8')
+
+    def copy_root(self, name='Copy'):
+        other = self.base / name
+        shutil.copytree(self.root, other)
+        return other
+
+    def assert_rebound(self, other, entry='index.html'):
+        before = self.record()
+        before['retainedExtension'] = {'value': 17}
+        self.write_record(before)
+        retained = [self.profile / 'Data' / 'setting', self.profile / 'WindowState' / 'state',
+                    self.profile / 'WebViewData' / 'legacy', self.base / 'WebViewData' / 'browser']
+        for path in retained:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'unchanged')
+        result = self.launch(root=other, entry=entry)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        after = self.record()
+        self.assertEqual(after['entry'], entry)
+        self.assertTrue(Path(after['root']).samefile(other))
+        for key in before.keys() - {'root', 'entry'}:
+            self.assertEqual(after[key], before[key])
+        for path in retained:
+            self.assertEqual(path.read_bytes(), b'unchanged')
+        self.assertEqual(self.launch(root=other, entry=entry).returncode, 0)
+
+    def test_recover_missing_root_with_and_without_entry(self):
+        self.stop()
+        original = self.record()
+        moved = self.base / 'Moved'
+        self.root.rename(moved)
+        for legacy in (False, True):
+            data = dict(original)
+            if legacy:
+                data.pop('entry')
+            self.write_record(data)
+            self.assert_rebound(moved)
+
+    def test_recover_recorded_entry_only(self):
+        self.stop()
+        other = self.copy_root()
+        (self.root / 'other.html').write_text('another document')
+        for invalid in ('missing', 'directory'):
+            with self.subTest(invalid=invalid):
+                self.write_record({**self.record(), 'root': self.root.as_posix(), 'entry': 'index.html'})
+                page = self.root / 'index.html'
+                if page.is_file():
+                    page.unlink()
+                if invalid == 'directory':
+                    page.mkdir()
+                self.assert_rebound(other)
+
+    def test_deleted_root_without_entry_metadata(self):
+        self.stop()
+        other = self.copy_root()
+        data = self.record()
+        data.pop('entry')
+        self.write_record(data)
+        for child in self.root.iterdir():
+            child.unlink()
+        self.root.rmdir()
+        self.assert_rebound(other)
+
+    def test_recorded_entry_parent_is_no_longer_a_directory(self):
+        self.stop()
+        other = self.copy_root()
+        self.write_record({**self.record(), 'entry': 'pages/start.html'})
+        (self.root / 'pages').write_text('directory replaced by a file')
+        self.assert_rebound(other)
+
+    def test_non_index_entry_and_same_root_preserves_original_entry(self):
+        self.stop()
+        data = self.record()
+        data.pop('entry')
+        self.write_record(data)
+        (self.root / 'launch.HTM').write_text('original entry')
+        self.assertEqual(self.launch(entry='launch.HTM').returncode, 0)
+        self.assertEqual(self.record()['entry'], 'launch.HTM')
+        self.assertEqual(self.launch().returncode, 0)
+        self.assertEqual(self.record()['entry'], 'launch.HTM')
+        other = self.copy_root()
+        (self.root / 'launch.HTM').unlink()
+        self.assert_rebound(other, 'launch.HTM')
+
+    def test_legacy_existing_root_cannot_guess_entry(self):
+        self.stop()
+        other = self.copy_root()
+        data = self.record()
+        data.pop('entry')
+        self.write_record(data)
+        (self.root / 'index.html').unlink()
+        result = self.launch(root=other)
+        self.assertIn('APP_ID_CONFLICT', result.stdout)
+        self.assertIn('Missing entry metadata', result.stdout)
+        self.assertEqual(self.record(), data)
+        (self.root / 'index.html').write_text('restored')
+        self.assertEqual(self.launch().returncode, 0)
+        self.assertEqual(self.record()['entry'], 'index.html')
+
+    def test_legacy_manifest_entry_is_authoritative(self):
+        self.stop()
+        other = self.copy_root()
+        data = self.record()
+        data.pop('entry')
+        (self.root / 'app.json').write_text('{"id":"timefold","entry":"original.htm"}')
+        (self.root / 'original.htm').write_text('original')
+        self.write_record(data)
+        self.assertIn('original entry is valid', self.launch(root=other).stdout)
+        (self.root / 'original.htm').unlink()
+        self.assert_rebound(other)
+
+    def test_legacy_manifest_errors_do_not_allow_takeover(self):
+        self.stop()
+        other = self.copy_root()
+        data = self.record()
+        data.pop('entry')
+        self.write_record(data)
+        for manifest in ('{broken', '{"id":"other","entry":"missing.html"}',
+                         '{"entry":"../outside.html"}', '{"schemaVersion":2,"entry":"missing.html"}'):
+            (self.root / 'app.json').write_text(manifest)
+            self.assertIn('APP_ID_CONFLICT', self.launch(root=other).stdout)
+            self.assertEqual(self.record(), data)
+
+    def test_active_binding_blocks_recovery_across_processes(self):
+        other = self.copy_root()
+        before = self.record()
+        (self.root / 'index.html').unlink()
+        result = self.launch(root=other)
+        self.assertIn('active or initializing windows', result.stdout)
+        self.assertEqual(self.record(), before)
+        moved = self.base / 'RemovedRoot'
+        self.root.rename(moved)
+        result = self.launch(root=other)
+        self.assertIn('active or initializing windows', result.stdout)
+        self.assertEqual(self.record(), before)
+        self.stop()
+        self.assert_rebound(other)
+
+    def test_conflict_diagnostics(self):
+        other = self.copy_root()
+        result = self.launch(root=other)
+        for text in ('APP_ID_CONFLICT', 'timefold', 'old Root exists', 'original entry is valid',
+                     'origin.json', 'remove its directory and retry'):
+            self.assertIn(text, result.stdout)
+        self.assertIn(other.as_posix().lower(), result.stdout.replace('\\', '/').lower())
+
+    def test_invalid_new_entry_does_not_change_binding(self):
+        self.stop()
+        other = self.copy_root()
+        (self.root / 'index.html').unlink()
+        before = (self.profile / 'origin.json').read_bytes()
+        for entry in ('missing.html', 'app.js', '../secret.txt'):
+            result = self.launch(root=other, entry=entry)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((self.profile / 'origin.json').read_bytes(), before)
+
+    def test_invalid_records_are_never_overwritten(self):
+        self.stop()
+        original = self.record()
+        other = self.copy_root()
+        (self.root / 'index.html').unlink()
+        for update in ({'schema': 3}, {'schema': 2.5}, {'schema': 4294967298}, {'appId': 'wrong'}, {'origin': 'reaweb://wrong'},
+                       {'root': 'relative'}, {'entry': '../outside.html'}, {'entry': '/outside.html'},
+                       {'entry': 'C:/outside.html'}, {'entry': 'a\\b.html'}, {'entry': 12}, {'entry': 'app.js'}):
+            with self.subTest(update=update):
+                self.write_record({**original, **update})
+                before = (self.profile / 'origin.json').read_bytes()
+                self.assertIn('APP_ORIGIN_INVALID', self.launch(root=other).stdout)
+                self.assertEqual((self.profile / 'origin.json').read_bytes(), before)
+        (self.profile / 'origin.json').write_text('{broken')
+        self.assertIn('APP_ORIGIN_INVALID', self.launch(root=other).stdout)
+        self.assertEqual((self.profile / 'origin.json').read_text(), '{broken')
+
+    def test_same_root_normalization(self):
+        self.stop()
+        data = self.record()
+        (self.root / 'child').mkdir()
+        data['root'] = str(self.root / 'child' / '..' / '.')
+        if sys.platform == 'win32':
+            data['root'] = data['root'].upper().replace('/', '\\')
+        self.write_record(data)
+        self.assertEqual(self.launch().returncode, 0)
+
+    @unittest.skipIf(sys.platform == 'win32', 'Case-sensitive filesystem required')
+    def test_case_distinct_roots_conflict(self):
+        other = self.base / 'app'
+        if other.exists():
+            self.skipTest('Filesystem is case insensitive')
+        shutil.copytree(self.root, other)
+        self.assertIn('APP_ID_CONFLICT', self.launch(root=other).stdout)
+
+    def test_concurrent_recovery_has_one_winner(self):
+        self.stop()
+        roots = [self.copy_root('Copy1'), self.copy_root('Copy2')]
+        (self.root / 'index.html').unlink()
+        processes = [subprocess.Popen([BINARY, str(root), str(self.profile)], stdin=subprocess.PIPE,
+                     stdout=subprocess.PIPE, text=True, encoding='utf-8') for root in roots]
+        try:
+            lines = [process.stdout.readline().strip() for process in processes]
+            self.assertEqual(sum(line == self.origin for line in lines), 1, lines)
+            self.assertEqual(sum('APP_ID_CONFLICT' in line for line in lines), 1, lines)
+            winner = lines.index(self.origin)
+            self.assertTrue(Path(self.record()['root']).samefile(roots[winner]))
+        finally:
+            for process in processes:
+                process.communicate('\n', timeout=8)
+
+    def test_recorded_entry_cannot_escape_through_symlink(self):
+        self.stop()
+        other = self.copy_root()
+        outside = self.base / 'outside.html'
+        outside.write_text('outside')
+        (self.root / 'index.html').unlink()
+        self.symlink(self.root / 'index.html', outside)
+        before = self.record()
+        self.assertIn('APP_ORIGIN_INVALID', self.launch(root=other).stdout)
+        self.assertEqual(self.record(), before)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows junctions only')
+    def test_binding_entry_junction_boundary(self):
+        self.stop()
+        other = self.copy_root()
+        outside = self.base / 'Outside'
+        outside.mkdir()
+        (outside / 'page.html').write_text('outside')
+        link = self.root / 'escape'
+        subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+                        "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction "
+                        '-Path $env:REAWEB_TEST_LINK -Target $env:REAWEB_TEST_TARGET | Out-Null'],
+                       env={**os.environ, 'REAWEB_TEST_LINK': str(link), 'REAWEB_TEST_TARGET': str(outside)},
+                       check=True, capture_output=True, timeout=15)
+        self.junctions = [link]
+        self.assertIn('INVALID_PATH', self.launch(entry='escape/page.html').stdout)
+        data = {**self.record(), 'entry': 'escape/page.html'}
+        self.write_record(data)
+        for missing in (False, True):
+            if missing:
+                (outside / 'page.html').unlink()
+            self.assertIn('APP_ORIGIN_INVALID', self.launch(root=other).stdout)
+            self.assertEqual(self.record(), data)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows drive status')
+    def test_unavailable_drive_is_not_a_deleted_root(self):
+        self.stop()
+        drive = next((letter for letter in 'ZYXWVUTSRQPONMLKJIHGFE' if not Path(letter + ':/').exists()), None)
+        if drive is None:
+            self.skipTest('No unused drive letter')
+        data = self.record()
+        data['root'] = drive + ':/Unavailable/App'
+        self.write_record(data)
+        result = self.launch()
+        self.assertIn('APP_ID_CONFLICT', result.stdout)
+        self.assertIn('Cannot confirm', result.stdout)
+        self.assertEqual(self.record(), data)
+
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX permissions')
+    def test_unreadable_old_path_is_not_missing(self):
+        if os.geteuid() == 0:
+            self.skipTest('Root bypasses file permissions')
+        self.stop()
+        other = self.copy_root()
+        before = self.record()
+        self.root.chmod(0)
+        try:
+            result = self.launch(root=other)
+            self.assertIn('APP_ID_CONFLICT', result.stdout)
+            self.assertIn('Cannot confirm', result.stdout)
+            self.assertEqual(self.record(), before)
+        finally:
+            self.root.chmod(0o700)
 
     def test_identity_conflict_and_move(self):
         other = self.base / 'Copy'
