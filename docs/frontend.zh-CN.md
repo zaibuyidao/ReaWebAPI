@@ -96,7 +96,13 @@ render(config, track);
 
 对应入口为 `reaweb://timefold/index.html`，`reaper.app.getId()` 返回 `timefold`。ID 仅允许小写 ASCII `a-z`、`0-9` 和 `-`。显示名称与目录名称不参与身份计算。复制模板创建新 App 时应更换 ID。
 
-未定义 `id` 时，启动器必须将自身的 `debug.getinfo(1, "S").source` 作为 `ReaWeb_Open` 的 `instanceKey`。回退 ID 去掉启动脚本文件名的 `.lua`，转为小写，并将分隔符转换为 `-`。例如 `zaibuyidao_ReaGBA.lua` 对应 `zaibuyidao-reagba`。不扫描目录猜测启动脚本。缺少清单 ID 和有效启动脚本 source 时返回 `APP_ID_REQUIRED`。App 打开的子窗口继承启动脚本 source，其自身的清单 ID 仍优先。
+未定义 `id` 时，普通 WebUI 使用持久化随机 ID，格式为 `app-<32 位小写十六进制字符>`，保存在 `<App 根目录>/.reawebapi/identity.json`，内容为 `{"schema":1,"appId":"app-…"}`。该目录随 App 移动，不通过 Web 资源响应暴露，解析后的别名路径也受保护。标记创建与绑定检查串行执行。标记无法读取或损坏时返回 `APP_IDENTITY_INVALID`，无法创建或更新时返回 `APP_IDENTITY_UNAVAILABLE`，不回退到临时 ID。不修改 `app.json`。
+
+移动目录并保留标记时身份不变。完整复制目录后，若标记中的 ID 已绑定另一个有效安装，副本自动获得新 ID。旧绑定失效时沿用既有恢复规则。文件系统状态不明、绑定损坏，或仍有窗口使用已失效的旧绑定时继续报错。删除标记后，下次打开会初始化新身份。
+
+Lua source 与 `instanceKey` 保留路径解析和窗口复用职责，不再生成 App ID。JSFX WebUI 继续通过 `fx_ident` 派生回退 ID，包括存在 `app.json` 但未定义 `id` 的情况。两类 WebUI 均优先使用有效的显式 `app.json.id`。`app.json.entry` 声明 HTML 入口，不是 App ID。
+
+**升级行为：**普通 WebUI 没有显式 ID 和身份标记时，首次打开生成新的随机 ID。不查询、回退或迁移旧 launcher 派生 ID。原有 localStorage、IndexedDB、Data 和 WindowState 保留，但不自动关联到新身份。显式 ID 应用不受影响。
 
 两个有效安装不能绑定同一 ID，即使先前窗口已关闭。第二个目录返回 `APP_ID_CONFLICT`。旧根目录不存在，或记录的原入口 HTML 已缺失、不再是常规文件时，只要没有活动或初始化中窗口使用旧绑定，即可自动恢复绑定。根目录按平台路径规则比较。无法确认文件系统状态时安全失败，冲突诊断包含新旧根目录及身份记录路径。修改 ID 会创建新的 origin 和数据目录。
 

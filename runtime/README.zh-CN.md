@@ -22,7 +22,7 @@
 
 修改 `starter/index.html` 的 `<title>` 即可自定义模板的原生窗口名称。动态标题和显式覆盖见[窗口标题](../docs/runtime-api.zh-CN.md#窗口标题)。
 
-扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开页面。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口，并要求定义 `app.json.id`。未定义该字段时使用启动脚本文件名生成回退 App ID。生产页面地址为 `reaweb://<appId>/...`。复制模板创建新 App 时应设置唯一的 ID。JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Mirror 和 Runtime API。
+扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开页面。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。普通 App 未定义 `app.json.id` 时，在根目录的 `.reawebapi/identity.json` 持久化随机 ID。移动时保留标记即可保留身份，复制后若原绑定仍有效，副本自动获得独立身份。启动脚本文件名不再决定 App ID，旧 launcher 身份的存储不自动迁移。生产页面地址为 `reaweb://<appId>/...`。显式 ID 仍须全局唯一。JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Mirror 和 Runtime API。
 
 `reaper.transaction.batch(b => { ... })` 在同步回调内收集已审核的 Mirror 调用，自动处理结果引用和多返回值解构。返回引用、对象或数组可选择结果并推导类型。[批处理契约](../docs/host-api.zh-CN.md#批处理与连续参数) 同时说明原有调用数组形式。
 

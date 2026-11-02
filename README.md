@@ -79,7 +79,7 @@ External HTTP, HTTPS and mailto navigation opens in the system default handler w
 
 [SDK](runtime/README.md) · [Developer guide](docs/development.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md) · [DevTools](docs/devtools.md)
 
-All Apps share `ReaWebAPI/WebViewData/`. App identities, private data and window state remain under `ReaWebAPI/Apps/<appId>/`. Unused bindings recover when their previous root or known original HTML entry is missing, preserving identity and storage. See the [storage contract](docs/frontend.md#resource-origin-and-storage) for legacy-record limits, App IDs, origin isolation and native cookie behavior.
+All Apps share `ReaWebAPI/WebViewData/`. App identities, private data and window state remain under `ReaWebAPI/Apps/<appId>/`. Ordinary WebUIs without `app.json.id` persist random IDs in `<App root>/.reawebapi/identity.json`. Moves preserve identity, and copies receive separate IDs when the original binding remains valid. Upgrading an App without an explicit ID or marker creates a new identity without migrating its old launcher-derived storage. Old data is retained. See the [storage contract](docs/frontend.md#resource-origin-and-storage) for legacy-record limits, App IDs, origin isolation and native cookie behavior.
 
 ## Build
 

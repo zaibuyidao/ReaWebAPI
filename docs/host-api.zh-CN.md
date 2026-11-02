@@ -234,9 +234,9 @@ local settings = reaper.ReaWeb_Open(directory .. "settings.html", instanceKey, "
 local extra = reaper.ReaWeb_Open(directory .. "index.html", instanceKey, nil, true)
 ```
 
-Runtime 对 `(instanceKey, id)` 两个字符串分别进行区分大小写的精确匹配。nil 或空字符串 `id` 表示默认窗口。实例匹配将 key 作为不透明标识，不做路径规范化，也不移除 source 的 `@` 前缀。App 身份解析在缺少 `app.json.id` 时单独使用 Lua source 的文件名，不读取 Lua 调用栈。在启动脚本中获取 source，再传给需要的辅助函数。后续调用应保持相同写法。复制到不同目录的启动脚本具有不同 key。正在关闭或初始化失败的窗口不参与复用，会话销毁时释放实例身份。
+Runtime 对 `(instanceKey, id)` 两个字符串分别进行区分大小写的精确匹配。nil 或空字符串 `id` 表示默认窗口。实例匹配将 key 作为不透明标识，不做路径规范化，也不移除 source 的 `@` 前缀。App 身份独立于 `instanceKey`，普通 WebUI 缺少 `app.json.id` 时使用 `.reawebapi/identity.json` 中的持久化随机 ID。不读取 Lua 调用栈。在启动脚本中获取 source，再传给需要的辅助函数。后续调用应保持相同写法。复制到不同目录的启动脚本具有不同 key。正在关闭或初始化失败的窗口不参与复用，会话销毁时释放实例身份。
 
-JavaScript 的 `reaper.window.open(path, options?)` 和 `ReaWeb_OpenDev(url)` 行为不变。原生 C/C++ 调用方须使用 v0.3.5 签名 `int ReaWeb_Open(const char* path, const char* instanceKey, const char* id, const bool* multiple)`，省略的选项传 `nullptr`。单参数 Lua 调用要求 App 定义 `app.json.id`。缺少该字段时须将启动脚本 source 作为 `instanceKey`，包括 `multiple = true` 的调用。
+JavaScript 的 `reaper.window.open(path, options?)` 和 `ReaWeb_OpenDev(url)` 行为不变。原生 C/C++ 调用方须使用 v0.3.5 签名 `int ReaWeb_Open(const char* path, const char* instanceKey, const char* id, const bool* multiple)`，省略的选项传 `nullptr`。单参数 Lua 调用也支持自动 App ID。需要复用窗口时，将启动脚本 source 作为 `instanceKey`。
 
 ## Lua 消息桥接
 

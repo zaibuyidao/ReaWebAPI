@@ -434,3 +434,5 @@ add_test(NAME media_resources COMMAND media_resources)
 target_link_libraries(web_resources_driver PRIVATE reaweb_core)
 add_test(NAME web_resources COMMAND "${Python3_EXECUTABLE}" -X utf8
   "${CMAKE_CURRENT_SOURCE_DIR}/web_resources_contract.py" "$<TARGET_FILE:web_resources_driver>")
+add_test(NAME auto_app_identity COMMAND "${Python3_EXECUTABLE}" -X utf8
+  "${CMAKE_CURRENT_SOURCE_DIR}/auto_app_identity_contract.py" "$<TARGET_FILE:web_resources_driver>")

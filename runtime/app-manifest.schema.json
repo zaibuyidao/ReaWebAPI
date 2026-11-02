@@ -6,7 +6,7 @@
   "required": ["name", "version", "entry"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "id": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "Stable App identity and reaweb:// authority. If omitted, the Lua launcher filename supplies the ID." },
+    "id": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "Stable global App identity and reaweb:// authority. If omitted, ordinary WebUIs persist a random ID in .reawebapi/identity.json; JSFX WebUI retains its fx_ident-derived ID." },
     "name": { "type": "string", "minLength": 1, "maxLength": 256 },
     "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?$" },
     "author": { "type": "string", "maxLength": 256 },

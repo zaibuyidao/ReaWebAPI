@@ -186,7 +186,7 @@ const meter = track ? await reaper.audio.getTrackMeter(track) : null;
 
 ## App 与系统信息
 
-五个 App getter 都返回 Promise。生产 App 的 `getId()` 返回 `app.json.id`，未定义时使用规范化 Lua 启动脚本文件名。该 ID 决定 `reaweb://<appId>` 和 App 数据目录。旧根目录不存在，或已知原入口 HTML 缺失、不再是常规文件时，未被使用的绑定可自动恢复。不同有效安装使用同一 ID 时返回 `APP_ID_CONFLICT`，旧根目录仍存在但缺少可靠入口元数据时也保留冲突保护。开发身份仍按受信任 URL 确定。详见 [App 身份](frontend.zh-CN.md#资源来源与存储)。
+五个 App getter 都返回 Promise。生产 App 的 `getId()` 返回 `app.json.id`，普通 WebUI 未定义时使用 `.reawebapi/identity.json` 中的持久化随机 ID。JSFX 保留 `fx_ident` 回退规则。该 ID 决定 `reaweb://<appId>` 和 App 数据目录。旧根目录不存在，或已知原入口 HTML 缺失、不再是常规文件时，未被使用的绑定可自动恢复。自动 ID 应用的副本在原绑定有效时获得新 ID。显式 ID 冲突，或旧根目录仍存在但缺少可靠入口元数据时，仍返回 `APP_ID_CONFLICT`。旧 launcher 身份不自动迁移。开发身份仍按受信任 URL 确定。详见 [App 身份](frontend.zh-CN.md#资源来源与存储)。
 
 `getRootPath()` 返回本地入口／资源根目录的绝对路径。开发服务器模式返回本地启动目录，Lua 启动器默认是 REAPER 的 Scripts 目录。`getName()` 读取该目录 `app.json` 的可选 name，缺省为目录名；`getVersion()` 读取可选 version，缺省为 null，不使用扩展版本冒充 App 版本。元数据在创建 App 时读取，已有窗口共享快照，全部关闭后重开才重新读取。文件须为不超过 64 KiB 的 JSON 对象；name 非空白且不超过 256 字符，version 使用 schema 的 `N.N.N[-后缀]` 格式。错误元数据以 `APP_MANIFEST_INVALID` 拒绝打开。完整 Manifest 与入口校验仍由独立校验器负责。
 

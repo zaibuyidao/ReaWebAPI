@@ -23,7 +23,7 @@ Effects/Author/Utility/
 {"schema":1,"JSFX_WebUI":{"entry":"index.html","enabled":true,"width":640,"height":420,"dawKeyboard":true}}
 ```
 
-`entry` 必须指向 JSFX 所在目录内的 HTML 文件，JSFX 必须位于 `Effects` 下。关联缺失、禁用或无效时保留原生编辑器。`width`、`height` 指定独立 FX 窗口的初始内容尺寸，范围为 100..2048，默认 640×420。停靠窗口保留宿主尺寸。HTML 目录内可提供遵循普通 App 身份契约的 `app.json`，未提供时按 `fx_ident` 生成稳定的 App ID。使用下方 helper 时，将 `SDK/jsfx-webui.mjs` 复制到页面旁。
+`entry` 必须指向 JSFX 所在目录内的 HTML 文件，JSFX 必须位于 `Effects` 下。关联缺失、禁用或无效时保留原生编辑器。`width`、`height` 指定独立 FX 窗口的初始内容尺寸，范围为 100..2048，默认 640×420。停靠窗口保留宿主尺寸。HTML 目录内可提供遵循普通 App 身份契约的 `app.json`，未定义显式 `app.json.id` 时按 `fx_ident` 生成稳定的 App ID。使用下方 helper 时，将 `SDK/jsfx-webui.mjs` 复制到页面旁。
 
 `dawKeyboard` 是 Windows、macOS 和 Linux 上的初始 Space 路由配置，省略时为 `true`。非布尔值使关联无效。启用后，非编辑区域的无修饰 Space 使用 REAPER 主区当前快捷键绑定，编辑区域与 IME 组合输入保留空格输入。
 

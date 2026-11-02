@@ -30,7 +30,7 @@ else:
     (root / 'reaper.ini').write_text('[REAPER]\naudiomode=4\nnewprojdo=0\nloadlastproj=0\nshowlastproj=0\nsplash=0\nverchk=0\nhasrecentlyopened=1\n'
         f'vstpath64={root / "EmptyPlugins"}\nvstfullstate=49989\n', encoding='utf-8')
 source = Path(__file__).resolve().parents[1] / 'examples/runtime-features/web-runtime'
-identities = {'A': 'timefold', 'B': 'reagba', 'Fallback': 'zaibuyidao-reagba'}
+identities = {'A': 'timefold', 'B': 'reagba', 'Fallback': None}
 folders = {name: root / name for name in identities}
 for name, folder in folders.items():
     shutil.copytree(source, folder)
@@ -44,7 +44,8 @@ duplicate = root / 'Duplicate'
 shutil.copytree(folders['A'], duplicate)
 launcher = root / 'zaibuyidao_ReaGBA.lua'
 reports = []
-phases = ('initial', 'restart', 'moved', 'entry-missing', 'rebound-restart')
+visits = {}
+phases = ('initial', 'restart', 'moved', 'entry-missing', 'copied', 'rebound-restart')
 for phase in phases:
     if phase == 'moved':
         record_path = root / 'ReaWebAPI/Apps' / identities['A'] / 'origin.json'
@@ -54,12 +55,25 @@ for phase in phases:
         destination = root / 'Renamed App 音 # %'
         folders['A'].rename(destination)
         folders['A'] = destination
+        destination = root / 'Renamed Automatic App'
+        folders['Fallback'].rename(destination)
+        folders['Fallback'] = destination
+        launcher = root / 'Renamed_Launcher.lua'
     if phase == 'entry-missing':
         destination = root / 'Recovered Entry App'
         shutil.copytree(folders['A'], destination)
         (folders['A'] / 'index.html').unlink()
         (folders['A'] / 'other.html').write_text('<html>Not the original entry</html>')
         folders['A'] = destination
+        destination = root / 'Recovered Automatic App'
+        shutil.copytree(folders['Fallback'], destination)
+        (folders['Fallback'] / 'index.html').unlink()
+        (folders['Fallback'] / 'other.html').write_text('<html>Another document</html>')
+        folders['Fallback'] = destination
+    if phase == 'copied':
+        folders['Copy'] = root / 'Automatic Copy'
+        shutil.copytree(folders['Fallback'], folders['Copy'])
+        identities['Copy'] = None
     expected = []
     for index, (name, folder) in enumerate(folders.items()):
         output = root / f'{phase}-{name}.json'
@@ -94,7 +108,7 @@ local started = reaper.time_precise()
 local function tick()
   local count = 0
   for _, path in ipairs(RESULTS) do local f = io.open(path, 'r'); if f then f:close(); count = count + 1 end end
-  if count == 3 or reaper.time_precise() - started > 50 then
+  if count == #RESULTS or reaper.time_precise() - started > 50 then
     for _, id in ipairs(ids) do reaper.ReaWeb_Close(id) end
     reaper.defer(function() reaper.Main_OnCommand(40004, 0) end)
   else reaper.defer(tick) end
@@ -122,18 +136,26 @@ end
     assert conflict.startswith('0 ') and 'APP_ID_CONFLICT' in conflict, conflict
     for name, result in zip(identities, expected):
         report = json.loads(result.read_text(encoding='utf-8'))
+        if name in ('Fallback', 'Copy'):
+            marker = json.loads((folders[name] / '.reawebapi/identity.json').read_text())
+            assert marker['schema'] == 1 and marker['appId'].startswith('app-'), marker
+            if identities[name] is None:
+                identities[name] = marker['appId']
+            assert marker['appId'] == identities[name], marker
+        if name == 'Copy':
+            assert identities[name] != identities['Fallback']
         skipped = ['Timers / requestAnimationFrame'] if args.allow_hidden and report.get('visibility') == 'hidden' else []
         assert all(check['ok'] for check in report['checks'] if check['name'] not in skipped and not check['name'].startswith(('Cookies', 'WebGL'))), report
         report['skippedChecks'] = skipped
         assert report['origin'] == 'reaweb://' + identities[name], report
         assert report['appId'] == identities[name], report
         assert report['runtime']['mode'] == 'app-virtual' and report['runtime']['localResources'], report
-        visits = phases.index(phase) + 1
-        assert report['storageVisits'] == report['indexedDBVisits'] == visits, report
+        visits[name] = visits.get(name, 0) + 1
+        assert report['storageVisits'] == report['indexedDBVisits'] == visits[name], report
         assert report['origin'] + '/app.js' in report['sourceLocation'], report
         record = json.loads((root / 'ReaWebAPI/Apps' / identities[name] / 'origin.json').read_text())
         assert record['schema'] == 2 and record['entry'] == 'index.html' and 'port' not in record, record
         reports.append({'phase': phase, 'app': name, **report})
-    print(phase + ': origins, fallback, conflict, storage, modules, Workers, CSP and source URLs passed'
+    print(phase + ': origins, automatic identity, conflict, storage, modules, Workers, CSP and source URLs passed'
         + (' (animation frames skipped in hidden host session)' if any(row['skippedChecks'] for row in reports[-3:]) else ''), flush=True)
 (root / 'report.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')

@@ -54,8 +54,15 @@ private:
   fs::path root_;
   std::string origin_;
 };
-std::string app_identity(const fs::path& root, const std::string& launcher_source = {});
+// Empty when the manifest does not specify an ID.
+std::string app_identity(const fs::path& root);
+struct AppBinding {
+  std::string id;
+  std::shared_ptr<void> lease;
+};
+AppBinding open_app_binding(const fs::path& root, const fs::path& apps, const fs::path& entry,
+  const std::string& fallback_id = {}, const std::function<void(const std::string&)>& prepare = {});
 // Retain the lease while windows use this binding, including asynchronous startup.
 std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& profile,
-  const std::string& app_id, const fs::path& entry);
+  const std::string& app_id, const fs::path& entry, bool* valid_root_conflict = nullptr);
 }

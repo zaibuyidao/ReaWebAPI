@@ -255,7 +255,7 @@ interface ReaWebAPI {
     startText(text: string): Promise<boolean>;
   };
   readonly app: {
-    /** Manifest ID or normalized Lua launcher filename for production Apps, URL-derived identity in development. */
+    /** Manifest ID or persistent automatic ID for ordinary Apps, fx_ident-derived fallback for JSFX, URL-derived identity in development. */
     getId(): Promise<string>;
     /** app.json name, otherwise the entry directory's name. */
     getName(): Promise<string>;

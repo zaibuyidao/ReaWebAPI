@@ -469,18 +469,21 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(self.origin, 'reaweb://timefold')
         self.assertEqual(self.request('/data.json')[0], 200)
 
-    def test_manifest_precedence_and_launcher_fallback(self):
+    def test_manifest_precedence_and_automatic_identity(self):
         self.assertEqual(self.launch(source='not-a-lua-source').stdout.strip(), 'reaweb://timefold')
         self.stop()
         (self.root / 'app.json').write_text('{"name":"Ignored display name"}')
         (self.root / 'Wrong.lua').write_text('-- Never infer identity from directory contents')
         fallback = self.base / 'fallback'
-        for source in ('@/Scripts/zaibuyidao_ReaGBA.lua', r'C:\Scripts\Zaibuyidao ReaGBA.LUA'):
-            self.assertEqual(self.launch(profile=fallback, source=source).stdout.strip(), 'reaweb://zaibuyidao-reagba')
-        self.assertIn('APP_ID_REQUIRED', self.launch(profile=fallback, source='').stdout)
+        origin = self.launch(profile=fallback).stdout.strip()
+        self.assertRegex(origin, r'^reaweb://app-[0-9a-f]{32}$')
+        for source in ('@/Scripts/Renamed.lua', r'C:\Scripts\Zaibuyidao ReaGBA.LUA', '', 'opaque key'):
+            self.assertEqual(self.launch(profile=fallback, source=source).stdout.strip(), origin)
         copy = self.base / 'OtherRoot'
         shutil.copytree(self.root, copy)
-        self.assertIn('APP_ID_CONFLICT', self.launch(root=copy, profile=fallback).stdout)
+        copied = self.launch(root=copy, profile=fallback).stdout.strip()
+        self.assertRegex(copied, r'^reaweb://app-[0-9a-f]{32}$')
+        self.assertNotEqual(copied, origin)
 
     def test_invalid_ids_are_not_silently_rewritten(self):
         self.stop()

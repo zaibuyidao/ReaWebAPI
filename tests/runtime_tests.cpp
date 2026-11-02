@@ -548,6 +548,21 @@ int main() {
       CHECK(!window->visible() && runtime.diagnostics(id)["jsfx"]["cached"] == true);
       CHECK(!runtime.captures_keyboard(window.get(), [](void*, void*) { return false; }, true));
       CHECK(call("present", {{"sessionId", session_id}, {"activation", fresh["activation"]}})["result"]["data"]["presented"] == false);
+      CHECK(window->options.url == "reaweb://jsfx-keyboard-config/index.html");
+      CHECK(!fs::exists(directory / ".reawebapi"));
+      for (bool with_manifest : {true, false}) {
+        if (with_manifest) std::ofstream(directory / "app.json") << R"({"name":"JSFX without explicit ID"})";
+        else fs::remove(directory / "app.json");
+        auto auto_editor = std::make_shared<Editor>();
+        auto auto_discovery = std::make_shared<Discovery>();
+        auto_discovery->editor = {&track, 0, false, auto_editor.get(), auto_editor};
+        auto jsfx_runtime = std::make_unique<Runtime>(jsfx_host, resource, [](const std::string&) {});
+        const auto count = windows.size();
+        jsfx_runtime->initialize_jsfx(auto_discovery);
+        until(*jsfx_runtime, [&] { return windows.size() > count; });
+        CHECK(windows.back().lock()->options.url == "reaweb://jsfx-" + state_key("Test/test.jsfx", 0) + "/index.html");
+        CHECK(!fs::exists(directory / ".reawebapi"));
+      }
     }
     windows.clear(); profiles.clear(); platform_count = 0; platform_pumps = 0;
     {
@@ -1612,17 +1627,32 @@ int main() {
       Runtime runtime(host, root, [](const std::string&) {}, docks);
       const auto id = runtime.open_instance((fallback_root / "index.html").u8string(), "@/Scripts/zaibuyidao_ReaGBA.lua", "", true);
       auto window = windows.back().lock();
-      CHECK(window->options.url == "reaweb://zaibuyidao-reagba/index.html");
+      const auto marker = fallback_root / ".reawebapi" / "identity.json";
+      const auto automatic_id = Json::parse(std::ifstream(marker))["appId"].get<std::string>();
+      CHECK(automatic_id.rfind("app-", 0) == 0);
+      CHECK(window->options.url == "reaweb://" + automatic_id + "/index.html");
       result(runtime, *window, window->send("__reawebHello", {1}));
-      CHECK(result(runtime, *window, window->send("ReaWeb_GetAppInfo"))["result"]["id"] == "zaibuyidao-reagba");
+      CHECK(result(runtime, *window, window->send("ReaWeb_GetAppInfo"))["result"]["id"] == automatic_id);
       const auto child = result(runtime, *window, window->send("ReaWeb_Open", {"index.html"}));
       CHECK(child.contains("result") && windows.back().lock()->options.url == window->options.url);
       const auto duplicate = root / "FallbackCopy";
       fs::create_directories(duplicate); std::ofstream(duplicate / "index.html") << "<html></html>";
-      bool conflict = false;
-      try { runtime.open_instance((duplicate / "index.html").u8string(), "@/Other/zaibuyidao_ReaGBA.lua"); }
-      catch (const Error& error) { conflict = error.code == "APP_ID_CONFLICT"; }
-      CHECK(conflict && runtime.is_open(id));
+      fs::create_directories(duplicate / ".reawebapi");
+      fs::copy_file(marker, duplicate / ".reawebapi" / "identity.json");
+      const auto copied = runtime.open_instance((duplicate / "index.html").u8string(), "@/Other/zaibuyidao_ReaGBA.lua");
+      CHECK(runtime.is_open(copied) && runtime.is_open(id));
+      CHECK(windows.back().lock()->options.url != window->options.url);
+      CHECK(runtime.open_instance((duplicate / "index.html").u8string(), "@/Other/zaibuyidao_ReaGBA.lua") == copied);
+      const auto renamed = runtime.open_instance((fallback_root / "index.html").u8string(), "@renamed.lua");
+      CHECK(renamed != id && windows.back().lock()->options.url == window->options.url);
+      CHECK(runtime.open_ex((fallback_root / "index.html").u8string(), R"({"instanceKey":"@renamed.lua"})") == renamed);
+      CHECK(runtime.open_ex((fallback_root / "index.html").u8string(), R"({"instanceKey":"@renamed.lua","multiple":true})") != renamed);
+      const auto without_key = runtime.open((fallback_root / "index.html").u8string());
+      CHECK(runtime.is_open(without_key) && windows.back().lock()->options.url == window->options.url);
+      defer_next_presentation = true;
+      const auto pending = runtime.open_instance((fallback_root / "index.html").u8string(), "pending-auto");
+      CHECK(!runtime.is_ready(pending));
+      CHECK(runtime.open_instance((fallback_root / "index.html").u8string(), "pending-auto") == pending);
       std::ofstream(duplicate / "app.json") << R"({"id":"manifest-wins","name":"Display only"})";
       runtime.open_instance((duplicate / "index.html").u8string(), "opaque key", "", true);
       CHECK(windows.back().lock()->options.url == "reaweb://manifest-wins/index.html");

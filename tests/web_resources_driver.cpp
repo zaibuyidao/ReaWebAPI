@@ -4,9 +4,14 @@ int main(int argc, char** argv) {
   if (argc < 3 || argc > 5) return 1;
   try {
     const auto root = reaweb::fs::u8path(argv[1]);
-    const auto id = reaweb::app_identity(root, argc >= 4 ? argv[3] : "@zaibuyidao_ReaGBA.lua");
-    const auto binding = reaweb::bind_app_identity(root, reaweb::fs::u8path(argv[2]), id,
-      reaweb::fs::u8path(argc == 5 ? argv[4] : "index.html"));
+    const auto profile = reaweb::fs::u8path(argv[2]);
+    const auto entry = reaweb::fs::u8path(argc == 5 ? argv[4] : "index.html");
+    auto id = reaweb::app_identity(root);
+    reaweb::AppBinding binding;
+    if (id.empty()) {
+      binding = reaweb::open_app_binding(root, profile, entry);
+      id = binding.id;
+    } else binding = {id, reaweb::bind_app_identity(root, profile, id, entry)};
     reaweb::WebResources resources(root, id);
     std::cout << resources.origin() << std::endl;
     std::string line;

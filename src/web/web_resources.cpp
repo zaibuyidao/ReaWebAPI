@@ -2,9 +2,11 @@
 #include "web/web_resources.hpp"
 #include "core/worker.hpp"
 #include "core/file_time.hpp"
+#include "runtime/external_settings.hpp"
 #include <fstream>
 #include <random>
 #include <atomic>
+#include <set>
 #ifndef _WIN32
 #include <sys/file.h>
 #endif
@@ -156,9 +158,53 @@ bool binding_entry_valid(const fs::path& root, const fs::path& entry) {
   }
   return fs::is_regular_file(status);
 }
+
+void write_identity_record(const fs::path& record, const Json& data, const char* code) {
+  auto temporary = record; temporary += "." + external_token().substr(0, 16) + ".tmp";
+  try {
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    output << data.dump(2) << '\n';
+    output.close();
+    if (!output) throw std::runtime_error("Cannot persist identity");
+#ifdef _WIN32
+    if (!MoveFileExW(temporary.c_str(), record.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+      throw std::runtime_error("Cannot replace identity record");
+#else
+    fs::rename(temporary, record);
+#endif
+  } catch (const std::exception& error) {
+    std::error_code ignored; fs::remove(temporary, ignored);
+    throw Error(code, record.u8string() + ": " + error.what());
+  }
+}
+std::string read_auto_identity(const fs::path& record) {
+  try {
+    const auto status = fs::symlink_status(record);
+    if (!fs::exists(status)) return {};
+    if (!fs::is_regular_file(status) || fs::file_size(record) > 65536)
+      throw std::runtime_error("Identity marker must be a regular file no larger than 64 KiB");
+    std::ifstream input(record, std::ios::binary);
+    if (!input) throw std::runtime_error("Cannot read identity marker");
+    std::set<std::string> keys;
+    const auto data = Json::parse(input, [&](int, Json::parse_event_t event, Json& value) {
+      if (event == Json::parse_event_t::key && !keys.insert(value.get<std::string>()).second)
+        throw std::runtime_error("Duplicate identity marker field");
+      return true;
+    });
+    if (!data.is_object() || data.size() != 2 || !data.at("schema").is_number_integer() ||
+        data["schema"] != 1 || !data.at("appId").is_string())
+      throw std::runtime_error("Invalid identity marker schema");
+    const auto id = data["appId"].get<std::string>();
+    if (id.size() != 36 || id.compare(0, 4, "app-") != 0 || id.substr(4).find_first_not_of("0123456789abcdef") != std::string::npos)
+      throw std::runtime_error("Invalid automatic App ID");
+    return id;
+  } catch (const std::exception& error) {
+    throw Error("APP_IDENTITY_INVALID", record.u8string() + ": " + error.what());
+  }
+}
 }
 
-std::string app_identity(const fs::path& root, const std::string& launcher_source) {
+std::string app_identity(const fs::path& root) {
   const auto manifest = root / "app.json";
   if (fs::exists(manifest)) {
     Json value;
@@ -171,27 +217,57 @@ std::string app_identity(const fs::path& root, const std::string& launcher_sourc
       return value["id"].get<std::string>();
     }
   }
-  auto source = launcher_source;
-  if (!source.empty() && source.front() == '@') source.erase(0, 1);
-  source = source.substr(source.find_last_of("/\\") + 1);
-  std::transform(source.begin(), source.end(), source.begin(), [](unsigned char c) {
-    return c >= 'A' && c <= 'Z' ? static_cast<char>(c + 32) : static_cast<char>(c);
-  });
-  if (source.size() <= 4 || source.substr(source.size() - 4) != ".lua")
-    throw Error("APP_ID_REQUIRED", "APP_ID_REQUIRED: Define app.json.id or pass the Lua launcher's source as ReaWeb_Open instanceKey");
-  source.resize(source.size() - 4);
-  std::string id;
-  for (unsigned char c : source) {
-    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) id += static_cast<char>(c);
-    else if (!id.empty() && id.back() != '-') id += '-';
+  return {};
+}
+
+AppBinding open_app_binding(const fs::path& root, const fs::path& apps, const fs::path& entry,
+    const std::string& fallback_id, const std::function<void(const std::string&)>& prepare) {
+  const auto canonical_root = fs::canonical(root);
+  const auto html = resolve_html(canonical_root, entry.u8string());
+  if (!binding_contains(canonical_root, html)) throw Error("INVALID_PATH", "HTML entry escapes App root");
+  auto id = app_identity(canonical_root);
+  if (id.empty()) id = fallback_id;
+  if (!id.empty()) {
+    if (prepare) prepare(id);
+    return {id, bind_app_identity(canonical_root, apps / id, id, html)};
   }
-  while (!id.empty() && id.back() == '-') id.pop_back();
-  if (!valid_id(id)) throw Error("APP_ID_REQUIRED", "APP_ID_REQUIRED: The Lua launcher filename must yield a nonempty ASCII App ID");
-  return id;
+  const auto directory = canonical_root / ".reawebapi";
+  const auto marker = directory / "identity.json";
+  std::unique_ptr<IdentityLock> lock;
+  try {
+    fs::create_directory(directory);
+    const auto status = fs::symlink_status(directory);
+    if (!fs::is_directory(status) || !same_binding_path(fs::canonical(directory), directory))
+      throw std::runtime_error("Identity directory must be local to this App root");
+    const auto lock_path = directory / ".identity.lock";
+    const auto lock_status = fs::symlink_status(lock_path);
+    if (fs::exists(lock_status) && !fs::is_regular_file(lock_status))
+      throw std::runtime_error("Invalid identity lock file");
+    // Lock order is always Root marker first, then the existing App ID binding lock.
+    lock = std::make_unique<IdentityLock>(lock_path);
+  } catch (const std::exception& error) {
+    throw Error("APP_IDENTITY_UNAVAILABLE", "Cannot persist App identity at " + marker.u8string() + ": " + error.what());
+  }
+  id = read_auto_identity(marker);
+  bool save = id.empty();
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    if (save) id = "app-" + external_token().substr(0, 32);
+    if (prepare) prepare(id);
+    // Persist before binding/navigation. A retry after interruption uses the same ID.
+    if (save) write_identity_record(marker, {{"schema", 1}, {"appId", id}}, "APP_IDENTITY_UNAVAILABLE");
+    bool duplicate = false;
+    try { return {id, bind_app_identity(canonical_root, apps / id, id, html, &duplicate)}; }
+    catch (const Error& error) {
+      if (error.code != "APP_ID_CONFLICT" || !duplicate) throw;
+      save = true;
+    }
+  }
+  throw Error("APP_IDENTITY_UNAVAILABLE", "Cannot allocate an unbound App ID: " + marker.u8string());
 }
 
 std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& profile,
-    const std::string& app_id, const fs::path& entry) {
+    const std::string& app_id, const fs::path& entry, bool* valid_root_conflict) {
+  if (valid_root_conflict) *valid_root_conflict = false;
   if (!valid_id(app_id)) throw Error("APP_MANIFEST_INVALID", "Invalid App ID");
   const auto canonical_root = fs::canonical(root);
   const auto html = resolve_html(canonical_root, entry.u8string());
@@ -255,7 +331,10 @@ std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& pr
         if (!same) {
           if (exists && old_entry.empty())
             throw conflict("Missing entry metadata, cannot safely determine the original entry. app.json does not define an authoritative entry");
-          if (exists && entry_valid) throw conflict("The old binding is still valid");
+          if (exists && entry_valid) {
+            if (valid_root_conflict) *valid_root_conflict = true;
+            throw conflict("The old binding is still valid");
+          }
           try { replacement = std::make_shared<IdentityLock>(active, true, false); }
           catch (const Error& error) {
             if (error.code == "APP_ID_CONFLICT") throw conflict(error.what());
@@ -273,19 +352,7 @@ std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& pr
   catch (const std::exception& error) { throw Error("APP_ORIGIN_INVALID", error.what()); }
   data["root"] = identity;
   data["entry"] = relative_entry;
-  auto temporary = record; temporary += ".tmp";
-  try {
-    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-    output << data.dump(2) << '\n';
-    output.close();
-    if (!output) throw Error("APP_DATA_UNAVAILABLE", "Cannot persist App identity");
-#ifdef _WIN32
-    if (!MoveFileExW(temporary.c_str(), record.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-      throw Error("APP_DATA_UNAVAILABLE", "Cannot replace App identity record");
-#else
-    fs::rename(temporary, record);
-#endif
-  } catch (...) { std::error_code ignored; fs::remove(temporary, ignored); throw; }
+  write_identity_record(record, data, "APP_DATA_UNAVAILABLE");
   replacement.reset();
   return std::make_shared<IdentityLock>(active, false);
 }
@@ -471,10 +538,15 @@ ResourceResponse WebResources::request(const std::string& uri, const std::string
     if (path.back() == '/') path += "index.html";
     auto relative = fs::u8path(path.substr(1));
     if (relative.has_root_path()) return fail(403);
-    for (const auto& component : relative) if (component == "..") return fail(403);
+    for (const auto& component : relative)
+      if (component == ".." || same_binding_path(component, ".reawebapi")) return fail(403);
     std::error_code error;
     const auto resolved = fs::weakly_canonical(root_ / relative, error);
     if (error || !contained(root_, resolved)) return fail(403);
+    const auto private_root = root_ / ".reawebapi";
+    if (same_binding_path(resolved, private_root) || binding_contains(private_root, resolved)) return fail(403);
+    if (fs::equivalent(resolved.parent_path(), private_root, error) ||
+        fs::equivalent(resolved, private_root / "identity.json", error)) return fail(403);
     std::string etag;
     time_t modified = -1;
     if (!fs::exists(resolved) && path == "/.well-known/appspecific/com.chrome.devtools.json") {
