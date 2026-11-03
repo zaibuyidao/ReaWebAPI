@@ -436,8 +436,9 @@ public:
     if (!options_.hidden) ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   }
   ~WinWindow() override {
-    cursor_.finish();
     closed_ = true;
+    if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
+    cursor_.finish();
     dock_redraw_.detach();
     if (devtools_) devtools_->detach();
     if (controller_) controller_->Close();

@@ -204,6 +204,14 @@ Run `windows_startup 1 --maximized` for saved maximized placement during first p
 
 On macOS, build `macos_startup` in `build-arm64`, then run `STARTUP_VARIANTS=4,6 STARTUP_RUNS=20 python3 tests/macos_startup.py`. It uses cold isolated profiles to check framed/frameless hidden creation, background JS, first Show pixels without focus, Focus, repeated Hide/Show, resize and Close before initialization. Variants `0,1,2,3,5` check normal visible startup. A logged-in graphical session and screen-capture permission are required.
 
+## Native close ordering
+
+Build and run `windows_close` on Windows. It observes native child destruction for visible, hidden, initializing, framed, frameless, fixed-size and maximized windows. The host must already be hidden when child teardown begins.
+
+On macOS build `macos_close`, then run `python3 tests/native_close.py` in a logged-in graphical session. On Linux build `linux_close` and run the same script on a dedicated X11 display with `REAWEB_TEST_ISOLATED_DISPLAY=1` and `REAWEB_TEST_REAPER` set. `REAWEB_TEST_BUILD_DIR` overrides the build directory. These tests check host visibility before WKWebView removal or X11 child unmap/reparent events, including repeated framed and frameless closes.
+
+Check that the existing close lifecycle callbacks finish before teardown and saved placement survives reopening. Record frameless closes at normal and maximized sizes to check for caption, border or empty-host flashes. Native event ordering does not replace compositor-specific visual acceptance.
+
 ## Transparent floating windows
 
 Run `python tests/transparent_smoke.py --reaper <executable> --extension <binary> --output <new-profile> --count 20` for transparent state, hidden startup, Lua/JS Dock rejection, instance reuse, reload and close. Runtime tests separately cover saved Dock preference preservation, menu rejection, invalid options and initialization failures.

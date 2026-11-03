@@ -345,6 +345,17 @@ public:
   }
   ~LinuxWindow() override {
     native_geometry_.watch(nullptr);
+    // Hide without destroying the X11 host before parking its foreign WebView.
+    const auto handle = static_cast<HWND>(window_->handle());
+    if (handle && !(GetWindowLong(handle, GWL_STYLE) & WS_CHILD)) {
+      if (auto native = SWELL_GetOSWindow(handle, "GdkWindow")) {
+        const auto hide = reinterpret_cast<void(*)(void*)>(dlsym(RTLD_DEFAULT, "gdk_window_hide"));
+        const auto display = reinterpret_cast<void*(*)(void*)>(dlsym(RTLD_DEFAULT, "gdk_window_get_display"));
+        const auto sync = reinterpret_cast<void(*)(void*)>(dlsym(RTLD_DEFAULT, "gdk_display_sync"));
+        if (hide) hide(native);
+        if (display && sync) sync(display(native));
+      }
+    } else if (handle) window_->set_visible(false);
     alpha_.detach();
     process_->alpha_frames.erase(id_);
     immediate_resize_enabled_ = false;

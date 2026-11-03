@@ -306,7 +306,7 @@ const id = await reaper.window.open('other/index.html', {frameless:true, resizab
 
 `getState()` 和 `windowstatechange` 增加 `frameless`、`resizable` 与 `framelessActive`。`frameless` 表示当前会话配置，`resizable` 表示创建配置，`framelessActive` 仅在独立无边框宿主内为 `true`。所有 Docker、浮动 Docker 和待恢复的保存停靠状态均为 `false`。Dock/Undock 保留 WebView 文档、句柄和订阅，原生标题和图标 API 的含义不变。
 
-使用 `data-reaweb-drag` 与 `data-reaweb-no-drag` 声明[原生拖动区](frontend.zh-CN.md#原生拖动区)。`setFrameless(boolean)` 保留宿主、文档、窗口外部尺寸位置、可见状态和停靠关系。客户区随原生标题栏调整，不触发导航。`resizable` 仍仅在创建时设置。[可运行示例](../examples/windows/frameless/README.md)提供可缩放与固定尺寸启动脚本，以及使用既有生命周期的关闭按钮。
+使用 `data-reaweb-drag` 与 `data-reaweb-no-drag` 声明[原生拖动区](frontend.zh-CN.md#原生拖动区)。`setFrameless(boolean)` 保留宿主、文档、窗口外部尺寸位置、可见状态和停靠关系。客户区随原生标题栏调整，不触发导航。`resizable` 仍仅在创建时设置。[可运行示例](../examples/windows/frameless/README.md)提供可缩放与固定尺寸启动脚本，以及使用既有生命周期的关闭按钮。三个平台均在关闭生命周期处理完成后，先隐藏原生宿主，再释放 WebView。
 
 `capabilities.runtime.window` 和诊断中的 `windowFeatures` 报告 `frameless`、`resizable`、`dragRegions` 及 `windowSystem`（`win32`、`appkit` 或 `x11`）。Windows 要求 WebView2 非客户区支持，Linux 要求 X11/XWayland 和支持 `_NET_WM_MOVERESIZE` 的窗口管理器，不支持原生 Wayland。不支持的创建选项明确失败，异步 WebView 初始化失败沿用既有错误报告和清理流程，不退化为带装饰的可见窗口。
 

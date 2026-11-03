@@ -540,6 +540,7 @@ public:
     } else [webview_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:ns(delegate_->options.url)]]];
   }
   ~MacWindow() override {
+    set_host_visible(false);
     if (focus_observer_) [NSNotificationCenter.defaultCenter removeObserver:focus_observer_];
     release_dock_icon();
     if (mouse_monitor_) [NSEvent removeMonitor:mouse_monitor_];
