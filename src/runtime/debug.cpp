@@ -170,6 +170,7 @@ Json Runtime::diagnostics(int id) const {
   result["system"] = system_diagnostics();
   result["streams"] = streams_.info();
   result["audioCapture"] = producers_.diagnostics();
+  result["realtime"] = realtime_.diagnostics(id);
   if (s.jsfx) result["jsfx"] = {{"cached", !s.jsfx->editor.host}, {"activation", s.jsfx->activation},
     {"presented", s.jsfx->presented}, {"fxGuid", s.jsfx->instance->binding->guid()}, {"fxIndex", s.jsfx->editor.fx},
     {"presentationMs", s.jsfx->presentation_ms}};

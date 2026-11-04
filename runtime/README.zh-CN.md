@@ -9,6 +9,7 @@
 | `reaper.d.ts` | 类型声明入口，引用 Mirror 和 Runtime 声明 |
 | `reaper-api.generated.d.ts` | 730 项 REAPER API 签名和返回类型 |
 | `runtime-api.d.ts` | Runtime 命名空间和数据类型 |
+| `native-transport/` | [Realtime 播放状态](../docs/realtime.zh-CN.md)，演示普通 Web 的 60/120 Hz 订阅、原始位置变化统计和 CSV 导出 |
 | `jsfx-webui.mjs` | [JSFX Web UI](../docs/jsfx-webui.zh-CN.md) 的共享 `editor` 尺寸、`params` 参数绑定、Promise 合并写入、参数组手势、DSP 流、状态、命令和二进制资源。 |
 | `browser-files.mjs` | 可选的 Blob/data URL 原生保存模块，附带 `browser-files.d.mts` 类型声明。参见[浏览器媒体接入](../docs/browser-media.md)。 |
 | [Native Service Demo](../examples/integrations/native-service/README.md) | 原生事件、服务与 Lua 共存。SDK 包含 `native/reaweb_service.h` 和 `native/test_extension.cpp`，参见 [接入文档](../docs/native-services.zh-CN.md)。 |

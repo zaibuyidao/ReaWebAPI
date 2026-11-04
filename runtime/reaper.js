@@ -618,6 +618,75 @@
     }
   };
   api.stream = Object.freeze({ open: openStream, getDiagnostics: () => call('ReaWeb_StreamDiagnostics', []) });
+  // Realtime sources use ordinary v1 binary streams. JSFX v2 timing and its
+  // instance permissions remain separate; source decoders are explicitly versioned.
+  const realtimeDecoders = {
+    'transport.v1': packet => {
+      const bytes = packet.bytes;
+      if (bytes.byteLength !== 64) throw failure('UNSUPPORTED_FORMAT', 'Invalid transport snapshot size');
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      if (view.getUint32(0, true) !== 0x31305452) throw failure('UNSUPPORTED_FORMAT', 'Invalid transport snapshot version');
+      const sampledAt = view.getFloat64(8, true), position = view.getFloat64(16, true);
+      const playState = view.getUint32(24, true), sampleDurationMs = view.getFloat64(40, true) * 1000;
+      if (!Number.isFinite(sampledAt) || !Number.isFinite(position) || !Number.isFinite(sampleDurationMs) || sampleDurationMs < 0 || playState > 7)
+        throw failure('UNSUPPORTED_FORMAT', 'Invalid transport snapshot values');
+      return Object.freeze({ source: 'transport', position, playState, sampledAt, sampleDurationMs,
+        projectChanged: !!(view.getUint32(28, true) & 1), projectEpoch: view.getBigUint64(32, true),
+        sourceSequence: view.getBigUint64(48, true), sequence: packet.sequence,
+        producerDropped: packet.producerDropped });
+    }
+  };
+  api.realtime = Object.freeze({
+    getCapabilities: () => call('ReaWeb_RealtimeCapabilities', []),
+    getDiagnostics: () => call('ReaWeb_RealtimeDiagnostics', []),
+    subscribe: async (source, options = {}) => {
+      if (typeof source !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(source) ||
+          !options || typeof options !== 'object' || Array.isArray(options) ||
+          Object.keys(options).some(key => !['updateRate', 'onData', 'onError', 'onClose'].includes(key)) ||
+          ['onData', 'onError', 'onClose'].some(key => options[key] !== undefined && typeof options[key] !== 'function') ||
+          (options.updateRate !== undefined && (!Number.isFinite(options.updateRate) || options.updateRate < 1 || options.updateRate > 120)))
+        throw failure('INVALID_ARGUMENT', 'Expected source, updateRate (1..120) and optional callbacks');
+      const descriptor = await call('ReaWeb_RealtimeSubscribe', [source, options.updateRate === undefined ? {} : { updateRate: options.updateRate }]);
+      let stream, current = null, releasing = null, closing = null, error = null;
+      const release = () => {
+        if (!releasing) releasing = closed ? Promise.resolve() : call('ReaWeb_RealtimeUnsubscribe', [descriptor.id]);
+        return releasing;
+      };
+      try {
+        const decode = realtimeDecoders[descriptor.schema];
+        if (!decode) throw failure('UNSUPPORTED_FORMAT', 'Unknown realtime source schema');
+        stream = await openStream(descriptor.stream);
+        const receive = () => {
+          const packet = stream.latest();
+          if (!packet || current?.sequence === packet.sequence) return;
+          try { current = decode(packet); if (options.onData) notify(options.onData, current); }
+          catch (reason) { error = reason; if (options.onError) notify(options.onError, reason); void subscription.close().catch(() => {}); }
+        };
+        const subscription = Object.freeze({
+          source, updateRate: descriptor.updateRate,
+          latest: () => stream.closed ? null : current,
+          get closed() { return stream.closed; },
+          get error() { return error || stream.error; },
+          close: () => {
+            if (!closing) closing = (async () => { try { await stream.close(); } finally { await release(); } })();
+            return closing;
+          }
+        });
+        stream.on('data', receive);
+        stream.on('error', reason => { error = reason; if (options.onError) notify(options.onError, reason); });
+        stream.on('close', reason => {
+          current = null;
+          void release().catch(reason => { if (options.onError) notify(options.onError, reason); });
+          if (options.onClose) notify(options.onClose, reason);
+        });
+        receive();
+        return subscription;
+      } catch (reason) {
+        try { if (stream) await stream.close(); } finally { await release().catch(() => {}); }
+        throw reason;
+      }
+    }
+  });
   const nativeTask = async (eventName, start, args, end, callback, waitReady) => {
     if (typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected a task callback');
     let id, stopped = false, initializedReady = false, resolveReady, rejectReady;

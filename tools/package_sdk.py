@@ -23,6 +23,10 @@ def payload(root, version, revision):
     paths = {f'ReaWebAPI/SDK/{name}': root / 'runtime' / name for name in (
         'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'browser-files.mjs', 'browser-files.d.mts', 'jsfx-webui.mjs', 'jsfx-webui.d.mts', 'README.md', 'README.zh-CN.md')}
     paths['ReaWebAPI/docs/jsfx-webui.md'] = root / 'docs/jsfx-webui.md'
+    for name in ('realtime.md', 'realtime.zh-CN.md'):
+        paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
+    for name in ('reawebapi-native-transport.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
+        paths[f'ReaWebAPI/SDK/native-transport/{name}'] = root / 'examples/integrations/native-transport' / name
     paths['ReaWebAPI/docs/jsfx-native-channel.md'] = root / 'docs/jsfx-native-channel.md'
     paths['ReaWebAPI/docs/jsfx-webui.zh-CN.md'] = root / 'docs/jsfx-webui.zh-CN.md'
     paths['ReaWebAPI/docs/jsfx-native-channel.zh-CN.md'] = root / 'docs/jsfx-native-channel.zh-CN.md'

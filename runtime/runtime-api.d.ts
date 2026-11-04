@@ -111,7 +111,7 @@ interface ReaWebLogEntry {
 }
 interface ReaWebCleanupEvent { reason: 'close' | 'reload' | 'unload'; timeoutMs: number; }
 type ReaWebRuntimeNamespace = 'window' | 'theme' | 'dialog' | 'events' | 'lifecycle' | 'debug' | 'fs' | 'audio'
-  | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction' | 'host' | 'stream';
+  | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction' | 'host' | 'stream' | 'realtime';
 interface ReaWebRuntimeCapabilities {
   contract: 2; namespaces: ReaWebRuntimeNamespace[]; cleanupTimeoutMs: number;
   /** JSFX-specific service protocol, when the optional module is registered. */
@@ -152,7 +152,8 @@ interface ReaWebDiagnostics {
   audioCapture: { callbacks: number; users: number; sampleRate: number; published: number; dropped: number; unavailable: number; blockFrames: number; channels: number; bufferAvailable: boolean }[];
   lifecycleAction: string; audioJobs: number; recentLogs: ReaWebLogEntry[]; devtools: ReaWebDevToolsState;
   /** Frame channel. `pushed` keeps rising while the page is idle; `luaFrameAgeMs` says how stale Lua's content is. */
-  frames?: { pushed: number; intervalMs: number; luaWrites: number; luaFrameAgeMs: number | null }; }
+  frames?: { pushed: number; intervalMs: number; luaWrites: number; luaFrameAgeMs: number | null };
+  realtime?: ReaWebRealtimeDiagnostics; }
 interface ReaWebEvents {
   /** Pushed by the extension from the REAPER timer, independent of how often Lua runs.
    * `lua` is the nonempty UTF-8 text Lua last wrote with ReaWeb_SetFrame, unchanged. */
@@ -192,6 +193,15 @@ interface ReaWebEvents {
   'theme-changed': ReaWebTheme;
 }
 interface ReaWebAPI {
+  readonly realtime: {
+    getCapabilities(): Promise<ReaWebRealtimeCapabilities>;
+    getDiagnostics(): Promise<ReaWebRealtimeDiagnostics>;
+    subscribe(source: 'transport', options?: { updateRate?: number;
+      onData?: (state: Readonly<ReaWebTransportSnapshot>) => void;
+      onError?: (error: Error & { code?: string }) => void;
+      onClose?: (reason: Error & { code?: string }) => void;
+    }): Promise<ReaWebRealtimeSubscription>;
+  };
   readonly stream: {
     open(name: string): Promise<ReaWebStream>;
     getDiagnostics(): Promise<{ allocatedBytes: number; consumers: number; streams: { name: string; published: number; dropped: number }[]; transport?: { connections: number; handshakeFailures: number; expiredTickets: number; lastHandshakeError: string } }>;
@@ -397,4 +407,31 @@ interface ReaWebAPI {
     getWaveform(path: string, options?: ReaWebWaveformOptions): Promise<ReaWebWaveform>;
     getTrackMeter(track: MediaTrackHandle): Promise<ReaWebTrackMeter>;
   };
+}
+
+/** Native host snapshot, not audio-block timing. No interpolation is applied. */
+interface ReaWebTransportSnapshot {
+  source: 'transport'; position: number; playState: number;
+  /** Host monotonic seconds; not directly comparable with performance.now(). */
+  sampledAt: number;
+  sampleDurationMs: number;
+  projectEpoch: bigint; projectChanged: boolean;
+  sourceSequence: bigint; sequence: bigint; producerDropped: bigint;
+}
+interface ReaWebRealtimeSubscription {
+  readonly source: 'transport'; readonly updateRate: number;
+  readonly closed: boolean; readonly error: (Error & { code?: string }) | null;
+  latest(): Readonly<ReaWebTransportSnapshot> | null;
+  close(): Promise<void>;
+}
+interface ReaWebRealtimeCapabilities {
+  version: 1; supported: boolean; hardRealtime: false; maxSubscriptions: number;
+  clock: 'host-monotonic-seconds';
+  sources: Record<string, { available: boolean; schema: string; minRate: number; maxRate: number;
+    defaultRate: number; policy: 'latest'; sampling: 'native-thread' }>;
+}
+interface ReaWebRealtimeDiagnostics {
+  schedulerRate: number; skippedBusy: number;
+  subscriptions: { id: number; source: string; updateRate: number; published: number; publishDropped: number }[];
+  sources: Record<string, { sampled: number; errors: number; maxSampleIntervalMs: number; lastSampleAt: number }>;
 }

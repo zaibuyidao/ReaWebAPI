@@ -17,6 +17,7 @@ void Runtime::navigate(Session& session) {
   }
   if (session.window) session.window->clear_media();
   streams_.detach_window(session.id);
+  realtime_.close_window(session.id);
   producers_.close_window(session.id);
   tasks_.cancel_window(session.id);
   services_.cancel_window(session.id);

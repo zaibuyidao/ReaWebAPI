@@ -8,6 +8,7 @@
 #include "runtime/native_stream.hpp"
 #include "runtime/native_tasks.hpp"
 #include "runtime/native_producers.hpp"
+#include "runtime/realtime.hpp"
 #include "runtime/external_transport.hpp"
 #include "runtime/external_settings.hpp"
 #include "runtime/diagnostics.hpp"
@@ -186,6 +187,7 @@ private:
   std::unique_ptr<JsfxNativeHub> jsfx_native_;
   NativeTasks tasks_;
   NativeProducers producers_;
+  RealtimeManager realtime_;
   NativeMonitorManager monitors_;
   DockApi dock_;
   fs::path resource_;

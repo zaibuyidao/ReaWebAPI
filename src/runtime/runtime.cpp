@@ -34,7 +34,7 @@ bool small_message(const Json& value, size_t& budget) {
 Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock)
   : host_(std::move(host)), services_([this](auto handle, const auto& service, int window, const auto& name, Json data) {
       service_event(handle, service, window, name, std::move(data));
-    }), producers_(host_, streams_), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), diagnostic_log_(resource_), main_thread_(std::this_thread::get_id()) {
+    }), producers_(host_, streams_), realtime_(host_, streams_), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), diagnostic_log_(resource_), main_thread_(std::this_thread::get_id()) {
   diagnostic_log_.event(Diagnostics::Level::Debug, Diagnostics::Scope::Runtime, "runtime.start.begin");
   project_ = host_.current_project();
   host_generation_ = host_.project_generation ? host_.project_generation() : 0;
@@ -52,6 +52,7 @@ Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::str
   diagnostic_log_.event(Diagnostics::Level::Info, Diagnostics::Scope::Runtime, "runtime.start.end");
 }
 Runtime::~Runtime() {
+  realtime_.shutdown();
   diagnostic_log_.event(Diagnostics::Level::Debug, Diagnostics::Scope::Runtime, "runtime.stop.begin");
   jsfx_discovery_.reset();
   for (auto& item : sessions_) release_jsfx(*item.second);
@@ -87,6 +88,17 @@ Json Runtime::web_runtime(const Session& session) const {
 }
 Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   auto& s = *sessions_.at(id);
+  if (method == "ReaWeb_RealtimeCapabilities") return realtime_.capabilities();
+  if (method == "ReaWeb_RealtimeDiagnostics") return realtime_.diagnostics(id);
+  if (method == "ReaWeb_RealtimeSubscribe") {
+    if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected realtime source name");
+    return realtime_.subscribe(args[0].get<std::string>(), args[1], id);
+  }
+  if (method == "ReaWeb_RealtimeUnsubscribe") {
+    if (!args[0].is_number_integer() || args[0].get<double>() < 1 || args[0].get<double>() > 9007199254740991.0)
+      throw Error("INVALID_ARGUMENT", "Expected realtime subscription id");
+    realtime_.unsubscribe(args[0].get<uint64_t>(), id); return true;
+  }
   if (method == "ReaWeb_AnalysisOpen") {
     if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected analysis stream kind");
     return producers_.audio(args[0].get<std::string>(), args[1], id);
@@ -462,6 +474,7 @@ void Runtime::tick() {
   if (ticking_) return;
   ticking_ = true;
   struct Reset { bool& value; ~Reset() { value = false; } } reset{ticking_};
+  realtime_.housekeeping();
   const bool diagnostic_active = std::any_of(sessions_.begin(), sessions_.end(), [](const auto& item) {
     return item.second->diagnostic_enabled && !item.second->closing;
   });
@@ -619,6 +632,7 @@ void Runtime::tick() {
         release_jsfx(s);
         streams_.detach_window(s.id);
         producers_.close_window(s.id);
+        realtime_.close_window(s.id);
         tasks_.cancel_window(s.id);
         services_.cancel_window(s.id);
         s.service_subscriptions.clear(); s.subscriptions.clear();

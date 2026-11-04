@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Realtime Transport Monitor</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script></head>
+<body><main>
+<header><div class="language-control"><label for="language" data-i18n="language">Language</label><select id="language"><option value="en">English</option><option value="zh-CN">简体中文</option></select></div><small>ReaWebAPI · realtime.transport</small><h1 data-i18n="title">Realtime Transport Monitor</h1><p data-i18n="subtitle">Lua opens the window and exits · No defer loop · No position interpolation</p></header>
+<div id="status" role="status">Connecting to REAPER…</div>
+<section class="hero"><div><label data-i18n="position">Play Position / seconds</label><strong id="position">—</strong></div><div><label data-i18n="transport">Transport State</label><strong id="transport">—</strong><span id="bits">—</span></div></section>
+<div class="controls"><select id="mode" aria-label="Subscription mode" disabled><option value="60">Realtime 60 Hz</option><option value="120">Realtime 120 Hz</option><option value="frame" data-i18n="frame">Frame comparison</option></select><button id="play" data-i18n="play" disabled>Play</button><button id="pause" data-i18n="pause" disabled>Pause / Resume</button><button id="stop" data-i18n="stop" disabled>Stop</button><button id="reset" data-i18n="reset">Reset statistics</button><button id="export" data-i18n="export" disabled>Export CSV</button><button id="diagnostics" data-i18n="diagnostics" disabled>Read diagnostics</button></div>
+<section class="grid">
+<article><label data-i18n="arrivalRate">Receive rate · last 5 seconds</label><b id="hz">—</b></article>
+<article><label data-i18n="arrivalInterval">Mean / P95 interval · last 5 seconds</label><b id="interval">—</b></article>
+<article><label data-i18n="nativeRate">Native sample rate · last 5 seconds</label><b id="native-hz">—</b></article>
+<article><label data-i18n="nativeInterval">Native mean / P95 interval</label><b id="native-interval">—</b></article>
+<article><label data-i18n="maxInterval">Maximum interval · this run</label><b id="max">—</b></article>
+<article><label data-i18n="counts">Received packets / sequence gaps</label><b id="counts">0 / 0</b></article>
+<article><label data-i18n="positionRate">Position changes · last 5 seconds</label><b id="position-hz">—</b></article>
+</section>
+<h2 data-i18n="chart">Packet arrival intervals · last 180 packets, milliseconds</h2><canvas id="chart" width="1000" height="130"></canvas>
+<p class="note" data-i18n="timingNote">Realtime samples on an independent native thread. Scheduling and browser load can delay delivery. Frame is the existing channel used for comparison. Intervals are not end-to-end latency. Host and page clocks cannot be subtracted directly.</p>
+<details open><summary data-i18n="raw">Latest transport snapshot</summary><pre id="raw">Waiting for the first packet…</pre></details>
+<details><summary data-i18n="native">Native diagnostics</summary><pre id="native">Click “Read diagnostics”. Lua writes should be 0.</pre></details>
+<p class="note" data-i18n="csvNote">CSV contains the latest 20,000 transport samples. All readings come from actual callbacks. Playback controls affect the current project.</p>
+</main></body></html>

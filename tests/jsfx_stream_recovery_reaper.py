@@ -12,6 +12,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 for name in ('reaper', 'extension', 'output'):
     parser.add_argument('--' + name, type=Path, required=True)
 parser.add_argument('--diagnostics', action='store_true')
+parser.add_argument('--realtime', action='store_true', help='Run a concurrent transport subscription during JSFX recovery')
 args = parser.parse_args()
 source = Path(__file__).resolve().parents[1]
 root = args.output.resolve()
@@ -71,6 +72,12 @@ setInterval(async()=>{
 await opening;
 </script>''')
 (root / 'EmptyVST').mkdir()
+if args.realtime:
+    page = effect / 'index.html'
+    text = page.read_text()
+    text = text.replace("const opening=open().catch", "let realtimeCount=0; const realtime=await reaper.realtime.subscribe('transport',{updateRate:120,onData:()=>realtimeCount++,onError:report});\nconst opening=open().catch")
+    text = text.replace('const state={page,counts,errors,', 'const state={realtimeCount,page,counts,errors,')
+    page.write_text(text)
 settings = ('[reaper]\nloadlastproj=0\nshowlastproj=0\nsplash=0\nverchk=0\nerrnowarn=5\nhasrecentlyopened=1\n'
             'newprojdo=0\nvst_scan=0\nvstfullstate=49989\nvstpath64=' + str(root / 'EmptyVST') + '\n')
 if sys.platform == 'darwin':
@@ -136,7 +143,7 @@ end
 local ok,err=xpcall(main,debug.traceback)
 if not ok then write('error.txt',err) end
 '''
-if args.diagnostics and sys.platform == 'darwin':
+if args.realtime or (args.diagnostics and sys.platform == 'darwin'):
     lua = lua.replace('local ok,err=xpcall(main,debug.traceback)\nif not ok then write(\'error.txt\',err) end',
         "local ready=reaper.time_precise()+1\nlocal function start()\nif reaper.time_precise()<ready then reaper.defer(start);return end\nlocal ok,err=xpcall(main,debug.traceback)\nif not ok then write('error.txt',err) end\nend\nreaper.defer(start)")
 (root / 'launch.lua').write_text(lua.replace('ROOT', '[[' + root.as_posix() + ']]'))
@@ -182,6 +189,8 @@ with (root / 'process.log').open('w') as log:
                 return value
         return wait(check, 60)
     try:
+        if args.realtime:
+            wait(lambda: (root / 'started.txt').exists(), 90)
         results['initial'] = advancing()
         for op in ('preset', 'recompile'):
             before = snapshot(); command(op); time.sleep(1)
@@ -190,6 +199,8 @@ with (root / 'process.log').open('w') as log:
             print(op, 'PASS', flush=True)
         command('device-stop'); time.sleep(2); paused = snapshot(); time.sleep(2)
         assert snapshot()['counts'] == paused['counts'], 'Audio_Quit did not stop DSP'
+        if args.realtime:
+            assert snapshot()['realtimeCount'] > paused['realtimeCount'], 'Realtime stopped with the audio device'
         command('device-start'); results['device-restart'] = advancing(paused)
         assert results['device-restart']['page'] == results['initial']['page']
         print('device-restart PASS', flush=True)

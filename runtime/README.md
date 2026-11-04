@@ -9,6 +9,7 @@ TypeScript declarations, templates and examples for the current ReaWebAPI releas
 | `reaper.d.ts` | Type declaration entry point, referencing the Mirror and Runtime declarations |
 | `reaper-api.generated.d.ts` | 730 REAPER API signatures and result types |
 | `runtime-api.d.ts` | Runtime namespaces and data types |
+| `native-transport/` | [Realtime transport](../docs/realtime.md): ordinary Web subscriptions at 60/120 Hz, raw position-change metrics and CSV export |
 | `jsfx-webui.mjs` | [JSFX Web UI](../docs/jsfx-webui.md): `params`, shared `editor` sizing, Promise-based coalesced writes, grouped gestures, DSP streams, state, commands and binary resources. |
 | `browser-files.mjs` | Opt-in Blob/data URL export through native save dialogs, with `browser-files.d.mts` declarations. See [browser media](../docs/browser-media.md). |
 | [Native Service Demo](../examples/integrations/native-service/README.md) | Native events, services and Lua coexistence. Packaged SDK also includes `native/reaweb_service.h` and `native/test_extension.cpp`. See [integration](../docs/native-services.md). |

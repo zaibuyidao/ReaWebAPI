@@ -322,3 +322,18 @@ async function jsfxContract() {
   await jsfx.params.set(0, { value: .4 });
   await jsfx.dispose();
 }
+
+async function realtimeContract(reaper: ReaWebAPI) {
+  const caps: ReaWebRealtimeCapabilities = await reaper.realtime.getCapabilities();
+  const sub = await reaper.realtime.subscribe('transport', {updateRate:120, onData(state) {
+    const position: number = state.position;
+    const epoch: bigint = state.projectEpoch;
+    void position; void epoch;
+  }});
+  const state: Readonly<ReaWebTransportSnapshot> | null = sub.latest();
+  await sub.close();
+  const diagnostics: ReaWebRealtimeDiagnostics = await reaper.realtime.getDiagnostics();
+  void caps; void state; void diagnostics;
+  // @ts-expect-error Only implemented sources are exposed by this SDK.
+  await reaper.realtime.subscribe('unknown');
+}

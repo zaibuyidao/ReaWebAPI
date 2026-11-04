@@ -24,6 +24,7 @@ src/
 │  ├─ native_stream.cpp / native_stream.hpp
 │  ├─ stream_transport.cpp / stream_transport.hpp
 │  ├─ native_producers.cpp / native_producers.hpp
+│  ├─ realtime.cpp / realtime.hpp / realtime_scheduler.cpp
 │  ├─ audio_analysis.cpp / audio_analysis.hpp
 │  ├─ native_tasks.cpp / native_tasks.hpp
 │  ├─ service_router.cpp
@@ -72,7 +73,7 @@ App examples live under `examples/`, separate from the SDK in `runtime/` and the
 | `examples/templates/` | `starter`, `modern`: development templates / 开发模板 |
 | `examples/runtime-features/` | `runtime-demo`, `web-runtime`, `hidden-start`: runtime APIs, browser capabilities and hidden startup / 运行时接口、浏览器能力和隐藏启动 |
 | `examples/backends/` | `lua-backend`, `eel-backend`, `eel-mixer`: Lua/EEL integration / Lua 与 EEL 后端接入 |
-| `examples/integrations/` | `native-service`, `native-stream`, `external-client`: native extensions and external clients / 原生扩展及外部客户端接入 |
+| `examples/integrations/` | `native-service`, `native-stream`, `native-transport`, `external-client`: native services, high-rate subscriptions and external clients / 原生服务、高频订阅及外部客户端接入 |
 | `examples/windows/` | `frameless`, `transparent`: window appearance and behavior / 窗口样式和行为 |
 
 Release installation paths remain unchanged. ReaPack packages only the six main Demo files under `web/`. SDK examples retain their individual directories under `ReaWebAPI/SDK/`; platform packages retain `Scripts/ReaWebAPI/Example/`. The JSFX helper examples remain with the helper under `runtime/jsfx/examples/`.
@@ -107,9 +108,9 @@ External Clients add an optional localhost protocol inside the same extension. `
 
 External Client 在同一扩展内增加可选本机协议。`ReaperApiCore` 提供共享原生调用、Handle 和 Batch，`Runtime` 管理窗口与 External Session 的调度，复用同一 Service Registry、Monitor Manager 和 Stream Hub。External Transport 仅处理 socket 与 JSON。参见 [External Client](external-clients.zh-CN.md)。
 
-The public API consists of 730 REAPER Mirror bindings, thirteen Lua `ReaWeb_*` host APIs and fifteen JavaScript Runtime namespaces.
+The public API consists of 730 REAPER Mirror bindings, thirteen Lua `ReaWeb_*` host APIs and sixteen JavaScript Runtime namespaces.
 
-公开接口包含 730 项 REAPER Mirror、13 项 Lua `ReaWeb_*` 宿主 API 和 15 个 JavaScript Runtime 命名空间。
+公开接口包含 730 项 REAPER Mirror、13 项 Lua `ReaWeb_*` 宿主 API 和 16 个 JavaScript Runtime 命名空间。
 
 Namespace names do not require one C++ file each. `reaper.dialog.*` wraps the `GetUserFileName` Mirror in `runtime/reaper.js`. Clipboard operations use the common asynchronous dispatcher and the OS implementations in `platform/`.
 

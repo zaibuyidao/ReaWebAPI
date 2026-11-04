@@ -230,14 +230,14 @@ int main() {
     CHECK(f.call("ReaWeb_IsDocked")["result"] == true);
     CHECK(f.call("ReaWeb_SetDocked", {false})["result"] == false);
     CHECK(f.call("ReaWeb_SetDocked", {1})["error"]["code"] == "INVALID_ARGUMENT");
-    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["methods"].size() == 802);
+    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["methods"].size() == 806);
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["window"]["hiddenStart"] == true);
     CHECK(f.call("ReaWeb_OpenEx", {"index.html", {{"hidden", 1}}})["error"]["code"] == "INVALID_ARGUMENT");
     CHECK(f.call("ReaWeb_OpenEx", {"index.html", {{"id", "child"}}})["error"]["code"] == "INVALID_ARGUMENT");
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["contract"] == 2);
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["namespaces"] ==
       Json({"window", "theme", "dialog", "events", "lifecycle", "debug", "fs", "audio",
-            "clipboard", "dragDrop", "app", "system", "transaction", "host", "stream"}));
+            "clipboard", "dragDrop", "app", "system", "transaction", "host", "stream", "realtime"}));
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["reservedNamespaces"] == Json::array());
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["version"] == REAWEB_VERSION);
     CHECK(same_document("file:///a/index.html#x", "file:///a/index.html"));

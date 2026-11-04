@@ -1,16 +1,16 @@
 # Runtime API 完整清单 / Complete API inventory
 
-JavaScript Runtime 公开以下 **15 个命名空间、81 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
+JavaScript Runtime 公开以下 **16 个命名空间、84 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
 
-The JavaScript Runtime exposes fifteen namespaces: 81 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
+The JavaScript Runtime exposes sixteen namespaces: 84 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
 Lua 通过原生函数 `reaper.ReaWeb_Open(path)` 启动页面。JavaScript 使用本清单中的 Runtime 命名空间。内部通信命令是桥接协议的一部分。
 
-全部 15 个命名空间已有具体能力；`capabilities.runtime.reservedNamespaces` 现在为空数组。`app` 提供当前应用信息，`dragDrop` 提供原生文件／文本拖放；大小写统一为 `dragDrop`，没有 `dragdrop` 别名。
+全部 16 个命名空间已有具体能力。`capabilities.runtime.reservedNamespaces` 现在为空数组。`app` 提供当前应用信息，`dragDrop` 提供原生文件／文本拖放。大小写统一为 `dragDrop`，没有 `dragdrop` 别名。
 
-All fifteen namespaces have implemented members. App identity is shared with browser storage. Manifest metadata is read at App creation, and the validator checks complete manifests.
+All sixteen namespaces have implemented members. App identity is shared with browser storage. Manifest metadata is read at App creation, and the validator checks complete manifests.
 
 ## reaper.host
 
@@ -234,3 +234,13 @@ v0.3.8.16 adds initial `{frameless?:boolean, resizable?:boolean}` to `window.ope
 v0.3.8.18 adds creation-only `transparent?:boolean`, window state fields `transparent` / `transparentActive`, and `capabilities.runtime.window.transparency`. Transparent windows reject docking. Public method counts and the legacy native ABI are unchanged. See [Transparent windows](host-api.md#transparent-windows) / [透明窗口](host-api.zh-CN.md#透明窗口)。
 
 Since v0.3.9.2, `window.setFrameless`, `window.setCornerRadius` and `fs.moveFile` are available. See the [appearance contract](host-api.md#runtime-appearance) and [file-move contract](runtime-api.md#file-moves).
+
+## reaper.realtime
+
+| Method | Returns | Purpose |
+| --- | --- | --- |
+| `reaper.realtime.subscribe(source, options?)` | `Promise<ReaWebRealtimeSubscription>` | Subscribe to a high-rate source; currently transport on Windows, macOS and Linux |
+| `reaper.realtime.getCapabilities()` | `Promise<ReaWebRealtimeCapabilities>` | Query supported sources and rates; no sampling starts |
+| `reaper.realtime.getDiagnostics()` | `Promise<ReaWebRealtimeDiagnostics>` | This window's subscriptions and shared sampling counters |
+
+See [Realtime sources](realtime.md). This additive namespace does not change JSFX streams or frame events.

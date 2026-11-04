@@ -4,11 +4,11 @@
 
 **English** | [简体中文](runtime-api.zh-CN.md)
 
-JavaScript Runtime fixes fifteen namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`, `reaper.host`, `reaper.stream`. All 730 REAPER methods retain their names, Promise results, typed handles and Lua argument/result order. Distribute `reaper.d.ts`, `reaper-api.generated.d.ts` and `runtime-api.d.ts` together. `capabilities.runtime.contract` is 2 (host SDK), while `webRuntime.contract` remains 1 (Web resources/storage).
+JavaScript Runtime fixes sixteen namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`, `reaper.host`, `reaper.stream`, `reaper.realtime`. All 730 REAPER methods retain their names, Promise results, typed handles and Lua argument/result order. Distribute `reaper.d.ts`, `reaper-api.generated.d.ts` and `runtime-api.d.ts` together. `capabilities.runtime.contract` is 2 (host SDK), while `webRuntime.contract` remains 1 (Web resources/storage).
 
 Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
 
-All fifteen namespaces provide implemented members: 77 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All sixteen namespaces provide implemented members: 84 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
 `reaper.host` retains the Lua Backend route. `reaper.host.service(name)` routes to named native services. `reaper.events` adds native selection, track, transport, project and timeline sources. See [Native Services](native-services.md) for payloads, thread boundaries and lifecycle rules. Existing Clipboard, Drag & Drop, Window/Dock/Focus and System interfaces remain unchanged.
 
@@ -234,3 +234,7 @@ const enabled = (await reaper.window.getState()).dawKeyboard;
 Window creation and navigation or reload reread JSON and apply its initial state before `lifecycle.ready` resolves. Runtime overrides never write configuration. Reusing a cached JSFX page retains its override until that page reloads. A missing or invalid JSFX association rejects the reload handshake with `JSFX_ASSOCIATION_INVALID`.
 
 When enabled, unmodified Space outside editable fields uses REAPER's current main-section shortcut binding. Text inputs, textareas, contenteditable, editable controls in open or closed Shadow DOM, and IME composition retain browser behavior. Other keys and newly pressed modified keys retain existing handling. A held Space retains its initial owner. Blur or disabling the switch releases a host-owned key.
+
+## Realtime subscriptions
+
+`reaper.realtime` provides transport subscriptions at requested rates up to 120 Hz. See [Realtime sources](realtime.md) for scheduling, timestamp semantics and cleanup.
