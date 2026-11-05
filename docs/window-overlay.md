@@ -55,3 +55,21 @@ Inspect `capabilities.runtime.window.overlay`. Its `layer`, `passthrough`, `regi
 `INVALID_ARGUMENT` identifies invalid parameters. `LAYER_UNAVAILABLE` and `MOUSE_MODE_UNAVAILABLE` identify unsupported native conditions. `LAYER_FAILED` and `MOUSE_MODE_FAILED` identify native setup or update failures. A failed runtime update preserves the previous requested state. Asynchronous initialization failures follow existing window cleanup and diagnostics behavior.
 
 See the [overlay example](../examples/windows/overlay/README.md) for controls, DOM region updates and external Lua recovery actions.
+
+Linux frameless overlays may extend beyond the display bounds. The example overscans by one native pixel to avoid window managers treating an exact screen-sized frameless window as fullscreen and raising it above floating windows. Apps fitting a display must retain this overscan, or use a smaller viewport. Exact fullscreen bounds are not a portable X11 stacking guarantee.
+
+## SVG controls and Main shortcuts (v0.3.9.25)
+
+The shipped example combines all policies in one display-sized overlay. Its `regions.js` helper samples `SVGGeometryElement.isPointInFill/isPointInStroke` in viewport CSS coordinates and merges scanlines into native rectangles. Holes and transformed geometry are supported at one CSS pixel resolution. DOM controls use bounding rectangles. The host still consumes rectangles, not selectors or SVG paths. Apps must republish after geometry/layout changes. Clipping, masks, non-scaling strokes and animated geometry need application-specific regions. Use `setPointerCapture` on pointer down to retain the gesture outside the hit region.
+
+```js
+await reaper.window.setShortcutRouting(true);
+const enabled = (await reaper.window.getState()).shortcutRouting;
+// Lua: reaper.ReaWeb_SetShortcutRouting(id, true)
+```
+
+This opt-in policy keeps native keyboard focus in the WebView. Outside editable fields, trusted letter, digit, punctuation, navigation, function and numeric-keypad key presses route to the user's REAPER **Main** section bindings, including Shift/Ctrl/Alt and macOS Command combinations. It does not simulate a fixed Play action or redirect keys to the MIDI editor section. Press ownership and initial modifiers remain fixed through repeat/release. Blur, disable, navigation and close release held routed keys.
+
+Text inputs, textareas, contenteditable, editable Shadow DOM, focused iframes and IME composition retain page input. Click an editable field to type, then click a non-editable control to resume Main shortcuts. Unbound routed keys are consumed outside editable fields. OS-reserved combinations, browser/platform shortcuts handled before DOM delivery (including DevTools shortcuts), media keys and arbitrary international keyboard layouts are outside the routing guarantee.
+
+The default is `false`, including after reload. `setShortcutRouting(false)` restores the existing keyboard policy and returns `false` on success. While enabled, it takes precedence over `setKeyboardCapture` and the older Space-only `setDawKeyboard` for eligible presses. Neither setting is overwritten. Hosted JSFX Web UIs reject this new setter with `WINDOW_HOSTED`. Lua returns the enabled state, with errors in `ReaWeb_GetLastError()`. Inspect `capabilities.runtime.window.shortcutRouting` for availability. This routing does not require mouse passthrough to release native keyboard focus.

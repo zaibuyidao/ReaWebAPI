@@ -83,6 +83,7 @@ struct FakeWindow : Window {
     wants_visible = !options.hidden; shown = !deferred;
   }
   void evaluate(const std::string& script) override {
+    if (script.rfind("window.__reawebSetShortcutRouting?.(", 0) == 0) return;
     if (script.rfind("window.__reawebSetDawKeyboard?.(", 0) == 0) {
       daw_keyboard = script.find("(true)") != std::string::npos; return;
     }
@@ -340,6 +341,31 @@ int main() {
       window->options.on_message("__reawebDawKey:d"); runtime.tick();
       runtime.close(id); runtime.tick(); CHECK(keys == "drudududu");
       runtime.close(second_id); runtime.tick();
+    }
+    {
+      auto routing_docks = docks;
+      std::vector<ShortcutKey> keys;
+      routing_docks.daw_shortcut = [&](const ShortcutKey& key) { keys.push_back(key); };
+      Runtime runtime(host, root, [](const std::string&) {}, routing_docks);
+      const auto id = runtime.open(entry.u8string()); auto window = windows.back().lock();
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      auto send = [&](bool down, bool repeat = false, const char* document = "first") {
+        window->options.on_message("__reawebShortcut:" + Json{{"document",document},{"key",65},{"modifiers",12},{"down",down},{"repeat",repeat}}.dump());
+      };
+      send(true); runtime.tick(); CHECK(keys.empty());
+      CHECK(result(runtime, *window, window->send("ReaWeb_SetShortcutRouting", {"true"}))["error"]["code"] == "INVALID_ARGUMENT");
+      CHECK(runtime.set_shortcut_routing(id, true));
+      CHECK(runtime.routes_shortcuts(window.get(), [](void*,void*) { return false; }));
+      send(true, false, "stale"); send(false); send(true,true); runtime.tick(); CHECK(keys.empty());
+      send(true); send(true); send(true,true); runtime.tick(); CHECK(keys.size() == 2 && keys.back().repeat && keys.back().modifiers == 12);
+      CHECK(!runtime.set_shortcut_routing(id,false)); CHECK(keys.size() == 3 && !keys.back().down);
+      send(false); runtime.tick(); CHECK(keys.size() == 3);
+      runtime.set_shortcut_routing(id,true); send(true); runtime.tick(); window->reload();
+      CHECK(keys.size() == 5 && !keys.back().down && runtime.diagnostics(id)["window"]["shortcutRouting"] == false);
+      window->document = "second"; result(runtime, *window, window->send("__reawebHello", {1}));
+      runtime.set_shortcut_routing(id,true); send(true,false,"first"); runtime.tick(); CHECK(keys.size() == 5);
+      send(true,false,"second"); runtime.tick(); runtime.close(id); CHECK(keys.size() == 7 && !keys.back().down);
+      runtime.tick();
     }
     {
       const auto directory = root / "Scripts" / "KeyboardConfig";

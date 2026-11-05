@@ -112,3 +112,5 @@ Native Stream 在多路分析间复用轨道采样，支持 `aggregate: true`，
 内置 Meter 提供 Sample/True Peak、独立的 Sample/True Peak 削波计数、每通道及全局峰值最大值、RMS-M/I、LUFS-M/S/I 和 LRA 上下界，支持复位及 Mono 标定，支持 1–32 源通道、精确整数削波计数和可选历史累计策略，分析独立于发布频率。
 
 Windows、macOS 和 Linux 支持原生[隐藏启动](docs/host-api.zh-CN.md#隐藏启动)与后台预加载，参见[示例](examples/runtime-features/hidden-start/README.md)。
+
+[SVG 覆盖层示例](examples/windows/overlay/README.md) 组合原生层级、形状交互区域和显式启用的 REAPER Main 快捷键路由（v0.3.9.25）。

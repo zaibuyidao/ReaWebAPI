@@ -452,8 +452,18 @@ public:
       std::function<std::string()>([title = delegate_->options.title] { return title; });
     [webview_ registerForDraggedTypes:@[NSPasteboardTypeFileURL, NSPasteboardTypeString]];
     __weak ReaWebNativeView* weak_view = webview_;
-    mouse_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskLeftMouseDragged handler:^NSEvent*(NSEvent* event) {
+    mouse_monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskLeftMouseDragged | NSEventMaskKeyUp handler:^NSEvent*(NSEvent* event) {
       auto view = weak_view;
+      if (event.type == NSEventTypeKeyUp) {
+        const auto& routing = delegate_->options.routes_shortcuts;
+        if (view && !view->sourceClosed && view.window.keyWindow && (event.modifierFlags & NSEventModifierFlagCommand) && routing && routing()) {
+          int flags = 0;
+          const int key = SWELL_MacKeyToWindowsKey((__bridge void*)event, &flags);
+          const auto release = std::string("window.__reawebReleaseShortcut?.(") + std::to_string((flags & FVIRTKEY) ? key : 0) + "," + std::to_string((flags & FVIRTKEY) ? 0 : key) + ");";
+          [view evaluateJavaScript:ns(release) completionHandler:nil];
+        }
+        return event;
+      }
       if (view && event.window == view.window) {
         const auto point = [view convertPoint:event.locationInWindow fromView:nil];
         if (event.type == NSEventTypeLeftMouseDown && frameless_active() &&

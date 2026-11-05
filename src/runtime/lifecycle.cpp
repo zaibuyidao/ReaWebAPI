@@ -8,6 +8,7 @@ void Runtime::navigate(Session& session) {
     session.overlay.regions.clear();
   }
   release_daw_space(session);
+  release_shortcuts(session);
   if (session.generation) session.startup_timing->reset("navigation");
   session.startup_timing->mark(StartupTiming::Navigation);
   end_jsfx_edit(session);
@@ -48,6 +49,7 @@ void Runtime::navigate(Session& session) {
   session.outstanding = session.output_pending = session.events_pending = 0;
   session.capture_keyboard = true;
   session.daw_keyboard = false;
+  session.shortcut_routing = false;
   session.audio.clear();
   session.lifecycle_enabled = false;
   session.allow_reload = false;

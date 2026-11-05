@@ -747,6 +747,7 @@
     setMouseMode: host('ReaWeb_SetMouseMode'),
     setMouseRegions: host('ReaWeb_SetMouseRegions'),
     setKeyboardCapture: host('ReaWeb_SetKeyboardCapture'),
+    setShortcutRouting: host('ReaWeb_SetShortcutRouting'),
     setDawKeyboard: host('ReaWeb_SetDawKeyboard'),
     close: host('ReaWeb_Close'), reload: host('ReaWeb_Reload')
   });

@@ -113,3 +113,5 @@ Aggregate RMS/LUFS history continues accumulating when routed folders, buses or 
 The built-in Meter provides Sample/True Peak, separate sample/True Peak clip counts, per-channel and global peak maxima, RMS-M/I, LUFS-M/S/I and LRA bounds, with reset and mono calibration. Meter supports 1–32 source channels, exact integer clip counts and selectable integrated history. Analysis is independent of publication rate.
 
 Native [hidden startup](docs/host-api.md#hidden-startup) supports background preloading on Windows, macOS and Linux. See the [example](examples/runtime-features/hidden-start/README.md).
+
+The [SVG overlay example](examples/windows/overlay/README.md) combines native layers, shape-based mouse regions and opt-in REAPER Main shortcuts (v0.3.9.25).

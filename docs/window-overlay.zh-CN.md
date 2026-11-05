@@ -55,3 +55,21 @@ Lua 设置接口返回 Boolean，诊断由 `ReaWeb_GetLastError()` 提供。无�
 `INVALID_ARGUMENT` 表示参数错误。`LAYER_UNAVAILABLE`、`MOUSE_MODE_UNAVAILABLE` 表示原生环境不支持。`LAYER_FAILED`、`MOUSE_MODE_FAILED` 表示原生设置或更新失败。运行时更新失败保留此前请求状态。异步初始化失败沿用现有窗口清理和诊断机制。
 
 [覆盖层示例](../examples/windows/overlay/README.md)提供交互控件、DOM 区域更新及窗口外恢复／关闭的 Lua 操作。
+
+Linux 无边框覆盖层允许超出显示器边界。示例向屏幕外多铺 1 个原生像素，避免窗口管理器将尺寸恰好等于整屏的无边框窗口提升到全屏层。App 铺满显示器时应保留此处理，或使用较小视口。恰好等于整屏的边界不具备跨 X11 窗口管理器的层级保证。
+
+## SVG 控件与 Main 快捷键（v0.3.9.25）
+
+示例在同一个显示器大小的覆盖层内组合全部策略。`regions.js` 通过 `SVGGeometryElement.isPointInFill/isPointInStroke` 采样填充和描边，再合并为原生矩形区域。支持孔洞和变换，精度为 1 CSS 像素。普通 DOM 控件使用包围矩形。宿主仍接收矩形，不直接接收选择器或 SVG 路径。几何或布局改变后，App 需重新提交区域。裁剪、遮罩、非缩放描边和动画需要 App 自行维护区域。控件在按下时调用 `setPointerCapture`，保证拖出区域后继续接收拖动和释放。
+
+```js
+await reaper.window.setShortcutRouting(true);
+const enabled = (await reaper.window.getState()).shortcutRouting;
+// Lua: reaper.ReaWeb_SetShortcutRouting(id, true)
+```
+
+此策略显式启用后，原生键盘焦点仍留在 WebView。非编辑区域的可信字母、数字、标点、导航键、功能键和数字小键盘事件，按用户绑定转交 REAPER **Main** 动作区，包含 Shift、Ctrl、Alt 和 macOS Command 组合。不会固定执行播放动作，也不会改投 MIDI 编辑器动作区。按键归属及初始修饰键在重复和释放期间保持一致。失焦、关闭策略、导航或关闭窗口会释放已转交的按键。
+
+文本框、textarea、contenteditable、可编辑 Shadow DOM、焦点 iframe 和 IME 组合输入留在页面内。点击文本框输入，点击非编辑控件后恢复 Main 快捷键。非编辑区域内未绑定的已路由按键会被消费。系统保留组合、在 DOM 之前被平台或浏览器处理的快捷键（包括开发者工具快捷键）、媒体键和任意国际键盘布局不在保证范围内。
+
+默认关闭，重载后复位。`setShortcutRouting(false)` 成功时返回 `false`。启用时，对符合条件的按键优先于 `setKeyboardCapture` 和原有仅空格路由的 `setDawKeyboard`，不修改它们的设置。内嵌 JSFX WebUI 调用新接口返回 `WINDOW_HOSTED`。Lua 返回实际启用状态，错误通过 `ReaWeb_GetLastError()` 获取。能力信息见 `capabilities.runtime.window.shortcutRouting`。鼠标完全穿透不必转移键盘焦点，非编辑输入仍可按此策略路由。

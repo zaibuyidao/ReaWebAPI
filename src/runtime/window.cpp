@@ -154,10 +154,24 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
   auto window_resources = app->resources ? std::make_shared<WebResources>(app->resources->root(), app_id) : nullptr;
   trace(*session, "webview.create.begin");
   session->window = app->platform->open(WindowOptions{entry, std::string(bridge_script) +
+    (dock_.daw_shortcut && !session->jsfx ? std::string(shortcut_keyboard_script) : "") +
     (dock_.daw_space ? std::string(daw_keyboard_script) : ""), session->title,
     [this, weak](std::string message) {
       if (auto s = weak.lock(); s && !s->closing) {
         if (message.rfind("__reawebDiagnostic:", 0) == 0) { diagnostic_receive(*s, message); return; }
+        if (message.rfind("__reawebShortcut:", 0) == 0) {
+          if (s->ready && s->shortcut_routing && message.size() <= 512) try {
+            auto value = Json::parse(message.substr(17));
+            if (value.at("document") != s->document) return;
+            const int key = value.at("key").get<int>(), mods = value.at("modifiers").get<int>();
+            if (key < 8 || key > 255 || (mods & ~60) || !value.at("down").is_boolean() || !value.at("repeat").is_boolean()) return;
+            const int character = value.value("character", 0);
+            if (character < 0 || character > 65535) return;
+            if (s->shortcut_events.size() >= 256) release_shortcuts(*s);
+            else s->shortcut_events.push_back({key, mods, value.at("down").get<bool>(), value.at("repeat").get<bool>(), character});
+          } catch (const Json::exception&) {}
+          return;
+        }
         if (message.rfind("__reawebDawKey:", 0) == 0) {
           if (s->ready && s->daw_keyboard_enabled() &&
               message.size() == 16 && (message.back() == 'd' || message.back() == 'r' || message.back() == 'u')) {
@@ -258,7 +272,8 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
       if (auto s = weak.lock(); s && !s->closing && is_docked(s->id) && dock_.activate)
         dock_.activate(s->window->native_handle());
     }, hidden, frameless, resizable, transparent, bool(session->jsfx), session->startup_timing,
-    [weak] { auto s = weak.lock(); return s && !s->closing && s->capture_keyboard; }, overlay});
+    [weak] { auto s = weak.lock(); return s && !s->closing && (s->capture_keyboard || s->shortcut_routing); }, overlay,
+    [weak] { auto s = weak.lock(); return s && !s->closing && s->shortcut_routing; }});
   trace(*session, "webview.create.end");
   trace(*session, "webview.load.begin");
   session->window->set_media_resources(window_resources);
@@ -313,6 +328,7 @@ bool Runtime::close(int id) {
   if (it == sessions_.end()) return false;
   if (it->second->window->presentation_pending() && it->second->lifecycle_action == "reload")
     it->second->lifecycle_action = "close";
+  release_shortcuts(*it->second);
   trace(*it->second, "webview.close.begin");
   it->second->window->cancel_pending_show();
   if (!it->second->closing && lifecycle(*it->second, "close")) return true;
@@ -371,6 +387,7 @@ void Runtime::release_daw_space(Session& session) {
   if (down && dock_.daw_space) dock_.daw_space(false, false);
 }
 void Runtime::tick_daw_keyboard() {
+  tick_shortcuts();
   // Shortcuts may close windows or switch FX editors. Keep each session alive during dispatch.
   std::vector<std::shared_ptr<Session>> keyed;
   for (const auto& item : sessions_) if (!item.second->space_events.empty()) keyed.push_back(item.second);
@@ -391,11 +408,61 @@ void Runtime::tick_daw_keyboard() {
   }
 }
 
+void Runtime::release_shortcuts(Session& session) {
+  session.shortcut_events.clear();
+  auto held = std::move(session.shortcut_down);
+  session.shortcut_down.clear();
+  if (dock_.daw_shortcut) for (auto& item : held) {
+    item.second.down = false; item.second.repeat = false;
+    dock_.daw_shortcut(item.second);
+  }
+}
+void Runtime::tick_shortcuts() {
+  std::vector<std::shared_ptr<Session>> keyed;
+  for (const auto& item : sessions_) if (!item.second->shortcut_events.empty() || !item.second->shortcut_down.empty()) keyed.push_back(item.second);
+  for (const auto& session : keyed) {
+    if (session->closing || session->window->closed() || !session->shortcut_routing) { release_shortcuts(*session); continue; }
+    while (!session->shortcut_events.empty() && !session->closing && session->shortcut_routing) {
+      auto event = session->shortcut_events.front(); session->shortcut_events.pop_front();
+      auto held = session->shortcut_down.find(event.key);
+      if (event.down && !event.repeat) {
+        if (held != session->shortcut_down.end()) continue;
+        session->shortcut_down[event.key] = event;
+      } else {
+        if (held == session->shortcut_down.end()) continue;
+        event.modifiers = held->second.modifiers;
+        event.character = held->second.character;
+        if (!event.down) session->shortcut_down.erase(held);
+      }
+      if (dock_.daw_shortcut) dock_.daw_shortcut(event);
+    }
+  }
+}
+bool Runtime::set_shortcut_routing(int id, bool enabled) {
+  check_thread();
+  if (!is_open(id)) throw Error("WINDOW_CLOSED", "Window is no longer open");
+  auto& s = *sessions_.at(id);
+  if (s.jsfx) throw Error("WINDOW_HOSTED", "Shortcut routing requires a standalone App");
+  if (enabled && !dock_.daw_shortcut) throw Error("HOST_UNAVAILABLE", "REAPER shortcut routing is unavailable");
+  if (!enabled) release_shortcuts(s);
+  s.shortcut_routing = enabled;
+  s.window->evaluate(std::string("window.__reawebSetShortcutRouting?.(") + (enabled ? "true," : "false,") + Json(s.document).dump() + ");");
+  return enabled;
+}
+bool Runtime::routes_shortcuts(void* handle, const std::function<bool(void*, void*)>& is_child) const {
+  check_thread();
+  for (const auto& item : sessions_) {
+    const auto& s = *item.second;
+    auto root = s.window->native_handle();
+    if (s.shortcut_routing && !s.closing && !s.window->closed() && root && (root == handle || is_child(root, handle))) return true;
+  }
+  return false;
+}
 bool Runtime::captures_keyboard(void* handle, const std::function<bool(void*, void*)>& is_child, bool daw_only) const {
   check_thread();
   for (const auto& item : sessions_) {
     const auto& s = *item.second;
-    if (daw_only ? !s.daw_keyboard_enabled() : !s.capture_keyboard) continue;
+    if (daw_only ? !s.daw_keyboard_enabled() : !(s.capture_keyboard || s.shortcut_routing)) continue;
     auto root = s.window->native_handle();
     if (!s.closing && !s.window->closed() && root &&
         (root == handle || is_child(root, handle))) return true;
@@ -524,7 +591,7 @@ void Runtime::refresh_icon(Session& s) {
 
 Json Runtime::window_state(const Session& s) const {
   return {{"id", s.id}, {"title", s.title}, {"docked", is_docked(s.id)},
-    {"visible", s.window->visible()}, {"focused", s.window->focused()}, {"keyboardCapture", s.capture_keyboard}, {"dawKeyboard", s.daw_keyboard_enabled()},
+    {"visible", s.window->visible()}, {"focused", s.window->focused()}, {"keyboardCapture", s.capture_keyboard}, {"dawKeyboard", s.daw_keyboard_enabled()}, {"shortcutRouting", s.shortcut_routing},
     {"iconVisible", s.icon_visible}, {"frameless", s.frameless}, {"resizable", s.resizable},
     {"framelessActive", !is_docked(s.id) && s.window->frameless_active()},
     {"cornerRadius", s.corner_radius}, {"cornerRadiusActive", !is_docked(s.id) && s.window->corner_radius_active()},

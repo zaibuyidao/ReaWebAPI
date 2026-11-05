@@ -8,7 +8,7 @@ JavaScript Runtime fixes sixteen namespace boundaries: `reaper.window`, `reaper.
 
 Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
 
-All sixteen namespaces provide implemented members: 86 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All sixteen namespaces provide implemented members: 87 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
 `reaper.host` retains the Lua Backend route. `reaper.host.service(name)` routes to named native services. `reaper.events` adds native selection, track, transport, project and timeline sources. See [Native Services](native-services.md) for payloads, thread boundaries and lifecycle rules. Existing Clipboard, Drag & Drop, Window/Dock/Focus and System interfaces remain unchanged.
 
@@ -24,7 +24,7 @@ All sixteen namespaces provide implemented members: 86 methods and one Promise p
 
 On Windows and macOS, new windows automatically become visible after their initial native frame is prepared. `getState().visible` stays false while presentation is pending, independently of `reaper.lifecycle.ready`. A pending `hide()` suppresses automatic display until `show()` or `focus()`. Closing cancels pending display, including during lifecycle cleanup. Existing `windowstatechange` events report the eventual visibility change. Linux retains the v0.3.8.10 window display behavior without a pending first-frame stage.
 
-`reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `setIcon`, `setIconVisible`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `setDawKeyboard`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
+`reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `setIcon`, `setIconVisible`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `setDawKeyboard`, `setShortcutRouting`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area except for frameless Linux overlays, which permit display overscan. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
 
 ```js
 await reaper.window.setSize(900, 700);
@@ -240,3 +240,5 @@ When enabled, unmodified Space outside editable fields uses REAPER's current mai
 `reaper.realtime` provides transport subscriptions at requested rates up to 120 Hz. See [Realtime sources](realtime.md) for scheduling, timestamp semantics and cleanup.
 
 Creation options `layer`, `mouseMode`, `mouseRegions` and current-window setters `setMouseMode`, `setMouseRegions` control [overlay layers and native mouse routing](window-overlay.md).
+
+Standalone Apps can opt into broader Main-section shortcut routing with `window.setShortcutRouting(true)`. Lua uses `ReaWeb_SetShortcutRouting(id, enabled)`. Defaults and text/IME behavior are specified in [overlay keyboard routing](window-overlay.md#svg-controls-and-main-shortcuts-v03925).

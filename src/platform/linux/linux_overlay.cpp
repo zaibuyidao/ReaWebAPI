@@ -133,11 +133,16 @@ struct LinuxOverlay::State {
     catch (const std::exception& e) { error(std::string("MOUSE_MODE_FAILED: ") + e.what()); }
     queue_events();
   }
-  ::Window frame(::Window window) const {
+  ::Window frame(::Window window, bool optional = false) {
     if (!window) return 0;
     for (int i = 0; i < 32; ++i) {
       ::Window root, parent, *children = nullptr; unsigned count;
-      if (!XQueryTree(display, window, &root, &parent, &children, &count)) return 0;
+      const int prior_error = xerror;
+      if (!XQueryTree(display, window, &root, &parent, &children, &count)) {
+        // EWMH client lists can briefly retain a window destroyed by another client.
+        if (optional && !prior_error && xerror == BadWindow) xerror = 0;
+        return 0;
+      }
       if (children) XFree(children);
       if (parent == root) return window;
       window = parent;
@@ -155,20 +160,24 @@ struct LinuxOverlay::State {
     std::set<::Window> overlays;
     for (const auto& entry : connections) if (entry.second->requested.layer == "overlay" && entry.second->owner == owner && entry.second->host)
       overlays.insert(frame(entry.second->host));
+    std::map<::Window, ::Window> managed;
+    Atom type; int format; unsigned long length, remaining; unsigned char* data = nullptr;
+    if (XGetWindowProperty(display, DefaultRootWindow(display), XInternAtom(display, "_NET_CLIENT_LIST", False),
+        0, 65536, False, XA_WINDOW, &type, &format, &length, &remaining, &data) == Success && format == 32) {
+      auto clients = reinterpret_cast<unsigned long*>(data);
+      for (unsigned long j = 0; j < length; ++j) if (auto outer = frame(clients[j], true)) managed[outer] = clients[j];
+    }
+    if (data) XFree(data);
     bool contiguous = above > own && above < count;
-    if (contiguous) for (unsigned i = own + 1; i < above; ++i) if (!overlays.count(children[i])) contiguous = false;
+    if (contiguous) for (unsigned i = own + 1; i < above; ++i)
+      if (managed.count(children[i]) && !overlays.count(children[i])) contiguous = false;
     ::Window sibling = owner; int mode = Above;
     if (own < count) for (unsigned i = own + 1; i < count; ++i) {
       if (children[i] == target || overlays.count(children[i])) continue;
-      // EWMH uses client IDs, not the window manager's frame IDs.
-      Atom type; int format; unsigned long length, remaining; unsigned char* data = nullptr;
-      if (XGetWindowProperty(display, DefaultRootWindow(display), XInternAtom(display, "_NET_CLIENT_LIST", False),
-          0, 65536, False, XA_WINDOW, &type, &format, &length, &remaining, &data) == Success && format == 32) {
-        auto clients = reinterpret_cast<unsigned long*>(data);
-        for (unsigned long j = 0; j < length; ++j) if (frame(clients[j]) == children[i]) { sibling = clients[j]; mode = Below; break; }
-      }
-      if (data) XFree(data);
-      break;
+      // Skip unmanaged helper windows. EWMH restacking takes managed client IDs.
+      auto client = managed.find(children[i]);
+      if (client == managed.end()) continue;
+      sibling = client->second; mode = Below; break;
     }
     if (children) XFree(children);
     if (own < count && above < count && !contiguous) {

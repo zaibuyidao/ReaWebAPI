@@ -20,6 +20,14 @@ Method dispatch_method;
 bool pending = false;
 NSPoint saved_cursor;
 Json events = Json::array();
+Json shortcut_packets = Json::array();
+IMP original_message = nullptr;
+Method message_method = nullptr;
+void receive_message(id object, SEL selector, WKUserContentController* controller, WKScriptMessage* message) {
+  if ([message.body isKindOfClass:NSString.class] && [(NSString*)message.body hasPrefix:@"__reawebShortcut:"])
+    shortcut_packets.push_back([(NSString*)message.body UTF8String]);
+  reinterpret_cast<void(*)(id,SEL,WKUserContentController*,WKScriptMessage*)>(original_message)(object, selector, controller, message);
+}
 template<class T> T api(const char* name) { return reinterpret_cast<T>(host->GetFunc(name)); }
 NSWindow* main_window() { return [(__bridge NSView*)host->hwnd_main window]; }
 void dispatch(id app, SEL selector, NSEvent* event) {
@@ -70,6 +78,10 @@ void tick() {
       if (!id) throw std::runtime_error(api<const char*(*)()>("ReaWeb_GetLastError")());
       ids.push_back(id); reply(id);
     } else if (op == "select") {
+      if (!original_message) {
+        message_method = class_getInstanceMethod(NSClassFromString(@"ReaWebDelegate"), @selector(userContentController:didReceiveScriptMessage:));
+        if (message_method) original_message = method_setImplementation(message_method, reinterpret_cast<IMP>(receive_message));
+      }
       view = nil;
       for (NSWindow* native in NSApp.windows) {
         auto candidate = find_view(native.contentView);
@@ -90,6 +102,8 @@ void tick() {
     } else if (op == "place") {
       [main_window() setFrame:NSMakeRect(30, 50, 1000, 750) display:YES];
       [view.window setFrame:NSMakeRect(180, 250, 600, 420) display:YES]; reply(true);
+    } else if (op == "fit-main") {
+      [main_window() setFrame:main_window().screen.visibleFrame display:YES]; reply(true);
     } else if (op == "zoom") { view.pageZoom = input.at("value").get<double>(); reply(true);
     } else if (op == "focus") {
       [NSApp activateIgnoringOtherApps:YES];
@@ -119,6 +133,7 @@ void tick() {
       reply(Json::array({global.x, global.y}));
     } else if (op == "key") {
       auto event = CGEventCreateKeyboardEvent(nullptr, input.at("key").get<int>(), input.at("down").get<bool>());
+      CGEventSetFlags(event, input.value("flags", uint64_t(0)));
       CGEventPostToPid(getpid(), event); CFRelease(event); reply(true);
     } else if (op == "state") {
       auto ordered = [NSMutableArray<NSWindow*> array];
@@ -132,12 +147,13 @@ void tick() {
       for (NSWindow* window in ordered) windows.push_back({{"title", window.title.UTF8String ?: ""}, {"number", window.windowNumber}, {"class", window.className.UTF8String}, {"level", window.level}, {"webview", bool(find_view(window.contentView))}});
       reply({{"main", [ordered indexOfObject:main_window()]}, {"overlay", [ordered indexOfObject:view.window]},
         {"floating", floating ? [ordered indexOfObject:floating] : NSNotFound}, {"visible", bool(view.window.visible)},
-        {"key", bool(view.window.keyWindow)}, {"ignores", bool(view.window.ignoresMouseEvents)}, {"events", events},
+        {"key", bool(view.window.keyWindow)}, {"ignores", bool(view.window.ignoresMouseEvents)}, {"events", events}, {"shortcutPackets",shortcut_packets},
         {"accessibility", bool(AXIsProcessTrusted())}, {"active", bool(NSApp.active)}, {"windows", windows}, {"stack", stack}, {"overlayNumber", view.window.windowNumber}});
       events = Json::array();
     } else if (op == "quit") {
       for (auto id : ids) api<bool(*)(int)>("ReaWeb_Close")(id);
       if (original_dispatch) method_setImplementation(dispatch_method, original_dispatch);
+      if (original_message) method_setImplementation(message_method, original_message);
       [floating close]; floating = nil;
       CGWarpMouseCursorPosition(CGPointMake(saved_cursor.x, CGDisplayBounds(CGMainDisplayID()).size.height-saved_cursor.y));
       reply(true); host->Register("-timer", reinterpret_cast<void*>(tick)); PostMessage(host->hwnd_main, WM_CLOSE, 0, 0);

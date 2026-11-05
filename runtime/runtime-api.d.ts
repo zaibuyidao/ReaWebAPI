@@ -119,6 +119,7 @@ interface ReaWebRuntimeCapabilities {
   fs?: { mediaURLs: boolean; maxOpenMedia: number; maxMediaBytes: number };
   window?: { hiddenStart: boolean; frameless: boolean; resizable: boolean; dragRegions?: boolean; windowSystem?: 'win32' | 'appkit' | 'x11';
     overlay: ReaWebOverlayCapabilities;
+    shortcutRouting?: { supported: boolean; section: 'main'; editable: 'page' };
     setFrameless?: boolean;
     cornerRadius?: { supported: boolean; framed: boolean; frameless: boolean; max: number };
     /** The creation option is accepted. Check transparency.supported for desktop Alpha. */
@@ -303,6 +304,9 @@ interface ReaWebAPI {
     isDocked(): Promise<boolean>;
     /** Default true. False allows REAPER's normal global shortcut policy for this window. */
     setKeyboardCapture(capture: boolean): Promise<boolean>;
+    /** Opt-in Main-section shortcut routing outside editable fields. Standalone Apps only.
+     * Defaults off, resets on reload. OS-reserved shortcuts remain with the OS. */
+    setShortcutRouting(enabled: boolean): Promise<boolean>;
     /** Route unmodified Space outside editable fields to REAPER for this App or JSFX page.
      * Overrides JSON until navigation/reload, without writing configuration or changing keyboard capture. */
     setDawKeyboard(enabled: boolean): Promise<boolean>;

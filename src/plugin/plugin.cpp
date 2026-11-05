@@ -73,6 +73,9 @@ int ReaWeb_Open(const char* path, const char* instance_key, const char* name, co
 int ReaWeb_OpenEx(const char* path, const char* options_json) {
   return guarded([&] { return runtime->open_ex(path ? path : "", options_json ? options_json : ""); }, 0);
 }
+bool ReaWeb_SetShortcutRouting(int id, bool enabled) {
+  return guarded([&] { return runtime->set_shortcut_routing(id, enabled); }, false);
+}
 bool ReaWeb_SetMouseMode(int id, const char* mode) {
   return guarded([&] { return runtime->set_mouse_mode(id, mode ? Json(mode) : Json()); }, false);
 }
@@ -202,9 +205,23 @@ int window_info(HWND window, INT_PTR type) {
     return IsChild(static_cast<HWND>(parent), static_cast<HWND>(child)) != 0;
   }) ? 1 : 0; }, 0);
 }
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(_WIN32)
 accelerator_register_t webview_keys{[](MSG* message, accelerator_register_t*) -> int {
-  if (!message || (message->message != WM_KEYDOWN && message->message != WM_KEYUP)) return 0;
+  if (!message || (message->message != WM_KEYDOWN && message->message != WM_KEYUP
+#ifdef _WIN32
+      && message->message != WM_SYSKEYDOWN && message->message != WM_SYSKEYUP
+#endif
+      )) return 0;
+  if (runtime && guarded([&] { return runtime->routes_shortcuts(message->hwnd, [](void* parent, void* child) {
+    return IsChild(static_cast<HWND>(parent), static_cast<HWND>(child)) != 0;
+  }); }, false)) {
+#ifdef _WIN32
+    return -20;
+#else
+    return -10;
+#endif
+  }
+#ifdef __APPLE__
   const bool modified = (message->lParam & 0xff & ~FVIRTKEY) != 0;
   if (message->wParam == VK_RETURN && !modified) {
     // SWELL's dialog fallback moves unmodified Return to the parent container.
@@ -221,8 +238,15 @@ accelerator_register_t webview_keys{[](MSG* message, accelerator_register_t*) ->
   space_window = raw && message->message == WM_KEYDOWN ? message->hwnd : nullptr;
   // Let opted-in pages decide whether Space edits text before host accelerators.
   return raw ? -10 : 0;
+#else
+  return 0;
+#endif
 }, true, nullptr};
 #endif
+void* shortcut_vararg(void** args, int count) {
+  return reinterpret_cast<void*>(static_cast<intptr_t>(count >= 2 && ReaWeb_SetShortcutRouting(
+    static_cast<int>(reinterpret_cast<intptr_t>(args[0])), args[1] != nullptr)));
+}
 void* dock_vararg(void** args, int count) {
   if (count < 2) return nullptr;
   return reinterpret_cast<void*>(static_cast<intptr_t>(ReaWeb_SetDocked(
@@ -434,6 +458,44 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
 #endif
       if (auto section = main_section(0)) translate_key(main, &message, section);
     };
+    dock.daw_shortcut = [translate_key, main_section, main = rec->hwnd_main](const ShortcutKey& key) {
+      MSG message{}; message.hwnd = main;
+      message.message = key.down ? WM_KEYDOWN : WM_KEYUP; message.wParam = key.key;
+#ifdef _WIN32
+      const auto scan = MapVirtualKeyW(key.key, MAPVK_VK_TO_VSC_EX);
+      message.lParam = 1 | ((scan & 0xff) << 16) | ((scan & 0xff00) ? LPARAM(1) << 24 : 0) |
+        (key.repeat || !key.down ? LPARAM(1) << 30 : 0) | (!key.down ? LPARAM(1) << 31 : 0);
+      struct Modifiers {
+        BYTE saved[256]{}; bool valid = GetKeyboardState(saved) != FALSE;
+        explicit Modifiers(int modifiers) {
+          if (!valid) return;
+          BYTE value[256]; std::copy(std::begin(saved), std::end(saved), value);
+          for (int k : {VK_SHIFT,VK_LSHIFT,VK_RSHIFT,VK_CONTROL,VK_LCONTROL,VK_RCONTROL,VK_MENU,VK_LMENU,VK_RMENU,VK_LWIN,VK_RWIN}) value[k] &= 0x7f;
+          if (modifiers & 4) value[VK_SHIFT] |= 0x80;
+          if (modifiers & 8) value[VK_CONTROL] |= 0x80;
+          if (modifiers & 16) value[VK_MENU] |= 0x80;
+          if (modifiers & 32) value[VK_LWIN] |= 0x80;
+          SetKeyboardState(value);
+        }
+        ~Modifiers() { if (valid) SetKeyboardState(saved); }
+      } modifiers(key.modifiers);
+#else
+      int modifiers = key.modifiers;
+#ifdef __APPLE__
+      modifiers = (modifiers & ~(8 | 32)) | ((modifiers & 32) ? FCONTROL : 0) | ((modifiers & 8) ? FLWIN : 0);
+#endif
+      message.lParam = FVIRTKEY | modifiers;
+      const std::map<int, std::pair<char,char>> punctuation{{186,{';',':'}},{187,{'=','+'}},{188,{',','<'}},{189,{'-','_'}},{190,{'.','>'}},{191,{'/','?'}},{192,{'`','~'}},{219,{'[','{'}},{220,{'\\','|'}},{221,{']','}'}},{222,{'\'','"'}}};
+      if (auto it = punctuation.find(key.key); it != punctuation.end()) {
+        message.wParam = key.character ? key.character : ((modifiers & FSHIFT) ? it->second.second : it->second.first);
+        message.lParam = modifiers & ~FSHIFT;
+      } else if (key.key >= '0' && key.key <= '9' && key.character && (key.character < '0' || key.character > '9')) {
+        message.wParam = key.character;
+        message.lParam = modifiers & ~FSHIFT;
+      }
+#endif
+      if (auto section = main_section(0)) translate_key(main, &message, section);
+    };
     runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
     runtime->schedule_webview_warmup();
     runtime->configure_webviews(idle_webview_preferences());
@@ -467,6 +529,8 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       "bool\0int\0windowId\0Close a ReaWebAPI window.\0");
     add_api("ReaWeb_OpenEx", reinterpret_cast<void*>(ReaWeb_OpenEx), reinterpret_cast<void*>(open_ex_vararg),
       "int\0const char*,const char*\0path,optionsJson\0Open local HTML with JSON options: instanceKey, id, multiple, hidden, frameless, resizable, transparent, layer, mouseMode, mouseRegions. Creation options do not reconfigure reused windows. Returns a window id, or 0 on failure.\0");
+    add_api("ReaWeb_SetShortcutRouting", reinterpret_cast<void*>(ReaWeb_SetShortcutRouting), reinterpret_cast<void*>(shortcut_vararg),
+      "bool\0int,bool\0windowId,enabled\0Route non-editing keyboard input to REAPER Main shortcuts. Defaults off. Returns the enabled state, false on disable or error.\0");
     add_api("ReaWeb_SetMouseMode", reinterpret_cast<void*>(ReaWeb_SetMouseMode), reinterpret_cast<void*>(mouse_vararg<ReaWeb_SetMouseMode>),
       "bool\0int,const char*\0windowId,mode\0Set normal, passthrough or regions mouse policy. Returns false on error. See ReaWeb_GetLastError.\0");
     add_api("ReaWeb_SetMouseRegions", reinterpret_cast<void*>(ReaWeb_SetMouseRegions), reinterpret_cast<void*>(mouse_vararg<ReaWeb_SetMouseRegions>),
@@ -498,7 +562,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     add_api("ReaWeb_OpenDev", reinterpret_cast<void*>(ReaWeb_OpenDev), reinterpret_cast<void*>(dev_vararg),
       "int\0const char*\0url\0Open an explicitly trusted loopback HTTP development server.\0");
     add_registration("hwnd_info", reinterpret_cast<void*>(window_info));
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(_WIN32)
     add_registration("accelerator", &webview_keys);
 #endif
     add_registration("projectconfig", &project_events);

@@ -363,6 +363,7 @@ public:
         if (wp && !self->options_.hosted) self->icon_.refresh(hwnd, self->icon_host(true));
         else self->cursor_.finish();
       }
+      if (msg == WM_SYSCOMMAND && (wp & 0xfff0) == SC_KEYMENU && self->options_.routes_shortcuts && self->options_.routes_shortcuts()) return 0;
       if (msg == WM_SYSCOMMAND && (wp & 0xfff0) == dock_command) {
         if (self->options_.on_dock_toggle) self->options_.on_dock_toggle();
         return 0;
@@ -717,6 +718,7 @@ public:
     return hwnd_ && (focus == hwnd_ || IsChild(hwnd_, focus));
   }
   void tick() override {
+    if (overlay_) overlay_->repair();
     if (!closed_ && startup_.expired()) { fail("WebView2 initial frame did not become available within 15 seconds"); return; }
     if (!closed_ && startup_.present()) {
       if (startup_region_) {

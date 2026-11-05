@@ -91,7 +91,7 @@ public:
     windows_[host] = this;
     if (options.layer == "overlay") {
       if (!IsWindow(owner)) throw Error("LAYER_UNAVAILABLE", "An overlay requires the REAPER main window");
-      order_ = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_LOCATIONCHANGE, nullptr, order_hook,
+      order_ = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_OBJECT_LOCATIONCHANGE, nullptr, order_hook,
         GetCurrentProcessId(), 0, WINEVENT_OUTOFCONTEXT);
       if (!order_) throw Error("LAYER_FAILED", "Cannot observe native window ordering");
       repair();

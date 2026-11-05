@@ -301,7 +301,7 @@ public:
     process_->send({{"id", id_}, {"op", "open"}, {"uri", options.url.empty() ? file_uri(options.entry) : options.url},
       {"script", options.script}, {"lifecycleReload", static_cast<bool>(options.on_reload)}, {"dockEnabled", static_cast<bool>(options.on_dock_toggle)},
       {"appName", options.app_name ? options.app_name() : options.title},
-      {"frameless", frameless_}, {"resizable", resizable_}, {"transparent", transparent_}, {"hosted", options.hosted},
+      {"frameless", frameless_}, {"resizable", resizable_}, {"transparent", transparent_}, {"hosted", options.hosted}, {"overlay",options.overlay.layer == "overlay"},
       {"resourceRoot", options.resources ? options.resources->root().u8string() : ""}});
     process_->listeners.emplace(id_, std::move(options));
     process_->backgrounds.emplace(id_, 0xffffff);
@@ -725,7 +725,11 @@ public:
   void restore_placement(const Json& value) override {
     native_geometry_.invalidate();
     normal_ = value;
-    window_->restore_placement(value);
+    if (frameless_ && overlay_options_.layer == "overlay" && !value.is_null()) {
+      // Overlays may overscan the display to avoid implicit fullscreen promotion.
+      SetWindowPos(static_cast<HWND>(window_->handle()), nullptr, value.at("x").get<int>(), value.at("y").get<int>(),
+        value.at("width").get<int>(), value.at("height").get<int>(), SWP_NOZORDER | SWP_NOACTIVATE);
+    } else window_->restore_placement(value);
     maximized_ = value.value("maximized", false);
     if (maximized_ && window_->visible()) ShowWindow(static_cast<HWND>(window_->handle()), SW_SHOWMAXIMIZED);
   }

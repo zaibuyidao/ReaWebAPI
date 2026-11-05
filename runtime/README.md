@@ -42,3 +42,5 @@ EEL2 backends use the same message bridge. The SDK includes a [minimal example](
 [Transparent Window](../examples/windows/transparent/README.md) demonstrates desktop Alpha, translucent panels, rounded corners and shadows. It is included in the SDK as `transparent/`.
 
 The JSFX helper shares its initialization path across Windows, macOS and Linux. After the capability handshake, it registers subscriptions concurrently, then reads initial size and parameters concurrently. Initial `STALE_SESSION` errors trigger a capability refresh and at most two snapshot retries. Writes are not retried. Distribute the updated `jsfx-webui.mjs` with your UI. See [connection semantics](../docs/jsfx-webui.md#parameter-service) and [startup timing](../docs/devtools.md#startup-timing).
+
+The [SVG overlay example](../examples/windows/overlay/README.md) combines native layers, shape-based mouse regions and opt-in REAPER Main shortcuts (v0.3.9.25).

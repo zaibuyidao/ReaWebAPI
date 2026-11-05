@@ -4,6 +4,7 @@
 #include "web/web_resources.hpp"
 #include "platform/shared/startup_timing.hpp"
 #include "platform/shared/overlay.hpp"
+#include "platform/shared/shortcut_keyboard.hpp"
 #include <memory>
 
 namespace reaweb {
@@ -16,6 +17,7 @@ struct DockApi {
   std::function<void(const std::string&, int)> remember;
   std::function<void(void*)> refresh;
   std::function<void(bool, bool)> daw_space;
+  std::function<void(const ShortcutKey&)> daw_shortcut;
 };
 struct WindowOptions {
   fs::path entry;
@@ -42,6 +44,7 @@ struct WindowOptions {
   std::shared_ptr<StartupTiming> startup_timing;
   std::function<bool()> captures_keyboard;
   OverlayOptions overlay;
+  std::function<bool()> routes_shortcuts;
 };
 class Window {
   std::shared_ptr<WebResources> media_resources_;

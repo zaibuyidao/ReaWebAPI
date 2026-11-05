@@ -1,7 +1,7 @@
 -- @noindex
 -- @description ReaWebAPI: Open Overlay
-if not reaper.APIExists('ReaWeb_SetMouseMode') then
-  reaper.MB('Install ReaWebAPI v0.3.9.24 or later and restart REAPER.', 'ReaWebAPI', 0)
+if not reaper.APIExists('ReaWeb_SetShortcutRouting') then
+  reaper.MB('Install ReaWebAPI v0.3.9.25 or later and restart REAPER.', 'ReaWebAPI', 0)
   return
 end
 local directory = debug.getinfo(1, 'S').source:sub(2):match('^(.*[/\\])')

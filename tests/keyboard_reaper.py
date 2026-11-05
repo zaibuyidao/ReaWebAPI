@@ -60,6 +60,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['reaper','extension','output']: parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--app-only',action='store_true')
+    parser.add_argument('--overlay',action='store_true',help='Exercise the SVG overlay example and Main shortcut routing')
     args=parser.parse_args(); root=args.output.resolve();root.mkdir(parents=True,exist_ok=False)
     (root/'UserPlugins').mkdir();shutil.copy2(args.extension,root/'UserPlugins'/args.extension.name)
     for helper in args.extension.parent.glob('reawebapi-webview-*'):
@@ -77,15 +78,26 @@ def main():
     (root/'reaper.ini').write_text(config)
     # A custom Space action makes hard-coded Play/Stop routing fail this test.
     (root/'reaper-kb.ini').write_text('KEY 1 32 40042 0\n')
+    if args.overlay:
+        (root/'reaper-kb.ini').write_text(''.join(f'KEY {flags} {key} 40042 0\n' for flags,key in [(1,32),(1,65),(5,65),(9,65),(13,65),(17,65),(1,37),(1,119)]))
     for folder in ['Scripts/Keyboard','Effects/keyboard']:
         path=root/folder;path.mkdir(parents=True);(path/'index.html').write_text(PAGE,encoding='utf-8')
     (root/'Scripts/Keyboard/app.json').write_text('{"id":"keyboard-acceptance"}')
+    if args.overlay:
+        example=Path(__file__).resolve().parents[1]/'examples/windows/overlay'
+        for source in example.iterdir():
+            if source.suffix in ['.html','.js','.css']:shutil.copy2(source,root/'Scripts/Keyboard'/source.name)
+        with (root/'Scripts/Keyboard/index.html').open('a',encoding='utf-8') as page:
+            page.write(PAGE[PAGE.index('<script>'):].replace("window.openInput=", "document.body.insertAdjacentHTML('beforeend','<div id=shadow></div><div id=closed></div>');window.openInput="))
     effect=root/'Effects/keyboard'
     shutil.copy2(Path(__file__).resolve().parents[1]/'runtime/jsfx-webui.mjs',effect/'jsfx-webui.mjs')
     with (effect/'index.html').open('a') as page:
         page.write("<script type=\"module\">import {connectJSFX} from './jsfx-webui.mjs';window.jsfx=await connectJSFX(reaper);</script>")
     (effect/'probe.jsfx').write_text('desc:Keyboard acceptance\nslider1:0.5<0,1,0.01>Gain\n@sample\nspl0*=slider1;spl1*=slider1;\n')
     (root/'launch.lua').write_text(LUA.replace('ROOT',json.dumps(root.as_posix())),encoding='utf-8')
+    if args.overlay:
+        launcher=root/'launch.lua'
+        launcher.write_text(launcher.read_text().replace("reaper.ReaWeb_Open(root..'/Scripts/Keyboard/index.html')", "reaper.ReaWeb_OpenEx(root..'/Scripts/Keyboard/index.html','{\"frameless\":true,\"transparent\":true,\"layer\":\"overlay\",\"mouseMode\":\"regions\"}')"))
     if sys.platform=='win32':
         from ctypes import wintypes as W
         user=C.WinDLL('user32');user.keybd_event.argtypes=[C.c_ubyte,C.c_ubyte,C.c_uint32,C.c_size_t]
@@ -96,10 +108,11 @@ def main():
         user.IsWindowVisible.argtypes=[W.HWND]
         user.GetClassNameW.argtypes=[W.HWND,W.LPWSTR,C.c_int]
         def activate():
-            targets=[];fallback=[]
+            targets=[];fallback=[];mains=[]
             @C.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
             def child(hwnd,_):
                 name=C.create_unicode_buffer(256);user.GetClassNameW(hwnd,name,256)
+                if name.value=='REAPERwnd':mains.append(hwnd)
                 if name.value=='ReaWebAPI.Window' and user.IsWindowVisible(hwnd):targets.append(user.GetAncestor(hwnd,2))
                 return True
             @C.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
@@ -114,11 +127,13 @@ def main():
             threads={user.GetWindowThreadProcessId(user.GetForegroundWindow(),None),user.GetWindowThreadProcessId(targets[0],None)}-{current,0}
             for thread in threads:user.AttachThreadInput(current,thread,True)
             try:
-                user.SetForegroundWindow(targets[0]);assert user.GetForegroundWindow()==targets[0]
+                if args.overlay and mains:user.SetForegroundWindow(mains[0]);time.sleep(.1)
+                user.SetForegroundWindow(targets[0]);time.sleep(.1)
+                assert user.GetForegroundWindow()==targets[0]
             finally:
                 for thread in threads:user.AttachThreadInput(current,thread,False)
-        def native_key(key,down):user.keybd_event(key,user.MapVirtualKeyW(key,0),0 if down else 2,0)
-        codes=dict(space=32,enter=13,shift=16,a=65)
+        def native_key(key,down):user.keybd_event(key,user.MapVirtualKeyW(key,0),(0 if down else 2)|(1 if key in range(33,41) else 0),0)
+        codes=dict(space=32,enter=13,shift=16,ctrl=17,alt=18,a=65,left=37,f8=119)
     else:
         def activate(): pass
         x11=C.CDLL('libX11.so.6');xtst=C.CDLL('libXtst.so.6');x11.XOpenDisplay.restype=C.c_void_p
@@ -127,7 +142,7 @@ def main():
         x11.XFlush.argtypes=[C.c_void_p];xtst.XTestFakeKeyEvent.argtypes=[C.c_void_p,C.c_uint,C.c_int,C.c_ulong]
         def native_key(key,down):
             xtst.XTestFakeKeyEvent(display,x11.XKeysymToKeycode(display,key),down,0);x11.XFlush(display)
-        codes=dict(space=32,enter=0xff0d,shift=0xffe1,a=97)
+        codes=dict(space=32,enter=0xff0d,shift=0xffe1,ctrl=0xffe3,alt=0xffe9,a=97,left=0xff51,f8=0xffc5)
         x11.XGetInputFocus.argtypes=[C.c_void_p,C.POINTER(C.c_ulong),C.POINTER(C.c_int)]
         def native_focus():
             window=C.c_ulong();revert=C.c_int();x11.XGetInputFocus(display,C.byref(window),C.byref(revert))
@@ -170,6 +185,18 @@ def main():
         process=subprocess.Popen([str(args.reaper.resolve()),'-newinst','-cfgfile',str(root/'reaper.ini'),'-new','-ignoreerrors','-nosplash',str(root/'launch.lua')],stdout=log,stderr=log)
         try:
             wait(lambda:(root/'lua-ready').exists(),120)
+            if args.overlay:
+                if sys.platform.startswith('linux'):
+                    time.sleep(12)
+                    about=subprocess.run(['xdotool','search','--onlyvisible','--pid',str(process.pid),'--name','About REAPER'],capture_output=True,text=True)
+                    if about.returncode==0:
+                        for hwnd in about.stdout.split():
+                            geometry=dict(line.split('=',1) for line in subprocess.check_output(['xdotool','getwindowgeometry','--shell',hwnd],text=True).splitlines() if '=' in line)
+                            subprocess.run(['xdotool','mousemove','--sync',str(int(geometry['X'])+int(geometry['WIDTH'])-85),str(int(geometry['Y'])+int(geometry['HEIGHT'])-27),'click','1'],check=True)
+                        time.sleep(.5)
+                from overlay_acceptance import run
+                run(locals())
+                return
             for mode in ([] if args.app_only else ['default',True,False]):
                 ui=dict(entry='index.html',width=640,height=420)
                 if mode!='default':ui['dawKeyboard']=mode
@@ -267,6 +294,11 @@ def main():
                 assert evaluate('document.hasFocus()')
                 report.append(dict(app=True,docked=docked,enterPairs=3,otherKeys=True,passed=True))
         finally:
+            if sys.platform=='win32' and args.overlay:
+                try:
+                    from PIL import ImageGrab
+                    ImageGrab.grab(all_screens=True).save(root/'desktop.png')
+                except Exception:pass
             if sys.platform.startswith('linux'):
                 try:
                     import gi

@@ -230,7 +230,7 @@ int main() {
     CHECK(f.call("ReaWeb_IsDocked")["result"] == true);
     CHECK(f.call("ReaWeb_SetDocked", {false})["result"] == false);
     CHECK(f.call("ReaWeb_SetDocked", {1})["error"]["code"] == "INVALID_ARGUMENT");
-    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["methods"].size() == 808);
+    CHECK(f.call("ReaWeb_GetCapabilities")["result"]["methods"].size() == 809);
     CHECK(f.call("ReaWeb_GetCapabilities")["result"]["runtime"]["window"]["hiddenStart"] == true);
     CHECK(f.call("ReaWeb_OpenEx", {"index.html", {{"hidden", 1}}})["error"]["code"] == "INVALID_ARGUMENT");
     CHECK(f.call("ReaWeb_OpenEx", {"index.html", {{"id", "child"}}})["error"]["code"] == "INVALID_ARGUMENT");

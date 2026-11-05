@@ -352,3 +352,5 @@ const id = await reaper.window.open('panel.html', {frameless:true, transparent:t
 ## 覆盖层与鼠标策略
 
 `ReaWeb_OpenEx` 接受 `layer`、`mouseMode`、`mouseRegions`。`ReaWeb_SetMouseMode(id, mode)` 和 `ReaWeb_SetMouseRegions(id, regionsJson)` 返回 Boolean。JS／Lua 契约、能力与错误见[覆盖层与鼠标策略](window-overlay.zh-CN.md)。
+
+独立 App 可通过 `window.setShortcutRouting(true)` 启用 Main 快捷键路由。Lua 使用 `ReaWeb_SetShortcutRouting(id, enabled)`。默认状态和文本／IME 规则见[覆盖层键盘路由](window-overlay.zh-CN.md)。

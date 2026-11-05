@@ -12,7 +12,7 @@ JavaScript Runtime 使用下列 16 个命名空间。730 项标准 REAPER 镜像
 
 就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
-16 个命名空间共 86 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
+16 个命名空间共 87 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
 `transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
 
@@ -23,6 +23,8 @@ JavaScript Runtime 使用下列 16 个命名空间。730 项标准 REAPER 镜像
 v0.3.8.21 新增 `reaper.fs.openMedia(path)`，返回 `{url, size, type, close()}`，用于本地音频或视频的只读播放与跳转。文件通过有界流式读取提供，不经过二进制桥接复制。使用前检查 `capabilities.runtime.fs.mediaURLs`，不再使用时调用 `close()`。授权随文档导航、重载或关闭失效。限制与平台覆盖见[媒体访问文档](browser-media.md#native-media-paths-v03821)。
 
 ## Window
+
+无边框 Linux 覆盖层允许边界超出显示器，以支持整屏覆盖时的边缘扩展。普通窗口保留原有边界限制。
 
 Windows 和 macOS 新窗口在原生首帧准备完成后自动显示。等待期间 `getState().visible` 为 false，与 `reaper.lifecycle.ready` 独立。此时调用 `hide()` 会阻止自动显示，直到调用 `show()` 或 `focus()`。关闭窗口会取消待显示状态，包括生命周期清理期间。最终可见状态变化通过现有 `windowstatechange` 事件报告。Linux 保留 v0.3.8.10 的窗口显示行为，不设首帧等待阶段。
 
@@ -285,3 +287,5 @@ const enabled = (await reaper.window.getState()).dawKeyboard;
 `reaper.realtime` 提供播放状态订阅，请求频率最高 120 Hz。调度、时间戳和清理约定见 [Realtime 数据源](realtime.zh-CN.md)。
 
 创建选项 `layer`、`mouseMode`、`mouseRegions` 及当前窗口接口 `setMouseMode`、`setMouseRegions` 控制[覆盖层与原生鼠标穿透](window-overlay.zh-CN.md)。
+
+独立 App 可通过 `window.setShortcutRouting(true)` 启用 Main 快捷键路由。Lua 使用 `ReaWeb_SetShortcutRouting(id, enabled)`。默认状态和文本／IME 规则见[覆盖层键盘路由](window-overlay.zh-CN.md)。

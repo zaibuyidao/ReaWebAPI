@@ -47,6 +47,8 @@ public:
   bool devtools(int id);
   bool set_docked(int id, bool docked);
   bool set_mouse_mode(int id, const Json& mode);
+  bool set_shortcut_routing(int id, bool enabled);
+  bool routes_shortcuts(void* handle, const std::function<bool(void*, void*)>& is_child) const;
   bool set_mouse_regions(int id, const Json& regions);
   bool is_docked(int id) const;
   bool is_ready(int id) const;
@@ -141,6 +143,9 @@ private:
     bool ready = false, capture_keyboard = true;
     bool daw_keyboard = false, space_down = false;
     std::deque<char> space_events;
+    bool shortcut_routing = false;
+    std::deque<ShortcutKey> shortcut_events;
+    std::map<int, ShortcutKey> shortcut_down;
     bool closing = false;
     bool background_start = false, pending_dock = false;
     bool frameless = false, resizable = true;
@@ -270,6 +275,8 @@ private:
   Json jsfx_result(int window, const std::string& method, const Json& payload);
   void end_jsfx_edit(Session& session);
   void release_daw_space(Session& session);
+  void release_shortcuts(Session& session);
+  void tick_shortcuts();
   bool daw_keyboard_default(Session& session);
   void tick_daw_keyboard();
   void check_thread() const;

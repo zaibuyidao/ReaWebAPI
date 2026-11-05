@@ -87,6 +87,7 @@ class Page {
   GdkRGBA background_{1, 1, 1, 1};
   DragRegions drag_regions_;
   bool frameless_ = false, resizable_ = true, docked_ = false;
+  bool overlay_ = false;
   bool transparent_ = false, page_ready_ = false, alpha_pending_ = false;
   unsigned long alpha_parent_ = 0;
   void prepare_alpha() {
@@ -135,7 +136,10 @@ class Page {
     if ((!delta_width && !delta_height) || !geometry_initialized_ || !visible_ || !mapped_ || failed_)
       return GDK_FILTER_CONTINUE;
     last_parent_configure_ = g_get_monotonic_time();
-    resize(std::max(1, native_width_ + delta_width), std::max(1, native_height_ + delta_height));
+    // A frameless overlay fills its parent. Absolute dimensions avoid applying
+    // the same resize twice when a host update precedes ConfigureNotify.
+    if (overlay_ && frameless_) resize(xevent->xconfigure.width, xevent->xconfigure.height);
+    else resize(std::max(1, native_width_ + delta_width), std::max(1, native_height_ + delta_height));
     return GDK_FILTER_CONTINUE;
   }
   // A host message carries the size REAPER had when its message loop last ran,
@@ -269,6 +273,7 @@ public:
   Page(LinuxChannel& channel, WebKitWebContext* context, const Json& request, std::shared_ptr<GtkIdleView> prepared = {})
     : channel_(channel), id_(request.at("id").get<int>()), uri_(request.at("uri").get<std::string>()) {
     frameless_ = request.value("frameless", false); resizable_ = request.value("resizable", true);
+    overlay_ = request.value("overlay", false);
     transparent_ = request.value("transparent", false);
     if (transparent_) {
       auto screen = gdk_screen_get_default();

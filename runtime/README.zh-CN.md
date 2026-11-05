@@ -42,3 +42,5 @@ EEL2 后端使用同一消息桥。SDK 提供[最简示例](../examples/backends
 [透明窗口示例](../examples/windows/transparent/README.md)演示桌面 Alpha、半透明面板、圆角和阴影，SDK 将其放在 `transparent/`。
 
 JSFX helper 在 Windows、macOS 和 Linux 共用初始化路径。能力握手后并发注册订阅，再并发读取初始尺寸与参数。初始读取遇到 `STALE_SESSION` 时刷新能力并最多重试两次快照，不重试写入。请随 UI 分发更新后的 `jsfx-webui.mjs`。参见[连接语义](../docs/jsfx-webui.zh-CN.md#参数服务)与[启动计时](../docs/devtools.zh-CN.md#启动计时)。
+
+[SVG 覆盖层示例](../examples/windows/overlay/README.md) 组合原生层级、形状交互区域和显式启用的 REAPER Main 快捷键路由（v0.3.9.25）。

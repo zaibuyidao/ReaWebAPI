@@ -1,4 +1,5 @@
 # ReaWebAPI
 
-- Add creation-time overlay layers and normal, passthrough and region-based native mouse policies for floating Apps, with platform capability reporting.
-- Add JS/Lua mouse-policy setters, window state fields and a transparent overlay example with external recovery actions.
+- Add opt-in REAPER Main shortcut routing for standalone Apps, preserving editable-field and IME input.
+- Replace the overlay example with SVG master gain/pan knobs, shape-based interaction regions, display fitting and external recovery actions.
+- Fix Windows overlay ordering after activation and X11 viewport synchronization. Allow frameless X11 overlays to overscan display bounds.

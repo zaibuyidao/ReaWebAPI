@@ -64,6 +64,7 @@ interface ReaWebWindowState {
   visible: boolean;
   focused: boolean;
   keyboardCapture: boolean;
+  shortcutRouting: boolean;
   /** Current Space routing state. JSON defaults: ordinary Apps false, JSFX Web UI true. */
   dawKeyboard: boolean;
   iconVisible: boolean;

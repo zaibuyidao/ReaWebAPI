@@ -61,6 +61,7 @@ Runtime::~Runtime() {
   services_.shutdown();
   try { finish_undo(); } catch (...) {}
   for (const auto& item : sessions_) {
+    release_shortcuts(*item.second);
     streams_.detach_window(item.first);
     producers_.close_window(item.first);
     tasks_.cancel_window(item.first);
@@ -260,6 +261,10 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
     s.daw_keyboard = enabled;
     s.window->evaluate(std::string("window.__reawebSetDawKeyboard?.(") + (enabled ? "true" : "false") + ");");
     return enabled;
+  }
+  if (method == "ReaWeb_SetShortcutRouting") {
+    if (!args[0].is_boolean()) throw Error("INVALID_ARGUMENT", "Expected a boolean");
+    return set_shortcut_routing(id, args[0].get<bool>());
   }
   if (method == "ReaWeb_SetKeyboardCapture") {
     if (!args[0].is_boolean()) throw Error("INVALID_ARGUMENT", "Expected a boolean");
@@ -742,6 +747,7 @@ void Runtime::dispatch_requests(Clock::time_point deadline) {
             s->window->evaluate(std::string("window.__reawebSetDawKeyboard?.(") + (s->daw_keyboard ? "true" : "false") + ");");
         }
         s->document = document; s->ready = true;
+        if (s->shortcut_routing) s->window->evaluate("window.__reawebSetShortcutRouting?.(true," + Json(s->document).dump() + ");");
         s->diagnostic_next = Clock::now() + std::chrono::seconds(5);
         update_diagnostics(*s);
         trace(*s, "webview.load.end", Diagnostics::Level::Info);
@@ -750,6 +756,7 @@ void Runtime::dispatch_requests(Clock::time_point deadline) {
         response = s->bridge->dispatch_request(query);
         response["result"]["webRuntime"] = web_runtime(*s);
         response["result"]["runtime"]["window"] = s->window->window_capabilities();
+          response["result"]["runtime"]["window"]["shortcutRouting"] = {{"supported", bool(dock_.daw_shortcut) && !s->jsfx}, {"section", "main"}, {"editable", "page"}};
         if (jsfx_service_) response["result"]["runtime"]["jsfx"] = {{"protocolVersion", 1}};
         response["result"]["windowId"] = s->id;
         response["result"]["projectEpoch"] = project_epoch_;
@@ -776,6 +783,7 @@ void Runtime::dispatch_requests(Clock::time_point deadline) {
         if (method == "ReaWeb_GetCapabilities" && response.contains("result")) {
           response["result"]["webRuntime"] = web_runtime(*s);
           response["result"]["runtime"]["window"] = s->window->window_capabilities();
+          response["result"]["runtime"]["window"]["shortcutRouting"] = {{"supported", bool(dock_.daw_shortcut) && !s->jsfx}, {"section", "main"}, {"editable", "page"}};
           if (jsfx_service_) response["result"]["runtime"]["jsfx"] = {{"protocolVersion", 1}};
         }
       }

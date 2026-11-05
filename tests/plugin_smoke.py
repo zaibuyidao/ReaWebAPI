@@ -413,9 +413,11 @@ entry.restype = C.c_int
 info = Info(0x20E, owner_window, register, get_func)
 assert entry(None, C.byref(info)) == 1
 try:
-    assert len(registrations) == 76 + (sys.platform == 'darwin'), list(registrations)
-    assert (b'accelerator' in registrations) == (sys.platform == 'darwin')
+    assert len(registrations) == 85 + (sys.platform in ('darwin', 'win32')), list(registrations)
+    assert (b'accelerator' in registrations) == (sys.platform in ('darwin', 'win32'))
     assert b'prefpage' in registrations
+    assert C.string_at(registrations[b'APIdef_ReaWeb_SetShortcutRouting']) == b'bool'
+    assert b'APIvararg_ReaWeb_SetShortcutRouting' in registrations
     for name in (b'ReaWeb_RegisterService', b'ReaWeb_UnregisterService', b'ReaWeb_CompleteServiceCall', b'ReaWeb_EmitServiceEvent'):
         assert b'API_' + name in registrations
         assert b'APIvararg_' + name not in registrations
