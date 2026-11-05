@@ -116,6 +116,14 @@
       .knobs circle:focus {
         outline: none;
       }
+      .knobs circle[aria-disabled="true"] {
+        opacity: 0.4;
+      }
+      #track-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .knobs path {
         stroke: #fff;
         stroke-width: 4;
@@ -270,9 +278,10 @@
           ×
         </button>
       </header>
+      <p id="track-name" role="status">Connecting to Lua…</p>
       <div class="knobs">
         <label
-          ><span data-i18n="gainLabel">MASTER GAIN</span
+          ><span data-i18n="gainLabel">TRACK VOLUME</span
           ><svg viewBox="0 0 120 120">
             <circle
               class="interactive"
@@ -283,13 +292,14 @@
               role="slider"
               tabindex="0"
               data-i18n-aria="gain"
-              aria-label="Master gain"
+              aria-label="Selected track volume"
+              aria-disabled="true"
             />
             <path id="gain-needle" d="M60 60V28" /></svg
           ><output id="gain-value"></output
         ></label>
         <label
-          ><span data-i18n="panLabel">MASTER PAN</span
+          ><span data-i18n="panLabel">TRACK PAN</span
           ><svg viewBox="0 0 120 120">
             <circle
               class="interactive"
@@ -300,7 +310,8 @@
               role="slider"
               tabindex="0"
               data-i18n-aria="pan"
-              aria-label="Master pan"
+              aria-label="Selected track pan"
+              aria-disabled="true"
             />
             <path id="pan-needle" d="M60 60V28" /></svg
           ><output id="pan-value"></output
@@ -380,10 +391,13 @@
           title: "REAPER SVG Overlay",
           heading: "REAPER / SVG OVERLAY",
           language: "Language",
-          gainLabel: "MASTER GAIN",
-          panLabel: "MASTER PAN",
-          gain: "Master gain",
-          pan: "Master pan",
+          gainLabel: "TRACK VOLUME",
+          panLabel: "TRACK PAN",
+          gain: "Selected track volume",
+          pan: "Selected track pan",
+          connecting: "Connecting to Lua…",
+          noTrack: "Select a track in REAPER.",
+          selectedTrack: "Selected track",
           knobHint:
             "Drag vertically to adjust parameters. Shift: fine control. The pointer hides during dragging and returns on release. Esc cancels dragging.",
           play: "Play / stop",
@@ -415,10 +429,13 @@
           title: "REAPER SVG 覆盖层",
           heading: "REAPER / SVG 覆盖层",
           language: "语言",
-          gainLabel: "主音量",
-          panLabel: "主声像",
-          gain: "主音量",
-          pan: "主声像",
+          gainLabel: "轨道音量",
+          panLabel: "轨道声像",
+          gain: "选中轨道音量",
+          pan: "选中轨道声像",
+          connecting: "正在连接 Lua…",
+          noTrack: "请在 REAPER 中选择轨道。",
+          selectedTrack: "选中轨道",
           knobHint:
             "纵向拖动旋钮调节参数，Shift 精细调整。拖动时隐藏鼠标，松开后回到起点，Esc 结束拖动。",
           play: "播放 / 停止",
@@ -447,12 +464,20 @@
       };
       let language = "en",
         state = null,
-        lastError = null;
+        lastError = null,
+        backendState = null,
+        connected = false;
       const strings = () => messages[language];
       const renderState = () => {
         const text = strings(),
           mode = state?.mouseMode || "regions";
         $("#mode-hint").textContent = text[mode + "Hint"];
+        $("#track-name").textContent = !connected
+          ? text.connecting
+          : backendState?.track
+            ? `${text.selectedTrack}: ${backendState.track.name}`
+            : text.noTrack;
+        $("#play").disabled = !connected;
         $("#status").textContent = state
           ? `${text.overlay} · ${text[mode]}${state.mouseModeActive ? "" : " · " + text.pending} · ${text.mainShortcuts} ${text[state.shortcutRouting ? "on" : "off"]}`
           : "";
@@ -667,33 +692,133 @@
           $("main").style.setProperty("--panel-opacity", value / 100);
           $("#opacity-value").value = `${value}%`;
         };
-        $("#play").onclick = () => reaper.Main_OnCommand(40044, 0).catch(fail);
+        $("#play").onclick = () => request("play").catch(fail);
         $("#close").onclick = () => reaper.window.close().catch(fail);
         $("#fit").onclick = () => fit().catch(fail);
+        // Lua commands and extension-timed state frames
+        const session = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        const pendingRequests = new Map(),
+          knobs = [];
+        let requestId = 0,
+          latestFrame = null,
+          renderedFrame = null,
+          framePaint = 0;
+        let unsubscribeMessage, unsubscribeFrame;
+        const sameTrack = (context) =>
+          context?.epoch === backendState?.epoch &&
+          context?.selection === backendState?.selection;
+        function request(command, value = "", context = backendState) {
+          if (disposed || (!connected && command !== "ready"))
+            return Promise.reject(new Error("Lua backend is not connected."));
+          const id = ++requestId;
+          return new Promise((resolve, reject) => {
+            const rejectRequest = (error) => {
+              const entry = pendingRequests.get(id);
+              if (!entry) return;
+              clearTimeout(entry.timer);
+              pendingRequests.delete(id);
+              reject(error);
+            };
+            const timer = setTimeout(
+              () =>
+                rejectRequest(
+                  new Error(
+                    `Lua did not confirm "${command}". The command may already have run.`,
+                  ),
+                ),
+              10000,
+            );
+            pendingRequests.set(id, { resolve, reject, timer });
+            const text = [
+              session,
+              id,
+              command,
+              context?.epoch ?? 0,
+              context?.selection ?? 0,
+              value,
+            ].join("\t");
+            try {
+              Promise.resolve(reaper.host.send(text)).then((accepted) => {
+                if (!accepted)
+                  rejectRequest(
+                    new Error("The message bridge rejected the command."),
+                  );
+              }, rejectRequest);
+            } catch (error) {
+              rejectRequest(error);
+            }
+          });
+        }
+        const applyBackend = (next) => {
+          if (next.session !== session || disposed) return;
+          if (
+            backendState &&
+            (next.epoch < backendState.epoch ||
+              (next.epoch === backendState.epoch &&
+                next.selection < backendState.selection) ||
+              next.revision < backendState.revision)
+          )
+            return;
+          const changed = !sameTrack(next);
+          backendState = next;
+          for (const knob of knobs) {
+            if (changed) knob.reset();
+            knob.sync();
+          }
+          renderState();
+        };
+        const receive = (text) => {
+          if (disposed) return;
+          try {
+            const message = JSON.parse(text);
+            if (message.session !== session) return;
+            if (message.state) applyBackend(message.state);
+            const entry = pendingRequests.get(message.id);
+            if (message.type !== "response" || !entry) return;
+            clearTimeout(entry.timer);
+            pendingRequests.delete(message.id);
+            if (message.ok) entry.resolve(message);
+            else
+              entry.reject(new Error(message.error || "Lua command failed."));
+          } catch (error) {
+            fail(error);
+          }
+        };
+        const onFrame = (frame) => {
+          if (disposed) return;
+          latestFrame = frame;
+          if (framePaint) return;
+          framePaint = requestAnimationFrame(() => {
+            framePaint = 0;
+            if (disposed) return;
+            try {
+              if (
+                typeof latestFrame?.lua === "string" &&
+                latestFrame.lua !== renderedFrame
+              ) {
+                renderedFrame = latestFrame.lua;
+                applyBackend(JSON.parse(renderedFrame));
+              } else for (const knob of knobs) knob.sync();
+            } catch (error) {
+              fail(error);
+            }
+          });
+        };
         // SVG parameter gestures
-        const master = await reaper.GetMasterTrack(0);
         const gestures = new AbortController(),
           endGestures = [];
         for (const spec of [
-          { id: "gain", parameter: "D_VOL", min: -60, max: 12 },
-          { id: "pan", parameter: "D_PAN", min: -100, max: 100 },
+          { id: "gain", command: "volume", min: -60, max: 12 },
+          { id: "pan", command: "pan", min: -100, max: 100 },
         ]) {
           const control = $("#" + spec.id),
-            initial = await reaper.GetMediaTrackInfo_Value(
-              master,
-              spec.parameter,
-            );
-          let value =
-            spec.id === "gain"
-              ? Math.min(
-                  12,
-                  Math.max(-60, 20 * Math.log10(Math.max(initial, 0.001))),
-                )
-              : initial * 100;
+            flights = new Map();
+          let value = 0,
+            requiredRevision = 0,
+            reported = false;
           let drag = null,
             requestingLock = false,
-            pending = null,
-            writing = false;
+            queued = null;
           const draw = () => {
             $("#" + spec.id + "-needle").style.transform =
               `rotate(${-135 + (270 * (value - spec.min)) / (spec.max - spec.min)}deg)`;
@@ -703,31 +828,89 @@
                 : `${value.toFixed(0)} %`;
             control.setAttribute("aria-valuenow", value.toFixed(1));
           };
-          const write = async () => {
-            pending = spec.id === "gain" ? 10 ** (value / 20) : value / 100;
-            if (writing) return;
-            writing = true;
-            try {
-              while (pending !== null && !disposed) {
-                const next = pending;
-                pending = null;
-                await reaper.SetMediaTrackInfo_Value(
-                  master,
-                  spec.parameter,
-                  next,
-                );
-              }
-            } catch (error) {
-              fail(error);
-            } finally {
-              writing = false;
+          const sync = () => {
+            if (disposed) return;
+            const track = connected && backendState?.track;
+            control.setAttribute("aria-disabled", String(!track));
+            if (!track) {
+              $("#" + spec.id + "-value").textContent = "—";
+              control.removeAttribute("aria-valuenow");
+              return;
             }
+            if (
+              drag ||
+              queued ||
+              [...flights.values()].some(sameTrack) ||
+              backendState.revision < requiredRevision
+            )
+              return;
+            const actual = track[spec.command];
+            value =
+              spec.id === "gain"
+                ? Math.max(
+                    spec.min,
+                    Math.min(
+                      spec.max,
+                      20 * Math.log10(Math.max(actual, 0.001)),
+                    ),
+                  )
+                : actual * 100;
+            draw();
+          };
+          const pump = () => {
+            while (queued && flights.size < 8 && !disposed) {
+              const next = queued;
+              queued = null;
+              const flight = request(spec.command, next.value, next.context)
+                .then((response) => {
+                  if (sameTrack(next.context) && !response.data.superseded)
+                    requiredRevision = Math.max(
+                      requiredRevision,
+                      response.data.revision,
+                    );
+                })
+                .catch((error) => {
+                  if (!sameTrack(next.context) || disposed) return;
+                  queued = null;
+                  end();
+                  if (!reported) {
+                    reported = true;
+                    fail(error);
+                  }
+                });
+              flights.set(flight, next.context);
+              flight.finally(() => {
+                flights.delete(flight);
+                pump();
+                sync();
+              });
+            }
+          };
+          const write = () => {
+            queued = {
+              value:
+                spec.id === "gain"
+                  ? value <= spec.min
+                    ? 0
+                    : 10 ** (value / 20)
+                  : value / 100,
+              context: backendState,
+            };
+            pump();
           };
           control.setAttribute("aria-valuemin", spec.min);
           control.setAttribute("aria-valuemax", spec.max);
           draw();
           control.onpointerdown = (event) => {
-            if (event.button !== 0 || drag || requestingLock) return;
+            if (
+              event.button !== 0 ||
+              drag ||
+              requestingLock ||
+              !connected ||
+              !backendState?.track
+            )
+              return;
+            reported = false;
             drag = {
               id: event.pointerId,
               y: event.clientY,
@@ -804,17 +987,48 @@
             if (drag && !drag.mouse) end();
           };
           endGestures.push(end);
+          knobs.push({
+            sync,
+            reset: () => {
+              queued = null;
+              requiredRevision = 0;
+              reported = false;
+              end();
+            },
+          });
+          sync();
         }
         // Cleanup and initial compact size
-        await reaper.lifecycle.on("cleanup", () => {
+        const cleanup = () => {
+          if (disposed) return;
           disposed = true;
+          connected = false;
+          for (const knob of knobs) knob.reset();
+          for (const entry of pendingRequests.values()) {
+            clearTimeout(entry.timer);
+            entry.reject(new Error("Page closed."));
+          }
+          pendingRequests.clear();
+          cancelAnimationFrame(framePaint);
+          for (const unsubscribe of [unsubscribeMessage, unsubscribeFrame])
+            if (unsubscribe)
+              void Promise.resolve(unsubscribe()).catch(() => {});
           endGestures.forEach((end) => end());
           gestures.abort();
           resize.disconnect();
           layout.disconnect();
           removeEventListener("resize", update);
           removeEventListener("scroll", update, true);
-        });
+        };
+        await reaper.lifecycle.on("cleanup", cleanup);
+        addEventListener("pagehide", cleanup, { once: true });
+        unsubscribeMessage = await reaper.events.on("message", receive);
+        unsubscribeFrame = await reaper.events.on("frame", onFrame);
+        await request("ready");
+        if (disposed) throw new Error("Page closed.");
+        connected = true;
+        for (const knob of knobs) knob.sync();
+        renderState();
         const panel = $("main").getBoundingClientRect();
         const size = await reaper.window.getSize();
         const scale = size.width / innerWidth;
