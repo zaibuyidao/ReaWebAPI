@@ -73,8 +73,15 @@ int main() {
     RealtimeManager native(host, streams);
     native.subscribe("transport", {{"updateRate", 120}}, 1);
     const auto before = reads.load();
-    // No main-thread pumping: sampling must continue independently.
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    // No main-thread pumping: sampling must continue independently. Wait for
+    // progress rather than assuming a shared CI runner can deliver 10 samples
+    // within 300 ms; this is a lifecycle test, not a scheduling benchmark.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (reads.load() - before < 10 && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    if (reads.load() - before < 10)
+      std::cerr << "Native sampling timed out: " << (reads.load() - before)
+                << " reads; diagnostics: " << native.diagnostics(1).dump() << '\n';
     CHECK(reads.load() - before >= 10);
     for (int i = 0; i < 20; ++i) {
       auto sub = native.subscribe("transport", {{"updateRate", 60}}, 2);

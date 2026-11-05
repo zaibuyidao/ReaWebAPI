@@ -10,6 +10,10 @@ import tempfile
 import unittest
 from urllib.parse import quote, urlsplit
 
+if sys.platform == 'win32':
+    # Create real junctions without starting PowerShell (which can time out on CI).
+    from _winapi import CreateJunction
+
 BINARY = sys.argv.pop(1)
 
 
@@ -149,11 +153,7 @@ class ResourceTests(unittest.TestCase):
         self.junctions = []
         for name, target in [('escape-dir', outside), ('inside-dir', internal)]:
             link = self.root / name
-            subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
-                            "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction "
-                            '-Path $env:REAWEB_TEST_LINK -Target $env:REAWEB_TEST_TARGET | Out-Null'],
-                           env={**os.environ, 'REAWEB_TEST_LINK': str(link), 'REAWEB_TEST_TARGET': str(target)},
-                           check=True, capture_output=True, timeout=15)
+            CreateJunction(str(target), str(link))
             self.junctions.append(link)
         self.assert_forbidden('/escape-dir/secret.txt')
         self.assert_forbidden('/escape-dir/')
@@ -411,11 +411,7 @@ class ResourceTests(unittest.TestCase):
         outside.mkdir()
         (outside / 'page.html').write_text('outside')
         link = self.root / 'escape'
-        subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
-                        "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction "
-                        '-Path $env:REAWEB_TEST_LINK -Target $env:REAWEB_TEST_TARGET | Out-Null'],
-                       env={**os.environ, 'REAWEB_TEST_LINK': str(link), 'REAWEB_TEST_TARGET': str(outside)},
-                       check=True, capture_output=True, timeout=15)
+        CreateJunction(str(outside), str(link))
         self.junctions = [link]
         self.assertIn('INVALID_PATH', self.launch(entry='escape/page.html').stdout)
         data = {**self.record(), 'entry': 'escape/page.html'}

@@ -9,6 +9,10 @@ import sys
 import tempfile
 import unittest
 
+if sys.platform == 'win32':
+    # Create real junctions without starting PowerShell (which can time out on CI).
+    from _winapi import CreateJunction
+
 BINARY = str(Path(sys.argv.pop(1)).resolve())
 
 
@@ -224,12 +228,7 @@ class AutoIdentityTests(unittest.TestCase):
         process = self.start()
         origin = process.stdout.readline().strip()
         link = self.root / 'alias'
-        subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
-                        "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction "
-                        '-Path $env:REAWEB_TEST_LINK -Target $env:REAWEB_TEST_TARGET | Out-Null'],
-                       env={**os.environ, 'REAWEB_TEST_LINK': str(link),
-                            'REAWEB_TEST_TARGET': str(self.marker().parent)},
-                       check=True, capture_output=True, timeout=15)
+        CreateJunction(str(self.marker().parent), str(link))
         try:
             for path in ('/alias/identity.json', '/.REAWebAPI/identity.json'):
                 process.stdin.write(json.dumps({'uri': origin + path}) + '\n')
