@@ -219,6 +219,8 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   }
   if (method == "ReaWeb_GetDiagnostics") return diagnostics(id);
   if (method == "ReaWeb_GetWindowState") return window_state(s);
+  if (method == "ReaWeb_SetMouseMode") return set_mouse_mode(id, args[0]);
+  if (method == "ReaWeb_SetMouseRegions") return set_mouse_regions(id, args[0]);
   if (method == "ReaWeb_SetFrameless") {
     if (!args[0].is_boolean()) throw Error("INVALID_ARGUMENT", "Expected a frameless boolean");
     if (s.jsfx) throw Error("WINDOW_HOSTED", "REAPER controls the JSFX editor frame");
@@ -266,7 +268,7 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   }
   if (method == "ReaWeb_OpenDev") return open_dev(args[0].get<std::string>(), s.entry.parent_path());
   if (method == "ReaWeb_OpenEx") return open_impl(args[0].get<std::string>(), s.entry.parent_path(), "", s.app->launcher_source,
-    args[1].value("hidden", false), args[1].value("frameless", false), args[1].value("resizable", true), args[1].value("transparent", false));
+    args[1].value("hidden", false), args[1].value("frameless", false), args[1].value("resizable", true), args[1].value("transparent", false), {}, OverlayOptions::parse(args[1]));
   if (method == "ReaWeb_BeginUndo" || method == "ReaWeb_EndUndo") return transaction_call(id, method, args);
   if (is_file_method(method) || method == "ReaWeb_SetIcon" || method == "ReaWeb_ClipboardReadText" ||
       method == "ReaWeb_ClipboardWriteText" || method == "ReaWeb_OpenExternal")

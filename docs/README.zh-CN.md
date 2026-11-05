@@ -26,3 +26,5 @@
 扩展维护者可参考 [API Sync 指南](https://github.com/zaibuyidao/ReaWebAPI/tree/main/api)，更新和校验 API 目录。
 
 [Native Streams](native-streams.md) · [Native Stream 中文](native-streams.zh-CN.md)
+
+- [覆盖层与原生鼠标穿透](window-overlay.zh-CN.md)

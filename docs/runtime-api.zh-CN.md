@@ -12,7 +12,7 @@ JavaScript Runtime 使用下列 16 个命名空间。730 项标准 REAPER 镜像
 
 就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
-16 个命名空间共 84 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
+16 个命名空间共 86 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
 `transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
 
@@ -283,3 +283,5 @@ const enabled = (await reaper.window.getState()).dawKeyboard;
 ## Realtime 订阅
 
 `reaper.realtime` 提供播放状态订阅，请求频率最高 120 Hz。调度、时间戳和清理约定见 [Realtime 数据源](realtime.zh-CN.md)。
+
+创建选项 `layer`、`mouseMode`、`mouseRegions` 及当前窗口接口 `setMouseMode`、`setMouseRegions` 控制[覆盖层与原生鼠标穿透](window-overlay.zh-CN.md)。

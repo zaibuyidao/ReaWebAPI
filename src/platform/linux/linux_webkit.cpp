@@ -431,6 +431,15 @@ public:
         catch (const std::exception& error) { fail(error.what()); }
       });
     dock_menu_->set_app_name(request.value("appName", std::string()));
+    const auto mouse_scale = +[](GObject*, GParamSpec*, gpointer data) {
+      auto self = static_cast<Page*>(data);
+      try { self->channel_.send({{"id", self->id_}, {"op", "mouse-scale"},
+        {"scale", webkit_web_view_get_zoom_level(self->view_) * gtk_widget_get_scale_factor(GTK_WIDGET(self->view_))}}); }
+      catch (const std::exception& e) { self->fail(e.what()); }
+    };
+    g_signal_connect(view_, "notify::zoom-level", G_CALLBACK(mouse_scale), this);
+    g_signal_connect(view_, "notify::scale-factor", G_CALLBACK(mouse_scale), this);
+    mouse_scale(nullptr, nullptr, this);
     gtk_widget_realize(plug_);
     // A global filter: events of the foreign parent window have no GdkWindow in
     // this process, so only GDK's display-wide filter list sees them.

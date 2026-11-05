@@ -39,13 +39,15 @@ public:
   void schedule_webview_warmup() { check_thread(); platform_warmup_pending_ = true; }
   void configure_webviews(unsigned idle_count);
   int open(const std::string& path, const fs::path& base = {});
-  int open_instance(const std::string& path, const std::string& instance_key, const std::string& name = {}, bool multiple = false, bool hidden = false, bool frameless = false, bool resizable = true, bool transparent = false);
+  int open_instance(const std::string& path, const std::string& instance_key, const std::string& name = {}, bool multiple = false, bool hidden = false, bool frameless = false, bool resizable = true, bool transparent = false, OverlayOptions overlay = {});
   int open_ex(const std::string& path, const std::string& options);
   int open_dev(const std::string& url, const fs::path& base = {});
   bool is_open(int id) const;
   bool close(int id);
   bool devtools(int id);
   bool set_docked(int id, bool docked);
+  bool set_mouse_mode(int id, const Json& mode);
+  bool set_mouse_regions(int id, const Json& regions);
   bool is_docked(int id) const;
   bool is_ready(int id) const;
   bool focus(int id);
@@ -144,6 +146,8 @@ private:
     bool frameless = false, resizable = true;
     double corner_radius = 0;
     bool transparent = false;
+    OverlayOptions overlay;
+    bool preserve_dock = false;
     std::optional<bool> native_dock_request;
     std::shared_ptr<const IconSource> icon_source;
     std::vector<IconBitmap> icon_bitmaps;
@@ -272,7 +276,7 @@ private:
   void enqueue_message(Session& session, const std::string& message, bool to_web);
   void clear_messages(Session& session);
   void flush_messages(Session& session, Clock::time_point deadline);
-  int open_impl(const std::string& path, const fs::path& base, const std::string& dev_url, const std::string& launcher_source = {}, bool hidden = false, bool frameless = false, bool resizable = true, bool transparent = false, std::shared_ptr<Session::Jsfx> jsfx = {});
+  int open_impl(const std::string& path, const fs::path& base, const std::string& dev_url, const std::string& launcher_source = {}, bool hidden = false, bool frameless = false, bool resizable = true, bool transparent = false, std::shared_ptr<Session::Jsfx> jsfx = {}, OverlayOptions overlay = {});
   void attach_pending_dock(Session& session);
   bool start_async(Session& session, const Work& request);
   void refresh_icon(Session& session);

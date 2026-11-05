@@ -73,6 +73,12 @@ int ReaWeb_Open(const char* path, const char* instance_key, const char* name, co
 int ReaWeb_OpenEx(const char* path, const char* options_json) {
   return guarded([&] { return runtime->open_ex(path ? path : "", options_json ? options_json : ""); }, 0);
 }
+bool ReaWeb_SetMouseMode(int id, const char* mode) {
+  return guarded([&] { return runtime->set_mouse_mode(id, mode ? Json(mode) : Json()); }, false);
+}
+bool ReaWeb_SetMouseRegions(int id, const char* regions) {
+  return guarded([&] { return runtime->set_mouse_regions(id, Json::parse(regions ? regions : "", nullptr, false)); }, false);
+}
 bool ReaWeb_Show(int id) { return guarded([&] { return runtime->show(id); }, false); }
 int ReaWeb_OpenDev(const char* url) { return guarded([&] { return runtime->open_dev(url ? url : ""); }, 0); }
 bool ReaWeb_Close(int id) { return guarded([&] { return runtime->close(id); }, false); }
@@ -167,6 +173,11 @@ void* open_ex_vararg(void** args, int count) {
 template<bool (*Fn)(int)> void* id_vararg(void** args, int count) {
   const auto id = count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0;
   return reinterpret_cast<void*>(static_cast<intptr_t>(Fn(id)));
+}
+template<bool (*Fn)(int, const char*)> void* mouse_vararg(void** args, int count) {
+  return reinterpret_cast<void*>(static_cast<intptr_t>(Fn(
+    count >= 1 ? static_cast<int>(reinterpret_cast<intptr_t>(args[0])) : 0,
+    count >= 2 ? static_cast<const char*>(args[1]) : nullptr)));
 }
 void* error_vararg(void**, int) { return const_cast<char*>(ReaWeb_GetLastError()); }
 void* send_vararg(void** args, int count) {
@@ -455,7 +466,11 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     add_api("ReaWeb_Close", reinterpret_cast<void*>(ReaWeb_Close), reinterpret_cast<void*>(id_vararg<ReaWeb_Close>),
       "bool\0int\0windowId\0Close a ReaWebAPI window.\0");
     add_api("ReaWeb_OpenEx", reinterpret_cast<void*>(ReaWeb_OpenEx), reinterpret_cast<void*>(open_ex_vararg),
-      "int\0const char*,const char*\0path,optionsJson\0Open local HTML with JSON options: instanceKey, id, multiple, hidden, frameless, resizable. Creation options do not reconfigure reused windows. Returns a window id, or 0 on failure.\0");
+      "int\0const char*,const char*\0path,optionsJson\0Open local HTML with JSON options: instanceKey, id, multiple, hidden, frameless, resizable, transparent, layer, mouseMode, mouseRegions. Creation options do not reconfigure reused windows. Returns a window id, or 0 on failure.\0");
+    add_api("ReaWeb_SetMouseMode", reinterpret_cast<void*>(ReaWeb_SetMouseMode), reinterpret_cast<void*>(mouse_vararg<ReaWeb_SetMouseMode>),
+      "bool\0int,const char*\0windowId,mode\0Set normal, passthrough or regions mouse policy. Returns false on error. See ReaWeb_GetLastError.\0");
+    add_api("ReaWeb_SetMouseRegions", reinterpret_cast<void*>(ReaWeb_SetMouseRegions), reinterpret_cast<void*>(mouse_vararg<ReaWeb_SetMouseRegions>),
+      "bool\0int,const char*\0windowId,regionsJson\0Replace mouse regions with a JSON rectangle array in viewport CSS pixels. Returns false on error.\0");
     add_api("ReaWeb_Show", reinterpret_cast<void*>(ReaWeb_Show), reinterpret_cast<void*>(id_vararg<ReaWeb_Show>),
       "bool\0int\0windowId\0Show a ReaWebAPI window without forcing focus. Returns false for an invalid or closed id.\0");
     add_api("ReaWeb_IsOpen", reinterpret_cast<void*>(ReaWeb_IsOpen), reinterpret_cast<void*>(id_vararg<ReaWeb_IsOpen>),

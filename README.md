@@ -14,6 +14,7 @@ Space routing starts from ordinary Apps’ `app.json.dawKeyboard` (default `fals
 - Optional [External Clients](docs/external-clients.md) over authenticated localhost WebSocket, sharing the Native API, Batch, Service, Event and binary Stream capabilities.
 - [Native Events and Host Services](docs/native-services.md) with subscription-driven state monitoring and a C/C++ extension registry, independent of Lua loops.
 - [JSFX Web UI](docs/jsfx-webui.md) hosts associated JSFX in track, master, take, input, monitoring and nested container FX, with instance-bound `params`, host parameter metadata, loaded-instance enum choices in `enum` (unavailable fields are `null`), normalized writes and grouped Undo gestures. `editor` provides persistent, shared content sizing. The optional EEL SDK adds DSP streams, structured state, commands and binary resources. The [native channel](docs/jsfx-native-channel.md) uses bounded staging programs to reduce EEL compilation overhead during initialization. Initial capability and state reads avoid an additional host scheduling cycle on Windows, macOS and Linux. SDK-managed DSP streams preserve subscriptions across session replacement and transport recovery.
+- [Overlay layers and native mouse routing](docs/window-overlay.md) for floating Apps, with JS/Lua controls and explicit platform requirements.
 - Optional [transparent floating windows](docs/host-api.md#transparent-windows) with desktop Alpha, explicit backend capability reporting and preserved Dock preferences.
 - [Frameless floating windows](docs/host-api.md#frameless-windows) with live title-bar switching, native corners and drag regions on Windows, macOS and Linux X11/XWayland. Native hosts hide before WebView teardown during close.
 - 15 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
@@ -84,7 +85,7 @@ All Apps share `ReaWebAPI/WebViewData/`. App identities, private data and window
 
 ## Build
 
-Requires CMake 3.24+, a C++17 toolchain and Python 3.10+. Tests use Node.js. Linux development dependencies are `pkg-config`, `libwebkit2gtk-4.1-dev` and `libx11-dev`.
+Requires CMake 3.24+, a C++17 toolchain and Python 3.10+. Tests use Node.js. Linux development dependencies are `pkg-config`, `libwebkit2gtk-4.1-dev`, `libx11-dev`, `libxext-dev` and `libxi-dev`. The optional native overlay test also requires `libxtst-dev`.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON

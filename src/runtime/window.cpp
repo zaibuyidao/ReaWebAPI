@@ -43,19 +43,19 @@ int Runtime::open_ex(const std::string& path, const std::string& options) {
   if (!value.is_object()) throw Error("INVALID_ARGUMENT", "optionsJson must be a JSON object string");
   for (const auto& field : value.items()) {
     const auto& key = field.key();
-    if ((key == "instanceKey" || key == "id") ? !field.value().is_string() :
-        (key == "multiple" || key == "hidden" || key == "frameless" || key == "resizable" || key == "transparent") ? !field.value().is_boolean() : true)
+    if ((key == "instanceKey" || key == "id" || key == "layer" || key == "mouseMode") ? !field.value().is_string() :
+        (key == "multiple" || key == "hidden" || key == "frameless" || key == "resizable" || key == "transparent") ? !field.value().is_boolean() : key == "mouseRegions" ? !field.value().is_array() : true)
       throw Error("INVALID_ARGUMENT", "Unknown or invalid open option: " + key);
   }
   return open_instance(path, value.value("instanceKey", ""), value.value("id", ""),
-    value.value("multiple", false), value.value("hidden", false), value.value("frameless", false), value.value("resizable", true), value.value("transparent", false));
+    value.value("multiple", false), value.value("hidden", false), value.value("frameless", false), value.value("resizable", true), value.value("transparent", false), OverlayOptions::parse(value));
 }
 
-int Runtime::open_instance(const std::string& path, const std::string& instance_key, const std::string& name, bool multiple, bool hidden, bool frameless, bool resizable, bool transparent) {
+int Runtime::open_instance(const std::string& path, const std::string& instance_key, const std::string& name, bool multiple, bool hidden, bool frameless, bool resizable, bool transparent, OverlayOptions overlay) {
   check_thread();
   if (instance_key.find('\0') != std::string::npos || name.find('\0') != std::string::npos)
     throw Error("INVALID_ARGUMENT", "Instance key and window name must not contain NUL");
-  if (multiple || instance_key.empty()) return open_impl(path, {}, "", instance_key, hidden, frameless, resizable, transparent);
+  if (multiple || instance_key.empty()) return open_impl(path, {}, "", instance_key, hidden, frameless, resizable, transparent, {}, overlay);
   const auto key = std::make_pair(instance_key, name);
   // The identity lives with the session, so destruction cannot leave a stale registry entry.
   for (const auto& item : sessions_) {
@@ -65,7 +65,7 @@ int Runtime::open_instance(const std::string& path, const std::string& instance_
       return session.id;
     }
   }
-  const auto id = open_impl(path, {}, "", instance_key, hidden, frameless, resizable, transparent);
+  const auto id = open_impl(path, {}, "", instance_key, hidden, frameless, resizable, transparent, {}, overlay);
   sessions_.at(id)->instance = key;
   return id;
 }
@@ -74,7 +74,7 @@ int Runtime::open_dev(const std::string& url, const fs::path& base) {
   return open_impl("", base, validate_dev_url(url));
 }
 
-int Runtime::open_impl(const std::string& path, const fs::path& base, const std::string& dev_url, const std::string& launcher_source, bool hidden, bool frameless, bool resizable, bool transparent, std::shared_ptr<Session::Jsfx> jsfx) {
+int Runtime::open_impl(const std::string& path, const fs::path& base, const std::string& dev_url, const std::string& launcher_source, bool hidden, bool frameless, bool resizable, bool transparent, std::shared_ptr<Session::Jsfx> jsfx, OverlayOptions overlay) {
   check_thread();
   const auto requested = Clock::now();
   std::string diagnostic_app;
@@ -126,6 +126,8 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
   session->frameless = frameless;
   session->resizable = resizable;
   session->transparent = transparent;
+  session->overlay = overlay;
+  session->preserve_dock = transparent || overlay.floating_only();
   session->entry = entry;
   session->app = app;
   trace(*session, "instance.bind", Diagnostics::Level::Info);
@@ -256,7 +258,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
       if (auto s = weak.lock(); s && !s->closing && is_docked(s->id) && dock_.activate)
         dock_.activate(s->window->native_handle());
     }, hidden, frameless, resizable, transparent, bool(session->jsfx), session->startup_timing,
-    [weak] { auto s = weak.lock(); return s && !s->closing && s->capture_keyboard; }});
+    [weak] { auto s = weak.lock(); return s && !s->closing && s->capture_keyboard; }, overlay});
   trace(*session, "webview.create.end");
   trace(*session, "webview.load.begin");
   session->window->set_media_resources(window_resources);
@@ -270,8 +272,8 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
       session->window->restore_placement(session->saved_state["placement"]);
       session->window->restore_devtools(session->saved_state.value("devtools", Json()));
       const auto dock_id = session->saved_state.value("dockId", -1);
-      if (!transparent && dock_.remember && dock_id >= 0) dock_.remember(session->ident, dock_id);
-      if (!transparent && session->saved_state.value("docked", false)) {
+      if (!session->preserve_dock && dock_.remember && dock_id >= 0) dock_.remember(session->ident, dock_id);
+      if (!session->preserve_dock && session->saved_state.value("docked", false)) {
         if (hidden) session->pending_dock = true;
         else set_docked(id, true);
       }
@@ -411,13 +413,36 @@ bool Runtime::is_docked(int id) const {
   return handle && dock_.index(handle) >= 0;
 }
 
+bool Runtime::set_mouse_mode(int id, const Json& value) {
+  check_thread();
+  const auto mode = mouse_mode(value);
+  if (!is_open(id)) throw Error("WINDOW_CLOSED", "Window is no longer open");
+  auto& s = *sessions_.at(id);
+  if (s.jsfx) throw Error("WINDOW_HOSTED", "Mouse policies require a standalone App");
+  if (mode != "normal" && is_docked(id)) throw Error("DOCK_UNAVAILABLE", "Mouse policies require a floating window");
+  s.window->set_mouse_mode(mode);
+  s.overlay.mode = mode;
+  return true;
+}
+
+bool Runtime::set_mouse_regions(int id, const Json& value) {
+  check_thread();
+  const auto regions = mouse_regions(value);
+  if (!is_open(id)) throw Error("WINDOW_CLOSED", "Window is no longer open");
+  auto& s = *sessions_.at(id);
+  if (s.jsfx) throw Error("WINDOW_HOSTED", "Mouse policies require a standalone App");
+  s.window->set_mouse_regions(regions);
+  s.overlay.regions = regions;
+  return true;
+}
+
 bool Runtime::set_docked(int id, bool docked) {
   check_thread();
   if (!is_open(id)) throw Error("WINDOW_CLOSED", "Window is no longer open");
   auto& session = *sessions_.at(id);
   if (session.jsfx) throw Error("WINDOW_HOSTED", "REAPER controls the JSFX editor placement");
-  if (session.transparent) {
-    if (docked) throw Error("DOCK_UNAVAILABLE", "Transparent windows require a standalone floating host");
+  if (session.transparent || session.overlay.floating_only()) {
+    if (docked) throw Error("DOCK_UNAVAILABLE", "Transparent, overlay and non-normal mouse policies require a standalone floating host");
     return false;
   }
   auto handle = session.window->native_handle();
@@ -458,6 +483,7 @@ bool Runtime::set_docked(int id, bool docked) {
     session.window->restore_floating();
     if (reparents && !was_visible) session.window->set_visible(false);
   }
+  session.preserve_dock = false;
   session.icon_dirty = true; refresh_icon(session);
   return is_docked(id);
 }
@@ -502,6 +528,8 @@ Json Runtime::window_state(const Session& s) const {
     {"iconVisible", s.icon_visible}, {"frameless", s.frameless}, {"resizable", s.resizable},
     {"framelessActive", !is_docked(s.id) && s.window->frameless_active()},
     {"cornerRadius", s.corner_radius}, {"cornerRadiusActive", !is_docked(s.id) && s.window->corner_radius_active()},
+    {"layer", s.overlay.layer}, {"layerActive", s.overlay.layer == "normal" || s.window->layer_active()},
+    {"mouseMode", s.overlay.mode}, {"mouseModeActive", s.window->mouse_mode_active()},
     {"transparent", s.transparent}, {"transparentActive", !is_docked(s.id) && s.window->transparent_active()}};
 }
 
@@ -521,8 +549,8 @@ void Runtime::persist(Session& s, bool force) {
     if (index < 0 && s.pending_state.is_object()) index = s.pending_state.value("dockId", -1);
     if (index < 0 && s.saved_state.is_object()) index = s.saved_state.value("dockId", -1);
     state = {{"schema", 1}, {"entry", s.entry.generic_u8string()}, {"placement", placement}, {"docked", docked}, {"dockId", index}};
-    // Floating transparency is a session override, not a new Dock preference.
-    if (s.transparent) state["docked"] = s.saved_state.is_object() && s.saved_state.value("docked", false);
+    // Floating-only policies preserve the saved Dock preference for the session.
+    if (s.preserve_dock) state["docked"] = s.saved_state.is_object() && s.saved_state.value("docked", false);
     const auto devtools = s.window->devtools_state();
     if (!devtools.is_null()) state["devtools"] = devtools;
   } else if (!force || state.is_null()) return;

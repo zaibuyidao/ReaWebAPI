@@ -3,6 +3,10 @@
 namespace reaweb {
 void Runtime::navigate(Session& session) {
   trace(session, "webview.load.begin");
+  if ((session.generation || session.ready) && session.window) {
+    session.window->clear_mouse_regions();
+    session.overlay.regions.clear();
+  }
   release_daw_space(session);
   if (session.generation) session.startup_timing->reset("navigation");
   session.startup_timing->mark(StartupTiming::Navigation);

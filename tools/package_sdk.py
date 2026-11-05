@@ -23,7 +23,7 @@ def payload(root, version, revision):
     paths = {f'ReaWebAPI/SDK/{name}': root / 'runtime' / name for name in (
         'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'browser-files.mjs', 'browser-files.d.mts', 'jsfx-webui.mjs', 'jsfx-webui.d.mts', 'README.md', 'README.zh-CN.md')}
     paths['ReaWebAPI/docs/jsfx-webui.md'] = root / 'docs/jsfx-webui.md'
-    for name in ('realtime.md', 'realtime.zh-CN.md'):
+    for name in ('realtime.md', 'realtime.zh-CN.md', 'window-overlay.md', 'window-overlay.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reawebapi-native-transport.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
         paths[f'ReaWebAPI/SDK/native-transport/{name}'] = root / 'examples/integrations/native-transport' / name
@@ -69,6 +69,8 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/SDK/hidden-start/{name}'] = root / 'examples/runtime-features/hidden-start' / name
     for name in ('reawebapi-frameless-resizable.lua', 'reawebapi-frameless-fixed.lua', 'launch.lua', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md'):
         paths[f'ReaWebAPI/SDK/frameless/{name}'] = root / 'examples/windows/frameless' / name
+    for name in ('reawebapi-overlay.lua', 'restore-interaction.lua', 'close-overlay.lua', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md'):
+        paths[f'ReaWebAPI/SDK/overlay/{name}'] = root / 'examples/windows/overlay' / name
     for name in ('reawebapi-transparent.lua', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md'):
         paths[f'ReaWebAPI/SDK/transparent/{name}'] = root / 'examples/windows/transparent' / name
     for name in ('reawebapi-starter.lua', 'index.html', 'app.js', 'style.css', 'jsconfig.json', 'app.json'):

@@ -77,6 +77,10 @@ interface ReaWebWindowState {
   transparent: boolean;
   /** Native desktop Alpha has been established, independently of page CSS. */
   transparentActive: boolean;
+  layer: ReaWebWindowLayer;
+  layerActive: boolean;
+  mouseMode: ReaWebMouseMode;
+  mouseModeActive: boolean;
 }
 interface ReaWebEvents {
   projectchange: { projectEpoch: number; changeCount: number };

@@ -1,0 +1,13 @@
+:root { color-scheme: dark; font: 14px/1.5 system-ui, sans-serif; color: #eef3f8; }
+html, body { margin: 0; background: transparent; }
+main { padding: 28px; }
+.panel { box-sizing: border-box; width: min(380px, 100%); padding: 20px; border: 1px solid #7898b4; border-radius: 16px; background: #142334ec; box-shadow: 0 8px 28px #0005; }
+h1 { margin: 0; font-size: 24px; }
+p { color: #c1cddb; }
+label { display: block; margin: 12px 0; }
+input:not([type=checkbox]), select { box-sizing: border-box; width: 100%; }
+input, select, button { font: inherit; }
+button, select, input:not([type=range]) { border: 1px solid #7898b4; border-radius: 6px; padding: 6px 10px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.clear-control { margin-top: 28px; background: transparent; text-shadow: 0 1px 3px #000; }
+#status { white-space: pre-wrap; max-width: 600px; color: #fff; text-shadow: 0 1px 3px #000; }

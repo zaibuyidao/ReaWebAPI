@@ -16,6 +16,7 @@ ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩�
 - 支持 Lua 或 EEL2 后端 + WebView UI，通过 `ReaWeb_Send`、`ReaWeb_Receive`、`reaper.host.send` 和 `message` 事件通信，多窗口公平轮转投递，通信调度预算独立于工程采样。
 - 可选 [External Client](docs/external-clients.zh-CN.md)，通过带认证的本机 WebSocket 复用 Native API、Batch、Service、Event 和二进制 Stream。服务默认关闭，可在 ReaWebAPI Preferences 中启用，默认地址为 `ws://127.0.0.1:9123`。
 - 可选[透明浮动窗口](docs/host-api.zh-CN.md#透明窗口)，支持桌面 Alpha、原生后端能力检测及原 Dock 偏好保留。
+- [覆盖层与原生鼠标穿透](docs/window-overlay.zh-CN.md)面向浮动 App，提供 JS／Lua 控制和明确的平台要求。
 - [无边框浮动窗口](docs/host-api.zh-CN.md#无边框窗口)支持动态切换标题栏、原生圆角和拖动区，覆盖 Windows、macOS 与 Linux X11/XWayland。关闭时先隐藏原生宿主，再释放 WebView。
 - 15 个 Runtime 命名空间，涵盖窗口、事件、文件、原生对话框、拖放、音频、Undo 和应用服务。
 - 稳定的 `reaweb://<appId>` 来源，原生加载本地资源、模块和 Worker，持久化 App 存储，不创建每 App TCP listener。
@@ -83,7 +84,7 @@ Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开应用。传入 `debug.
 
 ## 构建
 
-需要 CMake 3.24+、C++17 工具链和 Python 3.10+，测试使用 Node.js。Linux 开发依赖为 `pkg-config`、`libwebkit2gtk-4.1-dev` 和 `libx11-dev`。
+需要 CMake 3.24+、C++17 工具链和 Python 3.10+，测试使用 Node.js。Linux 开发依赖为 `pkg-config`、`libwebkit2gtk-4.1-dev`、`libx11-dev`、`libxext-dev` 和 `libxi-dev`。可选的原生覆盖层测试还需要 `libxtst-dev`。
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON

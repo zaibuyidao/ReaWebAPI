@@ -23,6 +23,18 @@ double jsfx_values[2] = {.25, .5};
 int jsfx_writes = 0, jsfx_ends = 0, jsfx_fail_param = -1;
 struct FakeWindow : Window {
   WindowOptions options;
+  bool reject_mouse = false;
+  void set_mouse_mode(const std::string& mode) override {
+    if (reject_mouse) throw Error("MOUSE_MODE_FAILED", "Injected native failure");
+    options.overlay.mode = mode;
+  }
+  void set_mouse_regions(const std::vector<MouseRegion>& regions) override {
+    if (reject_mouse) throw Error("MOUSE_MODE_FAILED", "Injected native failure");
+    options.overlay.regions = regions;
+  }
+  void clear_mouse_regions() override { options.overlay.regions.clear(); }
+  bool layer_active() const override { return options.overlay.layer == "overlay"; }
+  bool mouse_mode_active() const override { return true; }
   bool daw_keyboard = false;
   bool is_closed = false;
   bool shown = true;
@@ -712,6 +724,57 @@ int main() {
       catch (const Error& error) { refused = error.code == "TRANSPARENCY_FAILED"; }
       CHECK(refused && windows.back().expired());
       errors.clear();
+    }
+    windows.clear(); profiles.clear(); platform_count = 0; platform_pumps = 0;
+    {
+      int activations = 0;
+      auto background_docks = docks; background_docks.activate = [&](void*) { ++activations; };
+      Runtime runtime(host, root / "OverlayProfile", [](const std::string&) {}, background_docks);
+      const auto original = runtime.open(entry.u8string());
+      runtime.set_docked(original, true); runtime.close(original);
+      until(runtime, [&] { return runtime.diagnostics(original).value("stage", "") == "closed"; });
+      const auto id = runtime.open_ex(entry.u8string(), R"({"instanceKey":"overlay","hidden":true,"layer":"overlay","mouseMode":"regions","mouseRegions":[{"x":1,"y":2,"width":3,"height":4}]})");
+      auto window = windows.back().lock();
+      CHECK(!runtime.is_docked(id) && window->options.overlay.regions.size() == 1);
+      CHECK(runtime.open_ex("missing.html", R"({"instanceKey":"overlay","hidden":true})") == id);
+      CHECK(window->options.overlay.layer == "overlay" && window->options.overlay.mode == "regions");
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      const auto state = [&] { return result(runtime, *window, window->send("ReaWeb_GetWindowState"))["result"]; };
+      CHECK(state()["layer"] == "overlay" && state()["layerActive"] == true && state()["mouseModeActive"] == true);
+      CHECK(result(runtime, *window, window->send("ReaWeb_SetDocked", {true}))["error"]["code"] == "DOCK_UNAVAILABLE");
+      CHECK(result(runtime, *window, window->send("ReaWeb_SetMouseRegions", Json::array({Json::array()})))["result"] == true);
+      CHECK(window->options.overlay.regions.empty());
+      const Json valid = Json::array({{{"x", -1.5}, {"y", 0}, {"width", 20}, {"height", 30}}});
+      CHECK(runtime.set_mouse_regions(id, valid));
+      auto invalid = valid; invalid.push_back({{"x", 0}, {"y", 0}, {"width", 0}, {"height", 2}});
+      CHECK(result(runtime, *window, window->send("ReaWeb_SetMouseRegions", Json::array({invalid})))["error"]["code"] == "INVALID_ARGUMENT");
+      CHECK(window->options.overlay.regions.size() == 1);
+      window->reject_mouse = true;
+      CHECK(result(runtime, *window, window->send("ReaWeb_SetMouseMode", {"normal"}))["error"]["code"] == "MOUSE_MODE_FAILED");
+      CHECK(state()["mouseMode"] == "regions"); window->reject_mouse = false;
+      CHECK(runtime.set_mouse_mode(id, "passthrough"));
+      CHECK(state()["mouseMode"] == "passthrough");
+      window->options.on_navigation(); window->document = "overlay-reload";
+      result(runtime, *window, window->send("__reawebHello", {1}));
+      CHECK(window->options.overlay.regions.empty() && state()["mouseMode"] == "passthrough" && state()["layer"] == "overlay");
+      CHECK(runtime.set_mouse_mode(id, "normal"));
+      runtime.close(id);
+      until(runtime, [&] { return runtime.diagnostics(id).value("stage", "") == "closed"; });
+      const auto reopened = runtime.open(entry.u8string()); CHECK(runtime.is_docked(reopened));
+      bool dock_error = false;
+      try { runtime.set_mouse_mode(reopened, "passthrough"); } catch (const Error& e) { dock_error = e.code == "DOCK_UNAVAILABLE"; }
+      CHECK(dock_error);
+      CHECK(!runtime.set_docked(reopened, false));
+      CHECK(runtime.set_mouse_mode(reopened, "passthrough"));
+      runtime.close(reopened);
+      until(runtime, [&] { return runtime.diagnostics(reopened).value("stage", "") == "closed"; });
+      const auto undocked = runtime.open(entry.u8string());
+      CHECK(!runtime.is_docked(undocked)); runtime.close(undocked);
+      for (auto invalid : {R"({"layer":"topmost"})", R"({"mouseMode":"none"})", R"({"mouseRegions":null})", R"({"mouseRegions":[{"x":0,"y":0,"width":1}]})", R"({"mouseRegions":[{"x":0,"y":0,"width":-1,"height":2}]})"}) {
+        bool refused = false;
+        try { runtime.open_ex(entry.u8string(), invalid); } catch (const Error& e) { refused = e.code == "INVALID_ARGUMENT"; }
+        CHECK(refused);
+      }
     }
     windows.clear(); profiles.clear(); platform_count = 0; platform_pumps = 0;
     {

@@ -1,0 +1,57 @@
+# Window overlays and native mouse routing
+
+[简体中文](window-overlay.zh-CN.md)
+
+Available in v0.3.9.24 for standalone floating Apps. Embedded JSFX Web UIs retain their existing input and window behavior.
+
+```js
+const id = await reaper.window.open('overlay/index.html', {
+  frameless: true, transparent: true,
+  layer: 'overlay', mouseMode: 'regions',
+  mouseRegions: [{x: 20, y: 20, width: 80, height: 80}]
+});
+// These methods address the calling window.
+await reaper.window.setMouseRegions([{x: 20, y: 20, width: 80, height: 80}]);
+await reaper.window.setMouseMode('regions');
+```
+
+| Option | Default | Contract |
+| --- | --- | --- |
+| `layer` | `normal` | `overlay` places the window above REAPER's main window and below its floating windows. Creation only, without global topmost status. |
+| `mouseMode` | `normal` | `normal` receives client-area input, `passthrough` passes it through, `regions` receives it only inside the region union. Independent of layer and visual transparency. |
+| `mouseRegions` | `[]` | Rectangles in viewport CSS pixels. Empty regions pass all client-area input in `regions` mode. |
+
+Each rectangle requires finite `x`, `y`, `width` and `height`. Width and height must be positive. Native viewport clipping handles out-of-bounds portions. Invalid lists reject the entire update. `setMouseRegions` replaces the list atomically. Both setters resolve to `true` on acceptance and reject using the existing error contract. Native mouse gestures retain their original target until release before a pending policy takes effect. System title bars and borders retain native behavior.
+
+The host converts CSS coordinates using native DPI and WebView zoom. Apps submit new rectangles after DOM layout changes, using `getBoundingClientRect()` and layout observers. The host does not infer DOM/SVG shapes. Mouse routing does not change `setKeyboardCapture`, `setDawKeyboard` or existing text/IME rules. Full pass-through does not release keyboard focus previously acquired by the window.
+
+## Lua access
+
+```lua
+local id = reaper.ReaWeb_OpenEx(path,
+  '{"layer":"overlay","mouseMode":"regions","frameless":true,"transparent":true}')
+local ok = reaper.ReaWeb_SetMouseRegions(id, '[{"x":20,"y":20,"width":80,"height":80}]')
+ok = reaper.ReaWeb_SetMouseMode(id, 'normal')
+if not ok then reaper.ShowConsoleMsg(reaper.ReaWeb_GetLastError() .. '\n') end
+-- ReaWeb_Close(id) also works while all mouse input passes through.
+```
+
+Lua setters return Boolean and provide diagnostics through `ReaWeb_GetLastError()`. Invalid or closed IDs reject with `WINDOW_CLOSED` in JS and return false in Lua. Instance reuse keeps the original layer, mode and regions and ignores new creation options.
+
+## Lifecycle and capabilities
+
+`getState()` and `windowstatechange` include `layer`, `layerActive`, `mouseMode` and `mouseModeActive`. Active flags describe establishment of the requested native policy, independently of visibility. They can be false during initialization or a deferred mode change. Reload retains layer and mode but clears old document regions. Closing and reopening uses the new creation options. Policies are not persisted across REAPER launches.
+
+Overlay or non-normal mouse policies reject docking with `DOCK_UNAVAILABLE`. Creation temporarily bypasses saved docking without overwriting that preference. Runtime changes on a docked window must first be preceded by explicit undocking. Hosted JSFX editors reject policy setters with `WINDOW_HOSTED`.
+
+Inspect `capabilities.runtime.window.overlay`. Its `layer`, `passthrough`, `regions` and `combined` entries each contain `supported` and `reason`. It also reports `floatingOnly` and `backend`. Capability availability is separate from acceptance-test coverage.
+
+| Platform | Native implementation and conditions |
+| --- | --- |
+| Windows | Win32 event-driven ordering and pre-dispatch mouse routing for the HWND/WebView2 host. A REAPER main-window owner is required for overlay layering. |
+| macOS | AppKit ordering and a session mouse event tap. Non-normal mouse modes require Accessibility permission for REAPER. No permission prompt is opened automatically. |
+| Linux | Native X11, X Shape 1.1, XInput 2.1, a window manager supporting `_NET_RESTACK_WINDOW`, and REAPER's GLib loop. Input shapes apply to the host, independent of WebKitGTK rendering. XWayland/Wayland are rejected for these policies. Input-shaped viewports must be smaller than 32768 native pixels per axis. |
+
+`INVALID_ARGUMENT` identifies invalid parameters. `LAYER_UNAVAILABLE` and `MOUSE_MODE_UNAVAILABLE` identify unsupported native conditions. `LAYER_FAILED` and `MOUSE_MODE_FAILED` identify native setup or update failures. A failed runtime update preserves the previous requested state. Asynchronous initialization failures follow existing window cleanup and diagnostics behavior.
+
+See the [overlay example](../examples/windows/overlay/README.md) for controls, DOM region updates and external Lua recovery actions.

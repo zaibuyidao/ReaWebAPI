@@ -3,6 +3,7 @@
 #include "runtime/icon.hpp"
 #include "web/web_resources.hpp"
 #include "platform/shared/startup_timing.hpp"
+#include "platform/shared/overlay.hpp"
 #include <memory>
 
 namespace reaweb {
@@ -40,6 +41,7 @@ struct WindowOptions {
   bool hosted = false;
   std::shared_ptr<StartupTiming> startup_timing;
   std::function<bool()> captures_keyboard;
+  OverlayOptions overlay;
 };
 class Window {
   std::shared_ptr<WebResources> media_resources_;
@@ -87,6 +89,11 @@ public:
   virtual void set_frameless(bool) { throw Error("HOST_UNAVAILABLE", "Runtime window style control unavailable"); }
   virtual void set_corner_radius(double) { throw Error("HOST_UNAVAILABLE", "Native window rounding unavailable"); }
   virtual bool corner_radius_active() const { return false; }
+  virtual bool layer_active() const { return false; }
+  virtual bool mouse_mode_active() const { return false; }
+  virtual void set_mouse_mode(const std::string&) { throw Error("MOUSE_MODE_UNAVAILABLE", "Native mouse policy unavailable"); }
+  virtual void set_mouse_regions(const std::vector<MouseRegion>&) { throw Error("MOUSE_MODE_UNAVAILABLE", "Native mouse regions unavailable"); }
+  virtual void clear_mouse_regions() {}
   virtual bool transparent_active() const { return false; }
   virtual Json window_capabilities() const { return {{"hiddenStart", true}, {"frameless", false}, {"resizable", false},
     {"transparent", true}, {"transparency", {{"supported", false}, {"framed", false}, {"frameless", false},

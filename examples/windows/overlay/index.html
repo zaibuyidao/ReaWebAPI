@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overlay</title>
+<link rel="stylesheet" href="style.css">
+<main>
+  <section class="panel interactive">
+    <h1>Overlay</h1>
+    <p>Drag the slider beyond this panel. The surrounding viewport passes input to REAPER in Regions mode.</p>
+    <label>Mouse mode <select id="mode"><option value="regions">Regions</option><option value="normal">Normal</option><option value="passthrough">Pass through</option></select></label>
+    <label>Level <input id="level" type="range" min="0" max="100" value="50"><output id="value">50</output></label>
+    <label>Text / IME <input placeholder="Type here"></label>
+    <label><input id="capture" type="checkbox"> Capture REAPER shortcuts</label>
+    <label><input id="space" type="checkbox" checked> Route Space to REAPER</label>
+    <div class="actions"><button id="play">Play / stop</button><button id="reload">Reload</button><button id="close">Close</button></div>
+    <p>For full pass-through, use the external Restore Interaction or Close Overlay Lua actions.</p>
+  </section>
+  <button class="interactive clear-control" id="count">Transparent control: 0</button>
+  <pre id="status" role="status"></pre>
+</main>
+<script src="app.js"></script>
+</html>

@@ -33,7 +33,7 @@ type RuntimeAssert<T extends true> = T;
 type RuntimeEqual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type NoFlatRuntime = RuntimeAssert<RuntimeEqual<Extract<keyof ReaWebAPI, `ReaWeb${string}` | 'ready'>, never>>;
 
-type windowSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['window'], 'open' | 'openDev' | 'getSize' | 'setSize' | 'getPosition' | 'setPosition' | 'show' | 'hide' | 'getState' | 'setTitle' | 'setIcon' | 'setIconVisible' | 'setFrameless' | 'setCornerRadius' | 'focus' | 'setDocked' | 'isDocked' | 'setKeyboardCapture' | 'setDawKeyboard' | 'close' | 'reload'>>;
+type windowSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['window'], 'open' | 'openDev' | 'getSize' | 'setSize' | 'getPosition' | 'setPosition' | 'show' | 'hide' | 'getState' | 'setTitle' | 'setIcon' | 'setIconVisible' | 'setFrameless' | 'setCornerRadius' | 'focus' | 'setDocked' | 'isDocked' | 'setKeyboardCapture' | 'setDawKeyboard' | 'setMouseMode' | 'setMouseRegions' | 'close' | 'reload'>>;
 type themeSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['theme'], 'getColors' | 'apply'>>;
 type dialogSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dialog'], 'openFile' | 'saveFile' | 'selectFolder'>>;
 type eventsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['events'], 'on' | 'off'>>;
@@ -103,6 +103,13 @@ async function runtimeContract(track: MediaTrackHandle, take: MediaItem_TakeHand
   await reaper.fs.moveFile({source: 'source.wav', target: 'target.wav'});
 
   const transparentId: number = await reaper.window.open('other/index.html', {frameless:true, transparent:true});
+  const overlayId: number = await reaper.window.open('other/index.html', {layer:'overlay', mouseMode:'regions', mouseRegions:[]});
+  const mouseUpdated: boolean = await reaper.window.setMouseRegions([{x:0,y:0,width:40,height:80}]);
+  await reaper.window.setMouseMode('passthrough');
+  // @ts-expect-error Layer is a creation-time enum.
+  reaper.window.open('other/index.html', {layer:'topmost'});
+  // @ts-expect-error Mouse mode is an enum.
+  reaper.window.setMouseMode('none');
   const alphaState: boolean = (await reaper.window.getState()).transparentActive;
   const alphaSupport: boolean | undefined = (await reaper.system.getCapabilities()).runtime.window?.transparency.supported;
   // @ts-expect-error Transparency requires a boolean.

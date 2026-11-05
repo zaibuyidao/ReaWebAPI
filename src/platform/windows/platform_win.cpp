@@ -25,6 +25,7 @@
 #include "platform/windows/win_resize_edges.hpp"
 #include "platform/windows/win_context_menu.hpp"
 #include "platform/windows/win_resources.hpp"
+#include "platform/windows/win_overlay.hpp"
 #include "platform/shared/window_menu.hpp"
 
 namespace reaweb {
@@ -149,6 +150,7 @@ public:
 
 class WinWindow final : public Window, public std::enable_shared_from_this<WinWindow> {
   WindowOptions options_;
+  std::unique_ptr<WinOverlay> overlay_;
   std::string uri_;
   HWND hwnd_ = nullptr;
   ComPtr<ICoreWebView2Controller> controller_;
@@ -297,6 +299,13 @@ public:
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     }
     if (self) {
+      if (self->overlay_) {
+        if (msg == WM_WINDOWPOSCHANGING) self->overlay_->position(reinterpret_cast<WINDOWPOS*>(lp));
+        if (msg == WinOverlay::apply_message || msg == WM_MOVE || msg == WM_SIZE || msg == WM_DPICHANGED || msg == WM_CAPTURECHANGED) {
+          try { self->overlay_->synchronize(); } catch (const std::exception& e) { self->fail(e.what()); }
+        }
+        if (msg == WM_WINDOWPOSCHANGED) self->overlay_->repair();
+      }
       if (msg == WM_DWMCOMPOSITIONCHANGED && self->options_.transparent) {
         try { self->configure_transparency(); }
         catch (const std::exception& error) { self->fail(error.what()); }
@@ -397,6 +406,7 @@ public:
     return DefWindowProcW(hwnd, msg, wp, lp);
   }
   WinWindow(WindowOptions options, HINSTANCE instance) : options_(std::move(options)), uri_(options_.url.empty() ? file_uri(options_.entry) : options_.url), startup_(options_.hidden) {
+    if (options_.hosted && options_.overlay.floating_only()) throw Error("WINDOW_HOSTED", "Overlay policies require a standalone App");
     if (options_.transparent) {
       if (!desktop_composition()) throw Error("TRANSPARENCY_UNAVAILABLE", "Desktop Alpha requires DWM composition");
       background_ = RGB(0, 0, 0);
@@ -431,11 +441,19 @@ public:
     // A cloaked window keeps composing without exposing its empty native surface.
     const auto cloak_result = DwmSetWindowAttribute(hwnd_, DWMWA_CLOAK, &cloaked, sizeof(cloaked));
     if (FAILED(cloak_result)) { DestroyWindow(hwnd_); check(cloak_result, "Cloak initial window"); }
-    try { configure_frame(); configure_transparency(); } catch (...) { DestroyWindow(hwnd_); throw; }
+    try {
+      configure_frame(); configure_transparency();
+      overlay_ = std::make_unique<WinOverlay>();
+      overlay_->attach(hwnd_, static_cast<HWND>(options_.parent), options_.overlay, [this] {
+        double zoom = 1; if (controller_) controller_->get_ZoomFactor(&zoom);
+        return zoom * GetDpiForWindow(hwnd_) / 96.0;
+      }, [this](std::string error) { fail(std::move(error)); });
+    } catch (...) { overlay_.reset(); DestroyWindow(hwnd_); throw; }
     SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     if (!options_.hidden) ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   }
   ~WinWindow() override {
+    overlay_.reset();
     closed_ = true;
     if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
     cursor_.finish();
@@ -867,9 +885,21 @@ public:
   }
   void set_corner_radius(double value) override { corner_radius_ = value; custom_region_ = true; region_width_ = -1; update_region(); }
   bool corner_radius_active() const override { return corner_radius_ > 0 && floating() && !IsZoomed(hwnd_) && !IsIconic(hwnd_); }
+  bool layer_active() const override { return overlay_ && overlay_->layer_active(); }
+  bool mouse_mode_active() const override { return !overlay_ || overlay_->mouse_active(); }
+  void set_mouse_mode(const std::string& value) override {
+    if (!overlay_) throw Error("WINDOW_HOSTED", "Mouse policies require a standalone App");
+    overlay_->mode(value); options_.overlay.mode = value;
+  }
+  void set_mouse_regions(const std::vector<MouseRegion>& value) override {
+    if (!overlay_) throw Error("WINDOW_HOSTED", "Mouse policies require a standalone App");
+    overlay_->regions(value); options_.overlay.regions = value;
+  }
+  void clear_mouse_regions() override { if (overlay_) set_mouse_regions({}); }
   bool transparent_active() const override { return options_.transparent && alpha_ready_ && !closed_ && floating() && desktop_composition(); }
   Json window_capabilities() const override {
-    return {{"hiddenStart", true}, {"frameless", drag_regions_supported_}, {"setFrameless", drag_regions_supported_}, {"cornerRadius", {{"supported", true}, {"framed", true}, {"frameless", true}, {"max", 64}}}, {"resizable", true},
+    return {{"overlay", overlay_capabilities(options_.hosted ? "Hosted JSFX editor" : !options_.parent ? "REAPER main window unavailable" : "", options_.hosted ? "Hosted JSFX editor" : "", "win32")},
+      {"hiddenStart", true}, {"frameless", drag_regions_supported_}, {"setFrameless", drag_regions_supported_}, {"cornerRadius", {{"supported", true}, {"framed", true}, {"frameless", true}, {"max", 64}}}, {"resizable", true},
       {"transparent", true}, {"transparency", transparency_capabilities(alpha_supported_ && desktop_composition(), "dwm-hwnd",
         !desktop_composition() ? "DWM composition is unavailable" : !alpha_supported_ ? "WebView2 Controller2 is not ready or unavailable" : "", drag_regions_supported_)},
       {"dragRegions", drag_regions_supported_}, {"windowSystem", "win32"}};
@@ -933,6 +963,7 @@ public:
     if (parent != hosted_parking_ && startup_.pending() && startup_region_) ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   }
   void prepare_dock() override {
+    if (options_.overlay.floating_only()) throw Error("DOCK_UNAVAILABLE", "Overlay and mouse policies require a floating window");
     if (options_.transparent) throw Error("DOCK_UNAVAILABLE", "Transparent windows require a standalone floating host");
     if (options_.frameless) evaluate("window.__reawebDragRegionsActive?.(false);");
     if (!startup_region_) SetWindowRgn(hwnd_, nullptr, TRUE);

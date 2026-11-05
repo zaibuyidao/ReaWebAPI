@@ -118,6 +118,7 @@ interface ReaWebRuntimeCapabilities {
   jsfx?: { protocolVersion: 1 };
   fs?: { mediaURLs: boolean; maxOpenMedia: number; maxMediaBytes: number };
   window?: { hiddenStart: boolean; frameless: boolean; resizable: boolean; dragRegions?: boolean; windowSystem?: 'win32' | 'appkit' | 'x11';
+    overlay: ReaWebOverlayCapabilities;
     setFrameless?: boolean;
     cornerRadius?: { supported: boolean; framed: boolean; frameless: boolean; max: number };
     /** The creation option is accepted. Check transparency.supported for desktop Alpha. */
@@ -132,7 +133,22 @@ interface ReaWebRuntimeCapabilities {
   stream: { abi: 1; transport: 'websocket-binary'; maxStreams: number; maxConsumers: number; maxBytes: number; kinds: ReaWebStreamInfo['kind'][] };
 }
 interface ReaWebCapabilities { runtime: ReaWebRuntimeCapabilities; }
-interface ReaWebWindowOpenOptions { hidden?: boolean; frameless?: boolean; resizable?: boolean; transparent?: boolean; }
+type ReaWebWindowLayer = 'normal' | 'overlay';
+type ReaWebMouseMode = 'normal' | 'passthrough' | 'regions';
+interface ReaWebMouseRegion { x: number; y: number; width: number; height: number; }
+interface ReaWebOverlaySupport { supported: boolean; reason: string; }
+interface ReaWebOverlayCapabilities {
+  layer: ReaWebOverlaySupport;
+  passthrough: ReaWebOverlaySupport;
+  regions: ReaWebOverlaySupport;
+  combined: ReaWebOverlaySupport;
+  floatingOnly: boolean;
+  backend: string;
+}
+interface ReaWebWindowOpenOptions {
+  hidden?: boolean; frameless?: boolean; resizable?: boolean; transparent?: boolean;
+  layer?: ReaWebWindowLayer; mouseMode?: ReaWebMouseMode; mouseRegions?: ReaWebMouseRegion[];
+}
 interface ReaWebDevToolsState {
   mode: 'embedded' | 'floating';
   /** Embedded panel share of available width: 0.2–0.8, default 0.4. */
@@ -301,6 +317,10 @@ interface ReaWebAPI {
     show(): Promise<ReaWebWindowState>; hide(): Promise<ReaWebWindowState>;
     getState(): Promise<ReaWebWindowState>;
     /** Changes the current window without navigation. Docker retains the preference until undocking. */
+    /** Native client-area input policy. A pending pointer gesture retains its current target. */
+    setMouseMode(mode: ReaWebMouseMode): Promise<boolean>;
+    /** Atomically replace the union of viewport CSS-pixel rectangles. */
+    setMouseRegions(regions: ReaWebMouseRegion[]): Promise<boolean>;
     setFrameless(frameless: boolean): Promise<ReaWebWindowState>;
     /** Finite radius 0..64 in logical desktop units. Zero removes custom clipping.
      * Suspended while docked/maximized. macOS/Linux use system corners when framed. */

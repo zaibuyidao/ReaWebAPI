@@ -347,4 +347,8 @@ const id = await reaper.window.open('panel.html', {frameless:true, transparent:t
 
 透明功能仅适用于独立浮动窗口。首次呈现前临时跳过已保存的 Dock 恢复，继续保存位置和尺寸，并保留原来的 `docked` 与 `dockId` 偏好。关闭后不带 `transparent:true` 重新打开时恢复原 Dock 偏好。透明选项本身不持久化。所有 Dock 请求均以 `DOCK_UNAVAILABLE` 拒绝，包括 Lua 和上下文菜单。对已浮动窗口取消停靠仍保持幂等。
 
-选项类型错误返回 `INVALID_ARGUMENT`，缺少原生支持使用 `TRANSPARENCY_UNAVAILABLE`，Alpha 初始化失败使用 `TRANSPARENCY_FAILED`。Lua 同步失败返回 `0`，通过 `ReaWeb_GetLastError()` 获取原因。JavaScript 沿用 Promise 错误合同。原生异步失败关闭待创建窗口，并写入诊断和日志，正数窗口 ID 不代表已就绪。不提供动态透明切换、鼠标穿透或 Docker 透明。参见[可运行示例](../examples/windows/transparent/README.md)。
+选项类型错误返回 `INVALID_ARGUMENT`，缺少原生支持使用 `TRANSPARENCY_UNAVAILABLE`，Alpha 初始化失败使用 `TRANSPARENCY_FAILED`。Lua 同步失败返回 `0`，通过 `ReaWeb_GetLastError()` 获取原因。JavaScript 沿用 Promise 错误合同。原生异步失败关闭待创建窗口，并写入诊断和日志，正数窗口 ID 不代表已就绪。不提供动态透明切换或 Docker 透明。鼠标穿透独立配置，见[覆盖层与鼠标策略](window-overlay.zh-CN.md)。参见[可运行示例](../examples/windows/transparent/README.md)。
+
+## 覆盖层与鼠标策略
+
+`ReaWeb_OpenEx` 接受 `layer`、`mouseMode`、`mouseRegions`。`ReaWeb_SetMouseMode(id, mode)` 和 `ReaWeb_SetMouseRegions(id, regionsJson)` 返回 Boolean。JS／Lua 契约、能力与错误见[覆盖层与鼠标策略](window-overlay.zh-CN.md)。

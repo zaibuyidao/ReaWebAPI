@@ -8,7 +8,7 @@ JavaScript Runtime fixes sixteen namespace boundaries: `reaper.window`, `reaper.
 
 Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
 
-All sixteen namespaces provide implemented members: 84 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All sixteen namespaces provide implemented members: 86 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
 `reaper.host` retains the Lua Backend route. `reaper.host.service(name)` routes to named native services. `reaper.events` adds native selection, track, transport, project and timeline sources. See [Native Services](native-services.md) for payloads, thread boundaries and lifecycle rules. Existing Clipboard, Drag & Drop, Window/Dock/Focus and System interfaces remain unchanged.
 
@@ -238,3 +238,5 @@ When enabled, unmodified Space outside editable fields uses REAPER's current mai
 ## Realtime subscriptions
 
 `reaper.realtime` provides transport subscriptions at requested rates up to 120 Hz. See [Realtime sources](realtime.md) for scheduling, timestamp semantics and cleanup.
+
+Creation options `layer`, `mouseMode`, `mouseRegions` and current-window setters `setMouseMode`, `setMouseRegions` control [overlay layers and native mouse routing](window-overlay.md).

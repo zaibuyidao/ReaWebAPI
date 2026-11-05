@@ -1,4 +1,5 @@
 #include "platform/platform.hpp"
+#include "platform/macos/mac_overlay.hpp"
 #include "platform/shared/navigation.hpp"
 #include "platform/shared/page_background.hpp"
 #include "platform/shared/transparency.hpp"
@@ -252,6 +253,7 @@ public:
 };
 class MacWindow final : public Window, public std::enable_shared_from_this<MacWindow> {
   std::unique_ptr<SwellWindow> window_;
+  std::unique_ptr<MacOverlay> overlay_;
   ReaWebNativeView* webview_;
   id mouse_monitor_;
   id focus_observer_;
@@ -286,10 +288,11 @@ class MacWindow final : public Window, public std::enable_shared_from_this<MacWi
     return content.window.contentView == content ? content.window : nil;
   }
   void set_host_visible(bool visible) {
+    if (overlay_) visible = overlay_->visibility(visible);
     if (visible && !delegate_->options.hosted) if (auto native = floating_window()) {
       // SWELL may promote the first SW_SHOWNOACTIVATE to an activating show.
       native.contentView.hidden = NO;
-      [native orderFront:nil]; return;
+      [native orderFront:nil]; if (overlay_) overlay_->repair(); return;
     }
     window_->set_visible(visible);
   }
@@ -501,7 +504,17 @@ public:
     [content addSubview:webview_];
     window_->configure_floating = [this] { configure_floating(); };
     window_->resize = [this] { update_corners(); };
-    try { configure_floating(); }
+    try {
+      configure_floating();
+      if (delegate_->options.hosted && delegate_->options.overlay.floating_only())
+        throw Error("WINDOW_HOSTED", "Overlay policies require a standalone App");
+      if (!delegate_->options.hosted) {
+        overlay_ = std::make_unique<MacOverlay>();
+        auto owner = (__bridge NSView*)delegate_->options.parent;
+        overlay_->attach(floating_window(), owner.window, webview_, delegate_->options.overlay,
+          [this](std::string error) { delegate_->options.on_error(std::move(error)); });
+      }
+    }
     catch (...) {
       [NSEvent removeMonitor:mouse_monitor_]; mouse_monitor_ = nil;
       webview_.navigationDelegate = nil; webview_.UIDelegate = nil;
@@ -540,6 +553,7 @@ public:
     } else [webview_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:ns(delegate_->options.url)]]];
   }
   ~MacWindow() override {
+    overlay_.reset();
     set_host_visible(false);
     if (focus_observer_) [NSNotificationCenter.defaultCenter removeObserver:focus_observer_];
     release_dock_icon();
@@ -616,6 +630,7 @@ public:
   }
   void prepare_undock() override { release_dock_icon(); }
   void prepare_dock() override {
+    if (delegate_->options.overlay.floating_only()) throw Error("DOCK_UNAVAILABLE", "Overlay and mouse policies require a floating window");
     if (delegate_->options.transparent) throw Error("DOCK_UNAVAILABLE", "Transparent windows require a standalone floating host");
     update_corners(true);
     icon_window_ = nil;
@@ -633,6 +648,7 @@ public:
     if (startup_.pending()) { startup_.show(true); startup_key_ = NSApp.keyWindow; tick(); }
     [NSApp activateIgnoringOtherApps:YES];
     window_->focus(); [webview_.window makeFirstResponder:webview_];
+    if (overlay_) overlay_->repair();
   }
   void tick() override {
     if (closed()) return;
@@ -742,10 +758,22 @@ public:
     return corner_radius_ > 0 && frameless_active() && (!delegate_->options.resizable || !native.zoomed) && !(native.styleMask & NSWindowStyleMaskFullScreen);
   }
   Json window_capabilities() const override {
-    return {{"hiddenStart", true}, {"frameless", true}, {"setFrameless", true}, {"cornerRadius", {{"supported", true}, {"framed", false}, {"frameless", true}, {"max", 64}}}, {"resizable", true}, {"dragRegions", true}, {"windowSystem", "appkit"},
+    return {{"overlay", overlay_capabilities(delegate_->options.hosted ? "Hosted JSFX editor" : !delegate_->options.parent ? "REAPER main window unavailable" : "",
+      delegate_->options.hosted ? "Hosted JSFX editor" : MacOverlay::mouse_unavailable(), "appkit-session-event-tap")}, {"hiddenStart", true}, {"frameless", true}, {"setFrameless", true}, {"cornerRadius", {{"supported", true}, {"framed", false}, {"frameless", true}, {"max", 64}}}, {"resizable", true}, {"dragRegions", true}, {"windowSystem", "appkit"},
       {"transparent", true}, {"transparency", transparency_capabilities(alpha_supported(), "appkit-wkwebview",
         alpha_supported() ? "" : "WKWebView background control is unavailable")}};
   }
+  bool layer_active() const override { return overlay_ && overlay_->layer_active(); }
+  bool mouse_mode_active() const override { return !overlay_ || overlay_->mouse_active(); }
+  void set_mouse_mode(const std::string& value) override {
+    if (!overlay_) throw Error("WINDOW_HOSTED", "Mouse policies require a standalone App");
+    overlay_->mode(value); delegate_->options.overlay.mode = value;
+  }
+  void set_mouse_regions(const std::vector<MouseRegion>& value) override {
+    if (!overlay_) throw Error("WINDOW_HOSTED", "Mouse policies require a standalone App");
+    overlay_->regions(value); delegate_->options.overlay.regions = value;
+  }
+  void clear_mouse_regions() override { if (overlay_) set_mouse_regions({}); }
   bool transparent_active() const override {
     auto native = floating_window();
     return delegate_->options.transparent && alpha_ready_ && !closed() && native && !native.opaque;

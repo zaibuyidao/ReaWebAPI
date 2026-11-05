@@ -96,6 +96,8 @@ test('The public SDK has exactly 730 unchanged Mirror methods and sixteen frozen
     "setCornerRadius",
     "isDocked",
     "setKeyboardCapture",
+    "setMouseMode",
+    "setMouseRegions",
     "setDawKeyboard",
     "close",
     "reload"
@@ -228,6 +230,8 @@ test('Migrated host services keep their native argument and result contracts', a
     ['window','setIcon','ReaWeb_SetIcon',['logo.svg'],true],
     ['window','setIconVisible','ReaWeb_SetIconVisible',[true],true],
     ['window','setIconVisible','ReaWeb_SetIconVisible',[false],true],
+    ['window','setMouseMode','ReaWeb_SetMouseMode',['regions'],true],
+    ['window','setMouseRegions','ReaWeb_SetMouseRegions',[[{x:1,y:2,width:3,height:4}]],true],
     ['window','setFrameless','ReaWeb_SetFrameless',[false],{frameless:false}],
     ['window','setFrameless','ReaWeb_SetFrameless',[true],{frameless:true}],
     ['window','setCornerRadius','ReaWeb_SetCornerRadius',[24.5],{cornerRadius:24.5}],

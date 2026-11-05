@@ -4,6 +4,7 @@
 #include "platform/shared/window_menu.hpp"
 #include "platform/linux/linux_icon.hpp"
 #include "platform/linux/linux_alpha.hpp"
+#include "platform/linux/linux_overlay.hpp"
 #include "platform/linux/linux_corners.hpp"
 #include "platform/linux/linux_geometry.hpp"
 #include "platform/shared/transparency.hpp"
@@ -54,6 +55,7 @@ public:
   std::map<int, WindowOptions> listeners;
   std::map<int, Json> inspectors;
   std::map<int, unsigned> backgrounds;
+  std::map<int, double> mouse_scales;
   explicit LinuxProcess(const fs::path& data) {
     if (!getenv("DISPLAY")) throw std::runtime_error("ReaWebAPI requires an X11 or XWayland display on Linux");
     auto executable = helper_path().string();
@@ -137,6 +139,7 @@ public:
         }
         if (op == "navigating" && it->second.startup_timing) it->second.startup_timing->mark(StartupTiming::ControllerReady);
         if (op == "alpha-frame") { alpha_frames[it->first] = message.at("parent").get<unsigned long>(); return; }
+        if (op == "mouse-scale") { mouse_scales[it->first] = message.at("scale").get<double>(); return; }
         if (op == "background") { backgrounds[it->first] = message.at("color").get<unsigned>(); return; }
         if (op == "devtools-state") { inspectors[it->first] = message.at("state"); return; }
         if (op == "message") it->second.on_message(message.at("message").get<std::string>());
@@ -217,6 +220,9 @@ class LinuxWindow final : public Window, public std::enable_shared_from_this<Lin
   bool frameless_ = false, resizable_ = true;
   bool transparent_ = false;
   LinuxAlpha alpha_;
+  std::unique_ptr<LinuxOverlay> overlay_;
+  OverlayOptions overlay_options_;
+  void* overlay_owner_ = nullptr;
   LinuxCorners corners_;
   double corner_radius_ = 0;
   void* frame_window_ = nullptr;
@@ -264,6 +270,9 @@ public:
     if (options.startup_timing) options.startup_timing->mark(StartupTiming::ControllerStart);
     frameless_ = options.frameless; resizable_ = options.resizable;
     transparent_ = options.transparent;
+    overlay_options_ = options.overlay; overlay_owner_ = options.parent;
+    if (options.hosted && options.overlay.floating_only()) throw Error("WINDOW_HOSTED", "Overlay policies require a standalone App");
+    if (!options.hosted) overlay_ = std::make_unique<LinuxOverlay>(options.overlay, options.on_error);
     icon_.decorations = !frameless_;
     auto on_close = std::move(options.on_close);
     options.on_close = [this, on_close = std::move(on_close)]() mutable {
@@ -344,6 +353,7 @@ public:
     };
   }
   ~LinuxWindow() override {
+    overlay_.reset();
     native_geometry_.watch(nullptr);
     // Hide without destroying the X11 host before parking its foreign WebView.
     const auto handle = static_cast<HWND>(window_->handle());
@@ -365,6 +375,7 @@ public:
     process_->prewarmed.erase(id_);
     process_->inspectors.erase(id_);
     process_->backgrounds.erase(id_);
+    process_->mouse_scales.erase(id_);
     try {
       // Detach before SWELL destroys the X11 parent, preserving other pages.
       process_->park(id_);
@@ -418,6 +429,12 @@ public:
     if (revision != origin_revision_ && get_origin && get_origin(native, &native_x_, &native_y_)) origin_revision_ = revision;
     if (origin_revision_ == revision) { origin.x -= native_x_; origin.y -= native_y_; }
     else ScreenToClient(ancestor, &origin);
+    if (overlay_) {
+      auto main = overlay_owner_ ? SWELL_GetOSWindow(static_cast<HWND>(overlay_owner_), "GdkWindow") : nullptr;
+      overlay_->attach(get_xid(native), main ? get_xid(main) : 0);
+      auto scale = process_->mouse_scales.find(id_);
+      if (scale != process_->mouse_scales.end()) overlay_->scale(scale->second);
+    }
     const auto& options = process_->listeners.at(id_);
     const int raw_x = origin.x, raw_y = origin.y;
     const int next_width = rect.right - rect.left;
@@ -501,6 +518,7 @@ public:
     geometry_ = Json(); pending_origin_valid_ = false;
   }
   void prepare_dock() override {
+    if (overlay_options_.floating_only()) throw Error("DOCK_UNAVAILABLE", "Overlay and mouse policies require a floating window");
     if (transparent_) throw Error("DOCK_UNAVAILABLE", "Transparent windows require a standalone floating host");
     native_geometry_.invalidate();
     corners_.reset(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow"));
@@ -603,6 +621,7 @@ public:
     wants_visible_ = visible;
     if (!visible) {
       frame_window_ = nullptr;
+      if (overlay_) overlay_->attach(0, 0);
       corners_.reset(SWELL_GetOSWindow(static_cast<HWND>(window_->handle()), "GdkWindow"));
       immediate_resize_enabled_ = false;
       // SWELL may destroy a hidden floating X11 host. Park its foreign child first.
@@ -635,6 +654,17 @@ public:
     if (!closed()) process_->send({{"id", id_}, {"op", "media-clear"}});
   }
   bool visible() const override { return window_->visible() && !alpha_.pending() && !(native_state() & 2); }
+  bool layer_active() const override { return overlay_ && overlay_->layer_active(); }
+  bool mouse_mode_active() const override { return !overlay_ || overlay_->mouse_active(); }
+  void set_mouse_mode(const std::string& value) override {
+    if (!overlay_) throw Error("WINDOW_HOSTED", "Mouse policies require a standalone App");
+    overlay_->mode(value); overlay_options_.mode = value;
+  }
+  void set_mouse_regions(const std::vector<MouseRegion>& value) override {
+    if (!overlay_) throw Error("WINDOW_HOSTED", "Mouse policies require a standalone App");
+    overlay_->regions(value); overlay_options_.regions = value;
+  }
+  void clear_mouse_regions() override { if (overlay_) set_mouse_regions({}); }
   bool transparent_active() const override { return transparent_ && alpha_.active() && !closed(); }
   bool focused() const override { return window_->focused(); }
   bool frameless_active() const override {
@@ -671,7 +701,8 @@ public:
   }
   Json window_capabilities() const override {
     const auto reason = LinuxAlpha::unavailable();
-    return {{"hiddenStart", true}, {"frameless", process_->frameless_supported}, {"setFrameless", process_->frameless_supported},
+    return {{"overlay", overlay_ ? LinuxOverlay::capabilities() : overlay_capabilities("Hosted JSFX editor", "Hosted JSFX editor", "x11")},
+      {"hiddenStart", true}, {"frameless", process_->frameless_supported}, {"setFrameless", process_->frameless_supported},
       {"cornerRadius", {{"supported", corners_.supported()}, {"framed", false}, {"frameless", corners_.supported()}, {"max", 64}}},
       {"resizable", true}, {"dragRegions", process_->frameless_supported}, {"windowSystem", "x11"},
       {"transparent", true}, {"transparency", transparency_capabilities(reason.empty(), "x11-rgba-webkitgtk", reason, process_->frameless_supported)}};
