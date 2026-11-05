@@ -1,18 +1,860 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>REAPER SVG Overlay</title><link rel="stylesheet" href="style.css">
-<svg class="decoration" width="100%" height="100%" aria-hidden="true"><rect x="1%" y="1%" width="98%" height="98%" rx="24"/></svg>
-<main>
-<h1>REAPER / SVG OVERLAY</h1>
-<div class="knobs">
-<label>MASTER GAIN<svg viewBox="0 0 120 120"><circle class="interactive" id="gain" cx="60" cy="60" r="42" role="slider" tabindex="0" aria-label="Master gain"/><path id="gain-needle" d="M60 60V28"/></svg><output id="gain-value"></output></label>
-<label>MASTER PAN<svg viewBox="0 0 120 120"><circle class="interactive" id="pan" cx="60" cy="60" r="42" role="slider" tabindex="0" aria-label="Master pan"/><path id="pan-needle" d="M60 60V28"/></svg><output id="pan-value"></output></label>
-</div>
-<p>Drag vertically · Shift for fine control<br>Outside the circles, mouse input reaches REAPER.</p>
-<div class="toolbar"><button class="interactive" id="play">Play / stop</button><button class="interactive" id="fit">Fit display</button><button class="interactive" id="close">Close</button></div>
-<p><select class="interactive" id="mode" aria-label="Mouse policy"><option value="regions">Interactive regions</option><option value="passthrough">Decoration only</option><option value="normal">Entire window</option></select></p>
-<label class="interactive routing"><input id="shortcuts" type="checkbox" checked> Route shortcuts to REAPER Main</label>
-<p><input class="interactive" id="note" placeholder="Text / IME stays here" aria-label="Text input demonstration"></p>
-<p>Decoration-only recovery: run restore-interaction.lua or close-overlay.lua.</p>
-<output id="status"></output>
-</main><script type="module" src="app.js"></script></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>REAPER SVG Overlay</title>
+    <!-- CSS: layout and presentation -->
+    <style>
+      :root {
+        font:
+          13px -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: #e4ffff;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      .decoration {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      .decoration rect {
+        width: calc(100% - 2px);
+        height: calc(100% - 2px);
+        fill: none;
+        stroke: #68dace90;
+        stroke-width: 2;
+      }
+      main {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(360px, calc(100vw - 48px));
+        padding: 18px;
+        border: 1px solid
+          rgba(255, 255, 255, calc(var(--panel-opacity, 0.4) * 0.094));
+        border-radius: 14px;
+        background: rgba(16, 26, 36, var(--panel-opacity, 0.4));
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 22px;
+      }
+      h1 {
+        margin: 0;
+        flex: 1;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.8px;
+        color: #a5b8c6;
+      }
+      .languages {
+        display: flex;
+        flex-shrink: 0;
+        gap: 3px;
+      }
+      .languages button {
+        padding: 3px 5px;
+        font-size: 11px;
+      }
+      .languages button[aria-pressed="true"] {
+        background: #64dfcf;
+        color: #101c29;
+      }
+      .knobs {
+        display: flex;
+        gap: 16px;
+      }
+      .knobs label {
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+        letter-spacing: 0.8px;
+        font-size: 10px;
+        color: #a5b8c6;
+      }
+      .knobs output {
+        display: block;
+        color: #e4ffff;
+        font-size: 18px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0;
+      }
+      .knobs svg {
+        width: 120px;
+        max-width: 100%;
+        display: block;
+        margin: auto;
+        overflow: visible;
+      }
+      .knobs circle {
+        fill: #172735ed;
+        stroke: #64dfcf;
+        stroke-width: 3;
+        touch-action: none;
+        cursor: default;
+        user-select: none;
+      }
+      .knobs circle:focus {
+        outline: none;
+      }
+      .knobs path {
+        stroke: #fff;
+        stroke-width: 4;
+        stroke-linecap: round;
+        pointer-events: none;
+        transform-origin: 60px 60px;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 18px 0;
+      }
+      .toolbar button {
+        flex: 1;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+      }
+      button,
+      select,
+      #note {
+        border: 1px solid #ffffff20;
+        border-radius: 6px;
+        padding: 8px 10px;
+        background: #172735;
+        color: #e4ffff;
+      }
+      .routing {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        margin-top: 14px;
+      }
+      #shortcuts {
+        accent-color: #64dfcf;
+        margin: 0;
+      }
+      button:hover {
+        background: #253b4c;
+      }
+      :focus-visible {
+        outline: 2px solid #64dfcf;
+        outline-offset: 2px;
+      }
+      #close {
+        padding: 2px 6px;
+        border: 0;
+        background: transparent;
+        color: #a5b8c6;
+        font-size: 16px;
+      }
+      #close:hover {
+        color: #fff;
+        background: #ffffff18;
+      }
+      #mode {
+        width: 100%;
+      }
+      .opacity-control {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 14px 0;
+        font-size: 11px;
+        color: #a5b8c6;
+      }
+      #opacity {
+        flex: 1;
+        min-width: 0;
+        accent-color: #64dfcf;
+      }
+      #opacity-value {
+        width: 3.5em;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .field-label {
+        display: block;
+        margin-bottom: 7px;
+        color: #a5b8c6;
+        font-size: 11px;
+      }
+      p {
+        margin: 10px 0;
+        line-height: 1.5;
+        font-size: 11px;
+        color: #91a5b5;
+      }
+      #note {
+        width: 100%;
+      }
+      #status {
+        display: block;
+        font-size: 10px;
+        line-height: 1.5;
+        color: #64dfcf;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid #ffffff12;
+      }
+      #error {
+        color: #ffb7ae;
+        overflow-wrap: anywhere;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- HTML: SVG controls and window options -->
+    <svg class="decoration" width="100%" height="100%" aria-hidden="true">
+      <rect x="1" y="1" rx="6" />
+    </svg>
+    <main>
+      <header>
+        <h1 data-i18n="heading">REAPER / SVG OVERLAY</h1>
+        <div
+          class="languages"
+          role="group"
+          data-i18n-aria="language"
+          aria-label="Language"
+        >
+          <button
+            class="interactive"
+            data-language="en"
+            aria-label="English"
+            aria-pressed="true"
+          >
+            EN
+          </button>
+          <button
+            class="interactive"
+            data-language="zh-CN"
+            aria-label="简体中文"
+            aria-pressed="false"
+          >
+            CN
+          </button>
+        </div>
+        <button
+          class="interactive"
+          id="close"
+          aria-label="Close"
+          data-i18n-aria="close"
+          title="Close"
+        >
+          ×
+        </button>
+      </header>
+      <div class="knobs">
+        <label
+          ><span data-i18n="gainLabel">MASTER GAIN</span
+          ><svg viewBox="0 0 120 120">
+            <circle
+              class="interactive"
+              id="gain"
+              cx="60"
+              cy="60"
+              r="42"
+              role="slider"
+              tabindex="0"
+              data-i18n-aria="gain"
+              aria-label="Master gain"
+            />
+            <path id="gain-needle" d="M60 60V28" /></svg
+          ><output id="gain-value"></output
+        ></label>
+        <label
+          ><span data-i18n="panLabel">MASTER PAN</span
+          ><svg viewBox="0 0 120 120">
+            <circle
+              class="interactive"
+              id="pan"
+              cx="60"
+              cy="60"
+              r="42"
+              role="slider"
+              tabindex="0"
+              data-i18n-aria="pan"
+              aria-label="Master pan"
+            />
+            <path id="pan-needle" d="M60 60V28" /></svg
+          ><output id="pan-value"></output
+        ></label>
+      </div>
+      <p data-i18n="knobHint">
+        Drag vertically to adjust parameters. Hold Shift for fine control.
+      </p>
+      <div class="toolbar">
+        <button class="interactive" id="play" data-i18n="play">
+          Play / stop
+        </button>
+        <button class="interactive" id="fit" data-i18n="fit">
+          Fit display
+        </button>
+      </div>
+      <p>
+        <label for="mode" class="field-label" data-i18n="mousePolicy"
+          >Mouse policy</label
+        >
+        <select
+          class="interactive"
+          id="mode"
+          data-i18n-aria="mousePolicy"
+          aria-label="Mouse policy"
+        >
+          <option value="regions" data-i18n="regions">
+            Interactive regions
+          </option>
+          <option value="passthrough" data-i18n="passthrough">
+            Decoration only
+          </option>
+          <option value="normal" data-i18n="normal">
+            Window (move / resize)
+          </option>
+        </select>
+      </p>
+      <p id="mode-hint">Outside the controls, mouse input reaches REAPER.</p>
+      <label class="interactive opacity-control" data-reaweb-no-drag>
+        <span data-i18n="opacity">Opacity</span>
+        <input
+          id="opacity"
+          class="interactive"
+          type="range"
+          min="0"
+          max="100"
+          value="40"
+          step="1"
+          data-i18n-aria="opacity"
+          aria-label="Opacity"
+        />
+        <output id="opacity-value" for="opacity">40%</output>
+      </label>
+      <label class="interactive routing" data-reaweb-no-drag
+        ><input id="shortcuts" type="checkbox" checked />
+        <span data-i18n="shortcuts">Route shortcuts to REAPER Main</span></label
+      >
+      <p>
+        <input
+          class="interactive"
+          id="note"
+          data-i18n-placeholder="placeholder"
+          placeholder="Text / IME stays here"
+          data-i18n-aria="textInput"
+          aria-label="Text input demonstration"
+        />
+      </p>
+      <output id="status"></output>
+      <p id="error" role="alert" hidden></p>
+    </main>
+    <!-- JS: localization, native input regions and parameter controls -->
+    <script type="module">
+      // Localization
+      const $ = (selector) => document.querySelector(selector);
+      const messages = {
+        en: {
+          title: "REAPER SVG Overlay",
+          heading: "REAPER / SVG OVERLAY",
+          language: "Language",
+          gainLabel: "MASTER GAIN",
+          panLabel: "MASTER PAN",
+          gain: "Master gain",
+          pan: "Master pan",
+          knobHint:
+            "Drag vertically to adjust parameters. Shift: fine control. The pointer hides during dragging and returns on release. Esc cancels dragging.",
+          play: "Play / stop",
+          fit: "Fit display",
+          close: "Close",
+          mousePolicy: "Mouse policy",
+          opacity: "Background opacity",
+          regions: "Interactive regions",
+          passthrough: "Decoration only",
+          normal: "Window (move / resize)",
+          regionsHint: "Outside the controls, mouse input reaches REAPER.",
+          passthroughHint:
+            "All mouse input passes through. Use the external Lua actions to restore interaction or close.",
+          normalHint:
+            "Drag the background to move the window. Drag an edge or corner to resize.",
+          shortcuts: "Route shortcuts to REAPER Main",
+          placeholder: "Text / IME stays here",
+          textInput: "Text input demonstration",
+          overlay: "Overlay",
+          mainShortcuts: "Main shortcuts",
+          on: "on",
+          off: "off",
+          pending: "applying",
+          error: "Error",
+          regionLimit:
+            "SVG interaction geometry exceeds the example scan limit",
+        },
+        "zh-CN": {
+          title: "REAPER SVG 覆盖层",
+          heading: "REAPER / SVG 覆盖层",
+          language: "语言",
+          gainLabel: "主音量",
+          panLabel: "主声像",
+          gain: "主音量",
+          pan: "主声像",
+          knobHint:
+            "纵向拖动旋钮调节参数，Shift 精细调整。拖动时隐藏鼠标，松开后回到起点，Esc 结束拖动。",
+          play: "播放 / 停止",
+          fit: "铺满显示器",
+          close: "关闭",
+          mousePolicy: "鼠标模式",
+          opacity: "背景不透明度",
+          regions: "局部交互",
+          passthrough: "纯装饰（全部穿透）",
+          normal: "窗口交互（移动 / 缩放）",
+          regionsHint: "控件之外的鼠标操作穿透至 REAPER。",
+          passthroughHint:
+            "全部鼠标操作穿透。通过外部 Lua 操作恢复交互或关闭。",
+          normalHint: "拖动非控件区域移动窗口，拖动边缘或角落调整大小。",
+          shortcuts: "将快捷键路由至 REAPER Main",
+          placeholder: "在此输入文字，支持 IME",
+          textInput: "文本输入示例",
+          overlay: "覆盖层",
+          mainShortcuts: "Main 快捷键",
+          on: "开",
+          off: "关",
+          pending: "正在应用",
+          error: "错误",
+          regionLimit: "SVG 交互几何超出示例的采样上限",
+        },
+      };
+      let language = "en",
+        state = null,
+        lastError = null;
+      const strings = () => messages[language];
+      const renderState = () => {
+        const text = strings(),
+          mode = state?.mouseMode || "regions";
+        $("#mode-hint").textContent = text[mode + "Hint"];
+        $("#status").textContent = state
+          ? `${text.overlay} · ${text[mode]}${state.mouseModeActive ? "" : " · " + text.pending} · ${text.mainShortcuts} ${text[state.shortcutRouting ? "on" : "off"]}`
+          : "";
+        $("#error").hidden = !lastError;
+        $("#error").textContent = lastError
+          ? `${text.error} (${lastError.code || "ERROR"}): ${lastError.message}`
+          : "";
+      };
+      const fail = (error) => {
+        lastError = error;
+        renderState();
+      };
+      const applyLanguage = () => {
+        const text = strings();
+        document.documentElement.lang = language;
+        document.title = text.title;
+        $("#close").title = text.close;
+        for (const button of document.querySelectorAll("[data-language]"))
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.language === language),
+          );
+        for (const element of document.querySelectorAll("[data-i18n]"))
+          element.textContent = text[element.dataset.i18n];
+        for (const element of document.querySelectorAll("[data-i18n-aria]"))
+          element.setAttribute("aria-label", text[element.dataset.i18nAria]);
+        for (const element of document.querySelectorAll(
+          "[data-i18n-placeholder]",
+        ))
+          element.placeholder = text[element.dataset.i18nPlaceholder];
+        renderState();
+      };
+      applyLanguage();
+
+      // Native mouse-region geometry
+      // Approximate SVG fill/stroke geometry with one-CSS-pixel scanlines.
+      function mouseRegions(elements) {
+        const result = [];
+        for (const element of elements) {
+          const box = element.getBoundingClientRect(),
+            style = getComputedStyle(element);
+          if (
+            !box.width ||
+            !box.height ||
+            style.display === "none" ||
+            style.visibility === "hidden"
+          )
+            continue;
+          if (typeof element.isPointInFill !== "function") {
+            result.push({
+              x: box.x,
+              y: box.y,
+              width: box.width,
+              height: box.height,
+            });
+            continue;
+          }
+          const matrix = element.getScreenCTM();
+          if (!matrix) continue;
+          const inverse = matrix.inverse();
+          if (!Number.isFinite(inverse.a)) continue;
+          const stroke = style.stroke !== "none";
+          const margin = stroke
+            ? (parseFloat(style.strokeWidth) *
+                Math.max(
+                  Math.hypot(matrix.a, matrix.b),
+                  Math.hypot(matrix.c, matrix.d),
+                )) /
+              2
+            : 0;
+          const left = Math.max(0, Math.floor(box.left - margin)),
+            right = Math.min(innerWidth, Math.ceil(box.right + margin));
+          const top = Math.max(0, Math.floor(box.top - margin)),
+            bottom = Math.min(innerHeight, Math.ceil(box.bottom + margin));
+          if ((right - left) * (bottom - top) > 1048576)
+            throw new Error(strings().regionLimit);
+          let previous = new Map();
+          for (let y = top; y < bottom; ++y) {
+            const row = new Map();
+            let start = null;
+            for (let x = left; x <= right; ++x) {
+              const point = new DOMPoint(x + 0.5, y + 0.5).matrixTransform(
+                inverse,
+              );
+              const hit =
+                x < right &&
+                ((style.fill !== "none" && element.isPointInFill(point)) ||
+                  (stroke && element.isPointInStroke(point)));
+              if (hit && start === null) start = x;
+              if (!hit && start !== null) {
+                const key = start + ":" + x,
+                  old = previous.get(key),
+                  rect = old || { x: start, y, width: x - start, height: 0 };
+                ++rect.height;
+                if (!old) result.push(rect);
+                row.set(key, rect);
+                start = null;
+              }
+            }
+            previous = row;
+          }
+        }
+        return result;
+      }
+
+      // Window policy and layout
+      try {
+        await reaper.lifecycle.ready;
+        const applyState = (next) => {
+          state = next;
+          $("#mode").value = state.mouseMode;
+          $("#shortcuts").checked = state.shortcutRouting;
+          const movable = state.mouseMode === "normal" && state.mouseModeActive;
+          document.body.toggleAttribute("data-reaweb-drag", movable);
+          renderState();
+        };
+        await reaper.events.on("windowstatechange", applyState);
+        await reaper.window.setShortcutRouting(true);
+        applyState(await reaper.window.getState());
+        const platform = await reaper.system.getPlatform();
+        const elements = [...document.querySelectorAll(".interactive")];
+        let scheduled = false,
+          disposed = false,
+          publishing = false,
+          dirty = false;
+        const publish = async () => {
+          dirty = true;
+          if (publishing) return;
+          publishing = true;
+          try {
+            while (dirty && !disposed) {
+              dirty = false;
+              await reaper.window.setMouseRegions(mouseRegions(elements));
+            }
+          } catch (error) {
+            fail(error);
+          } finally {
+            publishing = false;
+          }
+        };
+        const update = () => {
+          if (scheduled || disposed) return;
+          scheduled = true;
+          requestAnimationFrame(() => {
+            scheduled = false;
+            publish();
+          });
+        };
+        const resize = new ResizeObserver(update);
+        elements.forEach((element) => resize.observe(element));
+        const layout = new MutationObserver(update);
+        layout.observe(document.querySelector("main"), {
+          attributes: true,
+          subtree: true,
+          attributeFilter: [
+            "class",
+            "d",
+            "r",
+            "cx",
+            "cy",
+            "transform",
+            "viewBox",
+          ],
+        });
+        addEventListener("resize", update);
+        addEventListener("scroll", update, true);
+        const fit = async () => {
+          const displays = await reaper.system.getDisplays(),
+            position = await reaper.window.getPosition();
+          const display =
+            displays.find(
+              ({ bounds: b }) =>
+                position.x >= b.x &&
+                position.x < b.x + b.width &&
+                position.y >= b.y &&
+                position.y < b.y + b.height,
+            ) ||
+            displays.find((d) => d.primary) ||
+            displays[0];
+          if (!display) return;
+          const { x, y, width, height } = display.bounds;
+          // Avoid X11 window managers promoting an exact screen-sized window to a fullscreen layer.
+          await reaper.window.setSize(
+            width,
+            height + (platform === "linux" ? 1 : 0),
+          );
+          await reaper.window.setPosition(x, y);
+          await publish();
+        };
+        for (const button of document.querySelectorAll("[data-language]"))
+          button.onclick = () => {
+            language = button.dataset.language;
+            applyLanguage();
+            update();
+          };
+        $("#mode").onchange = async () => {
+          $("#mode").disabled = true;
+          try {
+            await reaper.window.setMouseMode($("#mode").value);
+            applyState(await reaper.window.getState());
+          } catch (error) {
+            $("#mode").value = state.mouseMode;
+            fail(error);
+          } finally {
+            $("#mode").disabled = false;
+          }
+        };
+        $("#shortcuts").onchange = () =>
+          reaper.window.setShortcutRouting($("#shortcuts").checked).catch(fail);
+        $("#opacity").oninput = (event) => {
+          const value = Number(event.target.value);
+          $("main").style.setProperty("--panel-opacity", value / 100);
+          $("#opacity-value").value = `${value}%`;
+        };
+        $("#play").onclick = () => reaper.Main_OnCommand(40044, 0).catch(fail);
+        $("#close").onclick = () => reaper.window.close().catch(fail);
+        $("#fit").onclick = () => fit().catch(fail);
+        // SVG parameter gestures
+        const master = await reaper.GetMasterTrack(0);
+        const gestures = new AbortController(),
+          endGestures = [];
+        for (const spec of [
+          { id: "gain", parameter: "D_VOL", min: -60, max: 12 },
+          { id: "pan", parameter: "D_PAN", min: -100, max: 100 },
+        ]) {
+          const control = $("#" + spec.id),
+            initial = await reaper.GetMediaTrackInfo_Value(
+              master,
+              spec.parameter,
+            );
+          let value =
+            spec.id === "gain"
+              ? Math.min(
+                  12,
+                  Math.max(-60, 20 * Math.log10(Math.max(initial, 0.001))),
+                )
+              : initial * 100;
+          let drag = null,
+            requestingLock = false,
+            pending = null,
+            writing = false;
+          const draw = () => {
+            $("#" + spec.id + "-needle").style.transform =
+              `rotate(${-135 + (270 * (value - spec.min)) / (spec.max - spec.min)}deg)`;
+            $("#" + spec.id + "-value").textContent =
+              spec.id === "gain"
+                ? `${value.toFixed(1)} dB`
+                : `${value.toFixed(0)} %`;
+            control.setAttribute("aria-valuenow", value.toFixed(1));
+          };
+          const write = async () => {
+            pending = spec.id === "gain" ? 10 ** (value / 20) : value / 100;
+            if (writing) return;
+            writing = true;
+            try {
+              while (pending !== null && !disposed) {
+                const next = pending;
+                pending = null;
+                await reaper.SetMediaTrackInfo_Value(
+                  master,
+                  spec.parameter,
+                  next,
+                );
+              }
+            } catch (error) {
+              fail(error);
+            } finally {
+              writing = false;
+            }
+          };
+          control.setAttribute("aria-valuemin", spec.min);
+          control.setAttribute("aria-valuemax", spec.max);
+          draw();
+          control.onpointerdown = (event) => {
+            if (event.button !== 0 || drag || requestingLock) return;
+            drag = {
+              id: event.pointerId,
+              y: event.clientY,
+              mouse: event.pointerType === "mouse",
+            };
+            if (!drag.mouse) {
+              event.preventDefault();
+              control.setPointerCapture(event.pointerId);
+              return;
+            }
+            requestingLock = true;
+            try {
+              const request = control.requestPointerLock();
+              request?.catch(lockError);
+            } catch (error) {
+              lockError(error);
+            }
+          };
+          const adjust = (delta, fine) => {
+            value = Math.max(
+              spec.min,
+              Math.min(
+                spec.max,
+                value + (delta * (spec.max - spec.min)) / (fine ? 1500 : 150),
+              ),
+            );
+            draw();
+            write();
+          };
+          control.onpointermove = (event) => {
+            if (!drag || drag.mouse || drag.id !== event.pointerId) return;
+            adjust(drag.y - event.clientY, event.shiftKey);
+            drag.y = event.clientY;
+          };
+          const end = () => {
+            const previous = drag;
+            drag = null;
+            if (document.pointerLockElement === control)
+              document.exitPointerLock();
+            if (previous && control.hasPointerCapture(previous.id))
+              control.releasePointerCapture(previous.id);
+          };
+          const lockError = (error) => {
+            if (!requestingLock) return;
+            requestingLock = false;
+            end();
+            fail(
+              error instanceof Error
+                ? error
+                : new Error("POINTER_LOCK_UNAVAILABLE"),
+            );
+          };
+          const listen = (target, name, handler) =>
+            target.addEventListener(name, handler, { signal: gestures.signal });
+          listen(document, "mousemove", (event) => {
+            if (drag?.mouse && document.pointerLockElement === control)
+              adjust(-event.movementY, event.shiftKey);
+          });
+          listen(document, "mouseup", (event) => {
+            if (event.button === 0) end();
+          });
+          listen(document, "pointerlockchange", () => {
+            if (document.pointerLockElement === control) {
+              requestingLock = false;
+              // A quick release can arrive before the asynchronous lock grant.
+              if (!drag || disposed) end();
+            } else if (drag?.mouse && !requestingLock) end();
+          });
+          listen(document, "pointerlockerror", lockError);
+          listen(window, "blur", end);
+          control.onpointerup = end;
+          control.onpointercancel = end;
+          control.onlostpointercapture = () => {
+            if (drag && !drag.mouse) end();
+          };
+          endGestures.push(end);
+        }
+        // Cleanup and initial compact size
+        await reaper.lifecycle.on("cleanup", () => {
+          disposed = true;
+          endGestures.forEach((end) => end());
+          gestures.abort();
+          resize.disconnect();
+          layout.disconnect();
+          removeEventListener("resize", update);
+          removeEventListener("scroll", update, true);
+        });
+        const panel = $("main").getBoundingClientRect();
+        const size = await reaper.window.getSize();
+        const scale = size.width / innerWidth;
+        const position = await reaper.window.getPosition();
+        const displays = await reaper.system.getDisplays();
+        const display =
+          displays.find(
+            ({ bounds: b }) =>
+              position.x >= b.x &&
+              position.x < b.x + b.width &&
+              position.y >= b.y &&
+              position.y < b.y + b.height,
+          ) ||
+          displays.find((d) => d.primary) ||
+          displays[0];
+        const bounds = display?.workArea || display?.bounds;
+        const width = Math.min(
+          Math.ceil((panel.width + 48) * scale),
+          bounds?.width || Infinity,
+        );
+        const height = Math.min(
+          Math.ceil((panel.height + 48) * scale),
+          bounds?.height || Infinity,
+        );
+        await reaper.window.setSize(width, height);
+        if (bounds)
+          await reaper.window.setPosition(
+            Math.max(
+              bounds.x,
+              Math.min(position.x, bounds.x + bounds.width - width),
+            ),
+            Math.max(
+              bounds.y,
+              Math.min(position.y, bounds.y + bounds.height - height),
+            ),
+          );
+        await publish();
+      } catch (error) {
+        fail(error);
+      }
+    </script>
+  </body>
+</html>

@@ -69,7 +69,7 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/SDK/hidden-start/{name}'] = root / 'examples/runtime-features/hidden-start' / name
     for name in ('reawebapi-frameless-resizable.lua', 'reawebapi-frameless-fixed.lua', 'launch.lua', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md'):
         paths[f'ReaWebAPI/SDK/frameless/{name}'] = root / 'examples/windows/frameless' / name
-    for name in ('reawebapi-overlay.lua', 'restore-interaction.lua', 'close-overlay.lua', 'index.html', 'app.js', 'regions.js', 'style.css', 'app.json', 'README.md'):
+    for name in ('reawebapi-overlay.lua', 'restore-interaction.lua', 'close-overlay.lua', 'index.html', 'app.json', 'README.md', 'README.zh-CN.md'):
         paths[f'ReaWebAPI/SDK/overlay/{name}'] = root / 'examples/windows/overlay' / name
     for name in ('reawebapi-transparent.lua', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md'):
         paths[f'ReaWebAPI/SDK/transparent/{name}'] = root / 'examples/windows/transparent' / name

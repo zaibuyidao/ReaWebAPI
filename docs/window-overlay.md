@@ -2,7 +2,7 @@
 
 [简体中文](window-overlay.zh-CN.md)
 
-Available in v0.3.9.24 for standalone floating Apps. Embedded JSFX Web UIs retain their existing input and window behavior.
+Overlay policies apply to standalone floating Apps. Embedded JSFX Web UIs retain their existing input and window behavior.
 
 ```js
 const id = await reaper.window.open('overlay/index.html', {
@@ -54,13 +54,17 @@ Inspect `capabilities.runtime.window.overlay`. Its `layer`, `passthrough`, `regi
 
 `INVALID_ARGUMENT` identifies invalid parameters. `LAYER_UNAVAILABLE` and `MOUSE_MODE_UNAVAILABLE` identify unsupported native conditions. `LAYER_FAILED` and `MOUSE_MODE_FAILED` identify native setup or update failures. A failed runtime update preserves the previous requested state. Asynchronous initialization failures follow existing window cleanup and diagnostics behavior.
 
-See the [overlay example](../examples/windows/overlay/README.md) for controls, DOM region updates and external Lua recovery actions.
+The [single-file overlay example](../examples/windows/overlay/README.md) defaults to English and includes a Simplified Chinese selector. Its Window mode enables background dragging and native edge resizing with existing frameless-window support. Input controls are excluded from dragging. The overlay layer remains below floating REAPER windows.
+
+Before using mouse routing on macOS, open **System Settings → Privacy & Security → Accessibility** and enable **REAPER**. Add the application with **+** if it is absent, then quit and reopen REAPER.
 
 Linux frameless overlays may extend beyond the display bounds. The example overscans by one native pixel to avoid window managers treating an exact screen-sized frameless window as fullscreen and raising it above floating windows. Apps fitting a display must retain this overscan, or use a smaller viewport. Exact fullscreen bounds are not a portable X11 stacking guarantee.
 
-## SVG controls and Main shortcuts (v0.3.9.25)
+## SVG controls
 
-The shipped example combines all policies in one display-sized overlay. Its `regions.js` helper samples `SVGGeometryElement.isPointInFill/isPointInStroke` in viewport CSS coordinates and merges scanlines into native rectangles. Holes and transformed geometry are supported at one CSS pixel resolution. DOM controls use bounding rectangles. The host still consumes rectangles, not selectors or SVG paths. Apps must republish after geometry/layout changes. Clipping, masks, non-scaling strokes and animated geometry need application-specific regions. Use `setPointerCapture` on pointer down to retain the gesture outside the hit region.
+The shipped example combines all policies in one overlay. The `mouseRegions()` helper in `index.html` samples `SVGGeometryElement.isPointInFill/isPointInStroke` in viewport CSS coordinates and merges scanlines into native rectangles. Holes and transformed geometry are supported at one CSS pixel resolution. DOM controls use bounding rectangles. The host still consumes rectangles, not selectors or SVG paths. Apps must republish after geometry/layout changes. Clipping, masks, non-scaling strokes and animated geometry need application-specific regions. The example uses `requestPointerLock()` for mouse gestures, hides the pointer and restores its starting position on release. Touch/pen input uses `setPointerCapture`. The macOS and Linux hosts authorize Pointer Lock only for standalone overlay windows. A rejected lock aborts mouse adjustment with an error.
+
+## Main shortcut routing
 
 ```js
 await reaper.window.setShortcutRouting(true);

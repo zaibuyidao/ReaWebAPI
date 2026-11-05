@@ -3,6 +3,42 @@ import ctypes as C
 import sys
 import time
 
+def opacity_control(ev, mouse):
+    ev('reaper.window.focus()');time.sleep(.3)
+    rect=ev('(()=>{const r=document.querySelector("#opacity").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()')
+    x,y=rect['x']+rect['width']*.75,rect['y']+rect['height']/2
+    mouse('move',x,y);mouse('down',x,y);mouse('drag',rect['x']+rect['width']*.4,y);mouse('up',rect['x']+rect['width']*.4,y)
+    value=ev('Number(document.querySelector("#opacity").value)')
+    assert 20<value<70,(value,rect,ev('reaper.window.getPosition()'),ev('reaper.window.getSize()'),ev('reaper.system.getDisplays()'),ev('window.pointerLog'))
+    assert ev('getComputedStyle(document.querySelector("main")).opacity')=='1'
+    assert ev('getComputedStyle(document.querySelector(".decoration")).opacity')=='1'
+    assert abs(float(ev('document.querySelector("main").style.getPropertyValue("--panel-opacity")'))-value/100)<.001
+    ev('(()=>{const input=document.querySelector("#opacity");input.value=100;input.dispatchEvent(new Event("input"));return true})()')
+
+def window_mode(ev, mouse, wait, refresh=lambda: None):
+    ev("(document.querySelector('[data-language=\"zh-CN\"]').click(),true)")
+    assert ev('document.documentElement.lang')=='zh-CN'
+    ev("(document.querySelector('[data-language=\"en\"]').click(),true)")
+    ev("(()=>{document.querySelector('#mode').value='normal';document.querySelector('#mode').dispatchEvent(new Event('change'));return true})()")
+    wait(lambda:ev('document.body.hasAttribute("data-reaweb-drag")'))
+    assert ev('getComputedStyle(document.body).backgroundColor')=='rgba(0, 0, 0, 0)'
+    ev('(async()=>{await reaper.window.setSize(900,650);await reaper.window.setPosition(80,80);return true})()')
+    ev('reaper.window.focus()')
+    time.sleep(.5);refresh()
+    before=ev('reaper.window.getPosition()')
+    mouse('move',100,400);mouse('down',100,400);mouse('drag',150,440);mouse('up',150,440)
+    after=ev('reaper.window.getPosition()')
+    assert abs(after['x']-before['x'])>=30 and abs(after['y']-before['y'])>=20,(before,after,ev('window.dragLayout'),ev('reaper.window.getState()'),ev('window.pointerLog'))
+    refresh();size=ev('reaper.window.getSize()');width=ev('innerWidth');height=ev('innerHeight')
+    mouse('move',width-1,height/2);mouse('down',width-1,height/2)
+    for step in range(1,9):mouse('drag',width-1+step*10,height/2)
+    mouse('up',width+79,height/2)
+    resized=ev('reaper.window.getSize()')
+    assert resized['width']>=size['width']+40,(size,resized)
+    ev("(()=>{document.querySelector('#mode').value='regions';document.querySelector('#mode').dispatchEvent(new Event('change'));return true})()")
+    wait(lambda:ev('!document.body.hasAttribute("data-reaweb-drag")'))
+    ev("document.querySelector('#fit').onclick()");time.sleep(.5);refresh()
+
 def run(context):
     ev,cmd,wait,activate,key,codes,report=[context[k] for k in ('evaluate','command','wait','activate','native_key','codes','report')]
     cmd('open');wait(lambda:int(cmd('ready'))>0)
@@ -10,7 +46,7 @@ def run(context):
     wait(lambda:ev('reaper.window.getState().then(s=>s.shortcutRouting && s.mouseModeActive)'))
     state=ev('reaper.window.getState()');assert state['layer']=='overlay' and state['layerActive'],state
     activate();cmd('focus');wait(lambda:ev('document.hasFocus()'))
-    ev("window.shortcutPackets=[];const stringify=JSON.stringify;JSON.stringify=function(value,...args){if(value && typeof value.down==='boolean' && value.document)shortcutPackets.push({...value});return stringify.call(this,value,...args)};true")
+    ev("window.shortcutPackets=[];const stringify=JSON.stringify;JSON.stringify=function(value,...args){if(value?.__reawebDragRegions)window.dragLayout=value.__reawebDragRegions;if(value && typeof value.down==='boolean' && value.document)shortcutPackets.push({...value});return stringify.call(this,value,...args)};true")
     for name,mods in [('space',[]),('a',[]),('a',['shift']),('a',['ctrl']),('a',['ctrl','shift']),('a',['alt']),('left',[]),('f8',[])]:
         activate();cmd('focus');wait(lambda:ev('document.hasFocus()'));ev("document.querySelector('#pan').focus();keys=[];true");cmd('cursor',12)
         for mod in mods:key(codes[mod],True);time.sleep(.04)
@@ -31,32 +67,51 @@ def run(context):
         from ctypes import wintypes as W
         user.WindowFromPoint.argtypes=[W.POINT];user.WindowFromPoint.restype=W.HWND
         window_hits=[]
+        def cursor_position():
+            point=W.POINT();user.GetCursorPos(C.byref(point));return point.x,point.y
         def mouse(kind,x,y):
             sx,sy=round(position['x']+x*scale),round(position['y']+y*scale)
             left,top,width,height=[user.GetSystemMetrics(index) for index in (76,77,78,79)]
             user.mouse_event(0xc001,round((sx-left)*65535/(width-1)),round((sy-top)*65535/(height-1)),0,0)
             time.sleep(.08)
             point=W.POINT();user.GetCursorPos(C.byref(point));hit=user.WindowFromPoint(point);kind_name=C.create_unicode_buffer(128);user.GetClassNameW(hit,kind_name,128);window_hits.append((kind,point.x,point.y,kind_name.value,user.GetForegroundWindow()))
-            if kind!='move':user.mouse_event({'down':2,'up':4,'wheel':0x800}[kind],0,0,120 if kind=='wheel' else 0,0)
+            if kind not in ('move','drag'):user.mouse_event({'down':2,'up':4,'wheel':0x800}[kind],0,0,120 if kind=='wheel' else 0,0)
             time.sleep(.15)
     else:
         x11,xtst,display=[context[k] for k in ('x11','xtst','display')]
         xtst.XTestFakeMotionEvent.argtypes=[C.c_void_p,C.c_int,C.c_int,C.c_int,C.c_ulong]
         xtst.XTestFakeButtonEvent.argtypes=[C.c_void_p,C.c_uint,C.c_int,C.c_ulong]
+        xtst.XTestFakeRelativeMotionEvent.argtypes=[C.c_void_p,C.c_int,C.c_int,C.c_ulong]
+        last_mouse=[0,0]
+        x11.XDefaultRootWindow.argtypes=[C.c_void_p];x11.XDefaultRootWindow.restype=C.c_ulong
+        x11.XQueryPointer.argtypes=[C.c_void_p,C.c_ulong,C.POINTER(C.c_ulong),C.POINTER(C.c_ulong),C.POINTER(C.c_int),C.POINTER(C.c_int),C.POINTER(C.c_int),C.POINTER(C.c_int),C.POINTER(C.c_uint)]
+        def cursor_position():
+            root,child=C.c_ulong(),C.c_ulong();rx,ry,wx,wy=(C.c_int() for _ in range(4));mask=C.c_uint()
+            x11.XQueryPointer(display,x11.XDefaultRootWindow(display),C.byref(root),C.byref(child),C.byref(rx),C.byref(ry),C.byref(wx),C.byref(wy),C.byref(mask))
+            return rx.value,ry.value
         def mouse(kind,x,y):
-            xtst.XTestFakeMotionEvent(display,-1,round(position['x']+x*scale),round(position['y']+y*scale),0)
+            if ev('document.pointerLockElement !== null'):
+                xtst.XTestFakeRelativeMotionEvent(display,round((x-last_mouse[0])*scale),round((y-last_mouse[1])*scale),0)
+            else:
+                xtst.XTestFakeMotionEvent(display,-1,round(position['x']+x*scale),round(position['y']+y*scale),0)
+            last_mouse[:]=[x,y]
             if kind=='wheel':
                 xtst.XTestFakeButtonEvent(display,4,True,0);xtst.XTestFakeButtonEvent(display,4,False,0)
-            elif kind!='move':xtst.XTestFakeButtonEvent(display,1,kind=='down',0)
+            elif kind not in ('move','drag'):xtst.XTestFakeButtonEvent(display,1,kind=='down',0)
             x11.XFlush(display);time.sleep(.15)
     rect=ev('(()=>{const r=document.querySelector("#pan").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()')
     x,y=rect['x']+rect['width']/2,rect['y']+rect['height']/2
     activate();cmd('focus');time.sleep(.3)
     before=ev('reaper.GetMasterTrack(0).then(t=>reaper.GetMediaTrackInfo_Value(t,"D_PAN"))')
-    mouse('move',x,y);mouse('down',x,y);mouse('move',x-180,y-20);mouse('up',x-180,y-20)
+    ev("window.gestureLog=[];for(const t of ['mousemove','pointermove','pointerlockchange','blur'])addEventListener(t,e=>gestureLog.push([t,e.movementY,document.pointerLockElement?.id]));true")
+    mouse('move',x,y);origin=cursor_position();mouse('down',x,y)
+    wait(lambda:ev('document.pointerLockElement?.id === "pan"'))
+    mouse('move',x-180,y-20);mouse('up',x-180,y-20)
+    wait(lambda:ev('document.pointerLockElement === null'))
+    restored=cursor_position();assert all(abs(a-b)<=1 for a,b in zip(origin,restored)),(origin,restored)
     after=ev('reaper.GetMasterTrack(0).then(t=>reaper.GetMediaTrackInfo_Value(t,"D_PAN"))')
-    assert before!=after and ['pointerup',True] in ev('pointerLog'),(before,after,ev('pointerLog'),rect,position,size,width,ev('reaper.system.getDisplays()'),window_hits if sys.platform=='win32' else [])
-    report.append(dict(svgDragOutside=True,actualMasterPanChanged=True,passed=True))
+    assert before!=after and ['pointerup',True] in ev('pointerLog'),(before,after,ev('pointerLog'),ev('gestureLog'),rect,position,size,width,ev('reaper.system.getDisplays()'),window_hits if sys.platform=='win32' else [])
+    report.append(dict(svgDragOutside=True,actualMasterPanChanged=True,pointerLockAndCursorRestored=True,passed=True))
     activate();cmd('focus');ev('pointerLog=[];true');mouse('down',rect['x']+1,rect['y']+1);mouse('up',rect['x']+1,rect['y']+1)
     assert not any(row[0]=='pointerdown' for row in ev('pointerLog')),ev('pointerLog')
     report.append(dict(svgBoundingCornerPassesThrough=True,passed=True))
@@ -65,6 +120,15 @@ def run(context):
     assert not any(row[0]=='pointerdown' for row in ev('pointerLog')),ev('pointerLog')
     ev("reaper.window.setMouseMode('regions')")
     report.append(dict(fullPassthroughAndRecovery=True,passed=True))
+    opacity_control(ev,mouse)
+    report.append(dict(regionsModeBackgroundOpacity=True,passed=True))
+    def refresh():
+        nonlocal position,scale
+        position=ev('reaper.window.getPosition()');scale=ev('reaper.window.getSize()')['width']/ev('innerWidth')
+    window_mode(ev,mouse,wait,refresh)
+    rect=ev('(()=>{const r=document.querySelector("#pan").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()')
+    x,y=rect['x']+rect['width']/2,rect['y']+rect['height']/2
+    report.append(dict(languageSwitching=True,transparentNativeMoveResize=True,passed=True))
     if sys.platform=='win32':
         from ctypes import wintypes as W
         user.GetWindowTextW.argtypes=[W.HWND,W.LPWSTR,C.c_int]
@@ -152,7 +216,11 @@ def run_macos(context):
     rect=ev('(()=>{const r=document.querySelector("#pan").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()')
     x,y=rect['x']+rect['width']/2,rect['y']+rect['height']/2
     before=ev('reaper.GetMasterTrack(0).then(t=>reaper.GetMediaTrackInfo_Value(t,"D_PAN"))')
-    mouse('move',x,y);mouse('down',x,y);mouse('drag',x-180,y-20);mouse('up',x-180,y-20)
+    mouse('move',x,y);origin=context['cursor_position']();mouse('down',x,y)
+    wait(lambda:ev('document.pointerLockElement?.id === "pan"'))
+    mouse('drag',x-180,y-20);mouse('up',x-180,y-20)
+    wait(lambda:ev('document.pointerLockElement === null'))
+    restored=context['cursor_position']();assert all(abs(a-b)<=1 for a,b in zip(origin,restored)),(origin,restored)
     after=ev('reaper.GetMasterTrack(0).then(t=>reaper.GetMediaTrackInfo_Value(t,"D_PAN"))')
     assert before!=after and ['pointerup',True] in ev('pointerLog'),(before,after,ev('pointerLog'))
     report.append('SVG knob changes actual master pan and releases outside its region')
@@ -165,6 +233,12 @@ def run_macos(context):
     for kind in [1,2,6,22]:assert any(e['window']=='main' and e['type']==kind for e in state['events']),state
     ev('reaper.window.setMouseMode("regions")')
     report.append('Native clicks, wheel, drag and release reach REAPER in decoration mode')
+    opacity_control(ev,mouse)
+    report.append('Background opacity slider works in regions mode without fading controls or decoration')
+    window_mode(ev,mouse,wait)
+    rect=ev('(()=>{const r=document.querySelector("#pan").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()')
+    x,y=rect['x']+rect['width']/2,rect['y']+rect['height']/2
+    report.append('English/Chinese switching and native move/resize on a transparent background')
     raw("await reaper.InsertTrackAtIndex(0,false);window.track=await reaper.GetTrack(0,0);window.fx=await reaper.TrackFX_AddByName(track,'overlay/probe.jsfx',false,-1);await reaper.TrackFX_Show(track,fx,3);return fx")
     time.sleep(.5)
     for target in ['overlay','main','overlay']:

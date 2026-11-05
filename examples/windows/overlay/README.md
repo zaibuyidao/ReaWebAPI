@@ -1,25 +1,35 @@
 # SVG overlay
 
-Requires ReaWebAPI v0.3.9.25 or later. Run `reawebapi-overlay.lua` in REAPER. The window fits its current display and stays above REAPER's main window, below floating REAPER windows.
+[简体中文](README.zh-CN.md)
 
-- Drag the SVG knobs vertically to change the actual master gain and pan. Shift gives finer control. Pointer capture completes a drag outside the circle.
-- Decorations and gaps pass mouse input to native REAPER controls. Circle corners outside the SVG shape also pass through.
-- Main-section shortcuts are enabled outside editable fields. Click the text field for text/IME input. Disable **Route shortcuts** to restore page keyboard behavior.
-- **Decoration only** passes all mouse input through. Run `restore-interaction.lua` or `close-overlay.lua` from REAPER to recover.
-- **Fit display** reapplies the display bounds after moving the window or changing the display layout.
+Requires ReaWebAPI v0.3.9.26 or later. Run `reawebapi-overlay.lua` in REAPER. English is the default on each load. Use the compact **EN** / **CN** buttons to switch languages.
 
-`regions.js` converts SVG geometry fill/stroke into rectangles at one CSS pixel resolution. Ordinary DOM controls use bounding rectangles. Resize, scroll and geometry changes republish the regions. Custom animations, style changes, clipping, masks and non-scaling strokes require application-specific region updates. The helper limits each SVG scan to 1,048,576 CSS pixels. This example targets small controls, not rasterization of a full-screen illustration.
+The panel is centered. The initial window fits the English panel with 24 CSS pixels of space on each side, within the display work area. The decorative border follows the native window edges.
 
-On Linux, **Fit display** extends one native pixel past the screen edge to prevent implicit fullscreen promotion by the window manager. Keep this overscan when adapting the example.
+## Operation
 
-macOS requires REAPER Accessibility permission for native mouse routing. Linux requires a native X11 session, X Shape, XInput and a compatible window manager. See [overlay contracts](../../../docs/window-overlay.md).
+- Drag the SVG knobs vertically to adjust the project's master gain and pan. Hold Shift for fine control. The pointer is hidden during mouse dragging and returns to its starting position on release. Esc or loss of focus ends the gesture without reverting parameter changes.
+- **Interactive regions** receives mouse input on controls and passes other areas through to REAPER.
+- **Window (move / resize)** receives input across the transparent window. Drag non-control areas to move it, or its native edges/corners to resize it. Controls retain their own interactions. Floating REAPER windows remain above the overlay in every mode.
+- **Decoration only** passes all mouse input through. Register `restore-interaction.lua` and `close-overlay.lua` as REAPER actions before using this mode.
+- The top-right **×** closes the window. **Background opacity** adjusts only the panel background (0–100%, default 40%), including in Interactive regions mode. Text, controls and outer decoration remain unchanged.
+- **Fit display** reapplies the current display bounds.
+- **Route shortcuts to REAPER Main** routes supported keys outside editable fields to Main bindings. Text and IME input stay in editable fields. System/browser-reserved shortcuts and arbitrary international keyboard layouts are outside the guarantee.
 
-## 简体中文
+## Implementation
 
-运行 `reawebapi-overlay.lua`。示例覆盖当前显示器，提供 SVG 装饰、主音量和声像旋钮。纵向拖动旋钮，按住 Shift 可精细调整。拖出圆形区域后仍可释放。装饰和控件空隙允许鼠标操作到达 REAPER。
+`index.html` contains the HTML, a labeled CSS block and a labeled JavaScript module. The module separates localization, SVG hit geometry, window policy, parameter gestures and cleanup. No separate JS/CSS files or build step are required.
 
-默认启用 REAPER Main 快捷键路由。文本框内保留文字和 IME 输入。选择 Decoration only 后，通过 REAPER 运行 `restore-interaction.lua` 恢复交互，或运行 `close-overlay.lua` 关闭覆盖层。
+`mouseRegions()` samples SVG fill/stroke at one CSS pixel resolution and merges the result into rectangles. DOM controls use bounding rectangles. Layout, resize, scroll and language changes refresh the regions. Each SVG scan is limited to 1,048,576 CSS pixels. Custom animations, style changes, clipping, masks and non-scaling strokes need application-specific updates.
 
-SVG 区域按 1 CSS 像素精度近似。普通 DOM 控件使用包围矩形。自定义动画、样式、裁剪和遮罩需要 App 自行维护区域。示例会直接修改当前工程的主音量和声像。
+Window mode enables the existing `data-reaweb-drag` contract on the body. Native exclusions protect buttons, inputs and SVG sliders. Other mouse modes remove the drag region. Resizing uses the host's existing frameless-window support.
 
-Linux 的 Fit display 向屏幕外多铺 1 个原生像素，避免窗口被自动提升到全屏层。修改示例时需保留此处理。
+Mouse gestures use the browser Pointer Lock API and relative movement. Release, cancellation and cleanup exit the lock. A denied lock reports an error and does not start parameter adjustment. Touch/pen input uses pointer capture. macOS and Linux authorize pointer lock only in standalone overlay windows.
+
+## Platform conditions
+
+- **Windows:** requires a WebView2 Runtime supporting native drag regions and transparent windows.
+- **macOS:** before launching, open **System Settings → Privacy & Security → Accessibility** and enable **REAPER**. If absent, add the REAPER application with **+**. Quit and reopen REAPER after granting permission. Native mouse routing does not prompt automatically.
+- **Linux:** requires native X11, X Shape, XInput, a compositor for transparency and a compatible window manager. Wayland/XWayland are unsupported. **Fit display** extends one native pixel beyond the bottom edge to avoid implicit fullscreen promotion. Keep this overscan when adapting the example. Native move/resize also requires `_NET_WM_MOVERESIZE` support.
+
+See [overlay contracts](../../../docs/window-overlay.md) for API behavior, capabilities and errors.

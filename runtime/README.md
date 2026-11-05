@@ -43,4 +43,4 @@ EEL2 backends use the same message bridge. The SDK includes a [minimal example](
 
 The JSFX helper shares its initialization path across Windows, macOS and Linux. After the capability handshake, it registers subscriptions concurrently, then reads initial size and parameters concurrently. Initial `STALE_SESSION` errors trigger a capability refresh and at most two snapshot retries. Writes are not retried. Distribute the updated `jsfx-webui.mjs` with your UI. See [connection semantics](../docs/jsfx-webui.md#parameter-service) and [startup timing](../docs/devtools.md#startup-timing).
 
-The [SVG overlay example](../examples/windows/overlay/README.md) combines native layers, shape-based mouse regions and opt-in REAPER Main shortcuts (v0.3.9.25).
+The [SVG overlay example](../examples/windows/overlay/README.md) is a bilingual, single-file HTML demo of native layers, SVG parameter controls, mouse routing and REAPER Main shortcuts. Window mode supports background dragging and edge resizing.

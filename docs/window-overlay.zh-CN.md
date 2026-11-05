@@ -2,7 +2,7 @@
 
 [English](window-overlay.md)
 
-v0.3.9.24 为独立浮动 App 提供覆盖层和鼠标策略。嵌入 FX 的 JSFX WebUI 保持原有行为。
+覆盖层和鼠标策略适用于独立浮动 App。嵌入 FX 的 JSFX WebUI 保持原有行为。
 
 ```js
 const id = await reaper.window.open('overlay/index.html', {
@@ -40,7 +40,7 @@ Lua 设置接口返回 Boolean，诊断由 `ReaWeb_GetLastError()` 提供。无�
 
 ## 生命周期与能力
 
-`getState()` 和 `windowstatechange` 增加 `layer`、`layerActive`、`mouseMode`、`mouseModeActive`。Active 字段表示请求策略已在原生层建立，与可见性独立。初始化或等待手势结束时可为 false。重载保留层级和模式，清空旧文档区域。关闭后重新创建采用新选项，不跨 REAPER 启动持久化。
+`getState()` 和 `windowstatechange` 包含 `layer`、`layerActive`、`mouseMode`、`mouseModeActive`。Active 字段表示请求策略已在原生层建立，与可见性独立。初始化或等待手势结束时可为 false。重载保留层级和模式，清空旧文档区域。关闭后重新创建采用新选项，不跨 REAPER 启动持久化。
 
 覆盖层或非 normal 鼠标策略以 `DOCK_UNAVAILABLE` 拒绝停靠。创建时暂时绕过已保存的停靠位置，同时保留原停靠偏好。停靠窗口需要先显式取消停靠，再修改鼠标模式。嵌入式 JSFX 编辑器以 `WINDOW_HOSTED` 拒绝策略设置。
 
@@ -54,13 +54,17 @@ Lua 设置接口返回 Boolean，诊断由 `ReaWeb_GetLastError()` 提供。无�
 
 `INVALID_ARGUMENT` 表示参数错误。`LAYER_UNAVAILABLE`、`MOUSE_MODE_UNAVAILABLE` 表示原生环境不支持。`LAYER_FAILED`、`MOUSE_MODE_FAILED` 表示原生设置或更新失败。运行时更新失败保留此前请求状态。异步初始化失败沿用现有窗口清理和诊断机制。
 
-[覆盖层示例](../examples/windows/overlay/README.md)提供交互控件、DOM 区域更新及窗口外恢复／关闭的 Lua 操作。
+[单文件覆盖层示例](../examples/windows/overlay/README.zh-CN.md)默认使用英文，可切换简体中文。窗口交互模式复用无边框窗口能力，支持背景拖动和原生边缘缩放，输入控件排除在拖动区域之外。覆盖层仍位于 REAPER 浮动窗口下方。
+
+在 macOS 使用鼠标路由前，打开**系统设置 → 隐私与安全性 → 辅助功能**，开启 **REAPER**。列表中没有该应用时，点击 **＋** 添加实际使用的 REAPER 应用，授权后退出并重新打开 REAPER。
 
 Linux 无边框覆盖层允许超出显示器边界。示例向屏幕外多铺 1 个原生像素，避免窗口管理器将尺寸恰好等于整屏的无边框窗口提升到全屏层。App 铺满显示器时应保留此处理，或使用较小视口。恰好等于整屏的边界不具备跨 X11 窗口管理器的层级保证。
 
-## SVG 控件与 Main 快捷键（v0.3.9.25）
+## SVG 控件
 
-示例在同一个显示器大小的覆盖层内组合全部策略。`regions.js` 通过 `SVGGeometryElement.isPointInFill/isPointInStroke` 采样填充和描边，再合并为原生矩形区域。支持孔洞和变换，精度为 1 CSS 像素。普通 DOM 控件使用包围矩形。宿主仍接收矩形，不直接接收选择器或 SVG 路径。几何或布局改变后，App 需重新提交区域。裁剪、遮罩、非缩放描边和动画需要 App 自行维护区域。控件在按下时调用 `setPointerCapture`，保证拖出区域后继续接收拖动和释放。
+示例在同一个覆盖层内组合全部策略。`index.html` 内的 `mouseRegions()` 通过 `SVGGeometryElement.isPointInFill/isPointInStroke` 采样填充和描边，再合并为原生矩形区域。支持孔洞和变换，精度为 1 CSS 像素。普通 DOM 控件使用包围矩形。宿主仍接收矩形，不直接接收选择器或 SVG 路径。几何或布局改变后，App 需重新提交区域。裁剪、遮罩、非缩放描边和动画需要 App 自行维护区域。示例的鼠标手势使用 `requestPointerLock()`，拖动时隐藏光标，松开后恢复到起始位置。触摸和笔输入使用 `setPointerCapture`。macOS 和 Linux 宿主仅对独立覆盖层窗口授权 Pointer Lock，锁定被拒绝时终止鼠标调参并显示错误。
+
+## Main 快捷键路由
 
 ```js
 await reaper.window.setShortcutRouting(true);

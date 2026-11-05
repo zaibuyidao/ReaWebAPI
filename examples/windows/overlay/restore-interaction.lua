@@ -1,5 +1,5 @@
 -- @noindex
--- @description ReaWebAPI: Restore Overlay Interaction
+-- Restore Overlay Interaction
 local id = tonumber(reaper.GetExtState('ReaWebAPI.OverlayDemo', 'window'))
 if not id or not reaper.APIExists('ReaWeb_SetMouseMode') then return end
 if not reaper.ReaWeb_SetMouseMode(id, 'normal') then

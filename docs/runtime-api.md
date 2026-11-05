@@ -241,4 +241,4 @@ When enabled, unmodified Space outside editable fields uses REAPER's current mai
 
 Creation options `layer`, `mouseMode`, `mouseRegions` and current-window setters `setMouseMode`, `setMouseRegions` control [overlay layers and native mouse routing](window-overlay.md).
 
-Standalone Apps can opt into broader Main-section shortcut routing with `window.setShortcutRouting(true)`. Lua uses `ReaWeb_SetShortcutRouting(id, enabled)`. Defaults and text/IME behavior are specified in [overlay keyboard routing](window-overlay.md#svg-controls-and-main-shortcuts-v03925).
+Standalone Apps can opt into broader Main-section shortcut routing with `window.setShortcutRouting(true)`. Lua uses `ReaWeb_SetShortcutRouting(id, enabled)`. Defaults and text/IME behavior are specified in [overlay keyboard routing](window-overlay.md#main-shortcut-routing).

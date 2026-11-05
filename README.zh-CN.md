@@ -113,4 +113,4 @@ Native Stream 在多路分析间复用轨道采样，支持 `aggregate: true`，
 
 Windows、macOS 和 Linux 支持原生[隐藏启动](docs/host-api.zh-CN.md#隐藏启动)与后台预加载，参见[示例](examples/runtime-features/hidden-start/README.md)。
 
-[SVG 覆盖层示例](examples/windows/overlay/README.md) 组合原生层级、形状交互区域和显式启用的 REAPER Main 快捷键路由（v0.3.9.25）。
+[SVG 覆盖层示例](examples/windows/overlay/README.zh-CN.md) 为中英文单文件 HTML，演示原生层级、SVG 参数控件、鼠标路由和 REAPER Main 快捷键。窗口交互模式支持背景拖动与边缘缩放。

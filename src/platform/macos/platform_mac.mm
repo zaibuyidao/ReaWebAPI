@@ -58,6 +58,11 @@ void open_external(const std::string& url) {
 @end
 
 @implementation ReaWebDelegate
+// WKWebView exposes Pointer Lock authorization through this delegate selector.
+- (void)_webViewDidRequestPointerLock:(WKWebView*)webView completionHandler:(void (^)(BOOL))completionHandler {
+  completionHandler(!isClosed && !options.hosted && options.overlay.layer == "overlay" &&
+    webView.window.isKeyWindow && reaweb::same_document(webView.URL.absoluteString.UTF8String ?: "", entryURI));
+}
 - (void)webView:(WKWebView*)webView runOpenPanelWithParameters:(WKOpenPanelParameters*)parameters
     initiatedByFrame:(WKFrameInfo*)frame completionHandler:(void (^)(NSArray<NSURL*>*))completionHandler {
   if (isClosed || filePanel || !frame.mainFrame || !webView.window) { completionHandler(nil); return; }

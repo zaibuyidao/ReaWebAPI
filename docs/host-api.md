@@ -353,4 +353,4 @@ Invalid options reject with `INVALID_ARGUMENT`. Missing native support uses `TRA
 
 `ReaWeb_OpenEx` accepts `layer`, `mouseMode`, `mouseRegions`. `ReaWeb_SetMouseMode(id, mode)` and `ReaWeb_SetMouseRegions(id, regionsJson)` return Boolean. See [Overlay and mouse policies](window-overlay.md) for JS/Lua contracts, capabilities and errors.
 
-Standalone Apps can opt into broader Main-section shortcut routing with `window.setShortcutRouting(true)`. Lua uses `ReaWeb_SetShortcutRouting(id, enabled)`. Defaults and text/IME behavior are specified in [overlay keyboard routing](window-overlay.md#svg-controls-and-main-shortcuts-v03925).
+Standalone Apps can opt into broader Main-section shortcut routing with `window.setShortcutRouting(true)`. Lua uses `ReaWeb_SetShortcutRouting(id, enabled)`. Defaults and text/IME behavior are specified in [overlay keyboard routing](window-overlay.md#main-shortcut-routing).

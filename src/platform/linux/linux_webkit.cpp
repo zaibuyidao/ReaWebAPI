@@ -365,9 +365,13 @@ public:
       }
       return FALSE;
     }), this);
-    g_signal_connect(view_, "permission-request", G_CALLBACK(+[](WebKitWebView*, WebKitPermissionRequest* request, gpointer) -> gboolean {
-      webkit_permission_request_deny(request); return TRUE;
-    }), nullptr);
+    g_signal_connect(view_, "permission-request", G_CALLBACK(+[](WebKitWebView*, WebKitPermissionRequest* request, gpointer data) -> gboolean {
+      auto self = static_cast<Page*>(data);
+      if (self->overlay_ && !self->hosted_ && WEBKIT_IS_POINTER_LOCK_PERMISSION_REQUEST(request))
+        webkit_permission_request_allow(request);
+      else webkit_permission_request_deny(request);
+      return TRUE;
+    }), this);
     g_signal_connect(view_, "web-process-terminated", G_CALLBACK(+[](WebKitWebView*, WebKitWebProcessTerminationReason, gpointer data) {
       static_cast<Page*>(data)->fail("WEBVIEW_PROCESS_FAILED: WebKitGTK content process terminated. Reopen the tool.");
     }), this);

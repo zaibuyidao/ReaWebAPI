@@ -77,17 +77,36 @@ cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
 cg.CGEventCreateScrollWheelEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32]
 cg.CGEventCreateScrollWheelEvent.restype = ctypes.c_void_p
 cg.CGEventSetLocation.argtypes = [ctypes.c_void_p, Point]
+cg.CGEventSetIntegerValueField.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int64]
 cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
 cf.CFRelease.argtypes = [ctypes.c_void_p]
+cg.CGEventCreate.argtypes = [ctypes.c_void_p]
+cg.CGEventCreate.restype = ctypes.c_void_p
+cg.CGEventGetLocation.argtypes = [ctypes.c_void_p]
+cg.CGEventGetLocation.restype = Point
 
+def cursor_position():
+    event = cg.CGEventCreate(None)
+    point = cg.CGEventGetLocation(event)
+    cf.CFRelease(event)
+    return point.x, point.y
+
+last_mouse = [0, 0]
 def mouse(kind, x, y, **args):
     position = cmd('point', x=x, y=y)
     point = Point(*position)
+    # Pointer Lock keeps physical cursor position fixed while delivering deltas.
+    if a.example and kind in ('drag', 'up') and ev('return !!document.pointerLockElement'):
+        point = Point(*cursor_position())
     if kind == 'wheel':
         event = cg.CGEventCreateScrollWheelEvent(None, 1, 1, 3)
         cg.CGEventSetLocation(event, point)
     else:
         event = cg.CGEventCreateMouseEvent(None, dict(move=5,down=1,up=2,drag=6,rightDown=3,rightUp=4)[kind], point, 1 if kind.startswith('right') else 0)
+        if kind in ('move', 'drag'):
+            cg.CGEventSetIntegerValueField(event, 4, round(x-last_mouse[0]))
+            cg.CGEventSetIntegerValueField(event, 5, round(y-last_mouse[1]))
+    last_mouse[:] = [x, y]
     cg.CGEventPost(0, event); cf.CFRelease(event)
     time.sleep(.25)
 
