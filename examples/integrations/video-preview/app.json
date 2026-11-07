@@ -1,0 +1,6 @@
+{
+  "id": "reawebapi-video-preview",
+  "name": "Video Preview",
+  "version": "1.0.0",
+  "entry": "index.html"
+}

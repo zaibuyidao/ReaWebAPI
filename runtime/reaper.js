@@ -618,6 +618,23 @@
     }
   };
   api.stream = Object.freeze({ open: openStream, getDiagnostics: () => call('ReaWeb_StreamDiagnostics', []) });
+  const videoConsumers = new Set();
+  globalThis.document?.addEventListener?.('visibilitychange', () => {
+    if (document.hidden) for (const consumer of videoConsumers) consumer.close().catch(() => {});
+  });
+  api.video = Object.freeze({
+    getCapabilities: () => call('ReaWeb_VideoCapabilities', []),
+    getState: () => call('ReaWeb_VideoState', []),
+    getDiagnostics: () => call('ReaWeb_VideoDiagnostics', []),
+    openStream: async (options = {}) => {
+      if (globalThis.document?.hidden) throw failure('VIDEO_PAGE_HIDDEN', 'Show the page before opening project video');
+      const consumer = await openStream(await call('ReaWeb_VideoOpen', [options]));
+      videoConsumers.add(consumer);
+      consumer.on('close', () => videoConsumers.delete(consumer));
+      if (globalThis.document?.hidden) await consumer.close();
+      return consumer;
+    }
+  });
   // Realtime sources use ordinary v1 binary streams. JSFX v2 timing and its
   // instance permissions remain separate; source decoders are explicitly versioned.
   const realtimeDecoders = {

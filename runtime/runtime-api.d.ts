@@ -1,5 +1,28 @@
 /** ReaWebAPI Runtime contract 2. Standard REAPER APIs use their original names. */
 type ReaWebDispose = () => Promise<void>;
+interface ReaWebVideoOptions {
+  source?: 'project'; width?: number; height?: number; updateRate?: number | 'auto';
+}
+interface ReaWebVideoCapabilities {
+  available: boolean; backend: 'reaper-internal'; source: 'project';
+  backendAvailable: boolean; companionInstalled: false; platform: 'windows' | 'macos' | 'linux';
+  requiresVideoWindow: false; requiresCompanion: false; companion: null; hiddenVideoWindow: true;
+  supportedHosts: Array<{ platform: 'windows' | 'macos' | 'linux'; architecture: 'x64' | 'arm64' | 'x86_64'; version: string }>;
+  maxWidth: number; maxHeight: number; maxUpdateRate: number;
+  defaultWidth: number; defaultHeight: number; defaultUpdateRate: 'auto'; autoUpdateRate: true;
+  profiles: 1; profilePolicy: 'first-consumer'; format: 'rgba8'; error: string | null;
+}
+interface ReaWebVideoState {
+  updateRate: number | 'auto'; targetUpdateRate: number;
+  source: 'project'; backend: 'reaper-internal'; status: 'closed' | 'idle' | 'waiting' | 'ready';
+  epoch: number; width: number; height: number; sourceWidth: number; sourceHeight: number;
+  position: number | null; sourceFrameRate: number; frameAgeMs: number | null;
+  videoWindowOpen: boolean; subscribers: number; stream: string; error: string | null;
+}
+interface ReaWebVideoDiagnostics extends ReaWebVideoState {
+  producedFrames: number; capturedFrames: number; clearedFrames: number; droppedFrames: number; captureFailures: number;
+  actualFPS: number; captureMs: number; transportLatencyMs: number | null; transportDiagnostics: string;
+}
 interface ReaWebStreamInfo {
   name: string; kind: 'frame' | 'audio' | 'spectrum' | 'meter' | 'waveform' | 'binary' | 'midi';
   format: 'rgba8' | 'bgra8' | 'float32' | 'bytes'; capacity: number; maxBytes: number;
@@ -111,7 +134,7 @@ interface ReaWebLogEntry {
 }
 interface ReaWebCleanupEvent { reason: 'close' | 'reload' | 'unload'; timeoutMs: number; }
 type ReaWebRuntimeNamespace = 'window' | 'theme' | 'dialog' | 'events' | 'lifecycle' | 'debug' | 'fs' | 'audio'
-  | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction' | 'host' | 'stream' | 'realtime';
+  | 'clipboard' | 'dragDrop' | 'app' | 'system' | 'transaction' | 'host' | 'stream' | 'realtime' | 'video';
 interface ReaWebRuntimeCapabilities {
   contract: 2; namespaces: ReaWebRuntimeNamespace[]; cleanupTimeoutMs: number;
   /** JSFX-specific service protocol, when the optional module is registered. */
@@ -210,6 +233,12 @@ interface ReaWebEvents {
   'theme-changed': ReaWebTheme;
 }
 interface ReaWebAPI {
+  readonly video: {
+    getCapabilities(): Promise<ReaWebVideoCapabilities>;
+    openStream(options?: ReaWebVideoOptions): Promise<ReaWebStream>;
+    getState(): Promise<ReaWebVideoState>;
+    getDiagnostics(): Promise<ReaWebVideoDiagnostics>;
+  };
   readonly realtime: {
     getCapabilities(): Promise<ReaWebRealtimeCapabilities>;
     getDiagnostics(): Promise<ReaWebRealtimeDiagnostics>;

@@ -34,7 +34,7 @@ bool small_message(const Json& value, size_t& budget) {
 Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock)
   : host_(std::move(host)), services_([this](auto handle, const auto& service, int window, const auto& name, Json data) {
       service_event(handle, service, window, name, std::move(data));
-    }), producers_(host_, streams_), realtime_(host_, streams_), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), diagnostic_log_(resource_), main_thread_(std::this_thread::get_id()) {
+    }), producers_(host_, streams_), video_(host_, streams_), realtime_(host_, streams_), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), diagnostic_log_(resource_), main_thread_(std::this_thread::get_id()) {
   diagnostic_log_.event(Diagnostics::Level::Debug, Diagnostics::Scope::Runtime, "runtime.start.begin");
   project_ = host_.current_project();
   host_generation_ = host_.project_generation ? host_.project_generation() : 0;
@@ -52,6 +52,7 @@ Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::str
   diagnostic_log_.event(Diagnostics::Level::Info, Diagnostics::Scope::Runtime, "runtime.start.end");
 }
 Runtime::~Runtime() {
+  video_.shutdown();
   realtime_.shutdown();
   diagnostic_log_.event(Diagnostics::Level::Debug, Diagnostics::Scope::Runtime, "runtime.stop.begin");
   jsfx_discovery_.reset();
@@ -89,6 +90,10 @@ Json Runtime::web_runtime(const Session& session) const {
 }
 Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   auto& s = *sessions_.at(id);
+  if (method == "ReaWeb_VideoCapabilities") return video_.capabilities();
+  if (method == "ReaWeb_VideoState") return video_.state();
+  if (method == "ReaWeb_VideoDiagnostics") return video_.diagnostics();
+  if (method == "ReaWeb_VideoOpen") return video_.open(args[0], id);
   if (method == "ReaWeb_RealtimeCapabilities") return realtime_.capabilities();
   if (method == "ReaWeb_RealtimeDiagnostics") return realtime_.diagnostics(id);
   if (method == "ReaWeb_RealtimeSubscribe") {
@@ -520,6 +525,9 @@ void Runtime::tick() {
   }
   services_.tick(Clock::now(), Clock::now() + std::chrono::microseconds(500));
   producers_.tick();
+  for (const auto& item : sessions_)
+    if (item.second->window && !item.second->window->visible()) video_.close_window(item.first);
+  video_.tick();
   // Accessor calls can exceed their sampling budget. Keep bridge replies and
   // stream detach requests progressing independently of that work.
   const auto deadline = Clock::now() + std::chrono::milliseconds(2);

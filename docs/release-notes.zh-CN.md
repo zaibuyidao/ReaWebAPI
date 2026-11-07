@@ -1,6 +1,4 @@
 # ReaWebAPI
 
-- 覆盖层示例采用紧凑的 EN/CN 按钮，默认英文，整理控制面板布局，新增右上角关闭按钮和面板背景不透明度控制。
-- 窗口交互模式保持透明，支持背景拖动和原生边缘缩放，装饰边框贴合窗口边缘，初始窗口采用紧凑尺寸。
-- SVG 参数拖动时隐藏并锁定鼠标，释放后恢复起始位置。macOS 和 Linux 的独立覆盖层支持 Pointer Lock 授权。
-- 示例 CSS 和 JS 合并到标记清晰的 HTML 区块，README 拆分为中英文版本，整理平台使用条件。
+- 新增 `reaper.video` 工程预览，复用共享 Native Frame Streams，提供能力查询、状态和采集诊断。支持固定更新率与 `auto` 跟随工程帧率，API 和 Demo 默认使用 `auto`。
+- 新增 Windows、macOS、Linux 已验证 REAPER 构建的工程视频输出和 Canvas 预览 Demo。未知构建安全拒绝视频请求。

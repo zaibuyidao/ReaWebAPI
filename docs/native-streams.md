@@ -164,3 +164,7 @@ File watch creation resolves after its baseline. File watchers and timers releas
 The [Native Stream Demo](../examples/integrations/native-stream/README.md) consumes built-in analysis and third-party streams. ReaGBA integration belongs to its separate extension repository: `reaper.host.service('reagba')` provides controls/input and `reaper.stream.open('reagba.video')` provides frames. The emulator publishes at its own ~59.73 Hz cadence; the Lua launcher only opens the WebView.
 
 A page with a Content Security Policy must allow `connect-src ws://127.0.0.1:*` for the native stream socket. Authorization remains bound to the page origin and a single-use native attachment ticket.
+
+## Project video
+
+`reaper.video` exposes shared project video frames through Native Streams. Only verified REAPER builds are supported. See [Video Preview](video-preview.md) for installation, API, rendering and platform limits.

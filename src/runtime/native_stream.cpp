@@ -223,6 +223,16 @@ void StreamHub::detach_window(int window) {
   std::lock_guard<std::mutex> lock(mutex_);
   for (auto it = tickets_.begin(); it != tickets_.end();) if (!it->second.external && it->second.window == window) it = tickets_.erase(it); else ++it;
 }
+void StreamHub::detach_stream_window(uint64_t handle, int window) {
+  const unsigned index = handle & 255;
+  if (!handle || index >= slots_.size()) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto& slot = slots_[index];
+  if (slot.handle.load() != handle || !slot.owned) return;
+  for (auto it = tickets_.begin(); it != tickets_.end();)
+    if (!it->second.external && it->second.window == window && it->second.buffer == slot.owned) it = tickets_.erase(it);
+    else ++it;
+}
 Json StreamHub::info() const {
   std::lock_guard<std::mutex> lock(mutex_); Json streams = Json::array();
   reap();
@@ -236,5 +246,10 @@ size_t StreamHub::consumers(uint64_t handle) const {
   if (index >= slots_.size() || slots_[index].handle.load() != handle || !slots_[index].owned) return 0;
   size_t count = 0; for (const auto& ticket : tickets_) if (ticket.second.buffer == slots_[index].owned) ++count;
   return count;
+}
+double StreamHub::frame_ack_ms(uint64_t handle) const {
+  std::lock_guard<std::mutex> lock(mutex_); const auto index = handle & 255;
+  if (!handle || index >= slots_.size() || slots_[index].handle.load() != handle || !slots_[index].owned) return -1;
+  return slots_[index].owned->frame_ack_ms.load();
 }
 }

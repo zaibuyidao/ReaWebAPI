@@ -2,10 +2,12 @@
 #include <iostream>
 #include <thread>
 using namespace reaweb;
-int main(int argc,char**) {
-  const bool timing_packets=argc>1;
+int main(int argc,char** argv) {
+  const bool timing_packets=argc>1 && std::string(argv[1])=="timing";
+  const bool video=argc>1 && std::string(argv[1])=="video";
   StreamHub hub; ReaWeb_StreamDesc desc{}; desc.size = sizeof(desc); desc.abi_version = 1;
   desc.format = REAWEB_PIXEL_RGBA8; desc.width = 240; desc.height = 160; desc.stride = 960;
+  if(video) { desc.width=1280;desc.height=720;desc.stride=5120; }
   desc.max_bytes = desc.stride * desc.height; desc.capacity = 3; desc.update_rate = 60;
   uint64_t handle = 0;
   const auto created=timing_packets?hub.create_jsfx(REAWEB_FRAME,"test.frame",&desc,&handle,1,0,{{"sessionId","test"}}):hub.create(REAWEB_FRAME,"test.frame",&desc,&handle);
@@ -24,9 +26,11 @@ int main(int argc,char**) {
     }
     std::this_thread::sleep_until(begin + std::chrono::microseconds(sequence * 16667));
   }
+  const double latency = hub.frame_ack_ms(handle);
   hub.close(handle);
   // Keep transport alive until the consumer has received the complete close.
   std::string done;
   if (!std::getline(std::cin, done) || done != "done") return 3;
-  std::cout << hub.info().dump() << std::endl;
+  auto diagnostics = hub.info(); diagnostics["frameLatencyMs"] = latency;
+  std::cout << diagnostics.dump() << std::endl;
 }

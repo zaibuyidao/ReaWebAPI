@@ -94,6 +94,7 @@ interface ReaWebEvents {
   windowstatechange: ReaWebWindowState;
 }
 interface ReaWebDiagnostics {
+  video: ReaWebVideoDiagnostics;
     /** Last accepted page report. Collection requires matching diagnostic settings and resets on enable/navigation. */
   bridgeHealth: {
       enabled: boolean; probePending: boolean; unresponsive: boolean;

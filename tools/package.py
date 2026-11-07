@@ -31,6 +31,13 @@ required = ['Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua', 'Scripts/ReaWebAPI/E
             'ReaWebAPI/SDK/reaper.d.ts', 'ReaWebAPI/SDK/reaper-api.generated.d.ts',
             'ReaWebAPI/SDK/reaper-api.generated.js', 'ReaWebAPI/README.md', 'ReaWebAPI/README.zh-CN.md', 'ReaWebAPI/THIRD_PARTY.md']
 native_files = [binary]
+obsolete_video = list((args.stage / 'UserPlugins').glob('reaweb-video-*.clap'))
+obsolete_video += list(args.stage.rglob('ReaWebAPI_InstallVideoBackend.lua'))
+obsolete_video += list(args.stage.rglob('CLAP-LICENSE.txt'))
+if (args.stage / 'ReaWebAPI/licenses/clap.txt').exists():
+    obsolete_video.append(args.stage / 'ReaWebAPI/licenses/clap.txt')
+if obsolete_video:
+    raise SystemExit('Obsolete video companion files in the install tree. Use a clean staging directory.')
 if args.platform == 'linux':
     helper = args.stage / 'UserPlugins' / f'reawebapi-webview-{args.arch}'
     if not helper.is_file() or not helper.stat().st_size:

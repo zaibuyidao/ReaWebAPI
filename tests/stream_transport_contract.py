@@ -50,10 +50,10 @@ def receive(sock):
     assert data[:4] == b'RWS'+bytes([stream_version])
     sequence = struct.unpack_from('<Q', data, 8)[0]
     header = 80 if stream_version == 2 else 40
-    assert len(data) == header + 240 * 160 * 4
+    assert len(data) == header + first['maxBytes']
     if stream_version == 2:
         assert struct.unpack_from('<QQQdBB',data,40) == (99,9007199254740992+sequence,17,0.5,1,1)
-    assert all(byte == sequence & 255 for byte in data[header:])
+    assert data[header:] == bytes([sequence & 255]) * first['maxBytes']
     return sequence
 
 
@@ -65,7 +65,7 @@ process = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subproces
 try:
     first, second = json.loads(process.stdout.readline())
     stream_version = first.get('layoutVersion', 1)
-    assert stream_version == (2 if len(sys.argv)>2 else 1)
+    assert stream_version == (2 if sys.argv[-1]=='timing' else 1)
     assert connect(first, 'http://wrong.invalid') is None
     a, b = connect(first), connect(second)
     assert a is not None and b is not None
@@ -73,11 +73,14 @@ try:
     seq_a, seq_b = receive(a), receive(b)
     # One consumer stops acknowledging while the other receives continuously.
     until = time.monotonic() + 0.4
+    received = 0
     while time.monotonic() < until:
         ack(b)
         next_b = receive(b)
         assert next_b > seq_b
         seq_b = next_b
+        received += 1
+    if sys.argv[-1]=='video':assert received >= 4, ('720p transport stalled', received)
     ack(a)
     next_a = receive(a)
     assert next_a > seq_a + 10, (seq_a, next_a)
@@ -96,6 +99,7 @@ try:
     assert process.wait(timeout=5) == 0
     diagnostics = json.loads(process.stdout.readline())
     assert diagnostics['streams'] == []
+    assert 0 < diagnostics['frameLatencyMs'] < 30000
     assert diagnostics['transport'] == {'connections': 2, 'handshakeFailures': 2,
                                         'expiredTickets': 0, 'lastHandshakeError': 'TICKET_USED'}
     print('Binary transport, authentication, independent consumers and producer close passed')

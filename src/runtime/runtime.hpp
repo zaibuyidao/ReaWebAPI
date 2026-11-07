@@ -6,6 +6,7 @@
 #include "runtime/host_service.hpp"
 #include "runtime/native_monitor.hpp"
 #include "runtime/native_stream.hpp"
+#include "runtime/video.hpp"
 #include "runtime/native_tasks.hpp"
 #include "runtime/native_producers.hpp"
 #include "runtime/realtime.hpp"
@@ -64,6 +65,7 @@ public:
   StreamHub& streams() { return streams_; }
   NativeTasks& tasks() { return tasks_; }
   NativeProducers& producers() { return producers_; }
+  VideoManager& video() { return video_; }
   void configure_diagnostics(const DiagnosticSettings& settings);
   void open_diagnostics_folder();
   void configure_external(const ExternalSettings& settings);
@@ -196,6 +198,7 @@ private:
   std::unique_ptr<JsfxNativeHub> jsfx_native_;
   NativeTasks tasks_;
   NativeProducers producers_;
+  VideoManager video_;
   RealtimeManager realtime_;
   NativeMonitorManager monitors_;
   DockApi dock_;

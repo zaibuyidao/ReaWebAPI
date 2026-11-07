@@ -111,7 +111,7 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
     return Json{{"version", REAWEB_VERSION}, {"protocol", 1}, {"methods", names}, {"api", std::move(api)}, {"projectScope", "all"},
       {"events", runtime_events()},
       {"runtime", {{"contract", 2}, {"namespaces", {"window", "theme", "dialog", "events", "lifecycle", "debug", "fs", "audio",
-                                                  "clipboard", "dragDrop", "app", "system", "transaction", "host", "stream", "realtime"}},
+                                                  "clipboard", "dragDrop", "app", "system", "transaction", "host", "stream", "realtime", "video"}},
         {"host", {{"maxMessageBytes", host_message_limit}, {"maxPendingMessages", host_queue_limit}, {"maxQueuedBytes", host_queue_bytes},
           {"serviceABI", 1}, {"serviceTimeoutMs", 30000}, {"builtinServices", {"runtime"}}}},
         {"window", {{"hiddenStart", true}}},
@@ -128,6 +128,9 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
   for (const auto* name : {"ReaWeb_StreamOpen", "ReaWeb_StreamDetach"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
   add("ReaWeb_StreamDiagnostics", 0, 0, [this](const Json& a) { return controls_.host_call("ReaWeb_StreamDiagnostics", a); });
+  for (const auto* name : {"ReaWeb_VideoCapabilities", "ReaWeb_VideoState", "ReaWeb_VideoDiagnostics"})
+    add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
+  add("ReaWeb_VideoOpen", 1, 1, [this](const Json& a) { return controls_.host_call("ReaWeb_VideoOpen", a); });
   for (const auto* name : {"ReaWeb_RealtimeCapabilities", "ReaWeb_RealtimeDiagnostics"})
     add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
   add("ReaWeb_RealtimeSubscribe", 2, 2, [this](const Json& a) { return controls_.host_call("ReaWeb_RealtimeSubscribe", a); });

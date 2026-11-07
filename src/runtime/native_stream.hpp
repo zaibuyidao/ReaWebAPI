@@ -24,6 +24,7 @@ public:
   const ReaWeb_StreamDesc descriptor;
   std::atomic<int> closed{0};
   std::atomic<uint64_t> published{0}, dropped{0};
+  std::atomic<double> frame_ack_ms{-1};
 private:
   struct Slot {
     std::atomic<unsigned> state{0};
@@ -56,8 +57,10 @@ public:
   void detach_external(uint64_t session, const std::string& token = {});
   void detach(const std::string& token, int window);
   void detach_window(int window);
+  void detach_stream_window(uint64_t handle, int window);
   Json info() const;
   size_t consumers(uint64_t handle) const;
+  double frame_ack_ms(uint64_t handle) const;
   static const char* code(int status);
 private:
   friend class StreamTransport;

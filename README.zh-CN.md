@@ -114,3 +114,7 @@ Native Stream 在多路分析间复用轨道采样，支持 `aggregate: true`，
 Windows、macOS 和 Linux 支持原生[隐藏启动](docs/host-api.zh-CN.md#隐藏启动)与后台预加载，参见[示例](examples/runtime-features/hidden-start/README.md)。
 
 [SVG 覆盖层示例](examples/windows/overlay/README.zh-CN.md) 为中英文单文件 HTML，演示原生层级、SVG 参数控件、鼠标路由和 REAPER Main 快捷键。窗口交互模式支持背景拖动与边缘缩放。
+
+## 工程视频
+
+`reaper.video` 通过 Native Streams 提供共享工程视频帧。仅支持已验证的 REAPER 构建。安装、API、绘制和平台限制见[视频预览](docs/video-preview.zh-CN.md)。

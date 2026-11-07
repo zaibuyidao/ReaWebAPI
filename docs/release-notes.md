@@ -1,6 +1,4 @@
 # ReaWebAPI
 
-- Update the overlay demo with compact EN/CN buttons (English by default), a grouped control panel, a top-right close button and panel background opacity control.
-- Keep Window mode transparent, enable background dragging and native edge resizing, align the decorative border to the window edges and start at a compact size.
-- Hide and lock the pointer during SVG parameter dragging, restoring its starting position on release. Authorize Pointer Lock for standalone overlays on macOS and Linux.
-- Consolidate demo CSS/JS into labeled HTML blocks, split its README by language and clarify platform requirements.
+- Add `reaper.video` project preview with shared Native Frame Streams, capabilities, state and capture diagnostics. Support fixed update rates and `auto` project frame-rate tracking, with the API and Demo defaulting to `auto`.
+- Add project video output and a Canvas preview Demo for verified REAPER builds on Windows, macOS and Linux. Unknown builds reject video requests safely.

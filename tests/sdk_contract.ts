@@ -1,4 +1,15 @@
 /// <reference path="../runtime/reaper.d.ts" />
+async function projectVideo() {
+  const caps: ReaWebVideoCapabilities = await reaper.video.getCapabilities();
+  const stream: ReaWebStream = await reaper.video.openStream({source: 'project', width: 1280, height: 720, updateRate: 'auto'});
+  stream.on('data', frame => { const bytes: Uint8Array = frame.bytes; void bytes; });
+  await stream.close();
+  const state: ReaWebVideoState = await reaper.video.getState();
+  const diagnostics: ReaWebVideoDiagnostics = await reaper.video.getDiagnostics();
+  void caps; void state; void diagnostics;
+  // @ts-expect-error Project output is the only video source.
+  await reaper.video.openStream({source: 'file'});
+}
 
 async function hostMessages() {
   const accepted: boolean = await reaper.host.send({type: 'setVolume', value: 0.5, nested: [null, true]});

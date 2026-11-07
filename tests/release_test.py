@@ -158,6 +158,12 @@ class ReleaseTests(unittest.TestCase):
     def test_mismatched_binary_blocks_release(self):
         (self.directory / 'reaper_reawebapi-x64.dll').write_bytes(b'wrong')
         with self.assertRaises(ValueError): release.assemble(self.directory, self.version, 'test-sha')
+    def test_obsolete_video_companion_blocks_release(self):
+        bundle = self.directory / f'ReaWebAPI-windows-x64-v{self.version}.zip'
+        with zipfile.ZipFile(bundle, 'a') as archive:
+            archive.writestr('UserPlugins/reaweb-video-windows-x64.clap', b'OBSOLETE TEST FIXTURE')
+        with self.assertRaisesRegex(ValueError, 'Obsolete video companion'):
+            release.assemble(self.directory, self.version, 'test-sha')
     def test_wrong_commit_blocks_release(self):
         with self.assertRaises(ValueError): release.assemble(self.directory, self.version, 'other-sha')
     def test_draft_uploaded_before_publish(self):

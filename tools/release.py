@@ -111,6 +111,9 @@ def assemble(directory, version, revision):
         files = [binary] + ([f'reawebapi-webview-{arch}'] if platform == 'linux' else [])
         bundle = directory / f'ReaWebAPI-{platform}-{arch}-v{version}.zip'
         with zipfile.ZipFile(bundle) as archive:
+            if any(name.endswith(('.clap', '/ReaWebAPI_InstallVideoBackend.lua', '/CLAP-LICENSE.txt', '/licenses/clap.txt'))
+                   for name in archive.namelist()):
+                raise ValueError(f'Obsolete video companion in bundle: {bundle.name}')
             metadata = json.loads(archive.read('ReaWebAPI/BUILD.json'))
             expected = dict(version=version, platform=platform, architecture=arch, revision=revision, extension=binary)
             if metadata != expected:

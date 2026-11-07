@@ -23,6 +23,11 @@ def payload(root, version, revision):
     paths = {f'ReaWebAPI/SDK/{name}': root / 'runtime' / name for name in (
         'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'browser-files.mjs', 'browser-files.d.mts', 'jsfx-webui.mjs', 'jsfx-webui.d.mts', 'README.md', 'README.zh-CN.md')}
     paths['ReaWebAPI/docs/jsfx-webui.md'] = root / 'docs/jsfx-webui.md'
+    for name in ('video-preview.md', 'video-preview.zh-CN.md'):
+        paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
+    for path in (root / 'examples/integrations/video-preview').iterdir():
+        if path.is_file():
+            paths[f'ReaWebAPI/SDK/video-preview/{path.name}'] = path
     for name in ('realtime.md', 'realtime.zh-CN.md', 'window-overlay.md', 'window-overlay.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reawebapi-native-transport.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
@@ -130,6 +135,8 @@ def stage_sdk(stage, version, revision='local', root=ROOT):
     files = payload(root, version, revision)
     # Remove the old packaged copy when an install prefix is reused. Source notes stay local.
     (stage / 'ReaWebAPI/docs/VALIDATION.md').unlink(missing_ok=True)
+    for directory in ('ReaWebAPI/SDK/video-preview', 'Scripts/ReaWebAPI/Example/video-preview'):
+        (stage / directory / 'ReaWebAPI_VideoPreview.lua').unlink(missing_ok=True)
     for name, content in files.items():
         path = stage / name
         path.parent.mkdir(parents=True, exist_ok=True)

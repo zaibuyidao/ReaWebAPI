@@ -76,6 +76,7 @@ struct StreamTransport::Impl {
     size_t offset = 0, queued_bytes = 0;
     bool upgraded = false, inflight = false, closing = false, failed = false;
     Time::time_point progress = Time::now(), opened = Time::now();
+    Time::time_point frame_started{};
   };
   StreamHub& hub;
   Socket listener = invalid_socket;
@@ -136,6 +137,10 @@ struct StreamTransport::Impl {
       if (Time::now() - ticket->second.created > std::chrono::seconds(10)) return reject("TICKET_EXPIRED");
       ticket->second.connected = true; client.token = ticket->first; client.stream = ticket->second.buffer;client.reliable=ticket->second.reliable;
     }
+    if (client.stream && client.stream->kind == REAWEB_FRAME) {
+      const int bytes = std::min<int>(8 * 1024 * 1024, int(client.stream->descriptor.max_bytes) + 50);
+      setsockopt(client.socket, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&bytes), sizeof(bytes));
+    }
     const auto key = headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     unsigned char digest[20]; char accept[32]; WDL_SHA1 sha; sha.add(key.data(), static_cast<int>(key.size())); sha.result(digest);
     wdl_base64encode(digest, accept, 20);
@@ -167,7 +172,11 @@ struct StreamTransport::Impl {
         try {client.waiting.push_back(frame(client.reliable->exchange(request)));}
         catch(const Error&) {return false;}
       }
-      else if (opcode == 2 && length == 1 && (data[header+4] ^ data[header]) == 1) client.inflight = false;
+      else if (opcode == 2 && length == 1 && (data[header+4] ^ data[header]) == 1) {
+        if (client.inflight && client.stream && client.stream->kind == REAWEB_FRAME)
+          client.stream->frame_ack_ms = std::chrono::duration<double, std::milli>(Time::now() - client.frame_started).count();
+        client.inflight = false;
+      }
       else if (opcode != 10) return false;
       client.input.erase(0,header+4+size_t(length));client.progress=Time::now();
     }
@@ -192,11 +201,15 @@ struct StreamTransport::Impl {
     if (!client.output) {
       const auto reason = client.reliable?(client.reliable->closed()||client.reliable->expired()?REAWEB_STREAM_CLOSED:0):client.stream->closed.load();
       if (reason) {
-        const std::string code = StreamHub::code(reason); Bytes close{3, 232}; close.insert(close.end(), code.begin(), code.end());
-        client.output = frame(close, 8); client.closing = true; client.waiting.clear(); client.queued_bytes = 0;
+        client.waiting.clear(); client.queued_bytes = 0;
+        // Drain the final frame ACK before closing a large buffered video socket.
+        if (!client.stream || client.stream->kind != REAWEB_FRAME || !client.inflight) {
+          const std::string code = StreamHub::code(reason); Bytes close{3, 232}; close.insert(close.end(), code.begin(), code.end());
+          client.output = frame(close, 8); client.closing = true;
+        }
       } else if ((!client.inflight || client.reliable) && !client.waiting.empty()) {
         client.output = client.waiting.front(); client.waiting.pop_front();
-        if(!client.reliable){client.queued_bytes -= client.output->size();client.inflight = true;}
+        if(!client.reliable){client.queued_bytes -= client.output->size();client.inflight = true;client.frame_started = Time::now();}
       }
     }
     if (client.output) {
@@ -205,7 +218,10 @@ struct StreamTransport::Impl {
 #else
       constexpr int flags = 0;
 #endif
-      const int length = static_cast<int>(std::min<size_t>(65536, client.output->size() - client.offset));
+      // Video frames must not be throttled to one 64 KiB write per timer wake.
+      // Nonblocking writes remain bounded and retain the existing ACK/backpressure.
+      const size_t limit = client.stream && client.stream->kind == REAWEB_FRAME ? 8 * 1024 * 1024 : 65536;
+      const int length = static_cast<int>(std::min<size_t>(limit, client.output->size() - client.offset));
       const auto written = ::send(client.socket, reinterpret_cast<const char*>(client.output->data() + client.offset), length, flags);
       if (written < 0 && !would_block()) { client.failed = true; return; }
       if (written > 0) { client.offset += written; client.progress = Time::now(); }

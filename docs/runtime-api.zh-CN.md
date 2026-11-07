@@ -6,13 +6,13 @@
 
 [English](runtime-api.md) | **简体中文**
 
-JavaScript Runtime 使用下列 16 个命名空间。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
+JavaScript Runtime 使用下列 17 个命名空间。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
 
 `capabilities.runtime.contract` 为 2，描述宿主 SDK；`capabilities.webRuntime.contract` 仍为 1，描述 Web 资源和存储约定。能力信息列出命名空间、事件、清理超时和音频上限；底层标准 API 是否存在仍应查询 `api.availableMethods`。
 
 就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
 
-16 个命名空间共 87 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
+17 个命名空间共 91 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
 `transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
 
@@ -289,3 +289,7 @@ const enabled = (await reaper.window.getState()).dawKeyboard;
 创建选项 `layer`、`mouseMode`、`mouseRegions` 及当前窗口接口 `setMouseMode`、`setMouseRegions` 控制[覆盖层与原生鼠标穿透](window-overlay.zh-CN.md)。
 
 独立 App 可通过 `window.setShortcutRouting(true)` 启用 Main 快捷键路由。Lua 使用 `ReaWeb_SetShortcutRouting(id, enabled)`。默认状态和文本／IME 规则见[覆盖层键盘路由](window-overlay.zh-CN.md)。
+
+## 工程视频
+
+`reaper.video` 通过 Native Streams 提供共享工程视频帧。仅支持已验证的 REAPER 构建。安装、API、绘制和平台限制见[视频预览](video-preview.zh-CN.md)。

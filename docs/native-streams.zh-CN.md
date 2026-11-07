@@ -109,3 +109,7 @@ MIDI 通过 `system.openMIDIInput(device)` 消费原始事件，`-1` 表示所�
 页面如设置 Content Security Policy，需要允许 `connect-src ws://127.0.0.1:*`。连接仍受页面来源及一次性原生连接凭据约束。
 
 `stream.getDiagnostics().transport` 提供当前 Runtime 的成功连接数、握手拒绝数、过期凭据数及最近的握手拒绝代码，不包含连接凭据。传输尚未初始化时不返回此字段。
+
+## 工程视频
+
+`reaper.video` 通过 Native Streams 提供共享工程视频帧。仅支持已验证的 REAPER 构建。安装、API、绘制和平台限制见[视频预览](video-preview.zh-CN.md)。

@@ -70,12 +70,13 @@ test('every event the host advertises is subscribable from the page', async () =
   await assert.rejects(silent.window.reaper.events.on('message', () => {}), { code: 'SCHEMA_MISMATCH' });
 });
 
-test('The public SDK has exactly 730 unchanged Mirror methods and sixteen frozen Runtime namespaces', async () => {
+test('The public SDK has exactly 730 unchanged Mirror methods and seventeen frozen Runtime namespaces', async () => {
   const t = await connected();
   const api = t.window.reaper;
   const expected = {
   "host": ["send", "service"],
   "stream": ["open", "getDiagnostics"],
+  "video": ["getCapabilities", "openStream", "getState", "getDiagnostics"],
   "realtime": ["subscribe", "getCapabilities", "getDiagnostics"],
   "window": [
     "open",

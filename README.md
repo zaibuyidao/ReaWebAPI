@@ -115,3 +115,7 @@ The built-in Meter provides Sample/True Peak, separate sample/True Peak clip cou
 Native [hidden startup](docs/host-api.md#hidden-startup) supports background preloading on Windows, macOS and Linux. See the [example](examples/runtime-features/hidden-start/README.md).
 
 The [SVG overlay example](examples/windows/overlay/README.md) is a bilingual, single-file HTML demo of native layers, SVG parameter controls, mouse routing and REAPER Main shortcuts. Window mode supports background dragging and edge resizing.
+
+## Project video
+
+`reaper.video` exposes shared project video frames through Native Streams. Only verified REAPER builds are supported. See [Video Preview](docs/video-preview.md) for installation, API, rendering and platform limits.

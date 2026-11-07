@@ -4,11 +4,11 @@
 
 **English** | [简体中文](runtime-api.zh-CN.md)
 
-JavaScript Runtime fixes sixteen namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`, `reaper.host`, `reaper.stream`, `reaper.realtime`. All 730 REAPER methods retain their names, Promise results, typed handles and Lua argument/result order. Distribute `reaper.d.ts`, `reaper-api.generated.d.ts` and `runtime-api.d.ts` together. `capabilities.runtime.contract` is 2 (host SDK), while `webRuntime.contract` remains 1 (Web resources/storage).
+JavaScript Runtime fixes seventeen namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`, `reaper.host`, `reaper.stream`, `reaper.realtime`, `reaper.video`. All 730 REAPER methods retain their names, Promise results, typed handles and Lua argument/result order. Distribute `reaper.d.ts`, `reaper-api.generated.d.ts` and `runtime-api.d.ts` together. `capabilities.runtime.contract` is 2 (host SDK), while `webRuntime.contract` remains 1 (Web resources/storage).
 
 Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
 
-All sixteen namespaces provide implemented members: 87 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All seventeen namespaces provide implemented members: 91 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
 `reaper.host` retains the Lua Backend route. `reaper.host.service(name)` routes to named native services. `reaper.events` adds native selection, track, transport, project and timeline sources. See [Native Services](native-services.md) for payloads, thread boundaries and lifecycle rules. Existing Clipboard, Drag & Drop, Window/Dock/Focus and System interfaces remain unchanged.
 
@@ -242,3 +242,7 @@ When enabled, unmodified Space outside editable fields uses REAPER's current mai
 Creation options `layer`, `mouseMode`, `mouseRegions` and current-window setters `setMouseMode`, `setMouseRegions` control [overlay layers and native mouse routing](window-overlay.md).
 
 Standalone Apps can opt into broader Main-section shortcut routing with `window.setShortcutRouting(true)`. Lua uses `ReaWeb_SetShortcutRouting(id, enabled)`. Defaults and text/IME behavior are specified in [overlay keyboard routing](window-overlay.md#main-shortcut-routing).
+
+## Project video
+
+`reaper.video` exposes shared project video frames through Native Streams. Only verified REAPER builds are supported. See [Video Preview](video-preview.md) for installation, API, rendering and platform limits.
