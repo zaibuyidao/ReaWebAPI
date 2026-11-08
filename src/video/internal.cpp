@@ -17,22 +17,21 @@ namespace reaweb {
 namespace {
 constexpr int rgba = 0x52474241;
 struct Build {
-  const char* version;
   const char* checksum;
   size_t display, visible, window, frame, processed, monitor_hash;
   size_t query, source_hash, cached, destroy_sources, frame_index, is_visible, transform;
 };
 // RVAs are valid only after the complete loaded module file matches its SHA-256.
 #if defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))
-constexpr Build build{"7.84", "0143b8b78ee6bc714782411f89889d67470b07e94aa02d56922f54f76a1a2ec7",
+constexpr Build build{"0143b8b78ee6bc714782411f89889d67470b07e94aa02d56922f54f76a1a2ec7",
   0x1a8848, 0x26c14c, 0x26bd70, 0x26bdb0, 0x26bda8, 0x26bda0,
   0x1a9738, 0x1a5fc0, 0x1af738, 0x1ad4dc, 0x26bd98, 0x211810, 0x1a6ffc};
 #elif defined(__APPLE__) && defined(__aarch64__)
-constexpr Build build{"7.84", "96dc59911188d3c5ad9528f09b452d7b5174a3f60acf1140e0742e68040876c0",
+constexpr Build build{"96dc59911188d3c5ad9528f09b452d7b5174a3f60acf1140e0742e68040876c0",
   0x13868, 0x110860, 0x110858, 0x110ac8, 0x110ad0, 0x110ad8,
   0x13100, 0x126ac, 0x12a94, 0x12054, 0x110ae0, 0x10fa28, 0x14fdc};
 #elif defined(__linux__) && defined(__x86_64__)
-constexpr Build build{"7.82", "9bc595cb8f14bf71e7a47b6eb8e95afdcb16d9e8dfd51f3d9ff799f664d8e095",
+constexpr Build build{"9bc595cb8f14bf71e7a47b6eb8e95afdcb16d9e8dfd51f3d9ff799f664d8e095",
   0x1382f0, 0x3f8148, 0x3f8150, 0x3f7e78, 0x3f7e70, 0x3f7e68,
   0x132b30, 0x12b270, 0x12b660, 0x12ad30, 0x3f7e60, 0x3f21c0, 0x12e590};
 #else
@@ -93,16 +92,12 @@ public:
   explicit InternalVideo(const Host& h) : host(h) {}
   ~InternalVideo() override { stop(); }
   bool supported() override {
-    const char* expected = build.version ? build.version : "";
-    if (!*expected || std::this_thread::get_id() != main) return false;
-    const auto version = api<const char*(*)()>("GetAppVersion");
-    if (!version || !api<void*>("EnumProjects") || !api<void*>("TimeMap_curFrameRate")) return false;
-    const char* text = version();
-    const size_t length = std::strlen(expected);
-    if (!text || std::strncmp(text, expected, length) || (text[length] && text[length] != '/')) return false;
+    if (!build.checksum || std::this_thread::get_id() != main) return false;
+    if (!api<void*>("EnumProjects") || !api<void*>("TimeMap_curFrameRate")) return false;
     const auto loaded = find_module();
     if (!loaded.base) return false;
     if (verified && loaded.base == module.base && loaded.path == module.path) return true;
+    if (loaded.base != module.base) leased = false;
     verified = false; module = loaded;
     std::ifstream file(module.path, std::ios::binary | std::ios::ate);
     if (!file) return false;
@@ -170,9 +165,4 @@ public:
 };
 }
 std::unique_ptr<VideoBackend> make_video_backend(const Host& host) { return std::make_unique<InternalVideo>(host); }
-Json video_supported_hosts() {
-  return Json::array({{{"platform", "windows"}, {"architecture", "x64"}, {"version", "7.84"}},
-    {{"platform", "macos"}, {"architecture", "arm64"}, {"version", "7.84"}},
-    {{"platform", "linux"}, {"architecture", "x86_64"}, {"version", "7.82"}}});
-}
 }

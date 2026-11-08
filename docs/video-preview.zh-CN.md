@@ -6,17 +6,11 @@ Canvas 演示位于 `examples/integrations/video-preview`，运行 [reawebapi-vi
 
 ## 主机兼容性
 
-安装同平台、同架构的 v0.3.9.28 扩展。视频能力仅对以下已验证的 REAPER 模块构建启用：
+安装同平台、同架构的 v0.3.9.28 或更新版本扩展。视频后端不检查 REAPER 版本号，也不返回支持版本列表；保留视频模块 SHA-256 校验，用于保护固定内部地址的调用。
 
-| 平台 | REAPER | 架构 |
-| --- | --- | --- |
-| Windows | 7.84 | x64 |
-| macOS | 7.84 | arm64 |
-| Linux | 7.82 | x86_64 |
+`getCapabilities()` 查询后端是否具备启动条件及共享配置限制，后端名称为 `reaper-internal`。视频模块指纹不匹配、模块无法读取、缺少必要宿主接口或当前平台/架构没有后端实现时，`available` 为 `false`，`openStream()` 返回 `VIDEO_HOST_UNSUPPORTED`，示例显示不可用提示。无需桌面录制权限。
 
-兼容性依据视频模块 SHA-256 校验，不只比较版本字符串。其他构建和架构的 `getCapabilities().available` 为 `false`，`openStream()` 返回 `VIDEO_HOST_UNSUPPORTED`，不影响扩展其他功能。无需桌面录制权限。
-
-`getCapabilities()` 返回后端兼容性、`supportedHosts` 平台/架构/版本列表和共享配置限制。列表中的同版本自定义二进制仍需通过模块指纹校验。后端名称为 `reaper-internal`。
+只有模块文件与固定内部地址对应的 SHA-256 匹配时才允许调用。不同 REAPER 版本使用相同视频模块时可以通过；相同版本号的不同模块文件也可能被拒绝。此检查不替代实机兼容性验证。
 
 ## API
 
@@ -56,7 +50,7 @@ await reaper.lifecycle.on('cleanup', () => stream.close());
 | `VIDEO_SOURCE_UNAVAILABLE` | 当前没有可用源帧或帧格式无效 |
 | `VIDEO_RENDER_BUSY` | REAPER 渲染占用，暂停预览取帧并等待恢复 |
 | `VIDEO_PROJECT_CHANGED` | 旧流关闭，需为当前工程重新打开 |
-| `VIDEO_HOST_UNSUPPORTED` | 拒绝打开流，不调用未知构建的内部视频函数 |
+| `VIDEO_HOST_UNSUPPORTED` | 后端启动条件不满足，拒绝打开流并提示不可用 |
 
 ## 资源与限制
 
@@ -69,6 +63,6 @@ await reaper.lifecycle.on('cleanup', () => stream.close());
 - App 或页面隐藏时自动关闭其视频消费者，包括会隐藏页面的 Dock 切换。恢复可见后可重新打开。隐藏页面打开流返回 `VIDEO_PAGE_HIDDEN`。
 - 切换工程会关闭旧流并递增源 epoch。App 应在工程切换后重新打开，显示保留帧前应查询当前状态。
 
-后端依赖 REAPER 非公开函数和状态，新增主机构建必须单独验证兼容性。RGBA 和 YV12 输入路径已验证，YUY2 交由同一宿主转换路径处理，尚未单独进行素材验收。原生窗口的缩放、显示色彩管理和 GPU 呈现可能与采集到的源像素不同。
+后端依赖 REAPER 非公开函数和状态，跨版本兼容性仍需实机验证。RGBA 和 YV12 输入路径已验证，YUY2 交由同一宿主转换路径处理，尚未单独进行素材验收。原生窗口的缩放、显示色彩管理和 GPU 呈现可能与采集到的源像素不同。
 
 `tests/video_reaper.py` 使用全新隔离配置执行真实主机验收。编译和单元测试不能替代主机视频兼容性验证。

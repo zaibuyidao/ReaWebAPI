@@ -18,5 +18,4 @@ public:
   virtual void stop() = 0;
 };
 std::unique_ptr<VideoBackend> make_video_backend(const Host&);
-Json video_supported_hosts();
 }

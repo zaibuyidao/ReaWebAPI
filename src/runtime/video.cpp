@@ -97,7 +97,7 @@ Json VideoManager::capabilities() const {
   const char* platform = "linux";
 #endif
   return {{"available", available}, {"backendAvailable", available}, {"companionInstalled", false}, {"platform", platform},
-    {"backend", "reaper-internal"}, {"source", "project"}, {"supportedHosts", video_supported_hosts()},
+    {"backend", "reaper-internal"}, {"source", "project"},
     {"requiresVideoWindow", false}, {"requiresCompanion", false}, {"companion", nullptr},
     {"hiddenVideoWindow", true}, {"maxWidth", 1920}, {"maxHeight", 1080}, {"maxUpdateRate", 60},
     {"defaultWidth", 1280}, {"defaultHeight", 720}, {"defaultUpdateRate", "auto"}, {"autoUpdateRate", true},
@@ -112,7 +112,7 @@ std::string VideoManager::open(const Json& options, int window) {
   if (options.value("source", Json("project")) != "project") throw Error("INVALID_ARGUMENT", "Only the current project video source is supported");
   const int w = option(options, "width", 1280, 1920), h = option(options, "height", 720, 1080);
   const int rate = options.value("updateRate", Json("auto")) == "auto" ? 0 : option(options, "updateRate", 30, 60);
-  if (s.stopped || !s.backend->supported()) throw Error("VIDEO_HOST_UNSUPPORTED", "This REAPER video module build has not been validated");
+  if (s.stopped || !s.backend->supported()) throw Error("VIDEO_HOST_UNSUPPORTED", "The REAPER video backend is unavailable on this host");
   if (s.handle) {
     if (w != s.width || h != s.height || rate != s.rate) throw Error("VIDEO_PROFILE_CONFLICT", "Active project video consumers share one resolution and update rate", {{"width", s.width}, {"height", s.height}, {"updateRate", s.requested_rate()}});
     s.idle_at = seconds(); return s.name;

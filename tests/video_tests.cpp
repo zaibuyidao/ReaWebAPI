@@ -85,6 +85,15 @@ struct Fixture {
     CHECK(value["position"].is_null() && value["frameAgeMs"].is_null());
   }
 };
+void missing_native_prerequisites() {
+  Host host;
+  auto backend = make_video_backend(host);
+  CHECK(!backend->supported());
+  bool captured = false;
+  CHECK(backend->read(false, [&](const VideoImage&) { captured = true; }) == VideoRead::unsupported);
+  CHECK(!captured);
+  backend->stop();
+}
 void unused_and_rejection() {
   Fixture f;
   f.video->tick();
@@ -106,6 +115,7 @@ void unused_and_rejection() {
   f.backend->supported = false;
   const auto caps = f.video->capabilities();
   CHECK(caps["available"] == false && caps["error"] == "VIDEO_HOST_UNSUPPORTED");
+  CHECK(!caps.contains("supportedHosts"));
   CHECK(caps["requiresVideoWindow"] == false && caps["requiresCompanion"] == false);
   bool unsupported = false;
   try { f.video->open(f.profile, 1); } catch (const Error& e) { unsupported = e.code == "VIDEO_HOST_UNSUPPORTED"; }
@@ -115,6 +125,7 @@ void unused_and_rejection() {
 void sharing_and_lifetime() {
   Fixture f;
   CHECK(f.video->capabilities()["available"] == true);
+  CHECK(!f.video->capabilities().contains("supportedHosts"));
   const auto name = f.video->open(f.profile, 1);
   CHECK(f.cleared() == 1 && f.video->diagnostics()["capturedFrames"] == 0);
   f.video->tick();
@@ -233,7 +244,7 @@ void automatic_rate() {
 }
 int main() {
   try {
-    unused_and_rejection(); sharing_and_lifetime(); clocks_and_invalidations(); source_and_host_changes(); automatic_rate();
+    missing_native_prerequisites(); unused_and_rejection(); sharing_and_lifetime(); clocks_and_invalidations(); source_and_host_changes(); automatic_rate();
     std::cout << "Video host rejection, consumer ownership, invalidation, clocks and cleanup passed\n";
   } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

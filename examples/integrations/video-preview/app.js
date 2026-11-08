@@ -53,7 +53,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) close
   if (!caps.available) {
     openButton.disabled = true;
     throw Object.assign(new Error(caps.error === 'VIDEO_HOST_UNSUPPORTED'
-      ? 'This REAPER build is not supported by the video backend.' : 'The REAPER video backend is unavailable.'), { code: caps.error });
+      ? 'Video preview is unavailable on this host.' : 'The REAPER video backend is unavailable.'), { code: caps.error });
   }
   status.textContent = 'Open a stream to preview the current project video.';
   await reaper.lifecycle.on('cleanup', async () => { clearInterval(poll); await closeVideo(); });

@@ -6,17 +6,11 @@ Run [reawebapi-video-preview.lua](../examples/integrations/video-preview/reaweba
 
 ## Host compatibility
 
-Install the v0.3.9.28 extension for the host platform and architecture. Video is enabled only for these verified REAPER module builds:
+Install the v0.3.9.28 or newer extension for the host platform and architecture. The video backend does not check the REAPER version string or return a supported-version list. It retains video module SHA-256 validation to protect calls through fixed internal offsets.
 
-| Platform | REAPER | Architecture |
-| --- | --- | --- |
-| Windows | 7.84 | x64 |
-| macOS | 7.84 | arm64 |
-| Linux | 7.82 | x86_64 |
+`getCapabilities()` reports backend startup prerequisites and shared profile limits. The backend is `reaper-internal`. If the module fingerprint does not match, the module cannot be read, or required host APIs or a platform/architecture implementation are missing, `available` is `false`, `openStream()` rejects with `VIDEO_HOST_UNSUPPORTED`, and the demo displays an unavailable message. No desktop-capture permission is required.
 
-Compatibility is checked against the video module's SHA-256, not just the version string. For other builds and architectures, `getCapabilities().available` is `false` and `openStream()` rejects with `VIDEO_HOST_UNSUPPORTED`. Other extension features remain available. No desktop-capture permission is required.
-
-`getCapabilities()` reports backend compatibility, the `supportedHosts` platform/architecture/version list and profile limits. Custom binaries with a listed version must still match the module fingerprint. The backend is `reaper-internal`.
+Internal calls are allowed only when the module file matches the SHA-256 associated with the fixed offsets. Different REAPER versions can pass when they share the same video module; different module files with the same version string can still be rejected. This check does not replace host-level compatibility testing.
 
 ## API
 
@@ -56,7 +50,7 @@ A new stream first publishes an opaque black clear packet at the configured dime
 | `VIDEO_SOURCE_UNAVAILABLE` | No usable source frame or an invalid frame layout |
 | `VIDEO_RENDER_BUSY` | Pause preview capture while REAPER is rendering, then resume |
 | `VIDEO_PROJECT_CHANGED` | Close the old stream and require reopening for the current project |
-| `VIDEO_HOST_UNSUPPORTED` | Reject opening without calling unknown internal video functions |
+| `VIDEO_HOST_UNSUPPORTED` | Reject opening when backend startup prerequisites are missing |
 
 ## Ownership and limits
 
@@ -69,6 +63,6 @@ A new stream first publishes an opaque black clear packet at the configured dime
 - Hiding the App/page closes its video consumers, including a Dock transition that hides the page. Reopen when visible again. Opening from a hidden page rejects with `VIDEO_PAGE_HIDDEN`.
 - Project changes close the old stream and increment its source epoch. Reopen after the project change. Consult state before presenting retained frames as current.
 
-The backend depends on private REAPER functions and state. Each additional host build requires independent compatibility verification. RGBA and YV12 input paths are validated. YUY2 is delegated to the same host conversion path and has not had separate fixture acceptance. Native output scaling, display color management and GPU presentation can differ from the captured source pixels.
+The backend depends on private REAPER functions and state. Compatibility across versions still requires host-level testing. RGBA and YV12 input paths are validated. YUY2 is delegated to the same host conversion path and has not had separate fixture acceptance. Native output scaling, display color management and GPU presentation can differ from the captured source pixels.
 
 Run `tests/video_reaper.py` against a new disposable profile for host acceptance. Compile/unit tests alone do not establish host-level video compatibility.

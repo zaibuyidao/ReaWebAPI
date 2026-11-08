@@ -7,7 +7,6 @@ interface ReaWebVideoCapabilities {
   available: boolean; backend: 'reaper-internal'; source: 'project';
   backendAvailable: boolean; companionInstalled: false; platform: 'windows' | 'macos' | 'linux';
   requiresVideoWindow: false; requiresCompanion: false; companion: null; hiddenVideoWindow: true;
-  supportedHosts: Array<{ platform: 'windows' | 'macos' | 'linux'; architecture: 'x64' | 'arm64' | 'x86_64'; version: string }>;
   maxWidth: number; maxHeight: number; maxUpdateRate: number;
   defaultWidth: number; defaultHeight: number; defaultUpdateRate: 'auto'; autoUpdateRate: true;
   profiles: 1; profilePolicy: 'first-consumer'; format: 'rgba8'; error: string | null;

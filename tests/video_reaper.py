@@ -33,10 +33,10 @@ PAGE = r'''<!doctype html><meta charset="utf-8"><title>Video acceptance</title><
     }
     result.capabilities = await reaper.video.getCapabilities();
     if (await reaper.GetExtState('VideoAcceptance','expectUnsupported')==='1') {
-      check(!result.capabilities.available && result.capabilities.error==='VIDEO_HOST_UNSUPPORTED','unknown host is unavailable');
+      check(!result.capabilities.available && result.capabilities.error==='VIDEO_HOST_UNSUPPORTED','backend prerequisites are unavailable');
       let rejected=false;
       try { await reaper.video.openStream(); } catch(e) { rejected=e.code==='VIDEO_HOST_UNSUPPORTED'; }
-      check(rejected,'unknown host video safely rejected');
+      check(rejected,'unavailable backend rejects video');
       check((await reaper.window.getSize()).width>0,'window API remains available');
       check(typeof (await reaper.stream.getDiagnostics()).allocatedBytes==='number','stream API remains available');
       check(await reaper.TrackFX_GetRecCount(await reaper.GetMasterTrack(0))===0,'unsupported host adds no monitoring FX');
@@ -295,7 +295,7 @@ def main():
     parser.add_argument('--media',type=Path)
     parser.add_argument('--duration',type=int,default=60)
     parser.add_argument('--project-fps',type=float)
-    parser.add_argument('--expect-unsupported',action='store_true')
+    parser.add_argument('--expect-unsupported',action='store_true', help='Expect a module fingerprint mismatch or missing backend prerequisites, not an unlisted REAPER version')
     parser.add_argument('--resource-source',type=Path)
     args=parser.parse_args()
     root=args.profile.resolve();root.mkdir(parents=True,exist_ok=False)
