@@ -345,6 +345,8 @@ async function realtimeContract(reaper: ReaWebAPI) {
   const caps: ReaWebRealtimeCapabilities = await reaper.realtime.getCapabilities();
   const sub = await reaper.realtime.subscribe('transport', {updateRate:120, onData(state) {
     const position: number = state.position;
+    const musical: number[] = [state.playRate, state.tempo, state.beatPosition, state.timeSignature.numerator, state.timeSignature.denominator];
+    void musical;
     const epoch: bigint = state.projectEpoch;
     void position; void epoch;
   }});

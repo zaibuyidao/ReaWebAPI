@@ -1056,6 +1056,48 @@ test('Realtime decodes transport snapshots without altering stream timing and re
   assert.equal(t.messages.length,before+2);
 });
 
+test('Realtime decodes musical transport snapshots without altering stream timing and releases once', async () => {
+  const t = await connected(), sockets = streamSockets(t), received = [];
+  const pending = t.window.reaper.realtime.subscribe('transport', {updateRate:120, onData: value=>received.push(value)});
+  await flush();
+  assert.equal(t.messages.at(-1).method, 'ReaWeb_RealtimeSubscribe');
+  assert.deepEqual(t.messages.at(-1).args, ['transport',{updateRate:120}]);
+  t.reply(t.messages.length-1,{result:{id:7,stream:'reaweb.realtime.transport.7',schema:'transport.v2',updateRate:120}});
+  await flush();
+  assert.equal(t.messages.at(-1).method,'ReaWeb_StreamOpen');
+  t.reply(t.messages.length-1,{result:{...streamDescriptor('binary'),format:'bytes',maxBytes:96}});
+  await flush(); sockets[0].onopen();
+  const subscription = await pending;
+  const bytes=new Uint8Array(96), view=new DataView(bytes.buffer);
+  view.setUint32(0,0x32305452,true);view.setFloat64(8,123,true);view.setFloat64(16,4.5,true);
+  view.setUint32(24,5,true);view.setBigUint64(32,3n,true);view.setBigUint64(48,200n,true);
+  view.setFloat64(64,1.25,true);view.setFloat64(72,137.5,true);view.setFloat64(80,12.625,true);
+  view.setUint32(88,7,true);view.setUint32(92,8,true);
+  sockets[0].onmessage(streamPacket(1,6,bytes));
+  assert.equal(received[0].playRate,1.25);assert.equal(received[0].tempo,137.5);assert.equal(received[0].beatPosition,12.625);
+  assert.equal(received[0].timeSignature.numerator,7);assert.equal(received[0].timeSignature.denominator,8);assert.ok(Object.isFrozen(received[0].timeSignature));
+  assert.equal(received.length,1);assert.equal(received[0].position,4.5);assert.equal(received[0].playState,5);
+  assert.equal(received[0].projectEpoch,3n);assert.equal(received[0].sourceSequence,200n);
+  assert.equal(received[0].sampledAt,123);assert.ok(Object.isFrozen(received[0]));
+  assert.deepEqual(Object.keys(received[0]).sort(), ['source','position','playState','playRate','tempo','timeSignature','beatPosition','sampledAt','sampleDurationMs','sequence','sourceSequence','projectEpoch','projectChanged','producerDropped'].sort());
+  view.setUint32(28,2,true);view.setFloat64(56,4.6,true);
+  sockets[0].onmessage(streamPacket(2,6,bytes));
+  assert.equal(received[1].position,4.5);assert.deepEqual(Object.keys(received[1]),Object.keys(received[0]));
+  for (const [offset, value] of [[64,0],[64,NaN],[72,-1],[72,Infinity],[80,NaN]]) {
+    const saved=view.getFloat64(offset,true);view.setFloat64(offset,value,true);
+    sockets[0].onmessage(streamPacket(3,6,bytes));
+    assert.equal(received.length,2);view.setFloat64(offset,saved,true);
+  }
+
+  const before=t.messages.length, close=subscription.close();await flush();
+  const closing=t.messages.slice(before);
+  assert.deepEqual(closing.map(x=>x.method).sort(),['ReaWeb_RealtimeUnsubscribe','ReaWeb_StreamDetach']);
+  for(let i=before;i<t.messages.length;i++)t.reply(i,{result:true});
+  await close;await subscription.close();
+  assert.equal(subscription.closed,true);assert.equal(subscription.latest(),null);
+  assert.equal(t.messages.length,before+2);
+});
+
 test('Realtime rejects invalid options before allocation and cleans up failed attachments', async()=>{
   const t=await connected();
   for(const options of [{updateRate:0},{updateRate:121},{updateRate:NaN},{onData:3},{unknown:true},null])

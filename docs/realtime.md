@@ -1,6 +1,6 @@
 # Realtime sources
 
-`reaper.realtime` provides high-rate, latest-state subscriptions. v0.3.9.23 supports `transport` on Windows, macOS and Linux. Rates are requests, not hard realtime guarantees.
+`reaper.realtime` provides high-rate, latest-state subscriptions. v0.3.9.29 supports `transport` on Windows, macOS and Linux. Rates are requests, not hard realtime guarantees.
 
 ```js
 await reaper.lifecycle.ready;
@@ -9,7 +9,7 @@ if (!caps.sources.transport.available) throw new Error('Transport sampling unava
 const subscription = await reaper.realtime.subscribe('transport', {
   updateRate: 120,
   onData(state) {
-    render(state.position, state.playState);
+    render(state.position, state.playState, state.tempo, state.timeSignature, state.beatPosition, state.playRate);
   },
   onError(error) { console.error(error); }
 });
@@ -27,6 +27,10 @@ await subscription.close();
 | `source` | `transport` |
 | `position` | Unmodified `GetPlayPosition()` result in seconds, latency-compensated audible position |
 | `playState` | `GetPlayState()` bitmask: 1 playing, 2 paused, 4 recording |
+| `playRate` | `Master_GetPlayRateAtTime(position, 0)` playback rate multiplier |
+| `tempo` | Tempo-map BPM at `position`, without the playback rate multiplier |
+| `timeSignature` | `{ numerator, denominator }` at `position` |
+| `beatPosition` | `TimeMap_timeToQN_abs(0, position)`, cumulative fractional project QN, not beat within measure |
 | `sampledAt` | Host monotonic seconds at the beginning of the query |
 | `sampleDurationMs` | Time spent reading and validating the snapshot |
 | `sequence` | Per-subscription packet sequence, bigint |
@@ -37,17 +41,17 @@ await subscription.close();
 
 The source follows the active project. It reads state before and after position and discards a snapshot if state changes during the query. These API reads are not a host-atomic transaction. No interpolation is performed. Position is not replaced with the edit cursor when stopped. Position resolution depends on REAPER and its audio device/buffer configuration. A 120 Hz query/packet rate does not imply 120 distinct positions per second. Paused/stopped/device-closed states continue to be queried independently of the audio engine.
 
-A dedicated native thread samples and publishes on all three platforms. Windows uses a waitable timer, macOS and Linux use monotonic deadline waits. `GetPlayPosition()` and `GetPlayState()` are the only getters used there, both explicitly documented as thread-safe in [Cockos Host Functions](https://www.cockos.com/reaper/sdk/vst/vst_ext.php#host_functions). Project identity/generation tracking and subscription management stay on the main thread. `projectEpoch` is therefore a main-thread observation, not an atomic project identifier for the sampled transport. Sampling does not depend on Lua `defer`, `Runtime::tick()` or frame events. Missed periods are skipped. Scheduling and browser load can delay delivery. Consumers should use local receipt time to detect stale data and must not directly subtract `sampledAt` from `performance.now()`.
+A dedicated native thread samples and publishes on all three platforms. Windows uses a waitable timer, macOS and Linux use monotonic deadline waits. Musical values are queried using `Master_GetPlayRateAtTime`, `TimeMap_GetTimeSigAtTime` and `TimeMap_timeToQN_abs` at the sampled position. Tempo ramps and meter changes are evaluated by REAPER. Project identity/generation tracking and subscription management stay on the main thread. `projectEpoch` is therefore a main-thread observation, not an atomic project identifier for the sampled transport. Sampling does not depend on Lua `defer`, `Runtime::tick()` or frame events. Missed periods are skipped. Scheduling and browser load can delay delivery. Consumers should use local receipt time to detect stale data and must not directly subtract `sampledAt` from `performance.now()`.
 
 ## Compatibility and extension points
 
 The manager owns subscriptions, shared source reads, scheduling and cleanup. Source implementations own schemas, main-thread context refresh and thread-safe sampling semantics. A new source must establish its API threading contract before joining the native scheduler. The initial source is transport. JSFX producers remain managed by their existing instance lifecycle.
 
-Transport uses a separate ordinary binary Native Stream with latest-value delivery. Its payload schema is `transport.v1`, with a 64-byte little-endian payload. The existing Stream ABI, v1/v2 headers, JSFX `packet.timing` and frame event contract are unchanged. Slow consumers may miss intermediate snapshots. This is not an ordered transport-event history.
+Transport uses a separate ordinary binary Native Stream with latest-value delivery. Its payload schema is `transport.v2`, with a 96-byte little-endian payload. The existing Stream ABI, v1/v2 headers, JSFX `packet.timing` and frame event contract are unchanged. Slow consumers may miss intermediate snapshots. This is not an ordered transport-event history.
 
 | Offset | Encoding | Value |
 | --- | --- | --- |
-| 0 | 4 bytes | `RT01` |
+| 0 | 4 bytes | `RT02` |
 | 4 | uint32 | Reserved, zero |
 | 8 | float64 | Host monotonic sample time, seconds |
 | 16 | float64 | Position, seconds |
@@ -57,5 +61,12 @@ Transport uses a separate ordinary binary Native Stream with latest-value delive
 | 40 | float64 | Query duration, seconds |
 | 48 | uint64 | Source query sequence |
 | 56 | uint64 | Reserved, zero |
+| 64 | float64 | Playback rate |
+| 72 | float64 | Tempo, BPM |
+| 80 | float64 | Cumulative QN position |
+| 88 | uint32 | Time signature numerator |
+| 92 | uint32 | Time signature denominator |
 
 The [demo](../examples/integrations/native-transport/README.md) defaults to English with a Chinese language switch. It compares 60/120 Hz subscriptions with frame events and exports timestamped CSV. Run `tests/realtime_reaper.py` for isolated-host measurements and `tests/jsfx_stream_recovery_reaper.py --realtime` for concurrent JSFX recovery acceptance. Both require explicit executable, extension and disposable output paths.
+
+The runtime retains the `transport.v1` decoder for older producers. The four musical fields require v0.3.9.29. Repeat mode and loop boundaries remain available through existing APIs. Playing, paused and recording flags are already represented by `playState`.

@@ -28,6 +28,9 @@ class TransportSource final : public Source {
   const Host& host_;
   double (*position_)() = nullptr;
   int (*state_)() = nullptr;
+  double (*rate_)(double, void*) = nullptr;
+  void (*signature_)(void*, double, int*, int*, double*) = nullptr;
+  double (*qn_)(void*, double) = nullptr;
   void* project_ = nullptr;
   uint64_t generation_ = 0, epoch_ = 0, published_epoch_ = 0, sequence_ = 0;
 public:
@@ -35,11 +38,14 @@ public:
     if (host.native_function) {
       position_ = reinterpret_cast<double (*)()>(host.native_function("GetPlayPosition"));
       state_ = reinterpret_cast<int (*)()>(host.native_function("GetPlayState"));
+      rate_ = reinterpret_cast<double (*)(double, void*)>(host.native_function("Master_GetPlayRateAtTime"));
+      signature_ = reinterpret_cast<void (*)(void*, double, int*, int*, double*)>(host.native_function("TimeMap_GetTimeSigAtTime"));
+      qn_ = reinterpret_cast<double (*)(void*, double)>(host.native_function("TimeMap_timeToQN_abs"));
     }
   }
   const char* name() const override { return "transport"; }
-  const char* schema() const override { return "transport.v1"; }
-  bool available() const override { return position_ && state_ && host_.current_project; }
+  const char* schema() const override { return "transport.v2"; }
+  bool available() const override { return position_ && state_ && rate_ && signature_ && qn_ && host_.current_project; }
   void reset() override { project_ = nullptr; }
   void refresh_context() override {
     auto* project = host_.current_project();
@@ -49,22 +55,35 @@ public:
   }
   Sample read() override {
     const auto begin = Clock::now();
-    // Cockos Host Functions explicitly allow these two getters from any thread.
-    // https://www.cockos.com/reaper/sdk/vst/vst_ext.php#host_functions
+    // Query every musical value at the same audible position.
     const auto before = state_();
     const auto position = position_();
+    if (!project_ || !std::isfinite(position))
+      throw Error("REALTIME_SAMPLE_UNAVAILABLE", "Transport position is unavailable");
+    int numerator = 0, denominator = 0;
+    double tempo = 0;
+    const auto play_rate = rate_(position, nullptr);
+    signature_(nullptr, position, &numerator, &denominator, &tempo);
+    const auto beat_position = qn_(nullptr, position);
     const auto state = state_();
-    if (!project_ || before != state || !std::isfinite(position) || state < 0 || state > 7)
+    if (!project_ || before != state || !std::isfinite(position) || state < 0 || state > 7 ||
+        !std::isfinite(play_rate) || play_rate <= 0 || !std::isfinite(tempo) || tempo <= 0 ||
+        !std::isfinite(beat_position) || numerator <= 0 || denominator <= 0)
       throw Error("REALTIME_SAMPLE_UNAVAILABLE", "Transport changed during sampling or is unavailable");
     const auto end = Clock::now();
-    Sample sample{seconds(begin), std::vector<unsigned char>(64, 0)};
+    Sample sample{seconds(begin), std::vector<unsigned char>(96, 0)};
     auto& b = sample.bytes;
-    b[0] = 'R'; b[1] = 'T'; b[2] = '0'; b[3] = '1';
+    b[0] = 'R'; b[1] = 'T'; b[2] = '0'; b[3] = '2';
     put_double(b, 8, sample.timestamp); put_double(b, 16, position);
     b[24] = static_cast<unsigned char>(state); b[28] = epoch_ != published_epoch_ ? 1 : 0;
     published_epoch_ = epoch_;
     put64(b, 32, epoch_); put_double(b, 40, seconds(end) - sample.timestamp);
     put64(b, 48, ++sequence_);
+    put_double(b, 64, play_rate); put_double(b, 72, tempo); put_double(b, 80, beat_position);
+    for (unsigned i = 0; i < 4; ++i) {
+      b[88 + i] = static_cast<unsigned char>(static_cast<uint32_t>(numerator) >> (8 * i));
+      b[92 + i] = static_cast<unsigned char>(static_cast<uint32_t>(denominator) >> (8 * i));
+    }
     return sample;
   }
 };
@@ -166,7 +185,7 @@ Json RealtimeManager::subscribe(const std::string& name, const Json& options, in
   Impl::Subscription sub{}; sub.id = id; sub.window = window; sub.rate = value.get<double>(); sub.source = name;
   sub.name = "reaweb.realtime." + name + "." + std::to_string(id);
   ReaWeb_StreamDesc desc{}; desc.size = sizeof(desc); desc.abi_version = REAWEB_STREAM_ABI;
-  desc.format = REAWEB_BYTES; desc.max_bytes = 64; desc.capacity = 4; desc.update_rate = sub.rate;
+  desc.format = REAWEB_BYTES; desc.max_bytes = 96; desc.capacity = 4; desc.update_rate = sub.rate;
   const auto source = "realtime:" + name; desc.source = source.c_str();
   const auto result = p.streams.create(REAWEB_BINARY, sub.name.c_str(), &desc, &sub.handle);
   if (result) throw Error(StreamHub::code(result), "Cannot create realtime stream");

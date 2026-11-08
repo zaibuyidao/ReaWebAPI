@@ -62,7 +62,8 @@ function receive(value) {
   const dt = previous ? now - previous.receivedMs : null;
   const missing = previous ? Math.max(0, sequence - previous.sequence - 1) : 0;
   const row = { receivedMs: now, intervalMs: dt, sampledAt, sampleIntervalMs: previous && sampledAt !== null ? (sampledAt - previous.sampledAt) * 1000 : null,
-    sequence, position: value.position, state, missing, projectEpoch: value.projectEpoch?.toString() ?? '' };
+    sequence, position: value.position, state, playRate:value.playRate, tempo:value.tempo, beatPosition:value.beatPosition,
+    numerator:value.timeSignature?.numerator, denominator:value.timeSignature?.denominator, missing, projectEpoch: value.projectEpoch?.toString() ?? '' };
   samples.push(row); if (samples.length > 20000) samples.shift();
   previous = row; latest = value; total++; gaps += missing; maxGap = Math.max(maxGap, dt ?? 0);
   renderTransport();
@@ -75,8 +76,8 @@ function metrics(rows, key) {
     p95: intervals[Math.ceil(intervals.length*.95)-1], max:intervals.at(-1)};
 }
 function csv(rows) {
-  return 'received_page_ms,arrival_interval_ms,sampled_host_seconds,sample_interval_ms,sequence,position_seconds,play_state,sequence_gap,project_epoch\n' +
-    rows.map(r=>[r.receivedMs,r.intervalMs??'',r.sampledAt??'',r.sampleIntervalMs??'',r.sequence,r.position,r.state,r.missing,r.projectEpoch].join(',')).join('\n');
+  return 'received_page_ms,arrival_interval_ms,sampled_host_seconds,sample_interval_ms,sequence,position_seconds,play_state,sequence_gap,project_epoch,play_rate,tempo_bpm,qn_position,time_signature_numerator,time_signature_denominator\n' +
+    rows.map(r=>[r.receivedMs,r.intervalMs??'',r.sampledAt??'',r.sampleIntervalMs??'',r.sequence,r.position,r.state,r.missing,r.projectEpoch,r.playRate??'',r.tempo??'',r.beatPosition??'',r.numerator??'',r.denominator??''].join(',')).join('\n');
 }
 function report(error) { failed=true;lastError=error;draw(); }
 async function switchMode(next) {

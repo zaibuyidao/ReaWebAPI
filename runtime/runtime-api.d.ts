@@ -465,6 +465,13 @@ interface ReaWebAPI {
 /** Native host snapshot, not audio-block timing. No interpolation is applied. */
 interface ReaWebTransportSnapshot {
   source: 'transport'; position: number; playState: number;
+  /** Playback rate multiplier at position. */
+  playRate: number;
+  /** Tempo-map BPM at position, without the playback rate multiplier. */
+  tempo: number;
+  timeSignature: Readonly<{ numerator: number; denominator: number }>;
+  /** Cumulative project quarter-note position, including fractional QN. */
+  beatPosition: number;
   /** Host monotonic seconds; not directly comparable with performance.now(). */
   sampledAt: number;
   sampleDurationMs: number;

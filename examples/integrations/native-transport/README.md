@@ -19,6 +19,8 @@ await subscription.close();
 
 Click **Read diagnostics** to view sampling, errors and subscription counters. See [Realtime sources](../../../docs/realtime.md).
 
+With v0.3.9.29, the latest snapshot also shows `playRate`, position-specific `tempo` and `timeSignature`, and cumulative fractional `beatPosition` (QN). CSV includes these fields.
+
 ## 中文
 
 需要 ReaWebAPI v0.3.9.23 或更高版本。在 REAPER Action List 中加载并运行 `reawebapi-native-transport.lua`。Lua 打开窗口后退出，没有 defer 循环。界面默认英语，通过 **Language** 切换为简体中文，不会重建订阅。
@@ -28,3 +30,5 @@ Click **Read diagnostics** to view sampling, errors and subscription counters. S
 `position` 保留 `GetPlayPosition()` 原始结果。`playState` 位掩码为 1 播放、2 暂停、4 录音。不进行位置插值，每秒收到 120 个包不代表获得 120 个不同位置。宿主时间戳不能与网页时钟直接相减。采样使用独立原生线程，系统调度和浏览器负载仍可能延迟交付。播放按钮控制当前工程，无需 JSFX。
 
 点击 **读取原生诊断** 可查看采样、错误及订阅计数。接口约定见 [Realtime 数据源](../../../docs/realtime.zh-CN.md)。
+
+v0.3.9.29 的最新快照及 CSV 包含 `playRate`、当前位置的 `tempo` 和 `timeSignature`，以及支持小数的累计 `beatPosition`（QN）。

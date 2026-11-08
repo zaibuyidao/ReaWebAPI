@@ -651,6 +651,26 @@
         projectChanged: !!(view.getUint32(28, true) & 1), projectEpoch: view.getBigUint64(32, true),
         sourceSequence: view.getBigUint64(48, true), sequence: packet.sequence,
         producerDropped: packet.producerDropped });
+    },
+    'transport.v2': packet => {
+      const bytes = packet.bytes;
+      if (bytes.byteLength !== 96) throw failure('UNSUPPORTED_FORMAT', 'Invalid transport snapshot size');
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      if (view.getUint32(0, true) !== 0x32305452) throw failure('UNSUPPORTED_FORMAT', 'Invalid transport snapshot version');
+      const sampledAt = view.getFloat64(8, true), position = view.getFloat64(16, true);
+      const playState = view.getUint32(24, true), sampleDurationMs = view.getFloat64(40, true) * 1000;
+      if (!Number.isFinite(sampledAt) || !Number.isFinite(position) || !Number.isFinite(sampleDurationMs) || sampleDurationMs < 0 || playState > 7)
+        throw failure('UNSUPPORTED_FORMAT', 'Invalid transport snapshot values');
+      const playRate = view.getFloat64(64, true), tempo = view.getFloat64(72, true), beatPosition = view.getFloat64(80, true);
+      const numerator = view.getUint32(88, true), denominator = view.getUint32(92, true);
+      if (!Number.isFinite(playRate) || playRate <= 0 || !Number.isFinite(tempo) || tempo <= 0 ||
+          !Number.isFinite(beatPosition) || !numerator || !denominator)
+        throw failure('UNSUPPORTED_FORMAT', 'Invalid transport musical values');
+      return Object.freeze({ source: 'transport', position, playState, playRate, tempo, beatPosition,
+        timeSignature: Object.freeze({ numerator, denominator }), sampledAt, sampleDurationMs,
+        projectChanged: !!(view.getUint32(28, true) & 1), projectEpoch: view.getBigUint64(32, true),
+        sourceSequence: view.getBigUint64(48, true), sequence: packet.sequence,
+        producerDropped: packet.producerDropped });
     }
   };
   api.realtime = Object.freeze({

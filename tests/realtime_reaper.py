@@ -87,7 +87,37 @@ probe = r'''
     checks.chineseSwitch = document.documentElement.lang === 'zh-CN' && el('play').textContent === '播放' && el('pause').textContent === '暂停 / 继续';
     el('language').value = 'en'; el('language').onchange();
     checks.englishSwitch = document.documentElement.lang === 'en' && el('pause').textContent === 'Pause / Resume' && total === beforeSwitch.total && (await reaper.realtime.getDiagnostics()).subscriptions[0].id === beforeSwitch.id;
-    checks.csvTransportOnly = csv(samples).split('\n')[0] === 'received_page_ms,arrival_interval_ms,sampled_host_seconds,sample_interval_ms,sequence,position_seconds,play_state,sequence_gap,project_epoch';
+    checks.csvTransportOnly = csv(samples).split('\n')[0] === 'received_page_ms,arrival_interval_ms,sampled_host_seconds,sample_interval_ms,sequence,position_seconds,play_state,sequence_gap,project_epoch,play_rate,tempo_bpm,qn_position,time_signature_numerator,time_signature_denominator';
+    await reaper.SetTempoTimeSigMarker(0, -1, 0, -1, -1, 90, 4, 4, true);
+    await reaper.SetTempoTimeSigMarker(0, -1, 2, -1, -1, 150, 7, 8, false);
+    await reaper.SetTempoTimeSigMarker(0, -1, 4, -1, -1, 110, 3, 4, false);
+    const musical = await reaper.realtime.subscribe('transport', {updateRate:120});
+    const musicResults = [];
+    async function checkMusic(phase) {
+      await wait(100);
+      const v = musical.latest();
+      const sig = await reaper.TimeMap_GetTimeSigAtTime(0, v.position);
+      const qn = await reaper.TimeMap_timeToQN_abs(0, v.position);
+      const rate = await reaper.Master_GetPlayRateAtTime(v.position, 0);
+      const passed = Math.abs(v.tempo - sig[2]) < 1e-8 && v.timeSignature.numerator === sig[0] &&
+        v.timeSignature.denominator === sig[1] && Math.abs(v.beatPosition - qn) < 1e-8 && Math.abs(v.playRate-rate) < 1e-8;
+      musicResults.push({phase, position:v.position, tempo:v.tempo, sig, qn, rate, passed});
+      if (!passed) throw new Error('Musical snapshot mismatch: '+JSON.stringify(musicResults.at(-1)));
+    }
+    await reaper.OnPlayButton();
+    for (const pos of [0.5, 1.25, 2, 2.75, 4.25]) {
+      await reaper.SetEditCurPos(pos, false, true); await checkMusic('seek-'+pos);
+    }
+    await reaper.CSurf_OnPlayRateChange(1.25); await checkMusic('rate-change');
+    await reaper.OnPauseButton(); await checkMusic('pause');
+    await reaper.OnStopButton(); await checkMusic('stop');
+    await reaper.GetSet_LoopTimeRange(true, true, 1, 3, false);
+    await reaper.GetSetRepeat(1); await reaper.SetEditCurPos(1, false, true); await reaper.OnPlayButton();
+    let wrapped = false, last = -1;
+    for (let i=0;i<35;i++) { await checkMusic('loop'); const pos=musical.latest().position; if(pos<last)wrapped=true; last=pos; }
+    if (!wrapped) throw new Error('Loop did not wrap');
+    await reaper.OnStopButton(); await reaper.GetSetRepeat(0); await reaper.CSurf_OnPlayRateChange(1);
+    await musical.close(); checks.musical = musicResults; checks.loopWrapped = wrapped;
     let frames = 0;
     const frameOff = await reaper.events.on('frame', () => frames++);
     for (const [name, selected, command, duration] of [
@@ -102,7 +132,7 @@ probe = r'''
       const native = metrics(rows.filter(r=>r.sampledAt!==null).map(r=>({...r,t:r.sampledAt*1000})),'t');
       const span = rows.length>1 ? (rows.at(-1).receivedMs-rows[0].receivedMs)/1000 : 0;
       const changes = rows.slice(1).filter((r,i)=>r.position!==rows[i].position).length;
-      checks.transportPayloadClean = checks.transportPayloadClean && latest !== null && (selected === 'frame' || Object.keys(latest).sort().join(',') === ['source','position','playState','sampledAt','sampleDurationMs','sequence','sourceSequence','projectEpoch','projectChanged','producerDropped'].sort().join(','));
+      checks.transportPayloadClean = checks.transportPayloadClean && latest !== null && (selected === 'frame' || Object.keys(latest).sort().join(',') === ['source','position','playState','playRate','tempo','timeSignature','beatPosition','sampledAt','sampleDurationMs','sequence','sourceSequence','projectEpoch','projectChanged','producerDropped'].sort().join(','));
       results.push({phase:name,frames:rows.length,arrival,native,positionChangesHz:span?changes/span:0,
         states:[...new Set(rows.map(r=>r.state))],gaps,firstPosition:rows[0]?.position,lastPosition:rows.at(-1)?.position,
         diagnostics:await reaper.realtime.getDiagnostics()});

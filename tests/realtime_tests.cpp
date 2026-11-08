@@ -32,6 +32,11 @@ int main() {
         ++reads; return position;
       });
       if (!std::strcmp(name, "GetPlayState")) return reinterpret_cast<void*>(+[] { return play_state; });
+      if (!std::strcmp(name, "Master_GetPlayRateAtTime")) return reinterpret_cast<void*>(+[](double t, void*) { CHECK(t == position); return 1.25; });
+      if (!std::strcmp(name, "TimeMap_GetTimeSigAtTime")) return reinterpret_cast<void*>(+[](void*, double t, int* n, int* d, double* bpm) {
+        CHECK(t == position); *n = t < 2 ? 4 : 7; *d = t < 2 ? 4 : 8; *bpm = 90 + t * 15;
+      });
+      if (!std::strcmp(name, "TimeMap_timeToQN_abs")) return reinterpret_cast<void*>(+[](void*, double t) { CHECK(t == position); return t * 1.5 + t * t / 8; });
       throw std::runtime_error("Unexpected realtime getter");
     };
     StreamHub streams; auto clock = std::make_unique<Scheduler>(); auto* scheduler = clock.get();
@@ -59,6 +64,16 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     generation++; position = 0; play_state = 0; realtime.housekeeping();
     std::thread([&] { scheduler->fire(); }).join(); CHECK(reads == 2);
+    CHECK(realtime.diagnostics(1)["sources"]["transport"]["errors"] == 0);
+    // All musical getters must receive the single position read, including
+    // reverse jumps at a loop boundary and paused/recording states.
+    for (const auto state : {1, 2, 5, 6, 0}) {
+      for (const auto time : {0.125, 1.999, 2.0, 12.625, 0.25}) {
+        play_state = state; position = time;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        std::thread([&] { scheduler->fire(); }).join();
+      }
+    }
     CHECK(realtime.diagnostics(1)["sources"]["transport"]["errors"] == 0);
     realtime.close_window(2); CHECK(scheduler->rate == 60);
     CHECK(realtime.diagnostics(2)["subscriptions"].empty());
