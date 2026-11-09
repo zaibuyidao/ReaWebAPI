@@ -284,8 +284,10 @@ void clocks_and_invalidations() {
   reads = f.backend->reads;
   f.backend->next = VideoRead::ready; f.video->tick();
   CHECK(f.backend->reads == reads + 1 && f.video->diagnostics()["capturedFrames"] == captured.get<int>() + 1);
+  // The mock playback position is static, so test decode delays with playback stopped.
+  f.state.play = 0; f.ready(); before = f.cleared();
   f.backend->next = VideoRead::pending;
-  std::this_thread::sleep_for(std::chrono::milliseconds(120)); f.video->tick();
+  std::this_thread::sleep_for(std::chrono::milliseconds(200)); f.video->tick();
   CHECK(f.video->state()["status"] == "ready" && f.cleared() == before);
   std::this_thread::sleep_for(std::chrono::milliseconds(120)); f.video->tick();
   f.invalid("VIDEO_FRAME_PENDING"); CHECK(f.cleared() == before + 1);
