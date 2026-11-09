@@ -1,5 +1,5 @@
 #include "video/internal.hpp"
-#include "runtime/jsfx_transfer.hpp"
+#include "video/fingerprint.hpp"
 #define WDL_ALLOW_UNSIGNED_DEFAULT_CHAR
 #include <wdltypes.h>
 #include <video_frame.h>
@@ -21,21 +21,27 @@ struct Build {
   size_t display, visible, window, frame, processed, monitor_hash;
   size_t query, source_hash, cached, destroy_sources, frame_index, is_visible, transform;
 };
-// RVAs are valid only after the complete loaded module file matches its SHA-256.
+// Internal offsets are selected by the normalized module fingerprint.
 #if defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))
-constexpr Build build{"0143b8b78ee6bc714782411f89889d67470b07e94aa02d56922f54f76a1a2ec7",
+constexpr Build builds[]{{"b50bc6486f996acc2731acc6889217fdfb8f55dd8e6524746e7d7582ff705f59",
   0x1a8848, 0x26c14c, 0x26bd70, 0x26bdb0, 0x26bda8, 0x26bda0,
-  0x1a9738, 0x1a5fc0, 0x1af738, 0x1ad4dc, 0x26bd98, 0x211810, 0x1a6ffc};
+  0x1a9738, 0x1a5fc0, 0x1af738, 0x1ad4dc, 0x26bd98, 0x211810, 0x1a6ffc}};
 #elif defined(__APPLE__) && defined(__aarch64__)
-constexpr Build build{"96dc59911188d3c5ad9528f09b452d7b5174a3f60acf1140e0742e68040876c0",
+constexpr Build builds[]{{"318fef1c8d990840587b26cc58e2b7e9659844156b8578ba540e493c09f32ba0",
   0x13868, 0x110860, 0x110858, 0x110ac8, 0x110ad0, 0x110ad8,
-  0x13100, 0x126ac, 0x12a94, 0x12054, 0x110ae0, 0x10fa28, 0x14fdc};
+  0x13100, 0x126ac, 0x12a94, 0x12054, 0x110ae0, 0x10fa28, 0x14fdc}};
 #elif defined(__linux__) && defined(__x86_64__)
-constexpr Build build{"9bc595cb8f14bf71e7a47b6eb8e95afdcb16d9e8dfd51f3d9ff799f664d8e095",
+constexpr Build builds[]{{"f34a2e7634400dedfc70757e5daa7861988529e16ddcb2a3a85c5b72841e9535",
   0x1382f0, 0x3f8148, 0x3f8150, 0x3f7e78, 0x3f7e70, 0x3f7e68,
-  0x132b30, 0x12b270, 0x12b660, 0x12ad30, 0x3f7e60, 0x3f21c0, 0x12e590};
+  0x132b30, 0x12b270, 0x12b660, 0x12ad30, 0x3f7e60, 0x3f21c0, 0x12e590},
+  {"ef1bb206879f4a73f80550f551b98bb00b9493dd98648421c70c3d6eda3790ee",
+  0x138330, 0x3f8148, 0x3f8150, 0x3f7e78, 0x3f7e70, 0x3f7e68,
+  0x132b70, 0x12b2b0, 0x12b6a0, 0x12ad70, 0x3f7e60, 0x3f21c0, 0x12e5d0},
+  {"29efc78f2099a22a5a5c3cd31c0136f31af0d14ad619901fd7d0e914a2a7f3fd",
+  0x138320, 0x3f8148, 0x3f8150, 0x3f7e78, 0x3f7e70, 0x3f7e68,
+  0x133d60, 0x12b2a0, 0x12b690, 0x12ad60, 0x3f7e60, 0x3f21c0, 0x12e5c0}};
 #else
-constexpr Build build{};
+constexpr Build builds[]{{}};
 #endif
 struct Module { unsigned char* base = nullptr; fs::path path; };
 Module find_module() {
@@ -83,6 +89,7 @@ class InternalVideo final : public VideoBackend {
   const Host& host;
   std::thread::id main = std::this_thread::get_id();
   Module module;
+  const Build* build = nullptr;
   bool verified = false, leased = false;
   template<class T> T api(const char* name) const {
     return reinterpret_cast<T>(host.native_function ? host.native_function(name) : nullptr);
@@ -92,7 +99,7 @@ public:
   explicit InternalVideo(const Host& h) : host(h) {}
   ~InternalVideo() override { stop(); }
   bool supported() override {
-    if (!build.checksum || std::this_thread::get_id() != main) return false;
+    if (!builds[0].checksum || std::this_thread::get_id() != main) return false;
     if (!api<void*>("EnumProjects") || !api<void*>("TimeMap_curFrameRate")) return false;
     const auto loaded = find_module();
     if (!loaded.base) return false;
@@ -103,21 +110,27 @@ public:
     if (!file) return false;
     const auto size = file.tellg();
     if (size <= 0 || size > 64 * 1024 * 1024) return false;
-    JsfxTransfer::Bytes bytes(static_cast<size_t>(size));
+    std::vector<unsigned char> bytes(static_cast<size_t>(size));
     file.seekg(0); file.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
-    if (!file || JsfxTransfer::sha256(bytes) != build.checksum) return false;
-    verified = true; return true;
+    if (!file) return false;
+    const auto fingerprint = video_module_fingerprint(std::move(bytes));
+    for (const auto& candidate : builds) if (fingerprint == candidate.checksum) {
+      build = &candidate;
+      verified = true;
+      return true;
+    }
+    return false;
   }
   void stop() override {
     if (!leased) return;
     if (std::this_thread::get_id() == main && find_module().base == module.base) {
-      auto window = read_at<void*>(module.base, build.window);
+      auto window = read_at<void*>(module.base, build->window);
 #ifdef _WIN32
-      auto visible = read_at<BOOL(WINAPI*)(HWND)>(module.base, build.is_visible);
-      module.base[build.visible] = window && visible && visible(static_cast<HWND>(window));
+      auto visible = read_at<BOOL(WINAPI*)(HWND)>(module.base, build->is_visible);
+      module.base[build->visible] = window && visible && visible(static_cast<HWND>(window));
 #else
-      auto visible = read_at<bool(*)(void*)>(module.base, build.is_visible);
-      module.base[build.visible] = window && visible && visible(window);
+      auto visible = read_at<bool(*)(void*)>(module.base, build->is_visible);
+      module.base[build->visible] = window && visible && visible(window);
 #endif
     }
     leased = false;
@@ -129,30 +142,30 @@ public:
     auto project = projects(-1, nullptr, 0);
     const double fps = api<double(*)(void*, bool*)>("TimeMap_curFrameRate")(project, nullptr);
     if (!project || !std::isfinite(fps) || fps <= 0) { stop(); return VideoRead::empty; }
-    module.base[build.visible] = 1; leased = true;
-    internal<void(*)()>(build.display)();
+    module.base[build->visible] = 1; leased = true;
+    internal<void(*)()>(build->display)();
     Sources sources, monitor;
-    const auto destroy = internal<void(*)(void*)>(build.destroy_sources);
+    const auto destroy = internal<void(*)(void*)>(build->destroy_sources);
     struct Cleanup { Sources& a; Sources& b; void (*destroy)(void*); ~Cleanup() { destroy(&a); destroy(&b); } } cleanup{sources, monitor, destroy};
     int64_t index = -1;
-    internal<int(*)(void*, int64_t*, double, void*, void*, void*, int, void*)>(build.query)
+    internal<int(*)(void*, int64_t*, double, void*, void*, void*, int, void*)>(build->query)
       (&sources, &index, fps, &monitor, project, project, 3, nullptr);
     if (sources.used < 0 || monitor.used < 0) return VideoRead::pending;
     if (!sources.used && !monitor.used) return VideoRead::empty;
-    auto hash = internal<uint64_t(*)(void*, void*)>(build.source_hash);
-    auto base = read_at<IVideoFrame*>(module.base, build.frame);
+    auto hash = internal<uint64_t(*)(void*, void*)>(build->source_hash);
+    auto base = read_at<IVideoFrame*>(module.base, build->frame);
     FrameRef cached{nullptr};
     if (sources.used) {
-      cached.frame = internal<IVideoFrame*(*)(uint64_t, int64_t, bool, int64_t*, void*)>(build.cached)
+      cached.frame = internal<IVideoFrame*(*)(uint64_t, int64_t, bool, int64_t*, void*)>(build->cached)
         (hash(&sources, project), index, false, nullptr, project);
       if (!cached.frame || cached.frame != base) return VideoRead::pending;
-    } else if (base || index != read_at<int64_t>(module.base, build.frame_index)) return VideoRead::pending;
-    auto processed = read_at<IVideoFrame*>(module.base, build.processed);
-    if (monitor.used && (!processed || hash(&monitor, project) != read_at<uint64_t>(module.base, build.monitor_hash))) return VideoRead::pending;
+    } else if (base || index != read_at<int64_t>(module.base, build->frame_index)) return VideoRead::pending;
+    auto processed = read_at<IVideoFrame*>(module.base, build->processed);
+    if (monitor.used && (!processed || hash(&monitor, project) != read_at<uint64_t>(module.base, build->monitor_hash))) return VideoRead::pending;
     auto frame = processed ? processed : base;
     // transformFrame consumes this additional reference, including on failure.
     frame->AddRef();
-    frame = internal<IVideoFrame*(*)(IVideoFrame*, bool, int, void**, const char*)>(build.transform)
+    frame = internal<IVideoFrame*(*)(IVideoFrame*, bool, int, void**, const char*)>(build->transform)
       (frame, false, rgba, nullptr, nullptr);
     FrameRef reference{frame};
     if (!frame) return VideoRead::pending;

@@ -45,6 +45,9 @@ add_executable(native_stream_tests native_stream_tests.cpp)
 add_executable(video_tests video_tests.cpp)
 target_link_libraries(video_tests PRIVATE reaweb_runtime)
 add_test(NAME video COMMAND video_tests)
+add_executable(video_fingerprint_tests video_fingerprint_tests.cpp video_fingerprint_elf.cpp video_fingerprint_macho.cpp)
+target_link_libraries(video_fingerprint_tests PRIVATE reaweb_runtime)
+add_test(NAME video_fingerprint COMMAND video_fingerprint_tests)
 if(REAWEB_BUILD_EXTENSION)
   if((WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64" AND
       NOT CMAKE_GENERATOR_PLATFORM MATCHES "ARM64") OR

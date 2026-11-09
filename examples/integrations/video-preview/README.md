@@ -1,8 +1,8 @@
 # Video Preview
 
-Install ReaWebAPI v0.3.9.28, then run `reawebapi-video-preview.lua`. Open a project containing video and click **Open stream**. This example is not included in the ReaPack package.
+Install ReaWebAPI v0.3.9.31 or newer, then run `reawebapi-video-preview.lua`. Open a project containing video and click **Open stream**. This example is not included in the ReaPack package.
 
-Supported video hosts are the verified Windows REAPER 7.84 x64, macOS REAPER 7.84 arm64 and Linux REAPER 7.82 x86_64 module builds. Unknown builds report `VIDEO_HOST_UNSUPPORTED`.
+Video compatibility is checked by normalized module fingerprint on Windows x64, macOS arm64 and Linux x86_64. Changes confined to the normalized metadata fields do not require a new version entry. Unmatched modules report `VIDEO_HOST_UNSUPPORTED`.
 
 The Demo uses `updateRate: 'auto'` to follow the project frame rate, capped at 60 FPS. It shows the current target and actual preview FPS. Fixed integer rates remain available through the API.
 

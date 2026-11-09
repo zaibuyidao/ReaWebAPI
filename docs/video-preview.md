@@ -6,11 +6,13 @@ Run [reawebapi-video-preview.lua](../examples/integrations/video-preview/reaweba
 
 ## Host compatibility
 
-Install the v0.3.9.28 or newer extension for the host platform and architecture. The video backend does not check the REAPER version string or return a supported-version list. It retains video module SHA-256 validation to protect calls through fixed internal offsets.
+Install the v0.3.9.31 or newer extension for the host platform and architecture. The video backend checks a normalized module fingerprint rather than the REAPER version string. Selected build metadata fields are excluded from the fingerprint while code, data and layout remain checked to protect calls through fixed internal offsets.
+
+The backend supports Windows x64, macOS arm64 and Linux x86_64. Normalization excludes PE build timestamps, checksums and CodeView identifiers, Mach-O UUIDs and code-signature payloads, and ELF GNU build IDs. Linux selects the offset mapping for the matching module layout, including REAPER 7.82, 7.84 and 7.85.
 
 `getCapabilities()` reports backend startup prerequisites and shared profile limits. The backend is `reaper-internal`. If the module fingerprint does not match, the module cannot be read, or required host APIs or a platform/architecture implementation are missing, `available` is `false`, `openStream()` rejects with `VIDEO_HOST_UNSUPPORTED`, and the demo displays an unavailable message. No desktop-capture permission is required.
 
-Internal calls are allowed only when the module file matches the SHA-256 associated with the fixed offsets. Different REAPER versions can pass when they share the same video module; different module files with the same version string can still be rejected. This check does not replace host-level compatibility testing.
+Internal calls are allowed only when the normalized module fingerprint matches the fixed offsets. Rebuilds changing only these normalized fields can pass without adding a version entry. Changes to code, data or layout still require compatibility verification. This check does not replace host-level testing.
 
 ## API
 
