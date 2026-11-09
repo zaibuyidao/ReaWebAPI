@@ -8,10 +8,10 @@
 #include <regex>
 
 namespace reaweb {
-StreamBuffer::StreamBuffer(int type, const ReaWeb_StreamDesc& desc) : kind(type), descriptor(desc), slots_(new Slot[desc.capacity]) {
+StreamBuffer::StreamBuffer(int type, const ReaWeb_StreamDesc& desc, bool video) : kind(type), descriptor(desc), project_video(video), slots_(new Slot[desc.capacity]) {
   for (unsigned i = 0; i < desc.capacity; ++i) slots_[i].data.reset(new unsigned char[desc.max_bytes]);
 }
-int StreamBuffer::publish(const void* data, uint32_t bytes, uint64_t sequence, double timestamp, const Timing* timing) noexcept {
+int StreamBuffer::publish(const void* data, uint32_t bytes, uint64_t sequence, double timestamp, const Timing* timing, bool discontinuity) noexcept {
   if (closed.load(std::memory_order_acquire)) return REAWEB_STREAM_CLOSED;
   if (!data || !bytes || bytes > descriptor.max_bytes || !std::isfinite(timestamp)) return REAWEB_INVALID_ARGUMENT;
   if (kind == REAWEB_FRAME && bytes != descriptor.stride * descriptor.height) return REAWEB_INVALID_ARGUMENT;
@@ -19,9 +19,19 @@ int StreamBuffer::publish(const void* data, uint32_t bytes, uint64_t sequence, d
       ((kind == REAWEB_AUDIO || kind == REAWEB_SPECTRUM || kind == REAWEB_WAVEFORM) ? std::max(1u, descriptor.channels) : 1u))) return REAWEB_INVALID_ARGUMENT;
   if (writing_.test_and_set(std::memory_order_acquire)) return REAWEB_PRODUCER_BUSY;
   struct Unlock { std::atomic_flag& flag; ~Unlock() { flag.clear(std::memory_order_release); } } unlock{writing_};
+  bool claimed = false;
+  if (project_video) {
+    for (unsigned i = 0; i < descriptor.capacity; ++i) {
+      const unsigned index = (write_ + i) % descriptor.capacity;
+      unsigned empty = 0;
+      if (slots_[index].state.compare_exchange_strong(empty, 1, std::memory_order_acquire)) {
+        write_ = index; claimed = true; break;
+      }
+    }
+  }
   auto& slot = slots_[write_];
   unsigned expected = 0;
-  if (!slot.state.compare_exchange_strong(expected, 1, std::memory_order_acquire)) {
+  if (!claimed && !slot.state.compare_exchange_strong(expected, 1, std::memory_order_acquire)) {
     if (kind == REAWEB_AUDIO || kind == REAWEB_MIDI || expected != 2 ||
         !slot.state.compare_exchange_strong(expected, 1, std::memory_order_acquire)) {
       dropped.fetch_add(1, std::memory_order_relaxed); return REAWEB_BUFFER_FULL;
@@ -31,16 +41,42 @@ int StreamBuffer::publish(const void* data, uint32_t bytes, uint64_t sequence, d
   std::memcpy(slot.data.get(), data, bytes);
   slot.bytes = bytes; slot.sequence = sequence; slot.timestamp = timestamp; slot.order = ++order_;
   slot.timing = timing ? std::optional<Timing>(*timing) : std::nullopt;
+  slot.discontinuity = project_video && discontinuity;
   slot.state.store(2, std::memory_order_release);
   write_ = (write_ + 1) % descriptor.capacity;
   published.fetch_add(1, std::memory_order_relaxed);
   return REAWEB_OK;
 }
 bool StreamBuffer::consume(Packet& packet) {
+  if (project_video) {
+    if (packet.data.capacity() < descriptor.max_bytes) {
+      bool ready = false;
+      for (unsigned i = 0; i < descriptor.capacity; ++i) ready |= slots_[i].state.load(std::memory_order_acquire) == 2;
+      if (!ready) return false;
+      // Allocate before claiming a slot so allocation cannot hold up the producer.
+      packet.data.reserve(descriptor.max_bytes);
+    }
+    Slot* oldest = nullptr;
+    for (unsigned i = 0; i < descriptor.capacity; ++i) {
+      auto& slot = slots_[i]; unsigned expected = 2;
+      if (!slot.state.compare_exchange_strong(expected, 3, std::memory_order_acquire)) continue;
+      if (slot.order <= consumed_order_) { slot.state.store(0, std::memory_order_release); continue; }
+      if (!oldest || slot.order < oldest->order) {
+        if (oldest) oldest->state.store(2, std::memory_order_release);
+        oldest = &slot;
+      } else slot.state.store(2, std::memory_order_release);
+    }
+    if (!oldest) return false;
+    packet.sequence = oldest->sequence; packet.timestamp = oldest->timestamp; packet.dropped = dropped.load(); packet.timing = oldest->timing; packet.discontinuity = oldest->discontinuity;
+    packet.data.assign(oldest->data.get(), oldest->data.get() + oldest->bytes);
+    consumed_order_ = oldest->order;
+    oldest->state.store(0, std::memory_order_release);
+    return true;
+  }
   if (kind == REAWEB_AUDIO || kind == REAWEB_MIDI) {
     auto& slot = slots_[read_]; unsigned expected = 2;
     if (!slot.state.compare_exchange_strong(expected, 3, std::memory_order_acquire)) return false;
-    packet = {slot.sequence, slot.timestamp, dropped.load(), {slot.data.get(), slot.data.get() + slot.bytes}, slot.timing};
+    packet = {slot.sequence, slot.timestamp, dropped.load(), {slot.data.get(), slot.data.get() + slot.bytes}, slot.timing, slot.discontinuity};
     slot.state.store(0, std::memory_order_release); read_ = (read_ + 1) % descriptor.capacity; return true;
   }
   // A producer can refill an already-scanned slot before this scan reaches a
@@ -51,7 +87,7 @@ bool StreamBuffer::consume(Packet& packet) {
     if (!slot.state.compare_exchange_strong(expected, 3, std::memory_order_acquire)) continue;
     if (slot.order > newest) {
       newest = slot.order; found = true;
-      packet = {slot.sequence, slot.timestamp, dropped.load(), {slot.data.get(), slot.data.get() + slot.bytes}, slot.timing};
+      packet = {slot.sequence, slot.timestamp, dropped.load(), {slot.data.get(), slot.data.get() + slot.bytes}, slot.timing, slot.discontinuity};
     }
     slot.state.store(0, std::memory_order_release);
   }
@@ -88,7 +124,7 @@ const char* StreamHub::code(int status) {
     default: return "INVALID_ARGUMENT";
   }
 }
-int StreamHub::create(int kind, const char* name, const ReaWeb_StreamDesc* input, uint64_t* handle) {
+int StreamHub::create(int kind, const char* name, const ReaWeb_StreamDesc* input, uint64_t* handle, bool project_video) {
   if (std::this_thread::get_id() != main_) return REAWEB_MAIN_THREAD_REQUIRED;
   if (!name || !input || !handle || input->size != sizeof(*input) || input->abi_version != REAWEB_STREAM_ABI ||
       kind < REAWEB_FRAME || kind > REAWEB_MIDI || !std::regex_match(name, std::regex("[A-Za-z0-9_.-]{1,128}"))) return REAWEB_INVALID_ARGUMENT;
@@ -120,7 +156,7 @@ int StreamHub::create(int kind, const char* name, const ReaWeb_StreamDesc* input
   }
   if (!free) return REAWEB_QUEUE_LIMIT;
   free->source = desc.source ? desc.source : ""; desc.source = nullptr;
-  free->owned = std::make_shared<StreamBuffer>(kind, desc);
+  free->owned = std::make_shared<StreamBuffer>(kind, desc, kind == REAWEB_FRAME && project_video);
   free->name = name; free->owner = desc.owner; free->allocation = allocation; allocated_ += allocation;
   free->protected_window = 0; free->protected_generation = 0; free->metadata = nullptr;
   *handle = (++serial_ << 8) | index;
@@ -139,14 +175,14 @@ int StreamHub::create_jsfx(int kind, const char* name, const ReaWeb_StreamDesc* 
   return REAWEB_OK;
 }
 int StreamHub::publish(int kind, uint64_t handle, const void* data, uint32_t bytes, uint64_t sequence, double timestamp,
-                       const StreamBuffer::Timing* timing) noexcept {
+                       const StreamBuffer::Timing* timing, bool discontinuity) noexcept {
   const unsigned index = handle & 255;
   if (!handle || index >= slots_.size()) return REAWEB_STREAM_NOT_FOUND;
   auto& slot = slots_[index]; slot.readers.fetch_add(1, std::memory_order_seq_cst);
   auto* buffer = slot.buffer.load(std::memory_order_seq_cst);
   int status = REAWEB_STREAM_CLOSED;
   if (buffer && slot.handle.load(std::memory_order_acquire) == handle)
-    status = buffer->kind == kind ? buffer->publish(data, bytes, sequence, timestamp, timing) : REAWEB_UNSUPPORTED_FORMAT;
+    status = buffer->kind == kind ? buffer->publish(data, bytes, sequence, timestamp, timing, discontinuity) : REAWEB_UNSUPPORTED_FORMAT;
   slot.readers.fetch_sub(1, std::memory_order_release);
   return status;
 }

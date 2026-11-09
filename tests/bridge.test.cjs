@@ -915,6 +915,12 @@ test('Native streams cache binary frames, ACK delivery and detach only one consu
   assert.equal(stream.latest().producerDropped, 2n); assert.equal(received.length, 100);
   assert.equal(t.messages.length, requests, 'latest and frame delivery never use RPC');
   assert.equal(socket.sent.length, 100); assert.equal(socket.sent[0][0], 1);
+  assert.equal(stream.latest().discontinuity, undefined);
+  const invalidation = streamPacket(101); new DataView(invalidation.data).setUint8(5, 1);
+  socket.onmessage(invalidation);
+  assert.equal(stream.latest().discontinuity, true);
+  socket.onmessage(streamPacket(102));
+  assert.equal(stream.latest().discontinuity, undefined, 'Normal frames must not retain an invalidation flag');
   const closing = stream.close(); await flush();
   assert.equal(t.messages.at(-1).method, 'ReaWeb_StreamDetach');
   t.reply(t.messages.length - 1, { result: true }); await closing;

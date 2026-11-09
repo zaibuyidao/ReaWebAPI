@@ -59,7 +59,7 @@ PAGE = r'''<!doctype html><meta charset="utf-8"><title>Video acceptance</title><
     if(expectedFPS>0)check(Math.abs(projectFPS-expectedFPS)<0.001,'requested project frame rate loaded');
     result.projectFPS=projectFPS;
     const autoState=await reaper.video.getState();
-    check(autoState.updateRate==='auto' && Math.abs(autoState.targetUpdateRate-Math.min(60,Math.max(1,projectFPS)))<0.0001,'default target follows native project frame rate');
+    check(autoState.updateRate==='auto' && Math.abs(autoState.targetUpdateRate-Math.min(75,Math.max(1,projectFPS)))<0.0001,'default target follows native project frame rate');
     check(a.info.updateRate===autoState.targetUpdateRate,'stream descriptor preserves fractional target');
     let fixedConflict=false;
     try{await reaper.video.openStream({width:320,height:180,updateRate:30});}catch(e){fixedConflict=e.code==='VIDEO_PROFILE_CONFLICT';}
@@ -76,10 +76,10 @@ PAGE = r'''<!doctype html><meta charset="utf-8"><title>Video acceptance</title><
     check(pixel(a.latest()).join(',')==='30,80,220','blue source pixels');
     await reaper.SetEditCurPos(6,false,true);
     await wait(async()=>{const state=await reaper.video.getState();return state.sourceWidth===0 && state.status!=='ready' && pixel(a.latest()).join(',')==='0,0,0';},'gap clears stale pixels');
-    check(true,'gap publishes black invalidation and unavailable source');
+    check(a.latest().discontinuity===true,'gap publishes marked black invalidation and unavailable source');
     await reaper.SetEditCurPos(2.5,false,true);
     await wait(async()=>pixel(a.latest()).join(',')==='30,80,220' && (await reaper.video.getState()).status==='ready','source resumes after gap');
-    check(true,'valid video resumes after invalidation');
+    check(a.latest().discontinuity!==true,'valid video resumes after invalidation');
     await reaper.InsertTrackAtIndex(0,true);
     const overlayTrack=await reaper.GetTrack(0,0);
     await reaper.SetOnlyTrackSelected(overlayTrack);

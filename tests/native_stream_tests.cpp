@@ -13,6 +13,13 @@ int main() {
     for (unsigned i = 0; i < 10000; ++i) { std::memset(pixels, i & 255, sizeof(pixels)); CHECK(latest.publish(pixels, sizeof(pixels), i, i * 0.01) == 0); }
     StreamBuffer::Packet packet; CHECK(latest.consume(packet)); CHECK(packet.sequence == 9999); CHECK(packet.data.front() == (9999 & 255));
     CHECK(latest.dropped > 0); CHECK(!latest.consume(packet));
+    StreamBuffer video(REAWEB_FRAME, desc, true);
+    for (unsigned i = 1; i <= 3; ++i) CHECK(video.publish(pixels, sizeof(pixels), i, i / 60.0, nullptr, i == 2) == 0);
+    for (unsigned i = 1; i <= 3; ++i) { CHECK(video.consume(packet)); CHECK(packet.sequence == i); CHECK(packet.discontinuity == (i == 2)); }
+    CHECK(!video.consume(packet));
+    for (unsigned i = 4; i <= 8; ++i) CHECK(video.publish(pixels, sizeof(pixels), i, i / 60.0, nullptr, i == 2) == 0);
+    for (unsigned i = 6; i <= 8; ++i) { CHECK(video.consume(packet)); CHECK(packet.sequence == i); CHECK(packet.discontinuity == (i == 2)); }
+    CHECK(!video.consume(packet) && video.dropped == 2);
     CHECK(latest.publish(pixels, 63, 1, 0) == REAWEB_INVALID_ARGUMENT);
     std::atomic<bool> done{false}; std::thread producer([&] {
       for (unsigned i = 1; i <= 100000; ++i) { std::memset(pixels, i & 255, sizeof(pixels)); latest.publish(pixels, sizeof(pixels), i, 0); }
@@ -26,6 +33,20 @@ int main() {
       for (auto byte : packet.data) if (byte != (packet.sequence & 255)) { std::cerr << "Torn frame " << packet.sequence << '\n'; valid = false; break; }
     }
     producer.join(); CHECK(valid && last);
+    done = false; valid = true; last = 8;
+    producer = std::thread([&] {
+      for (unsigned i = 9; i <= 100000; ++i) {
+        std::memset(pixels, i & 255, sizeof(pixels)); video.publish(pixels, sizeof(pixels), i, 0);
+      }
+      done = true;
+    });
+    for (;;) {
+      if (!video.consume(packet)) { if (done) break; continue; }
+      if (packet.sequence <= last) valid = false;
+      last = packet.sequence;
+      for (auto byte : packet.data) if (byte != (packet.sequence & 255)) valid = false;
+    }
+    producer.join(); CHECK(valid && last > 8);
     desc.format = REAWEB_FLOAT32; desc.channels = 2; desc.sample_rate = 48000; desc.block_frames = 8;
     StreamBuffer audio(REAWEB_AUDIO, desc); float pcm[16]{};
     for (int i = 0; i < 3; ++i) CHECK(audio.publish(pcm, sizeof(pcm), i, 0) == 0);

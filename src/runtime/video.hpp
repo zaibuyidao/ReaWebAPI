@@ -1,11 +1,13 @@
 #pragma once
 #include "runtime/native_stream.hpp"
 #include "video/internal.hpp"
+#include "video/scheduler.hpp"
 
 namespace reaweb {
 class VideoManager {
 public:
-  VideoManager(const Host&, StreamHub&, std::unique_ptr<VideoBackend> backend = {});
+  VideoManager(const Host&, StreamHub&, std::unique_ptr<VideoBackend> backend = {},
+    std::unique_ptr<VideoScheduler> scheduler = {}, std::function<void()> wake = {});
   ~VideoManager();
   Json capabilities() const;
   Json state() const;

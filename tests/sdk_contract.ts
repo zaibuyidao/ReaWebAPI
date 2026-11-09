@@ -1,8 +1,10 @@
 /// <reference path="../runtime/reaper.d.ts" />
 async function projectVideo() {
   const caps: ReaWebVideoCapabilities = await reaper.video.getCapabilities();
+  await reaper.video.openStream({updateRate: 30000 / 1001});
+  await reaper.video.openStream({updateRate: 75});
   const stream: ReaWebStream = await reaper.video.openStream({source: 'project', width: 1280, height: 720, updateRate: 'auto'});
-  stream.on('data', frame => { const bytes: Uint8Array = frame.bytes; void bytes; });
+  stream.on('data', frame => { const bytes: Uint8Array = frame.bytes; const reset: boolean | undefined = frame.discontinuity; void bytes; void reset; });
   await stream.close();
   const state: ReaWebVideoState = await reaper.video.getState();
   const diagnostics: ReaWebVideoDiagnostics = await reaper.video.getDiagnostics();

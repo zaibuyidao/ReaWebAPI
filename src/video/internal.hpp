@@ -6,7 +6,7 @@ struct VideoImage {
   const unsigned char* pixels = nullptr;
   int width = 0, height = 0, stride = 0;
 };
-enum class VideoRead { ready, pending, empty, rendering, unsupported };
+enum class VideoRead { ready, unchanged, pending, empty, rendering, unsupported };
 
 // All methods and the borrowed image callback run on REAPER's main thread.
 class VideoBackend {

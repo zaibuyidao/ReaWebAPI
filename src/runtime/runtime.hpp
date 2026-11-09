@@ -61,6 +61,7 @@ public:
   Json diagnostics(int id) const;
   bool captures_keyboard(void* handle, const std::function<bool(void*, void*)>& is_child, bool daw_only = false) const;
   void tick();
+  void video_tick();
   ServiceRegistry& services() { return services_; }
   StreamHub& streams() { return streams_; }
   NativeTasks& tasks() { return tasks_; }

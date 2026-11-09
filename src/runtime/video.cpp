@@ -1,4 +1,5 @@
 #include "runtime/video.hpp"
+#include "video/pixels.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -20,16 +21,18 @@ struct VideoManager::Impl {
   const Host& host;
   StreamHub& streams;
   std::unique_ptr<VideoBackend> backend;
+  std::unique_ptr<VideoScheduler> scheduler;
+  std::function<void()> wake;
   bool stopped = false, had_consumers = false, valid = false, discontinuity = true;
   void* project = nullptr;
   uint64_t generation = 0, epoch = 1, serial = 0, handle = 0, sequence = 0;
   uint64_t produced = 0, dropped = 0, failed = 0, captured = 0, cleared = 0;
   std::string name, error;
-  int width = 1280, height = 720, rate = 0, source_width = 0, source_height = 0;
-  double target_rate = 30;
+  int width = 1280, height = 720, source_width = 0, source_height = 0;
+  double rate = 0, target_rate = 30;
   int previous_changes = -1, previous_play = -1;
   std::vector<unsigned char> pixels;
-  double idle_at = 0, next_capture = 0, first_capture = 0, last_capture = 0;
+  double idle_at = 0, next_capture = 0, first_capture = 0, last_capture = 0, pending_since = 0;
   double position = 0, source_rate = 0, capture_ms = 0, previous_position = 0, previous_tick = 0;
   Impl(const Host& h, StreamHub& s, std::unique_ptr<VideoBackend> b)
     : host(h), streams(s), backend(b ? std::move(b) : make_video_backend(h)) {}
@@ -40,51 +43,43 @@ struct VideoManager::Impl {
     const double value = fps ? fps(project, nullptr) : 0;
     return std::isfinite(value) && value > 0 ? value : 0;
   }
-  double resolve_rate(double fps) const { return rate ? rate : fps > 0 ? std::clamp(fps, 1.0, 60.0) : 30.0; }
+  double resolve_rate(double fps) const { return rate ? rate : fps > 0 ? std::clamp(fps, 1.0, 75.0) : 30.0; }
 
-  void publish(double time) {
-    if (streams.publish(REAWEB_FRAME, handle, pixels.data(), uint32_t(pixels.size()), ++sequence, time)) ++dropped;
+  void publish(double time, bool reset = false) {
+    if (streams.publish(REAWEB_FRAME, handle, pixels.data(), uint32_t(pixels.size()), ++sequence, time, nullptr, reset)) ++dropped;
     else ++produced;
   }
   void clear(double time, const char* reason) {
     if (valid || !sequence) {
       std::fill(pixels.begin(), pixels.end(), 0);
       for (size_t i = 3; i < pixels.size(); i += 4) pixels[i] = 255;
-      publish(time); ++cleared;
+      publish(time, true); ++cleared;
     }
-    valid = false; source_width = source_height = 0; last_capture = 0; error = reason;
+    valid = false; source_width = source_height = 0; last_capture = pending_since = 0; error = reason;
   }
   void close() {
+    if (scheduler) scheduler->stop();
     backend->stop();
     if (handle) streams.close(handle);
     handle = 0; name.clear(); std::vector<unsigned char>().swap(pixels);
-    project = nullptr; valid = false; source_width = source_height = 0; last_capture = 0;
+    project = nullptr; valid = false; source_width = source_height = 0; last_capture = pending_since = 0;
   }
   bool capture(const VideoImage& image, double time, double fps) {
     const int w = image.width, h = image.height;
     if (!image.pixels || w <= 0 || h <= 0 || w > 16384 || h > 16384 || image.stride < int64_t(w) * 4) return false;
-    const double scale = std::min(double(width) / w, double(height) / h);
-    const int dw = std::max(1, int(w * scale)), dh = std::max(1, int(h * scale));
-    const int left = (width - dw) / 2, top = (height - dh) / 2;
-    std::fill(pixels.begin(), pixels.end(), 0);
-    for (size_t i = 3; i < pixels.size(); i += 4) pixels[i] = 255;
-    for (int y = 0; y < dh; ++y) {
-      const auto* input = image.pixels + size_t(std::min(h - 1, int(int64_t(y) * h / dh))) * image.stride;
-      auto* output = pixels.data() + (size_t(y + top) * width + left) * 4;
-      for (int x = 0; x < dw; ++x) {
-        const auto* p = input + std::min(w - 1, int(int64_t(x) * w / dw)) * 4;
-        // REAPER's RGBA format uses LICE's little-endian BGRA byte order.
-        output[0] = p[2]; output[1] = p[1]; output[2] = p[0]; output[3] = 255; output += 4;
-      }
-    }
+    copy_video_pixels(image, width, height, pixels);
     publish(time); ++captured;
     if (!first_capture) first_capture = seconds();
     source_width = w; source_height = h; position = time; source_rate = fps;
     last_capture = seconds(); valid = true; error.clear(); return true;
   }
 };
-VideoManager::VideoManager(const Host& h, StreamHub& s, std::unique_ptr<VideoBackend> backend)
-  : impl_(new Impl(h, s, std::move(backend))) {}
+VideoManager::VideoManager(const Host& h, StreamHub& s, std::unique_ptr<VideoBackend> backend,
+    std::unique_ptr<VideoScheduler> scheduler, std::function<void()> wake)
+  : impl_(new Impl(h, s, std::move(backend))) {
+  impl_->scheduler = std::move(scheduler);
+  impl_->wake = wake ? std::move(wake) : std::function<void()>([this] { tick(); });
+}
 VideoManager::~VideoManager() { shutdown(); }
 Json VideoManager::capabilities() const {
   const auto& s = *impl_;
@@ -99,7 +94,7 @@ Json VideoManager::capabilities() const {
   return {{"available", available}, {"backendAvailable", available}, {"companionInstalled", false}, {"platform", platform},
     {"backend", "reaper-internal"}, {"source", "project"},
     {"requiresVideoWindow", false}, {"requiresCompanion", false}, {"companion", nullptr},
-    {"hiddenVideoWindow", true}, {"maxWidth", 1920}, {"maxHeight", 1080}, {"maxUpdateRate", 60},
+    {"hiddenVideoWindow", true}, {"maxWidth", 1920}, {"maxHeight", 1080}, {"maxUpdateRate", 75},
     {"defaultWidth", 1280}, {"defaultHeight", 720}, {"defaultUpdateRate", "auto"}, {"autoUpdateRate", true},
     {"profiles", 1}, {"profilePolicy", "first-consumer"}, {"format", "rgba8"},
     {"error", available ? Json(nullptr) : Json("VIDEO_HOST_UNSUPPORTED")}};
@@ -111,7 +106,14 @@ std::string VideoManager::open(const Json& options, int window) {
     throw Error("INVALID_ARGUMENT", "Unknown video option: " + item.key());
   if (options.value("source", Json("project")) != "project") throw Error("INVALID_ARGUMENT", "Only the current project video source is supported");
   const int w = option(options, "width", 1280, 1920), h = option(options, "height", 720, 1080);
-  const int rate = options.value("updateRate", Json("auto")) == "auto" ? 0 : option(options, "updateRate", 30, 60);
+  const auto requested_rate = options.value("updateRate", Json("auto"));
+  double rate = 0;
+  if (requested_rate != "auto") {
+    if (!requested_rate.is_number()) throw Error("INVALID_ARGUMENT", "updateRate must be auto or a number from 1 to 75");
+    rate = requested_rate.get<double>();
+    if (!std::isfinite(rate) || rate < 1 || rate > 75)
+      throw Error("INVALID_ARGUMENT", "updateRate is outside the supported video range");
+  }
   if (s.stopped || !s.backend->supported()) throw Error("VIDEO_HOST_UNSUPPORTED", "The REAPER video backend is unavailable on this host");
   if (s.handle) {
     if (w != s.width || h != s.height || rate != s.rate) throw Error("VIDEO_PROFILE_CONFLICT", "Active project video consumers share one resolution and update rate", {{"width", s.width}, {"height", s.height}, {"updateRate", s.requested_rate()}});
@@ -126,15 +128,16 @@ std::string VideoManager::open(const Json& options, int window) {
     s.name = "reaweb.video.project." + std::to_string(++s.serial);
     ReaWeb_StreamDesc desc{};
     desc.size = sizeof(desc); desc.abi_version = REAWEB_STREAM_ABI; desc.format = REAWEB_PIXEL_RGBA8;
-    desc.max_bytes = uint32_t(s.pixels.size()); desc.capacity = 2; desc.width = w; desc.height = h; desc.stride = w * 4;
+    desc.max_bytes = uint32_t(s.pixels.size()); desc.capacity = 3; desc.width = w; desc.height = h; desc.stride = w * 4;
     desc.update_rate = s.target_rate; desc.source = "project";
-    const int result = s.streams.create(REAWEB_FRAME, s.name.c_str(), &desc, &s.handle);
+    const int result = s.streams.create(REAWEB_FRAME, s.name.c_str(), &desc, &s.handle, true);
     if (result) throw Error(StreamHub::code(result), "Cannot create project video stream");
     s.next_capture = s.first_capture = s.last_capture = s.previous_tick = 0;
     s.produced = s.dropped = s.failed = s.captured = s.sequence = s.cleared = 0;
     s.source_rate = 0; s.previous_changes = s.previous_play = -1;
     s.valid = false; s.discontinuity = true; s.idle_at = seconds(); s.had_consumers = false;
     s.clear(0, "VIDEO_FRAME_PENDING");
+    if (s.scheduler) s.scheduler->start(s.wake);
     return s.name;
   } catch (...) { s.close(); throw; }
 }
@@ -165,17 +168,33 @@ void VideoManager::tick() {
   s.previous_position = position; s.previous_tick = now; s.previous_play = playing; s.previous_changes = changes;
   const double source_rate = s.project_frame_rate();
   const double target_rate = s.resolve_rate(source_rate);
-  if (target_rate != s.target_rate) { s.target_rate = target_rate; s.next_capture = now; }
-  if (now + 0.001 < s.next_capture) return;
-  s.next_capture = std::max(s.next_capture + 1.0 / s.target_rate, now);
+  if (target_rate != s.target_rate) { s.target_rate = target_rate; s.next_capture = now; s.discontinuity = true; }
+  // Auto follows distinct host frames instead of a second, unsynchronised clock.
+  const bool follow_frames = !s.rate && (playing & 1) && source_rate > 0 && source_rate <= 75 &&
+    std::isfinite(play_rate) && play_rate > 0 && play_rate <= 1;
+  if (!follow_frames && now + 0.5 / s.target_rate < s.next_capture) return;
   bool copied = false;
   try {
     const auto result = s.backend->read(s.discontinuity, [&](const VideoImage& image) {
       if (std::isfinite(position)) copied = s.capture(image, position, source_rate);
     });
     s.discontinuity = false;
+    if (result != VideoRead::pending) s.pending_since = 0;
     if (result == VideoRead::unsupported) { s.error = "VIDEO_HOST_UNSUPPORTED"; s.close(); return; }
+    if (result == VideoRead::unchanged || result == VideoRead::pending) {
+      s.capture_ms = (seconds() - now) * 1000;
+      if (result == VideoRead::unchanged && !(playing & 1)) s.next_capture = now + 1.0 / s.target_rate;
+      if (result == VideoRead::pending) {
+        if (!s.pending_since) s.pending_since = now;
+        if (!s.valid || now - s.pending_since > 0.1) {
+          s.clear(position, "VIDEO_FRAME_PENDING"); s.discontinuity = true;
+        }
+      }
+      return;
+    }
+    s.next_capture = follow_frames ? now + 1.0 / s.target_rate : std::max(s.next_capture + 1.0 / s.target_rate, now);
     if (!copied) {
+      s.discontinuity = true;
       if (result == VideoRead::ready) ++s.failed;
       s.clear(position, result == VideoRead::rendering ? "VIDEO_RENDER_BUSY" :
         result == VideoRead::empty || result == VideoRead::ready ? "VIDEO_SOURCE_UNAVAILABLE" : "VIDEO_FRAME_PENDING");

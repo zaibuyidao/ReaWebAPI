@@ -49,6 +49,7 @@ def receive(sock):
         return None
     assert data[:4] == b'RWS'+bytes([stream_version])
     sequence = struct.unpack_from('<Q', data, 8)[0]
+    assert data[5] == int(video and sequence % 3 == 1), 'Video discontinuity flag leaked or was lost'
     header = 80 if stream_version == 2 else 40
     assert len(data) == header + first['maxBytes']
     if stream_version == 2:
@@ -62,6 +63,9 @@ def ack(sock):
 
 
 process = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+jitter = sys.argv[-1] == 'jitter'
+burst = sys.argv[-1] == 'burst'
+video = len(sys.argv) > 2 and sys.argv[2].startswith('video')
 try:
     first, second = json.loads(process.stdout.readline())
     stream_version = first.get('layoutVersion', 1)
@@ -71,19 +75,57 @@ try:
     assert a is not None and b is not None
     assert connect(first) is None, 'tickets must be single use'
     seq_a, seq_b = receive(a), receive(b)
-    # One consumer stops acknowledging while the other receives continuously.
-    until = time.monotonic() + 0.4
-    received = 0
-    while time.monotonic() < until:
-        ack(b)
-        next_b = receive(b)
-        assert next_b > seq_b
-        seq_b = next_b
-        received += 1
-    if sys.argv[-1]=='video':assert received >= 4, ('720p transport stalled', received)
-    ack(a)
-    next_a = receive(a)
-    assert next_a > seq_a + 10, (seq_a, next_a)
+    if burst:
+        ack(a); ack(b)
+        for first_sequence in range(2, 98, 3):
+            process.stdin.write(str(first_sequence)+'\n'); process.stdin.flush()
+            assert process.stdout.readline().strip() == 'published'
+            for sequence in range(first_sequence, first_sequence + 3):
+                assert receive(a) == sequence, 'An available send slot was ignored during a capture burst'
+                ack(a)
+                assert receive(b) == sequence
+                ack(b)
+            seq_b = first_sequence + 2
+        process.stdin.write('close\n'); process.stdin.flush()
+    elif jitter:
+        def publish(sequence):
+            ack(b)
+            process.stdin.write(str(sequence)+'\n'); process.stdin.flush()
+            assert process.stdout.readline().strip() == 'published'
+            # This consumer proves that transport has consumed each packet.
+            assert receive(b) == sequence
+        for sequence in (2, 3): publish(sequence)
+        ack(a)
+        assert receive(a) == (2 if video else 3), 'Brief ACK jitter discarded an available frame'
+        if video:
+            ack(a); assert receive(a) == 3
+        for sequence in (4, 5, 6, 7): publish(sequence)
+        ack(a)
+        if video:
+            assert receive(a) == 4, 'The second in-flight frame must stay ordered'
+            ack(a)
+        assert receive(a) == (6 if video else 7), 'A stalled consumer retained an unbounded backlog'
+        if video:
+            ack(a); assert receive(a) == 7
+        seq_b = 7
+        process.stdin.write('close\n'); process.stdin.flush()
+    else:
+        # One consumer stops acknowledging while the other receives continuously.
+        until = time.monotonic() + 0.4
+        received = 0
+        while time.monotonic() < until:
+            ack(b)
+            next_b = receive(b)
+            assert next_b > seq_b
+            seq_b = next_b
+            received += 1
+        if video:assert received >= 4, ('720p transport stalled', received)
+        ack(a)
+        next_a = receive(a)
+        if video:
+            assert next_a > seq_a
+            ack(a); next_a = receive(a)
+        assert next_a > seq_a + 10, (seq_a, next_a)
     a.close()
     while True:
         ack(b)

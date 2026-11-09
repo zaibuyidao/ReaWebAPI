@@ -34,7 +34,7 @@ bool small_message(const Json& value, size_t& budget) {
 Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock)
   : host_(std::move(host)), services_([this](auto handle, const auto& service, int window, const auto& name, Json data) {
       service_event(handle, service, window, name, std::move(data));
-    }), producers_(host_, streams_), video_(host_, streams_), realtime_(host_, streams_), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), diagnostic_log_(resource_), main_thread_(std::this_thread::get_id()) {
+    }), producers_(host_, streams_), video_(host_, streams_, {}, make_video_scheduler(), [this] { video_tick(); }), realtime_(host_, streams_), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), diagnostic_log_(resource_), main_thread_(std::this_thread::get_id()) {
   diagnostic_log_.event(Diagnostics::Level::Debug, Diagnostics::Scope::Runtime, "runtime.start.begin");
   project_ = host_.current_project();
   host_generation_ = host_.project_generation ? host_.project_generation() : 0;
@@ -480,6 +480,15 @@ void Runtime::reply(Session& session, Work work, Json response) {
   work.text.clear();
   if (!worker_.submit(std::move(work))) fail(session, "Bridge output queue limit exceeded");
   else ++session.output_pending;
+}
+void Runtime::video_tick() {
+  check_thread();
+  if (ticking_) return;
+  ticking_ = true;
+  struct Reset { bool& value; ~Reset() { value = false; } } reset{ticking_};
+  for (auto& item : sessions_)
+    if (item.second->window && !item.second->window->visible()) video_.close_window(item.first);
+  video_.tick();
 }
 void Runtime::tick() {
   check_thread();

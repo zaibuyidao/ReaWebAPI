@@ -601,7 +601,8 @@
               firstSample: view.getBigUint64(48, true), sourceDropped: view.getBigUint64(56, true),
               position: view.getFloat64(64, true), playState: view.getUint8(72), discontinuity: !!view.getUint8(73) }) : undefined;
             const packet = Object.freeze({ sequence, frameId: sequence, timestamp, producerDropped: dropped, data, bytes,
-              ...(timing ? { timing } : {}) });
+              ...(timing ? { timing } : {}),
+              ...(descriptor.kind === 'frame' && (view.getUint8(5) & 1) ? { discontinuity: true } : {}) });
             last = packet;
             if (diagnosticEnabled) ++health.streamPackets;
             if (ordered) { if (queue.length < descriptor.capacity) queue.push(packet); else ++consumerDrops; }

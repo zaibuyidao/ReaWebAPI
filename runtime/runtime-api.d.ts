@@ -1,6 +1,7 @@
 /** ReaWebAPI Runtime contract 2. Standard REAPER APIs use their original names. */
 type ReaWebDispose = () => Promise<void>;
 interface ReaWebVideoOptions {
+  /** updateRate follows the project by default, or accepts a fixed finite rate from 1 to 75 FPS. */
   source?: 'project'; width?: number; height?: number; updateRate?: number | 'auto';
 }
 interface ReaWebVideoCapabilities {
@@ -34,6 +35,8 @@ interface ReaWebStreamInfo {
 interface ReaWebStreamPacket {
   sequence: bigint; frameId: bigint; timestamp: number; producerDropped: bigint;
   data: Uint8Array | Float32Array; bytes: Uint8Array;
+  /** Project video invalidation clears frames queued before this packet. */
+  discontinuity?: boolean;
   timing?: Readonly<{ clockEpoch: bigint; firstSample: bigint; sourceDropped: bigint;
     position: number; playState: number; discontinuity: boolean }>;
 }

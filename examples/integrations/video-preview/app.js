@@ -1,13 +1,15 @@
-'use strict';
+import { createFrameRenderer } from './frame-renderer.js';
 const canvas = document.querySelector('canvas'), context = canvas.getContext('2d');
 const status = document.querySelector('#status'), diagnostics = document.querySelector('#diagnostics');
 const openButton = document.querySelector('#open'), closeButton = document.querySelector('#close');
-let stream, opening = false, pendingFrame, painting = 0, poll;
+let stream, opening = false, poll;
+const renderer = createFrameRenderer(frame => {
+  context.putImageData(new ImageData(new Uint8ClampedArray(frame.bytes.buffer,
+    frame.bytes.byteOffset, frame.bytes.byteLength), canvas.width, canvas.height), 0, 0);
+});
 const report = error => { status.textContent = `${error.code || 'VIDEO_ERROR'}: ${error.message}`; };
 function clearPreview() {
-  pendingFrame = null;
-  if (painting) cancelAnimationFrame(painting);
-  painting = 0;
+  renderer.clear();
   context.clearRect(0, 0, canvas.width, canvas.height);
 }
 async function closeVideo() {
@@ -25,15 +27,7 @@ async function openVideo() {
     stream = next; closeButton.disabled = false;
     canvas.width = next.info.width; canvas.height = next.info.height;
     const draw = frame => {
-      pendingFrame = frame;
-      if (painting) return;
-      painting = requestAnimationFrame(() => {
-        painting = 0;
-        if (!pendingFrame || stream !== next) return;
-        context.putImageData(new ImageData(new Uint8ClampedArray(pendingFrame.bytes.buffer,
-          pendingFrame.bytes.byteOffset, pendingFrame.bytes.byteLength), canvas.width, canvas.height), 0, 0);
-        pendingFrame = null;
-      });
+      if (stream === next) renderer.push(frame);
     };
     next.on('data', draw);
     if (next.latest()) draw(next.latest());
@@ -62,7 +56,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) close
     try {
       const data = await reaper.video.getDiagnostics();
       diagnostics.textContent = JSON.stringify(data, null, 2);
-      status.textContent = data.error || `${data.status} · ${data.sourceWidth}×${data.sourceHeight} · Auto target ${data.targetUpdateRate.toFixed(3)} FPS · Actual ${data.actualFPS.toFixed(1)} FPS`;
+      status.textContent = data.error || `${data.status} · ${data.sourceWidth}×${data.sourceHeight} · Auto target ${data.targetUpdateRate.toFixed(3)} FPS · Capture ${data.actualFPS.toFixed(1)} FPS`;
       if (data.status !== 'ready') clearPreview();
     } catch (error) { report(error); }
   }, 1000);

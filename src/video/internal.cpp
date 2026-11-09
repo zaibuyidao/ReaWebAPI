@@ -91,6 +91,10 @@ class InternalVideo final : public VideoBackend {
   Module module;
   const Build* build = nullptr;
   bool verified = false, leased = false;
+  bool has_frame = false;
+  int64_t last_index = 0;
+  uint64_t last_source = 0, last_monitor = 0;
+  double last_start = 0, last_end = 0;
   template<class T> T api(const char* name) const {
     return reinterpret_cast<T>(host.native_function ? host.native_function(name) : nullptr);
   }
@@ -122,6 +126,7 @@ public:
     return false;
   }
   void stop() override {
+    has_frame = false;
     if (!leased) return;
     if (std::this_thread::get_id() == main && find_module().base == module.base) {
       auto window = read_at<void*>(module.base, build->window);
@@ -135,7 +140,8 @@ public:
     }
     leased = false;
   }
-  VideoRead read(bool, const Capture& capture) override {
+  VideoRead read(bool discontinuity, const Capture& capture) override {
+    if (discontinuity) has_frame = false;
     if (!supported()) { stop(); return VideoRead::unsupported; }
     const auto projects = api<void*(*)(int, char*, int)>("EnumProjects");
     if (projects(0x40000000, nullptr, 0)) { stop(); return VideoRead::rendering; }
@@ -143,7 +149,8 @@ public:
     const double fps = api<double(*)(void*, bool*)>("TimeMap_curFrameRate")(project, nullptr);
     if (!project || !std::isfinite(fps) || fps <= 0) { stop(); return VideoRead::empty; }
     module.base[build->visible] = 1; leased = true;
-    internal<void(*)()>(build->display)();
+    const auto play = api<int(*)()>("GetPlayState");
+    const auto selected = [&](bool retained) -> VideoRead {
     Sources sources, monitor;
     const auto destroy = internal<void(*)(void*)>(build->destroy_sources);
     struct Cleanup { Sources& a; Sources& b; void (*destroy)(void*); ~Cleanup() { destroy(&a); destroy(&b); } } cleanup{sources, monitor, destroy};
@@ -152,17 +159,28 @@ public:
       (&sources, &index, fps, &monitor, project, project, 3, nullptr);
     if (sources.used < 0 || monitor.used < 0) return VideoRead::pending;
     if (!sources.used && !monitor.used) return VideoRead::empty;
+    if (retained) {
+      const auto displayed_index = read_at<int64_t>(module.base, build->frame_index);
+      if (displayed_index < 0 || displayed_index > index || index - displayed_index > 1) return VideoRead::pending;
+      index = displayed_index;
+    }
     auto hash = internal<uint64_t(*)(void*, void*)>(build->source_hash);
+    const auto source_key = sources.used ? hash(&sources, project) : 0;
+    const auto monitor_key = monitor.used ? hash(&monitor, project) : 0;
     auto base = read_at<IVideoFrame*>(module.base, build->frame);
     FrameRef cached{nullptr};
     if (sources.used) {
       cached.frame = internal<IVideoFrame*(*)(uint64_t, int64_t, bool, int64_t*, void*)>(build->cached)
-        (hash(&sources, project), index, false, nullptr, project);
+        (source_key, index, false, nullptr, project);
       if (!cached.frame || cached.frame != base) return VideoRead::pending;
     } else if (base || index != read_at<int64_t>(module.base, build->frame_index)) return VideoRead::pending;
     auto processed = read_at<IVideoFrame*>(module.base, build->processed);
-    if (monitor.used && (!processed || hash(&monitor, project) != read_at<uint64_t>(module.base, build->monitor_hash))) return VideoRead::pending;
+    if (monitor.used && (!processed || monitor_key != read_at<uint64_t>(module.base, build->monitor_hash))) return VideoRead::pending;
     auto frame = processed ? processed : base;
+    if (!frame) return VideoRead::pending;
+    const double start = frame->time_start, end = frame->time_end;
+    if (play && (play() & 1) && has_frame && index == last_index && source_key == last_source && monitor_key == last_monitor &&
+        start == last_start && end == last_end) return VideoRead::unchanged;
     // transformFrame consumes this additional reference, including on failure.
     frame->AddRef();
     frame = internal<IVideoFrame*(*)(IVideoFrame*, bool, int, void**, const char*)>(build->transform)
@@ -173,7 +191,16 @@ public:
     if (w <= 0 || h <= 0 || w > 16384 || h > 16384 || stride <= 0 || stride > 262144 || !frame->get_bits()) return VideoRead::empty;
     if (frame->get_fmt() != rgba || stride < int64_t(w) * 4) return VideoRead::pending;
     capture({reinterpret_cast<const unsigned char*>(frame->get_bits()), w, h, stride});
+    has_frame = true; last_index = index; last_source = source_key; last_monitor = monitor_key;
+    last_start = start; last_end = end;
     return VideoRead::ready;
+    };
+    // Read an unseen official frame before display() can replace it with the next one.
+    if (!discontinuity && has_frame && play && (play() & 1) &&
+        read_at<int64_t>(module.base, build->frame_index) != last_index && selected(true) == VideoRead::ready)
+      return VideoRead::ready;
+    internal<void(*)()>(build->display)();
+    return selected(false);
   }
 };
 }

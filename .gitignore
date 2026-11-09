@@ -76,6 +76,7 @@ Thumbs.db
 !/tests/*.hpp
 !/tests/*.py
 !/tests/*.cjs
+!/tests/video_renderer_tests.mjs
 !/tests/*.ts
 !/tests/*.lua
 !/tests/*.eel
