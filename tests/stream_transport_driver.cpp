@@ -7,6 +7,7 @@ int main(int argc,char** argv) {
   const bool video=argc>1 && std::string(argv[1]).rfind("video",0)==0;
   const bool shared_video=argc>1 && std::string(argv[1])=="video-shared";
   const bool pressure=argc>1 && std::string(argv[1])=="video-pressure";
+  const bool max_frame=argc>1 && std::string(argv[1])=="frame-max";
   const bool jitter=argc>2 && std::string(argv[2])=="jitter";
   const bool burst=argc>2 && std::string(argv[2])=="burst";
   const char* name = video ? "reaweb.video.project.test" : "test.frame";
@@ -16,7 +17,7 @@ int main(int argc,char** argv) {
   if(argc>1 && std::string(argv[1])=="video-4k") { desc.width=3840;desc.height=2160;desc.stride=15360; }
   if(argc>1 && std::string(argv[1])=="video-small") { desc.width=4;desc.height=4;desc.stride=16; }
   if(argc>1 && std::string(argv[1])=="video-medium") { desc.width=64;desc.height=64;desc.stride=256; }
-  if(argc>1 && std::string(argv[1])=="frame-max") { desc.width=2048;desc.height=2048;desc.stride=8192; }
+  if(max_frame) { desc.width=2048;desc.height=2048;desc.stride=8192; }
   desc.max_bytes = desc.stride * desc.height; desc.capacity = 3; desc.update_rate = 60;
   if(pressure) { desc.width=3840;desc.height=2160;desc.stride=15360;desc.max_bytes=desc.stride*desc.height; }
   uint64_t handle = 0;
@@ -30,6 +31,10 @@ int main(int argc,char** argv) {
   auto tickets = Json::array({hub.attach(name, 1, 0, "http://127.0.0.1:9000", memory), hub.attach(name, timing_packets?1:2, 0, "http://127.0.0.1:9000")});
   if(pressure) for(int window=3;window<=8;++window) tickets.push_back(hub.attach(name,window,0,"http://127.0.0.1:9000"));
   std::cout << tickets.dump() << std::endl;
+  if (max_frame) {
+    std::string command;
+    if (!std::getline(std::cin, command) || command != "start") return 3;
+  }
   std::vector<unsigned char> pixels(desc.max_bytes);
   auto begin = std::chrono::steady_clock::now();
   auto publish = [&](unsigned sequence) {

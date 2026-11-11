@@ -102,6 +102,10 @@ try:
     a, b = connect(first), connect(second)
     assert a is not None and b is not None
     assert connect(first) is None, 'tickets must be single use'
+    if sys.argv[-1] == 'frame-max':
+        # Finish the ticket checks before queuing 16 MiB frames.
+        process.stdin.write('start\n')
+        process.stdin.flush()
     seq_a, seq_b = receive(a), receive(b)
     if burst:
         ack(a); ack(b)
