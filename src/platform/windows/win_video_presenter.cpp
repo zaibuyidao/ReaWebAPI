@@ -100,6 +100,7 @@ struct Surface {
   HANDLE frame_ready = nullptr;
   bool frame_permitted = false;
   bool content_attached = false;
+  bool content_changed = false;
   float visual_x = 0, visual_y = 0;
   int width = 0, height = 0;
   UINT observed_present = 0;
@@ -205,9 +206,11 @@ struct Worker {
     }
     state.pending.erase(state.pending.begin(), std::next(found));
   }
-  void release_surface(Surface& state) {
-    state.visual->SetContent(nullptr); state.composition->Commit();
-    state.content_attached = false;
+  void release_surface(Surface& state, bool detach = true) {
+    if (detach) {
+      state.visual->SetContent(nullptr); state.composition->Commit();
+      state.content_attached = false;
+    }
     if (state.frame_ready) { CloseHandle(state.frame_ready); state.frame_ready = nullptr; }
     state.frame_permitted = false;
     state.pending.clear(); state.media.Reset(); state.chain.Reset();
@@ -228,7 +231,8 @@ struct Worker {
     }
     const bool resized = state.width != layout.width || state.height != layout.height;
     if (!state.chain || resized) {
-      release_surface(state);
+      // Keep the displayed swapchain attached until its replacement has a frame.
+      release_surface(state, false);
       DXGI_SWAP_CHAIN_DESC1 desc{}; desc.Width = layout.width; desc.Height = layout.height; desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
       desc.SampleDesc.Count = 1; desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; desc.BufferCount = 3;
       desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
@@ -240,6 +244,7 @@ struct Worker {
       state.frame_ready = paced->GetFrameLatencyWaitableObject();
       if (!state.frame_ready) throw Error("VIDEO_RENDERER_UNAVAILABLE", "Cannot monitor video viewport availability");
       state.chain.As(&state.media); state.observed_present = 0; state.width = layout.width; state.height = layout.height;
+      state.content_changed = true;
     }
     if (!state.frame_permitted) {
       const auto ready = WaitForSingleObject(state.frame_ready, 0);
@@ -260,7 +265,9 @@ struct Worker {
     auto* rgb = slot.rgb_view.Get(); context->PSSetShaderResources(0,1,&rgb); auto* render_target=target.Get(); context->OMSetRenderTargets(1,&render_target,nullptr);
     context->Draw(3,0); ID3D11ShaderResourceView* empty=nullptr; context->PSSetShaderResources(0,1,&empty); context->OMSetRenderTargets(0,nullptr,nullptr);
     if (state.invalidated || slot.epoch != epoch) return true;
-    const auto started=std::chrono::steady_clock::now(); const HRESULT result=state.chain->Present(1,DXGI_PRESENT_DO_NOT_WAIT);
+    const auto started=std::chrono::steady_clock::now();
+    // A replacement must have a front buffer before the visual switches to it.
+    const HRESULT result=state.chain->Present(state.content_changed ? 0 : 1,DXGI_PRESENT_DO_NOT_WAIT);
     {std::lock_guard<std::mutex> guard(state.mutex);state.max_present_ms=(std::max)(state.max_present_ms,std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count());}
     if(result==DXGI_ERROR_WAS_STILL_DRAWING){if(!slot.clear&&state.submitted_sequence!=slot.sequence){state.retry_sequence=slot.sequence;state.retry_epoch=slot.epoch;}state.redraw=true;return true;}
     require(result,"Cannot present video viewport");
@@ -270,10 +277,10 @@ struct Worker {
     UINT id=0; require(state.chain->GetLastPresentCount(&id),"Cannot query video submission");
     if(state.submitted_sequence!=slot.sequence){state.submitted_sequence=slot.sequence;std::lock_guard<std::mutex> guard(state.mutex);if(!slot.clear)++state.submitted;}
     state.pending.push_back({id,slot.sequence,slot.epoch,slot.clear});if(state.pending.size()>64)state.pending.pop_front();
-    if(!state.content_attached||state.visual_x!=layout.x||state.visual_y!=layout.y){
+    if(!state.content_attached||state.content_changed||state.visual_x!=layout.x||state.visual_y!=layout.y){
       require(state.visual->SetOffsetX(layout.x),"Cannot position video viewport");require(state.visual->SetOffsetY(layout.y),"Cannot position video viewport");
       require(state.visual->SetContent(state.chain.Get()),"Cannot set video viewport content");require(state.composition->Commit(),"Cannot commit video viewport");
-      state.content_attached=true;state.visual_x=layout.x;state.visual_y=layout.y;
+      state.content_attached=true;state.content_changed=false;state.visual_x=layout.x;state.visual_y=layout.y;
     }
     return true;
   }

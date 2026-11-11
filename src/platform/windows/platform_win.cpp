@@ -351,14 +351,14 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   void paint_background(HDC dc) {
     const auto saved = SaveDC(dc);
     // Docker style changes and WM_PRINTCLIENT may supply an unclipped DC.
-    for (auto child = GetWindow(hwnd_, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+    for (auto child = video_background_active_ ? nullptr : GetWindow(hwnd_, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
       if (!IsWindowVisible(child)) continue;
       RECT rect{}; GetWindowRect(child, &rect);
       MapWindowPoints(nullptr, hwnd_, reinterpret_cast<POINT*>(&rect), 2);
       ExcludeClipRect(dc, rect.left, rect.top, rect.right, rect.bottom);
     }
     RECT rect{}; GetClientRect(hwnd_, &rect);
-    const auto brush = CreateSolidBrush(background_);
+    const auto brush = CreateSolidBrush(video_background_active_ ? RGB(0, 0, 0) : background_);
     FillRect(dc, &rect, brush); DeleteObject(brush);
     if (saved) RestoreDC(dc, saved);
   }

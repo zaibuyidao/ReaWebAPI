@@ -92,6 +92,8 @@ The demo's web renderer keeps source-resolution I420 textures and combines host-
 
 ## Native presentation on Windows and macOS
 
+For native presentation, fullscreen containers need a transparent `::backdrop`. Hide surrounding page content while fullscreen is active. Keep control spacing inside opaque backgrounds, using padding instead of exposed margins. The Demo applies these styles only to native presentation.
+
 Windows x64 and macOS ARM64 support direct RGBA8 texture upload and the verified I420 conversions above, using D3D11 and Metal respectively. RGBA8 does not require another RGB conversion.
 
 `getCapabilities().nativePresentation` reports `{available, backend: 'd3d11' | 'metal' | null}`. When available, `openSurface(options?)` opens a native video layer beneath the page's HTML content. It accepts the video profile options and shares capture, frame upload and RGB conversion across native previews using the same profile. Each window draws the shared RGB texture into its own display area. Keep the page backgrounds over the video region transparent and give overlaid controls their own backgrounds, as in the Demo. Existing `openStream()` pixel delivery, Windows worker delivery and Linux web rendering remain available.

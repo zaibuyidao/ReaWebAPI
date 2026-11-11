@@ -95,6 +95,8 @@ Windows x64 与 macOS ARM64 分别使用 D3D11 和 Metal，支持 RGBA8 纹理�
 
 不可用的平台返回 `VIDEO_PRESENTATION_UNAVAILABLE`。每个窗口最多拥有一个表面，重复打开返回 `VIDEO_SURFACE_IN_USE`，更换配置前应关闭当前表面。布局变化仅调整显示尺寸与裁剪，不改变采集尺寸。Demo 的原生适配模式请求 `resolution: 'source'` 并适配显示布局，保留完整源纹理，使不同大小的窗口可共享同一配置。自定义模式仍按指定尺寸采集，公开像素流的适配模式保持原有行为。
 
+原生呈现的全屏容器需设置透明的 `::backdrop`，全屏期间隐藏周围页面内容。控件间距应使用不透明背景内部的 padding，避免 margin 暴露底层背景。Demo 仅在原生呈现模式应用这些样式。
+
 原生呈现诊断统计提交与呈现活动，不代表屏幕实际扫描输出。`sourceUploadedFrames`、`sourceConvertedFrames` 与 `sourceDroppedFrames` 属于共享源，不应跨表面累加。已分离的表面返回 `{closed: true}`，呈现失败时可附带 `errorCode` 与 `error`。吞吐量仍受源解码、GPU 负载与屏幕刷新率限制，不保证任意数量窗口均达到固定帧率。
 
 Windows 返回 `presentationCounter: 'dxgi-observed'`，仅统计 DXGI 呈现信息中观察到的新源帧，不以 `Present()` 成功次数或提交编号差值推断显示帧数，也不补计未观察到的中间帧，因此计数与 FPS 可能低于屏幕实际呈现值。统计不可用时，`presentationAvailable` 为 `false`，`presentedFrames` 与 `presentationFPS` 为 `null`，`hasFrame` 不依赖这些计数。macOS 统计 Metal 呈现回调。这些指标不能证明每一帧都已在屏幕上可见。
