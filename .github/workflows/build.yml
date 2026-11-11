@@ -46,28 +46,37 @@ jobs:
         shell: bash
         timeout-minutes: 8
         run: |
+          apt_options=(-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          packages=(libwebkit2gtk-4.1-dev libx11-dev libxext-dev libxi-dev)
+          use_ubuntu_archive() {
+            sources=$(mktemp "$RUNNER_TEMP/reawebapi-apt.XXXXXX.list")
+            trap 'rm -f "$sources"' EXIT
+            local keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg suite
+            for suite in noble noble-updates noble-backports noble-security; do
+              printf 'deb [signed-by=%s] %s %s main restricted universe multiverse\n' "$keyring" "$1" "$suite"
+            done > "$sources"
+            apt_options+=(-o "Dir::Etc::sourcelist=$sources" -o Dir::Etc::sourceparts=-)
+          }
+          download_dependencies() {
+            sudo timeout --kill-after=5s 60s apt-get "${apt_options[@]}" update --error-on=any &&
+              sudo timeout --kill-after=5s 90s apt-get "${apt_options[@]}" install -y --download-only "${packages[@]}"
+          }
           case "$(dpkg --print-architecture)" in
             amd64)
-              archive=https://archive.ubuntu.com/ubuntu
-              security=https://security.ubuntu.com/ubuntu
+              if ! download_dependencies; then
+                echo '::warning::Ubuntu runner sources failed. Retrying with the MIT Ubuntu mirror.'
+                use_ubuntu_archive https://mirrors.mit.edu/ubuntu
+                download_dependencies
+              fi
+              sudo apt-get "${apt_options[@]}" install -y --no-download "${packages[@]}"
               ;;
             arm64)
-              archive=https://ports.ubuntu.com/ubuntu-ports
-              security=$archive
+              use_ubuntu_archive https://ports.ubuntu.com/ubuntu-ports
+              sudo apt-get "${apt_options[@]}" update --error-on=any
+              sudo apt-get "${apt_options[@]}" install -y "${packages[@]}"
               ;;
             *) echo 'Unsupported Ubuntu architecture' >&2; exit 1 ;;
           esac
-          sources=$(mktemp "$RUNNER_TEMP/reawebapi-apt.XXXXXX.list")
-          trap 'rm -f "$sources"' EXIT
-          keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg
-          for suite in noble noble-updates noble-backports; do
-            printf 'deb [signed-by=%s] %s %s main restricted universe multiverse\n' "$keyring" "$archive" "$suite"
-          done > "$sources"
-          printf 'deb [signed-by=%s] %s noble-security main restricted universe multiverse\n' "$keyring" "$security" >> "$sources"
-          apt_options=(-o "Dir::Etc::sourcelist=$sources" -o Dir::Etc::sourceparts=-
-                       -o Acquire::Retries=1 -o Acquire::https::Timeout=15)
-          sudo apt-get "${apt_options[@]}" update --error-on=any
-          sudo apt-get "${apt_options[@]}" install -y libwebkit2gtk-4.1-dev libx11-dev libxext-dev libxi-dev
       - name: Verify API definitions and native coverage
         run: python -m tools.api_sync verify
       - name: Configure Windows
