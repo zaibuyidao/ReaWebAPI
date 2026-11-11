@@ -103,6 +103,8 @@ Windows 返回 `presentationCounter: 'dxgi-observed'`，仅统计 DXGI 呈现信
 
 原生呈现不可用或报告 `VIDEO_RENDERER_UNAVAILABLE` 时，Demo 回退网页绘制。Windows 使用现有工作线程路径，macOS 保留网页绘制回退。SDK 不会将 `openSurface()` 结果隐式变成像素流，应用应显式选择回退方式。原生呈现不启用 WebView2 实验纹理流，也不改变普通窗口的绘制设置。
 
+Canvas 预览在适配显示区域时如因缩放重新连接，Demo 会保留上一帧，直到新连接绘制首帧。
+
 ## Windows 视频工作线程
 
 `openWorkerStream(worker, options?)` 将 WebView2 视频映射直接交给专用 `Worker`，在工作线程接收和上传像素，省去页面主线程的整帧复制。返回连接提供 `info`、`closed`、`error`、`on('data'|'error'|'close', callback)` 和 `close()`。数据事件仅含帧元数据，不提供 `bytes`、`data`、`latest()` 或 `read()`。原有 `openStream()` 仍返回独立持有、内容稳定的数据包，默认格式为 RGBA。

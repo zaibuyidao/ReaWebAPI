@@ -108,6 +108,8 @@ Windows reports `presentationCounter: 'dxgi-observed'`. It counts newly observed
 
 The Demo falls back to its web renderer when native presentation is unavailable or reports `VIDEO_RENDERER_UNAVAILABLE`. Windows uses its existing worker path, while macOS retains its web rendering fallbacks. The SDK does not silently turn an `openSurface()` result into a pixel stream. Applications choose their fallback explicitly. Native presentation does not enable WebView2 experimental texture streaming or alter ordinary window rendering settings.
 
+When a viewport-fit Canvas preview reconnects after resizing, the Demo keeps the last drawn frame visible until the replacement draws its first frame.
+
 ## Dedicated video worker on Windows
 
 `openWorkerStream(worker, options?)` moves the WebView2 video mapping directly to a dedicated `Worker`. The worker receives and uploads pixels without a full-frame copy on the page thread. The returned connection exposes `info`, `closed`, `error`, `on('data'|'error'|'close', callback)` and `close()`. Data events contain frame metadata, without `bytes`, `data`, `latest()` or `read()`. The existing `openStream()` continues to return immutable owned packets, with RGBA as the default.

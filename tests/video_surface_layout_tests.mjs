@@ -124,7 +124,7 @@ test('Demo native initialization failures restore the requested canvas profile a
 
 test('Native windows share one source profile while aspect and viewport changes remain display-only', async () => {
   const app = await readFile(new URL('../examples/integrations/video-preview/app.js', import.meta.url), 'utf8');
-  const optionsAndMatch = app.slice(app.indexOf('function options()'), app.indexOf('async function detach()'));
+  const optionsAndMatch = app.slice(app.indexOf('function options()'), app.indexOf('async function detach('));
   const reconcile = app.slice(app.indexOf('async function reconcile()'), app.indexOf('function schedule()'));
   const sharedProfile = { source: 'project', resolution: 'source', preserveAspect: true, updateRate: 'auto', format: 'i420' };
   const windows = [true, false].map((aspect, index) => {
@@ -156,7 +156,7 @@ test('Native windows share one source profile while aspect and viewport changes 
 
 test('Demo falls back after asynchronous renderer failure but keeps native presentation after normal close', async () => {
   const app = await readFile(new URL('../examples/integrations/video-preview/app.js', import.meta.url), 'utf8');
-  const functions = app.slice(app.indexOf('function options()'), app.indexOf('async function detach()')) +
+  const functions = app.slice(app.indexOf('function options()'), app.indexOf('async function detach(')) +
     app.slice(app.indexOf('async function reconcile()'), app.indexOf('function schedule()'));
   for (const errorCode of ['VIDEO_RENDERER_UNAVAILABLE', 'VIDEO_PROJECT_CHANGED', null]) {
     const nativeOptions = [], byteOptions = [], events = new Map(), reports = [];
@@ -165,7 +165,7 @@ test('Demo falls back after asynchronous renderer failure but keeps native prese
       nativeUnavailable: false, nativeLayout: null, nativeMetrics: null, renderer: null, rendererFormat: 'rgba8', i420Unavailable: false,
       stream: null, profileKey: '', source: { width: 3840, height: 2160 }, wanted: true, closing: false, busy: false, dirty: false,
       capabilities: { formats: ['rgba8', 'i420'] }, document: { hidden: false, documentElement: { classList: { add() {}, remove() {} } } },
-      canvas: {}, performance, layout() {}, clear() {}, status() {}, report: error => reports.push(error.code),
+      canvas: {}, performance, layout() {}, clear() {}, discardRetainedFrame() {}, status() {}, report: error => reports.push(error.code),
       createSurfaceLayout: () => ({ update() {}, dispose() {} }),
       reaper: { video: {
         getSourceInfo: async () => ({ available: true, nativeFormat: 'i420', colorMatrix: 'bt709', colorRange: 'limited', colorConversion: 'reaper-sse' }),
@@ -189,4 +189,31 @@ test('Demo falls back after asynchronous renderer failure but keeps native prese
     } else { assert.equal(nativeOptions.length, 2); assert.equal(byteOptions.length, 0); }
     assert.deepEqual(reports, errorCode ? [errorCode] : []);
   }
+});
+
+test('Canvas fit reconnect keeps the displayed canvas until the replacement draws', async () => {
+  const app = await readFile(new URL('../examples/integrations/video-preview/app.js', import.meta.url), 'utf8');
+  const functions = app.slice(app.indexOf('function discardRetainedFrame()'), app.indexOf('function layout()')) +
+    app.slice(app.indexOf('async function detach('), app.indexOf('async function reconcile()'));
+  const ready = new Set(['ready']), classes = new Set();
+  const previous = {
+    classList: classes, cloneNode: () => ({}), before() {}, remove() { this.removed = true; }
+  };
+  const oldRenderer = { clear() { assert.fail('The retained canvas must keep its pixels'); }, dispose() { this.disposed = true; } };
+  let onDraw, closed = false;
+  const context = vm.createContext({
+    retainedFrame: undefined, canvas: previous, renderer: oldRenderer, rendererFormat: 'rgba8', painted: 0,
+    nativeLayout: null, nativeMetrics: null, profileKey: '', stage: { classList: { contains: key => ready.has(key),
+      add: key => ready.add(key), remove: key => ready.delete(key) } },
+    stream: { close: async () => { closed = true; } },
+    document: { documentElement: { classList: { remove() {} } } },
+    capabilities: { platform: 'linux' },
+    createVideoRenderer: async (_, options) => { onDraw = options.onDraw; return {}; }
+  });
+  vm.runInContext(functions, context);
+  await vm.runInContext("detach(true).then(() => selectRenderer('rgba8'))", context);
+  assert.ok(closed && classes.has('retained-frame'));
+  assert.ok(!previous.removed && !oldRenderer.disposed && !ready.has('ready'));
+  onDraw();
+  assert.ok(previous.removed && oldRenderer.disposed && ready.has('ready'));
 });

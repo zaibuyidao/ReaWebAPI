@@ -47,6 +47,7 @@ $('theme').onchange = () => { document.documentElement.dataset.theme = $('theme'
 
 let canvas = document.querySelector('canvas');
 const stage = $('stage');
+let retainedFrame;
 let renderer, rendererFormat = 'rgba8', i420Unavailable = false, outputWidth = canvas.width, outputHeight = canvas.height;
 let nativeUnavailable = false, nativeLayout, nativeMetrics = null, previousPresented = 0;
 const preferNative = () => capabilities?.nativePresentation?.available && !nativeUnavailable && typeof reaper.video.openSurface === 'function';
@@ -60,7 +61,17 @@ function report(error) {
   $('status').classList.toggle('error', !waiting);
   $('status').textContent = waiting ? t(waiting) : message && message !== code ? `${code}: ${message}` : code;
 }
-function clear() { renderer?.clear(); stage.classList.remove('ready');  }
+function discardRetainedFrame() {
+  if (!retainedFrame) return;
+  retainedFrame.canvas.remove();
+  retainedFrame.renderer.dispose();
+  retainedFrame = null;
+}
+function clear(keepRetained = false) {
+  if (!keepRetained) discardRetainedFrame();
+  renderer?.clear();
+  stage.classList.remove('ready');
+}
 function layout() {
   const original = $('original').checked;
   canvas.style.width = original ? `${outputWidth / devicePixelRatio}px` : '100%';
@@ -103,9 +114,19 @@ function sameOutput(next) {
   }
   return stream.info.width === w && stream.info.height === h;
 }
-async function detach() {
+async function detach(retainFrame = false) {
   nativeLayout?.dispose(); nativeLayout = null; nativeMetrics = null;
-  const old = stream; stream = null; profileKey = ''; clear();
+  const old = stream; stream = null; profileKey = '';
+  if (retainFrame && renderer && stage.classList.contains('ready')) {
+    discardRetainedFrame();
+    const replacement = canvas.cloneNode(false);
+    canvas.classList.add('retained-frame');
+    canvas.before(replacement);
+    retainedFrame = { canvas, renderer };
+    canvas = replacement;
+    renderer = null;
+  }
+  clear(retainFrame);
   document.documentElement.classList.remove('native-video');
   await old?.close();
 }
@@ -117,8 +138,15 @@ async function selectRenderer(format) {
   }
   rendererFormat = format;
   try {
-    renderer = await createVideoRenderer(canvas, { platform: capabilities.platform, format, onDraw: () => ++painted,
-      onError: error => { wanted = false; report(error); reconcile().catch(report); } });
+    const target = canvas;
+    renderer = await createVideoRenderer(target, { platform: capabilities.platform, format, onDraw: () => {
+      if (canvas !== target) return;
+      ++painted;
+      if (retainedFrame) {
+        stage.classList.add('ready');
+        discardRetainedFrame();
+      }
+    }, onError: error => { if (canvas === target) { wanted = false; report(error); reconcile().catch(report); } } });
   } catch (error) {
     if (format !== 'i420') throw error;
     i420Unavailable = true;
@@ -134,7 +162,9 @@ async function reconcile() {
     if (!wanted || document.hidden) { await detach(); return; }
     const nextOptions = options();
     if (sameOutput(nextOptions)) { layout(); return; }
-    await detach();
+    const previous = stream && JSON.parse(profileKey);
+    await detach(!preferNative() && nextOptions.resolution === 'fit' && previous?.resolution === 'fit' &&
+      nextOptions.preserveAspect === previous.preserveAspect);
     let format = 'rgba8';
     if (capabilities.formats?.includes('i420') && nextOptions.resolution === 'source' && !i420Unavailable) {
       const info = await reaper.video.getSourceInfo();
@@ -191,7 +221,10 @@ async function reconcile() {
     sequenceGaps = 0; lastSequence = undefined; received = painted = 0; sampledAt = performance.now();
     if (!native) next.on('data', frame => {
       if (stream !== next) return;
-      if (frame.discontinuity) clear();
+      if (frame.discontinuity) {
+        clear(!!retainedFrame);
+        if (retainedFrame) return;
+      }
       else { stage.classList.add('ready');  }
       if (!frame.discontinuity && lastSequence !== undefined && frame.sequence > lastSequence + 1n) sequenceGaps += Number(frame.sequence - lastSequence - 1n);
       lastSequence = frame.sequence;
@@ -202,9 +235,10 @@ async function reconcile() {
       nativeLayout?.dispose(); nativeLayout = null; nativeMetrics = null;
       stream = null; document.documentElement.classList.remove('native-video'); clear();
     } });
-    if (next.latest?.()) renderer.push(next.latest());
+    const latest = next.latest?.();
+    if (latest && (!retainedFrame || !latest.discontinuity)) renderer.push(latest);
     status('connected');
-  } catch (error) { report(error); if (error.code === 'VIDEO_FRAME_PENDING' && wanted) dirty = true; }
+  } catch (error) { discardRetainedFrame(); report(error); if (error.code === 'VIDEO_FRAME_PENDING' && wanted) dirty = true; }
   finally {
     busy = false;
     if (dirty) { dirty = false; schedule(); }
@@ -294,7 +328,8 @@ translate();
       const surface = native ? await current.getDiagnostics() : null;
       if (stream !== current || current.closed) return;
       source = { width: data.sourceWidth, height: data.sourceHeight };
-      if (data.status !== 'ready' || (surface && !surface.hasFrame)) clear();
+      if (data.status !== 'ready' || (surface && !surface.hasFrame))
+        clear(!!retainedFrame && (!data.error || data.error === 'VIDEO_FRAME_PENDING'));
       else if (native) stage.classList.add('ready');
       const seconds = (performance.now() - sampledAt) / 1000;
       receiveRate = received / seconds;

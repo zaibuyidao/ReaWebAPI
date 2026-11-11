@@ -8,3 +8,4 @@
 :root.native-video #status{margin:0;padding-top:8px;padding-bottom:8px}:root.native-video .diagnostic{margin:0;padding:0 18px 10px;border:0}:root.native-video .diagnostic pre{padding-inline:18px}:root.native-video .diagnostic>summary{border-top:1px solid var(--line);padding-top:8px}
 :root.native-video #stage:fullscreen::backdrop{background:transparent}:root.native-video:has(#stage:fullscreen) body>:not(#stage){visibility:hidden}
 @media(max-width:650px){:root.native-video .diagnostic{padding-left:16px;padding-right:16px}}
+#stage canvas.retained-frame{position:absolute;inset:0;z-index:1;visibility:visible;pointer-events:none}
