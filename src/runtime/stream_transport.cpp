@@ -11,6 +11,7 @@
 #include "runtime/stream_transport.hpp"
 #include "runtime/native_stream.hpp"
 #include "runtime/jsfx_transfer.hpp"
+#include "runtime/video_message_pool.hpp"
 #include <sha.h>
 #include <wdl_base64.h>
 #include <algorithm>
@@ -34,24 +35,30 @@ bool would_block() { return errno == EAGAIN || errno == EWOULDBLOCK || errno == 
 void nonblocking(Socket socket) { fcntl(socket, F_SETFL, fcntl(socket, F_GETFL) | O_NONBLOCK); }
 #endif
 using Bytes = std::vector<unsigned char>;
-using Message = std::shared_ptr<const Bytes>;
+struct WireMessage {
+  Bytes header, video;
+  uint64_t video_sequence = 0;
+  double video_timestamp = 0;
+  bool video_discontinuity = false;
+  size_t size() const { return header.size() + video.size(); }
+};
+using Message = std::shared_ptr<const WireMessage>;
 using Time = std::chrono::steady_clock;
 Message frame(const Bytes& bytes, unsigned opcode = 2) {
-  auto out = std::make_shared<Bytes>(); out->reserve(bytes.size() + 10); out->push_back(static_cast<unsigned char>(128 | opcode));
+  auto message = std::make_shared<WireMessage>(); auto* out = &message->header;
+  out->reserve(bytes.size() + 10); out->push_back(static_cast<unsigned char>(128 | opcode));
   if (bytes.size() < 126) out->push_back(static_cast<unsigned char>(bytes.size()));
   else if (bytes.size() <= 65535) { out->push_back(126); out->push_back(static_cast<unsigned char>(bytes.size() >> 8)); out->push_back(static_cast<unsigned char>(bytes.size())); }
   else { out->push_back(127); for (int i = 7; i >= 0; --i) out->push_back(static_cast<unsigned char>(uint64_t(bytes.size()) >> (8 * i))); }
-  out->insert(out->end(), bytes.begin(), bytes.end()); return out;
+  out->insert(out->end(), bytes.begin(), bytes.end()); return message;
 }
 void le64(Bytes& data, size_t at, uint64_t value) { for (unsigned i = 0; i < 8; ++i) data[at + i] = static_cast<unsigned char>(value >> (8 * i)); }
-Message packet_frame(const StreamBuffer::Packet& packet, int kind, bool project_video = false, std::shared_ptr<Bytes> reusable = {}) {
+Message packet_frame(StreamBuffer::Packet& packet, int kind, bool project_video = false, std::shared_ptr<WireMessage> reusable = {}) {
   if (project_video && !packet.timing) {
     const size_t length = 40 + packet.data.size();
     const size_t prefix = length < 126 ? 2 : length <= 65535 ? 4 : 10;
-    auto out = reusable ? std::move(reusable) : std::make_shared<Bytes>();
-    out->resize(prefix + length);
-    std::fill(out->begin(), out->begin() + prefix + 40, 0);
-    auto& data = *out; data[0] = 0x82;
+    auto out = reusable ? std::move(reusable) : std::make_shared<WireMessage>();
+    auto& data = out->header; data.assign(prefix + 40, 0); data[0] = 0x82;
     if (prefix == 2) data[1] = static_cast<unsigned char>(length);
     else {
       data[1] = prefix == 4 ? 126 : 127;
@@ -62,7 +69,10 @@ Message packet_frame(const StreamBuffer::Packet& packet, int kind, bool project_
     uint64_t timestamp; std::memcpy(&timestamp, &packet.timestamp, 8);
     le64(data, prefix + 8, packet.sequence); le64(data, prefix + 16, timestamp);
     le64(data, prefix + 24, packet.dropped); le64(data, prefix + 32, packet.data.size());
-    std::memcpy(data.data() + prefix + 40, packet.data.data(), packet.data.size());
+    out->video.swap(packet.data);
+    out->video_sequence = packet.sequence;
+    out->video_timestamp = packet.timestamp;
+    out->video_discontinuity = packet.discontinuity;
     return out;
   }
   const size_t header = packet.timing ? 80 : 40;
@@ -90,6 +100,8 @@ struct StreamTransport::Impl {
     explicit Client(Socket value) : socket(value) {}
     std::string input, token;
     std::shared_ptr<StreamBuffer> stream;
+    std::shared_ptr<VideoMemory> video_memory;
+    unsigned video_slot = 0;
     std::shared_ptr<JsfxTransfer> reliable;
     Message output;
     std::deque<Message> waiting;
@@ -108,6 +120,7 @@ struct StreamTransport::Impl {
   std::thread thread;
   std::vector<Client> clients;
   std::map<std::shared_ptr<StreamBuffer>, Message> latest;
+  VideoMessagePool<WireMessage> video_messages{6ull * video_max_frame_bytes};
   explicit Impl(StreamHub& owner) : hub(owner) {
 #ifdef _WIN32
     WSADATA data{}; if (WSAStartup(MAKEWORD(2, 2), &data)) throw Error("TRANSPORT_UNAVAILABLE", "Cannot initialize local sockets");
@@ -157,6 +170,7 @@ struct StreamTransport::Impl {
       if (!ticket->second.external && ticket->second.origin != headers["origin"]) return reject("ORIGIN_MISMATCH");
       if (Time::now() - ticket->second.created > std::chrono::seconds(10)) return reject("TICKET_EXPIRED");
       ticket->second.connected = true; client.token = ticket->first; client.stream = ticket->second.buffer;client.reliable=ticket->second.reliable;
+      client.video_memory = ticket->second.video_memory;
     }
     if (client.stream && client.stream->kind == REAWEB_FRAME) {
       const int bytes = std::min<int>(8 * 1024 * 1024, int(client.stream->descriptor.max_bytes) + 50);
@@ -166,7 +180,8 @@ struct StreamTransport::Impl {
     unsigned char digest[20]; char accept[32]; WDL_SHA1 sha; sha.add(key.data(), static_cast<int>(key.size())); sha.result(digest);
     wdl_base64encode(digest, accept, 20);
     const std::string response = std::string("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ") + accept + "\r\n\r\n";
-    client.output = std::make_shared<Bytes>(response.begin(), response.end()); client.upgraded = true;
+    auto reply = std::make_shared<WireMessage>(); reply->header.assign(response.begin(), response.end());
+    client.output = std::move(reply); client.upgraded = true;
     const auto cached = latest.find(client.stream);
     if (cached != latest.end()) { client.waiting.push_back(cached->second); client.queued_bytes = cached->second->size(); }
     ++connections; client.input.erase(0, end + 4); return true;
@@ -207,6 +222,22 @@ struct StreamTransport::Impl {
     }
     return true;
   }
+  bool video_send_available(const Client& client) const {
+    if (!client.stream || !client.stream->project_video || client.video_memory) return true;
+    const auto* next = client.waiting.front().get();
+    const WireMessage* pinned[64]{};
+    size_t count = 0, bytes = 0;
+    for (const auto& other : clients) {
+      if (!other.output || other.output->video.empty()) continue;
+      const auto* message = other.output.get();
+      if (message == next) return true;
+      if (std::find(pinned, pinned + count, message) != pinned + count) continue;
+      pinned[count++] = message;
+      bytes += message->video.capacity();
+    }
+    // Partial socket frames cannot be replaced. Leave one snapshot for publication.
+    return video_messages.can_pin(bytes, next->video.capacity());
+  }
   void pump(Client& client) {
     char input[4096]; const auto read = recv(client.socket, input, sizeof(input), 0);
     if (!read || (read < 0 && !would_block())) { client.failed = true; return; }
@@ -232,9 +263,19 @@ struct StreamTransport::Impl {
           const std::string code = StreamHub::code(reason); Bytes close{3, 232}; close.insert(close.end(), code.begin(), code.end());
           client.output = frame(close, 8); client.closing = true;
         }
-      } else if ((client.inflight < (client.stream && client.stream->project_video ? 2u : 1u) || client.reliable) && !client.waiting.empty()) {
+      } else if ((client.inflight < (client.stream && client.stream->project_video ? (client.video_memory ? 2u : 3u) : 1u) || client.reliable) && !client.waiting.empty() && video_send_available(client)) {
         client.output = client.waiting.front(); client.waiting.pop_front();
         if(!client.reliable){client.queued_bytes -= client.output->size();++client.inflight;if(client.stream->kind==REAWEB_FRAME)client.frame_started.push_back(Time::now());}
+        if (client.video_memory && !client.output->video.empty()) {
+          const auto& memory = *client.video_memory;
+          if (client.output->video.size() != memory.frame_bytes) { client.failed = true; return; }
+          memory.write_slot(client.video_slot, client.output->video.data());
+          Bytes metadata(44);
+          std::copy(client.output->header.end() - 40, client.output->header.end(), metadata.begin());
+          metadata[5] |= 2; metadata[40] = static_cast<unsigned char>(client.video_slot);
+          client.video_slot ^= 1;
+          client.output = frame(metadata);
+        }
       }
     }
     if (client.output) {
@@ -246,10 +287,17 @@ struct StreamTransport::Impl {
       // Video frames must not be throttled to one 64 KiB write per timer wake.
       // Nonblocking writes retain bounded, per-consumer ACK backpressure.
       const size_t limit = client.stream && client.stream->kind == REAWEB_FRAME ? 8 * 1024 * 1024 : 65536;
-      const int length = static_cast<int>(std::min<size_t>(limit, client.output->size() - client.offset));
-      const auto written = ::send(client.socket, reinterpret_cast<const char*>(client.output->data() + client.offset), length, flags);
-      if (written < 0 && !would_block()) { client.failed = true; return; }
-      if (written > 0) { client.offset += written; client.progress = Time::now(); }
+      do {
+        const bool header = client.offset < client.output->header.size();
+        const auto& bytes = header ? client.output->header : client.output->video;
+        const size_t offset = header ? client.offset : client.offset - client.output->header.size();
+        const int length = static_cast<int>(std::min<size_t>(limit, bytes.size() - offset));
+        const auto written = ::send(client.socket, reinterpret_cast<const char*>(bytes.data() + offset), length, flags);
+        if (written < 0 && !would_block()) { client.failed = true; return; }
+        if (written <= 0) break;
+        client.offset += written; client.progress = Time::now();
+        // Finish at most this frame, and yield immediately when the socket is full.
+      } while (client.stream && client.stream->project_video && client.offset < client.output->size());
       if (client.offset == client.output->size()) { client.output.reset(); client.offset = 0; if (client.closing) client.failed = true; }
     }
     if (Time::now() - client.progress > std::chrono::seconds(30) && (client.inflight || client.output)) client.failed = true;
@@ -273,7 +321,8 @@ struct StreamTransport::Impl {
 #endif
     try {
       StreamBuffer::Packet video_packet{};
-      std::vector<std::shared_ptr<Bytes>> video_messages;
+      std::weak_ptr<StreamBuffer> video_profile;
+      std::map<VideoPresentationSource*, std::weak_ptr<VideoPresentationSource>> known_presenters;
       while (!stopping.load()) {
         for (int count = 0; count < 4; ++count) {
           const auto connection = accept(listener, nullptr, nullptr); if (connection == invalid_socket) break;
@@ -286,6 +335,12 @@ struct StreamTransport::Impl {
           clients.push_back(Client{connection});
         }
         std::vector<std::shared_ptr<StreamBuffer>> buffers;
+        struct NativeTarget {
+          std::string token;
+          std::shared_ptr<StreamBuffer> buffer;
+          std::shared_ptr<VideoPresenter> presenter;
+        };
+        std::vector<NativeTarget> native_targets;
 #ifdef _WIN32
         bool project_video = false;
 #endif
@@ -299,23 +354,97 @@ struct StreamTransport::Impl {
           }
           for (auto it = hub.tickets_.begin(); it != hub.tickets_.end();)
             if (!it->second.connected && Time::now() - it->second.created > std::chrono::seconds(10)) { ++expired_tickets; it = hub.tickets_.erase(it); } else ++it;
+          for (auto it = hub.video_failures_.begin(); it != hub.video_failures_.end();)
+            if (Time::now() - it->second.created >= std::chrono::seconds(30)) it = hub.video_failures_.erase(it); else ++it;
+          for (const auto& ticket : hub.tickets_) if (ticket.second.presenter)
+            native_targets.push_back({ticket.first, ticket.second.buffer, ticket.second.presenter});
         }
+        struct NativeGroup {
+          std::shared_ptr<VideoPresentationSource> source;
+          std::vector<NativeTarget> targets;
+        };
+        const auto retire_native = [&](const NativeTarget& target) {
+          target.presenter->invalidate();
+          Json diagnostic;
+          try {
+            diagnostic = target.presenter->diagnostics();
+            if (!diagnostic.value("error", std::string()).empty()) {
+              diagnostic["closed"] = true;
+              diagnostic["errorCode"] = "VIDEO_RENDERER_UNAVAILABLE";
+            } else diagnostic = nullptr;
+          } catch (...) { diagnostic = nullptr; }
+          std::lock_guard<std::mutex> lock(hub.mutex_);
+          const auto found = hub.tickets_.find(target.token);
+          if (found != hub.tickets_.end() && found->second.presenter == target.presenter) {
+            if (!diagnostic.is_null()) {
+              if (hub.video_failures_.size() >= 64) hub.video_failures_.erase(hub.video_failures_.begin());
+              hub.video_failures_.insert_or_assign(target.token, StreamHub::VideoFailure{found->second.window, found->second.generation, std::move(diagnostic)});
+            }
+            hub.tickets_.erase(found);
+          }
+        };
+        std::map<StreamBuffer*, std::map<VideoPresentationSource*, NativeGroup>> native_groups;
+        for (const auto& target : native_targets) {
+          try {
+            if (target.buffer->closed || target.presenter->closed()) { retire_native(target); continue; }
+            if (auto source = target.presenter->source()) {
+              auto& group = native_groups[target.buffer.get()][source.get()];
+              group.source = std::move(source); group.targets.push_back(target);
+            }
+            else retire_native(target);
+          } catch (...) { retire_native(target); }
+        }
+        const auto present = [&](NativeGroup& group, const VideoPresentationFrame& frame) {
+          try { group.source->submit(frame); }
+          catch (...) { for (const auto& target : group.targets) retire_native(target); }
+        };
+        for (auto it = known_presenters.begin(); it != known_presenters.end();)
+          if (it->second.expired()) it = known_presenters.erase(it); else ++it;
         for (auto it = latest.begin(); it != latest.end();) {
           if (it->first->closed) it = latest.erase(it); else ++it;
         }
         for (const auto& buffer : buffers) {
+          auto native = native_groups.find(buffer.get());
+          if (native != native_groups.end()) for (auto& entry : native->second) {
+            auto& group = entry.second;
+            if (known_presenters.emplace(entry.first, group.source).second) {
+              const auto cached = latest.find(buffer);
+              if (!buffer->closed && cached != latest.end() && !cached->second->video.empty()) {
+                const auto& frame = *cached->second;
+                present(group, {frame.video.data(), frame.video.size(), frame.video_sequence,
+                                frame.video_timestamp, frame.video_discontinuity});
+              }
+            }
+          }
+          if (buffer->project_video && video_profile.lock() != buffer) {
+            Bytes().swap(video_packet.data);
+            for (auto& client : clients) if (client.stream && client.stream->project_video && client.stream->closed) {
+              client.waiting.clear(); client.queued_bytes = 0;
+            }
+            video_messages.release_unused(); video_profile = buffer;
+          }
           StreamBuffer::Packet ordinary_packet;
           auto& packet = buffer->project_video ? video_packet : ordinary_packet;
           for (int i = 0; i < 64 && buffer->consume(packet); ++i) {
+            const size_t packet_bytes = packet.data.size();
+            if (!buffer->closed && native != native_groups.end()) for (auto& entry : native->second)
+              present(entry.second, {packet.data.data(), packet_bytes, packet.sequence, packet.timestamp, packet.discontinuity});
             Message message;
             if (buffer->kind != REAWEB_AUDIO && buffer->kind != REAWEB_MIDI) {
-              std::shared_ptr<Bytes> reusable;
+              std::shared_ptr<WireMessage> reusable;
               if (buffer->project_video) {
-                for (const auto& candidate : video_messages) if (candidate.use_count() == 1) { reusable = candidate; break; }
-                if (!reusable && video_messages.size() < 3) {
-                  reusable = std::make_shared<Bytes>(); video_messages.push_back(reusable);
+                for (auto& client : clients) if (client.upgraded && client.stream == buffer && !client.failed) pump(client);
+                reusable = video_messages.acquire(packet.data.capacity());
+                if (!reusable) {
+                  // Pending snapshots are replaceable, unlike an in-progress wire frame.
+                  latest.erase(buffer);
+                  for (auto& client : clients) if (client.stream == buffer) {
+                    client.waiting.clear(); client.queued_bytes = 0;
+                  }
+                  reusable = video_messages.acquire(packet.data.capacity());
                 }
               }
+              if (buffer->project_video && !reusable) continue;
               message = packet_frame(packet, buffer->kind, buffer->project_video, std::move(reusable)); latest[buffer] = message;
             }
             for (auto& client : clients) if (client.upgraded && client.stream == buffer && !client.failed) {
@@ -328,15 +457,16 @@ struct StreamTransport::Impl {
                   client.queued_bytes -= client.waiting.front()->size(); client.waiting.pop_front();
                 }
               } else if (buffer->kind != REAWEB_AUDIO && buffer->kind != REAWEB_MIDI) { client.waiting.clear(); client.queued_bytes = 0; }
-              if (client.waiting.size() >= 8 || client.queued_bytes + packet.data.size() > 16 * 1024 * 1024) continue;
+              const auto queued_cost = packet_bytes + (buffer->project_video ? 50 : 0);
+              if (client.waiting.size() >= 8 || client.queued_bytes + queued_cost > (buffer->project_video ? 2ull * (buffer->descriptor.max_bytes + 50) : 16ull * 1024 * 1024)) continue;
               if (!message) message = packet_frame(packet, buffer->kind);
               client.waiting.push_back(message); client.queued_bytes += message->size();
             }
           }
         }
-        if (video_packet.data.capacity() && std::none_of(buffers.begin(), buffers.end(),
+        if (std::none_of(buffers.begin(), buffers.end(),
             [](const auto& buffer) { return buffer->project_video; })) {
-          Bytes().swap(video_packet.data); video_messages.clear();
+          Bytes().swap(video_packet.data); video_messages.release_unused(); video_profile.reset();
         }
         for (auto& client : clients) pump(client);
         for (auto it = clients.begin(); it != clients.end();) {

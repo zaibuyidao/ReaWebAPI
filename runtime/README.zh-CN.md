@@ -47,4 +47,4 @@ JSFX helper 在 Windows、macOS 和 Linux 共用初始化路径。能力握手�
 
 ## 工程视频
 
-`reaper.video` 通过 Native Streams 提供共享工程视频帧。仅支持已验证的 REAPER 构建。安装、API、绘制和平台限制见[视频预览](../docs/video-preview.zh-CN.md)。
+`reaper.video` 提供共享工程视频帧，支持 Windows 工作线程直收、Windows D3D11 与 macOS Metal 原生共享呈现，以及 Windows x64、macOS ARM64 和 Linux x86_64 已验证转换器的可选原生 I420。仅支持已验证的 REAPER 构建。安装、API、绘制和平台限制见[视频预览](../docs/video-preview.zh-CN.md)。

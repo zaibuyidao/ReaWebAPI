@@ -34,6 +34,8 @@ Include [reaweb_stream.h](../src/public/reaweb_stream.h) and resolve the typed f
 
 Creation and close require REAPER's main thread. Set `size`, `abi_version`, `format`, `max_bytes`, and `capacity` in the descriptor. Set frame dimensions/stride or audio channels/sample rate as appropriate. Descriptor strings are copied. An optional registered service `owner` ties streams to extension lifetime. Stream names are unique ASCII letters, digits, `.`, `_`, `-`, up to 128 bytes. Handles never alias a later stream of the same name.
 
+`REAWEB_PIXEL_I420` identifies the optional built-in [project-video](video-preview.md) layout. External `CreateFrameStream` producers still accept only RGBA8/BGRA8. The ABI version and descriptor size are unchanged.
+
 Publish copies into preallocated storage and returns immediately. A stream has one producer. Publish makes no host/WebView calls, performs no allocation, acquires no mutex and never waits for consumers. Concurrent producers receive `PRODUCER_BUSY`. Audio callbacks may publish directly. FFT, decoding and other expensive processing belong on a worker. Producers define their own clocks.
 
 Use `ReaWeb_SetServiceShutdown(service, callback)` to stop and join producers before Runtime removal, while provider functions are still callable. Normal extension shutdown follows the same order: stop/join producers, close streams, unregister the service, release resources. The [complete synthetic producer](../tests/native_stream_extension.cpp) demonstrates this lifecycle.

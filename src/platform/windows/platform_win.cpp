@@ -26,6 +26,7 @@
 #include "platform/windows/win_context_menu.hpp"
 #include "platform/windows/win_resources.hpp"
 #include "platform/windows/win_overlay.hpp"
+#include "platform/windows/win_video_presenter.hpp"
 #include "platform/shared/window_menu.hpp"
 
 namespace reaweb {
@@ -159,6 +160,55 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   std::unique_ptr<WinDevTools> devtools_;
   static constexpr UINT toggle_devtools_message = DevToolsKeys::toggle_message;
   static constexpr UINT focus_page_message = WM_APP + 74;
+  HWND fullscreen_host_ = nullptr, fullscreen_parent_ = nullptr;
+  RECT fullscreen_restore_{};
+  LONG_PTR fullscreen_style_ = 0;
+  void element_fullscreen(bool enter) {
+    if (enter == bool(fullscreen_host_) || !hwnd_) return;
+    if (enter) {
+      fullscreen_style_ = GetWindowLongPtrW(hwnd_, GWL_STYLE);
+      fullscreen_parent_ = (fullscreen_style_ & WS_CHILD) ? GetParent(hwnd_) : GetWindow(hwnd_, GW_OWNER);
+      GetWindowRect(hwnd_, &fullscreen_restore_);
+      MONITORINFO monitor{sizeof(monitor)};
+      if (!GetMonitorInfoW(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST), &monitor)) {
+        webview_->ExecuteScript(L"document.exitFullscreen().catch(()=>{})", nullptr); return;
+      }
+      const auto& bounds = monitor.rcMonitor;
+      fullscreen_host_ = CreateWindowExW(WS_EX_APPWINDOW, L"STATIC", L"Video fullscreen", WS_POPUP | WS_CLIPCHILDREN,
+        bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+      if (!fullscreen_host_) { webview_->ExecuteScript(L"document.exitFullscreen().catch(()=>{})", nullptr); return; }
+      SetWindowSubclass(fullscreen_host_, [](HWND host, UINT message, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR data) -> LRESULT {
+        auto* self = reinterpret_cast<WinWindow*>(data);
+        if (message == WM_CLOSE || (message == WM_KEYDOWN && wp == VK_ESCAPE)) {
+          if (self->webview_) self->webview_->ExecuteScript(L"document.exitFullscreen().catch(()=>{})", nullptr);
+          return 0;
+        }
+        if (message == WM_SIZE && self->hwnd_) {
+          RECT rect{}; GetClientRect(host, &rect);
+          SetWindowPos(self->hwnd_, nullptr, 0, 0, rect.right, rect.bottom, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        return DefSubclassProc(host, message, wp, lp);
+      }, 1, reinterpret_cast<DWORD_PTR>(this));
+      SetWindowLongPtrW(hwnd_, GWL_STYLE, (fullscreen_style_ & ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME)) | WS_CHILD);
+      SetParent(hwnd_, fullscreen_host_);
+      SetWindowPos(hwnd_, HWND_TOP, 0, 0, bounds.right - bounds.left, bounds.bottom - bounds.top, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+      ShowWindow(fullscreen_host_, SW_SHOW); SetForegroundWindow(fullscreen_host_);
+    } else {
+      const auto host = fullscreen_host_; fullscreen_host_ = nullptr;
+      SetParent(hwnd_, (fullscreen_style_ & WS_CHILD) ? fullscreen_parent_ : nullptr);
+      SetWindowLongPtrW(hwnd_, GWL_STYLE, fullscreen_style_);
+      if (!(fullscreen_style_ & WS_CHILD)) SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(fullscreen_parent_));
+      auto rect = fullscreen_restore_;
+      if ((fullscreen_style_ & WS_CHILD) && IsWindow(fullscreen_parent_)) {
+        GetClientRect(fullscreen_parent_, &rect);
+      }
+      SetWindowPos(hwnd_, nullptr, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+        SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE);
+      DestroyWindow(host);
+    }
+    layout();
+    if (!closed_ && controller_) controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+  }
   HWND hosted_parking_ = nullptr;
   RECT floating_rect_{};
   bool maximized_ = false;
@@ -180,6 +230,45 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   bool startup_region_ = false;
   bool drag_regions_supported_ = false;
   bool alpha_ready_ = false, alpha_supported_ = false;
+  std::shared_ptr<WinVideoHost> video_host_;
+  std::weak_ptr<WinVideoPresenter> video_presenter_;
+  bool video_background_active_ = false;
+  bool update_video_clipping() noexcept {
+    if (!hwnd_ || !IsWindow(hwnd_)) return true;
+    const auto style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
+    const auto next = video_background_active_ ? style & ~LONG_PTR(WS_CLIPCHILDREN) : style | WS_CLIPCHILDREN;
+    if (next == style) return true;
+    SetLastError(0);
+    if (!SetWindowLongPtrW(hwnd_, GWL_STYLE, next) && GetLastError()) return false;
+    const bool changed = SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED) != FALSE;
+    InvalidateRect(hwnd_, nullptr, TRUE);
+    return changed;
+  }
+  void clear_video_surface() {
+    if (auto presenter = video_presenter_.lock()) { presenter->invalidate(); presenter->detach_view(); }
+    video_presenter_.reset();
+    if (video_background_active_) {
+      ComPtr<ICoreWebView2Controller2> alpha;
+      if (controller_ && SUCCEEDED(controller_.As(&alpha)))
+        alpha->put_DefaultBackgroundColor(options_.transparent ? COREWEBVIEW2_COLOR{0,0,0,0} :
+          COREWEBVIEW2_COLOR{255,GetRValue(background_),GetGValue(background_),GetBValue(background_)});
+      video_background_active_ = false;
+      update_video_clipping();
+    }
+  }
+  void update_video_surface() {
+    if (!video_background_active_) return;
+    const auto presenter = video_presenter_.lock();
+    if (!presenter || presenter->closed()) { clear_video_surface(); return; }
+    RECT bounds{}; controller_->get_Bounds(&bounds);
+    double zoom = 1, scale = GetDpiForWindow(hwnd_) / 96.0;
+    controller_->get_ZoomFactor(&zoom);
+    ComPtr<ICoreWebView2Controller3> raster;
+    if (SUCCEEDED(controller_.As(&raster))) raster->get_RasterizationScale(&scale);
+    try { presenter->update_view(bounds, zoom * scale, visible() && !IsIconic(GetAncestor(hwnd_, GA_ROOT))); }
+    catch (...) { clear_video_surface(); }
+  }
   double corner_radius_ = 0;
   bool custom_region_ = false;
   int region_width_ = -1, region_height_ = -1, region_radius_ = -1;
@@ -254,7 +343,7 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
     if (background_ == next) return;
     background_ = next;
     ComPtr<ICoreWebView2Controller2> controller;
-    if (controller_ && SUCCEEDED(controller_.As(&controller)))
+    if (!video_background_active_ && controller_ && SUCCEEDED(controller_.As(&controller)))
       controller->put_DefaultBackgroundColor({255, GetRValue(next), GetGValue(next), GetBValue(next)});
     InvalidateRect(hwnd_, nullptr, FALSE);
     if (options_.frameless && floating()) RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME);
@@ -287,6 +376,7 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
     RECT rect{}; GetClientRect(hwnd_, &rect);
     if (devtools_) rect = devtools_->layout(rect);
     if (controller_) controller_->put_Bounds(rect);
+    update_video_surface();
     resize_edges_.sync(hwnd_, controller_ && frameless_active() && resize_border());
     update_region();
   }
@@ -342,7 +432,9 @@ public:
       if (!self->options_.hosted && (msg == WM_WINDOWPOSCHANGED || (msg == WM_STYLECHANGED && wp == static_cast<WPARAM>(GWL_STYLE))))
         self->dock_redraw_.sync(hwnd);
       if (msg == WM_STYLECHANGING && wp == static_cast<WPARAM>(GWL_STYLE)) {
-        reinterpret_cast<STYLESTRUCT*>(lp)->styleNew |= WS_CLIPCHILDREN;
+        auto& style = reinterpret_cast<STYLESTRUCT*>(lp)->styleNew;
+        if (self->video_background_active_) style &= ~DWORD(WS_CLIPCHILDREN);
+        else style |= WS_CLIPCHILDREN;
       } else if (msg == WM_ERASEBKGND) {
         self->paint_background(reinterpret_cast<HDC>(wp)); return 1;
       } else if (msg == WM_PAINT) {
@@ -454,8 +546,11 @@ public:
     if (!options_.hidden) ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   }
   ~WinWindow() override {
-    overlay_.reset();
     closed_ = true;
+    clear_video_surface();
+    video_host_.reset();
+    element_fullscreen(false);
+    overlay_.reset();
     if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
     cursor_.finish();
     dock_redraw_.detach();
@@ -466,7 +561,7 @@ public:
     if (hwnd_) DestroyWindow(hwnd_);
     if (hosted_parking_) DestroyWindow(hosted_parking_);
   }
-  void fail(const std::string& error) { closed_ = true; options_.on_error(error); }
+  void fail(const std::string& error) { clear_video_surface(); closed_ = true; options_.on_error(error); }
   bool environment_wait_cancelled() const { return closed_ || startup_.cancelled(); }
   void initialize(ICoreWebView2Environment* environment, Json timing = nullptr, ComPtr<ICoreWebView2Controller> prepared = {}) {
     if (environment_wait_cancelled()) return;
@@ -577,6 +672,14 @@ public:
           } catch (const std::exception& error) { self->fail(error.what()); return E_FAIL; }
         }).Get(), &token), "WebView2 App resources");
     }
+    EventRegistrationToken fullscreen_token{};
+    check(webview_->add_ContainsFullScreenElementChanged(Callback<ICoreWebView2ContainsFullScreenElementChangedEventHandler>(
+      [weak](ICoreWebView2* sender, IUnknown*) -> HRESULT {
+        if (auto self = weak.lock(); self && !self->closed_) {
+          BOOL full = FALSE; sender->get_ContainsFullScreenElement(&full); self->element_fullscreen(full != FALSE);
+        }
+        return S_OK;
+      }).Get(), &fullscreen_token), "WebView2 fullscreen");
     check(install_window_menu(webview_.Get(), options_.on_dock_toggle ? std::function<void()>([weak] {
       if (auto self = weak.lock(); self && !self->closed_) self->options_.on_dock_toggle();
     }) : std::function<void()>(), [weak] {
@@ -641,6 +744,7 @@ public:
         }
         else if (self->options_.on_reload && self->options_.on_reload()) args->put_Cancel(TRUE);
         else {
+          self->clear_video_surface();
           if (self->options_.hosted) self->set_visible(false);
           self->startup_.navigate(self->options_.hosted);
           self->cursor_.finish();
@@ -699,6 +803,31 @@ public:
           return S_OK;
         }).Get()), "AddScriptToExecuteOnDocumentCreated");
   }
+  std::shared_ptr<VideoMemory> video_memory(const std::string& token, uint32_t bytes) override {
+    ComPtr<ICoreWebView2_17> view;
+    ComPtr<ICoreWebView2_2> view2;
+    ComPtr<ICoreWebView2Environment> environment;
+    ComPtr<ICoreWebView2Environment12> modern;
+    if (closed_ || !webview_ || FAILED(webview_.As(&view)) || FAILED(webview_.As(&view2)) ||
+        FAILED(view2->get_Environment(&environment)) || FAILED(environment.As(&modern))) return {};
+    struct Mapping final : VideoMemory {
+      HANDLE handle = nullptr;
+      ~Mapping() override { if (data) UnmapViewOfFile(data); if (handle) CloseHandle(handle); }
+    };
+    ComPtr<ICoreWebView2SharedBuffer> shared;
+    const size_t size = size_t(bytes) * 2;
+    if (FAILED(modern->CreateSharedBuffer(size, &shared))) return {};
+    HANDLE handle = nullptr;
+    auto mapping = std::make_shared<Mapping>();
+    if (FAILED(shared->get_FileMappingHandle(&handle)) ||
+        !DuplicateHandle(GetCurrentProcess(), handle, GetCurrentProcess(), &mapping->handle, 0, FALSE, DUPLICATE_SAME_ACCESS)) return {};
+    mapping->data = static_cast<unsigned char*>(MapViewOfFile(mapping->handle, FILE_MAP_WRITE, 0, 0, size));
+    if (!mapping->data) return {};
+    mapping->frame_bytes = bytes;
+    const auto metadata = wide(Json{{"reawebVideo", token}}.dump());
+    if (FAILED(view->PostSharedBufferToScript(shared.Get(), COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_ONLY, metadata.c_str()))) return {};
+    return mapping;
+  }
   void evaluate(const std::string& script) override {
     if (webview_ && !closed_) webview_->ExecuteScript(wide(script).c_str(), nullptr);
   }
@@ -718,6 +847,7 @@ public:
     return hwnd_ && (focus == hwnd_ || IsChild(hwnd_, focus));
   }
   void tick() override {
+    update_video_surface();
     if (overlay_) overlay_->repair();
     if (!closed_ && startup_.expired()) { fail("WebView2 initial frame did not become available within 15 seconds"); return; }
     if (!closed_ && startup_.present()) {
@@ -754,6 +884,26 @@ public:
     if (!closed_ && devtools_) devtools_->tick(webview_.Get());
     const bool next = startup_.pending() || visible();
     if (controller_ && next != visible_) { controller_->put_IsVisible(next); visible_ = next; }
+  }
+  bool video_presenter_available() const override { return !closed_ && controller_ && alpha_supported_ && desktop_composition(); }
+  const char* video_presenter_backend() const override { return "d3d11"; }
+  std::shared_ptr<VideoPresenter> video_presenter(const Json& descriptor) override {
+    if (!video_presenter_available()) throw Error("VIDEO_PRESENTATION_UNAVAILABLE", "Native D3D presentation is unavailable");
+    if (auto current = video_presenter_.lock(); current && !current->closed())
+      throw Error("VIDEO_SURFACE_IN_USE", "This window already has a native video surface");
+    clear_video_surface();
+    if (!video_host_) video_host_ = make_win_video_host(hwnd_);
+    auto presenter = make_win_video_presenter(video_host_, descriptor);
+    ComPtr<ICoreWebView2Controller2> alpha; controller_.As(&alpha);
+    if (FAILED(alpha->put_DefaultBackgroundColor({0,0,0,0}))) {
+      presenter->invalidate(); throw Error("VIDEO_RENDERER_UNAVAILABLE", "Cannot enable video background transparency");
+    }
+    video_presenter_ = presenter; video_background_active_ = true;
+    if (!update_video_clipping()) {
+      clear_video_surface(); throw Error("VIDEO_RENDERER_UNAVAILABLE", "Cannot expose the native video layer");
+    }
+    update_video_surface();
+    return presenter;
   }
   void focus() override {
     if (closed_ || !hwnd_ || startup_.cancelled()) return;

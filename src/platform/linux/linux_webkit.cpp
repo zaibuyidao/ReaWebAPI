@@ -18,6 +18,8 @@
 #include "platform/linux/gtk_context_menu.hpp"
 #include "platform/linux/gtk_resources.hpp"
 #include "platform/linux/gtk_media.hpp"
+#include "platform/linux/video_memory.hpp"
+#include <gio/gunixfdlist.h>
 
 namespace reaweb {
 namespace {
@@ -64,6 +66,36 @@ class Page {
   int id_;
   std::string uri_;
   GtkWidget* plug_ = nullptr;
+  GtkWidget* fullscreen_window_ = nullptr;
+  GtkWidget* fullscreen_parent_ = nullptr;
+  void element_fullscreen(bool enter) {
+    if (enter == bool(fullscreen_window_)) return;
+    if (enter) {
+      fullscreen_parent_ = gtk_widget_get_parent(GTK_WIDGET(view_));
+      if (!fullscreen_parent_) return;
+      g_object_ref(fullscreen_parent_);
+      fullscreen_window_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+      gtk_window_set_title(GTK_WINDOW(fullscreen_window_), "Video fullscreen");
+      gtk_window_set_screen(GTK_WINDOW(fullscreen_window_), gtk_widget_get_screen(plug_));
+      gint x = 0, y = 0; gdk_window_get_origin(gtk_widget_get_window(plug_), &x, &y);
+      gtk_window_move(GTK_WINDOW(fullscreen_window_), x, y);
+      g_signal_connect(fullscreen_window_, "delete-event", G_CALLBACK(+[](GtkWidget*, GdkEvent*, gpointer data) -> gboolean {
+        auto* self = static_cast<Page*>(data);
+        webkit_web_view_evaluate_javascript(self->view_, "document.exitFullscreen().catch(()=>{})", -1, nullptr, nullptr, nullptr, nullptr, nullptr);
+        return TRUE;
+      }), this);
+      gtk_container_remove(GTK_CONTAINER(fullscreen_parent_), GTK_WIDGET(view_));
+      gtk_container_add(GTK_CONTAINER(fullscreen_window_), GTK_WIDGET(view_));
+      gtk_window_fullscreen(GTK_WINDOW(fullscreen_window_));
+      gtk_widget_show_all(fullscreen_window_); gtk_widget_grab_focus(GTK_WIDGET(view_));
+    } else {
+      gtk_container_remove(GTK_CONTAINER(fullscreen_window_), GTK_WIDGET(view_));
+      gtk_container_add(GTK_CONTAINER(fullscreen_parent_), GTK_WIDGET(view_));
+      gtk_widget_show(GTK_WIDGET(view_));
+      gtk_widget_destroy(fullscreen_window_); fullscreen_window_ = nullptr;
+      g_object_unref(fullscreen_parent_); fullscreen_parent_ = nullptr;
+    }
+  }
   WebKitWebView* view_ = nullptr;
   WebKitUserContentManager* manager_ = nullptr;
   std::shared_ptr<WebResources> resources_;
@@ -329,6 +361,14 @@ public:
     channel_.send({{"id", id_}, {"op", "container"}, {"prewarmed", bool(prepared)}});
     auto settings = webkit_web_view_get_settings(view_);
     webkit_settings_set_enable_developer_extras(settings, TRUE);
+    webkit_settings_set_enable_fullscreen(settings, gdk_x11_screen_supports_net_wm_hint(
+      gdk_screen_get_default(), gdk_atom_intern_static_string("_NET_WM_STATE_FULLSCREEN")));
+    g_signal_connect(view_, "enter-fullscreen", G_CALLBACK(+[](WebKitWebView*, gpointer data) -> gboolean {
+      static_cast<Page*>(data)->element_fullscreen(true); return TRUE;
+    }), this);
+    g_signal_connect(view_, "leave-fullscreen", G_CALLBACK(+[](WebKitWebView*, gpointer data) -> gboolean {
+      static_cast<Page*>(data)->element_fullscreen(false); return TRUE;
+    }), this);
     webkit_settings_set_enable_javascript(settings, TRUE);
     webkit_settings_set_enable_html5_local_storage(settings, TRUE);
     webkit_settings_set_allow_file_access_from_file_urls(settings, FALSE);
@@ -364,6 +404,11 @@ public:
         self->navigation_uri_ = uri;
       }
       return FALSE;
+    }), this);
+    g_signal_connect(view_, "user-message-received", G_CALLBACK(+[](WebKitWebView*, WebKitUserMessage* message, gpointer data) -> gboolean {
+      if (std::strcmp(webkit_user_message_get_name(message), "reaweb-video-ready")) return FALSE;
+      auto self = static_cast<Page*>(data);
+      self->channel_.send({{"id", self->id_}, {"op", "video-native-ready"}}); return TRUE;
     }), this);
     g_signal_connect(view_, "permission-request", G_CALLBACK(+[](WebKitWebView*, WebKitPermissionRequest* request, gpointer data) -> gboolean {
       auto self = static_cast<Page*>(data);
@@ -489,6 +534,7 @@ public:
     XFlush(display);
   }
   ~Page() {
+    element_fullscreen(false);
     failed_ = true;
     g_object_set_data(G_OBJECT(view_), "reaweb-alpha", nullptr);
     watchParent(0, false);
@@ -506,7 +552,21 @@ public:
   }
   void command(const Json& request) {
     const auto op = request.at("op").get<std::string>();
-    if (op == "frameless") {
+    if (op == "video-memory") {
+      if (!resources_) return;
+      const auto token = request.at("token").get<std::string>();
+      if (token.size() != 64 || token.find_first_not_of("0123456789abcdef") != std::string::npos || request.at("origin") != resources_->origin()) return;
+      LinuxVideoResource resource{request.at("pid"), request.at("fd"), request.at("device"), request.at("inode"), request.at("bytes")};
+      const int fd = resource.open(); if (fd < 0) return;
+      auto files = g_unix_fd_list_new();
+      const int index = g_unix_fd_list_append(files, fd, nullptr); ::close(fd);
+      if (index == 0) {
+        auto message = webkit_user_message_new_with_fd_list("reaweb-video-buffer",
+          g_variant_new("(ssu)", token.c_str(), resources_->origin().c_str(), resource.bytes), files);
+        webkit_web_view_send_message_to_page(view_, message, nullptr, nullptr, nullptr);
+      }
+      g_object_unref(files);
+    } else if (op == "frameless") {
       frameless_ = request.at("value").get<bool>();
       const auto script = frameless_ && !docked_ ? "window.__reawebDragRegionsActive?.(true);" : "window.__reawebDragRegionsActive?.(false);";
       webkit_web_view_evaluate_javascript(view_, script, -1, nullptr, nullptr, nullptr, nullptr, nullptr);
@@ -665,6 +725,11 @@ struct Process {
     webkit_cookie_manager_set_persistent_storage(webkit_website_data_manager_get_cookie_manager(manager),
       cookies.c_str(), WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE);
     context = webkit_web_context_new_with_website_data_manager(manager);
+    std::error_code video_error;
+    const auto executable = fs::read_symlink("/proc/self/exe", video_error);
+    const auto video_extensions = executable.parent_path() / REAWEB_VIDEO_MODULE_DIR;
+    if (!video_error && fs::is_directory(video_extensions, video_error))
+      webkit_web_context_set_web_extensions_directory(context, video_extensions.c_str());
     register_app_resources(context);
     g_object_unref(manager);
     channel.send({{"op", "ready"}, {"protocol", 1}, {"version", REAWEB_VERSION}, {"frameless", window_moves_supported()}, {"browserVersion",

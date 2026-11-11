@@ -1,6 +1,8 @@
 #pragma once
 #include "core/core.hpp"
 #include "runtime/icon.hpp"
+#include "runtime/video_memory.hpp"
+#include "runtime/video_presenter.hpp"
 #include "web/web_resources.hpp"
 #include "platform/shared/startup_timing.hpp"
 #include "platform/shared/overlay.hpp"
@@ -45,6 +47,7 @@ struct WindowOptions {
   std::function<bool()> captures_keyboard;
   OverlayOptions overlay;
   std::function<bool()> routes_shortcuts;
+  bool video_high_refresh_rate = false;
 };
 class Window {
   std::shared_ptr<WebResources> media_resources_;
@@ -59,6 +62,10 @@ public:
       Json(media_resources_->close_media(args.at(0).get<std::string>()))}});
   }
   virtual void evaluate(const std::string& script) = 0;
+  virtual std::shared_ptr<VideoMemory> video_memory(const std::string&, uint32_t) { return {}; }
+  virtual bool video_presenter_available() const { return false; }
+  virtual const char* video_presenter_backend() const { return ""; }
+  virtual std::shared_ptr<VideoPresenter> video_presenter(const Json&) { return {}; }
   virtual void devtools() = 0;
   virtual Json devtools_state() const { return nullptr; }
   virtual void restore_devtools(const Json&) {}

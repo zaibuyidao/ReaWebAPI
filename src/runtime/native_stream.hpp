@@ -1,6 +1,8 @@
 #pragma once
 #include "core/core.hpp"
 #include "public/reaweb_stream.h"
+#include "runtime/video_memory.hpp"
+#include "runtime/video_presenter.hpp"
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -8,6 +10,7 @@
 
 namespace reaweb {
 class JsfxTransfer;
+inline constexpr uint32_t video_max_frame_bytes = 40u * 1024 * 1024;
 class StreamBuffer {
 public:
   struct Timing {
@@ -18,7 +21,8 @@ public:
   };
   struct Packet { uint64_t sequence; double timestamp; uint64_t dropped; std::vector<unsigned char> data; std::optional<Timing> timing; bool discontinuity = false; };
   StreamBuffer(int kind, const ReaWeb_StreamDesc& desc, bool project_video = false);
-  int publish(const void* data, uint32_t bytes, uint64_t sequence, double timestamp, const Timing* timing = nullptr, bool discontinuity = false) noexcept;
+  int publish(const void* data, uint32_t bytes, uint64_t sequence, double timestamp, const Timing* timing = nullptr, bool discontinuity = false,
+              std::vector<unsigned char>* owned_video = nullptr) noexcept;
   bool consume(Packet& packet);
   const int kind;
   const ReaWeb_StreamDesc descriptor;
@@ -35,6 +39,7 @@ private:
     std::optional<Timing> timing;
     bool discontinuity = false;
     std::unique_ptr<unsigned char[]> data;
+    std::vector<unsigned char> video_data;
   };
   std::unique_ptr<Slot[]> slots_;
   std::atomic_flag writing_ = ATOMIC_FLAG_INIT;
@@ -47,14 +52,21 @@ public:
   StreamHub();
   ~StreamHub();
   int create(int kind, const char* name, const ReaWeb_StreamDesc* desc, uint64_t* handle, bool project_video = false);
+  int create(int kind, const char* name, const ReaWeb_StreamDesc* desc, uint64_t* handle, bool project_video,
+             const Json& video_metadata);
   int create_jsfx(int kind, const char* name, const ReaWeb_StreamDesc* desc, uint64_t* handle,
                   int window, uint64_t generation, const Json& metadata);
   int publish(int kind, uint64_t handle, const void* data, uint32_t bytes, uint64_t sequence, double timestamp,
-              const StreamBuffer::Timing* timing = nullptr, bool discontinuity = false) noexcept;
+              const StreamBuffer::Timing* timing = nullptr, bool discontinuity = false,
+              std::vector<unsigned char>* owned_video = nullptr) noexcept;
   int close(uint64_t handle, int reason = REAWEB_STREAM_CLOSED);
   void close_owner(uint64_t owner);
-  Json attach(const std::string& name, int window, uint64_t generation, const std::string& origin);
+  Json attach(const std::string& name, int window, uint64_t generation, const std::string& origin, const VideoMemoryFactory& video_memory = {});
   Json attach_external(const std::string& name, uint64_t session);
+  Json attach_video_presenter(const std::string& name, int window, uint64_t generation,
+                              const std::string& origin, const VideoPresenterFactory&);
+  std::shared_ptr<VideoPresenter> video_presenter(const std::string& token, int window, uint64_t generation) const;
+  Json video_presenter_diagnostics(const std::string& token, int window, uint64_t generation) const;
   Json attach_jsfx_resource(const std::shared_ptr<JsfxTransfer>& transfer,int window,uint64_t generation,const std::string& origin);
   void detach_external(uint64_t session, const std::string& token = {});
   void detach(const std::string& token, int window);
@@ -87,17 +99,28 @@ private:
     std::chrono::steady_clock::time_point created = std::chrono::steady_clock::now();
     uint64_t external = 0;
     std::shared_ptr<JsfxTransfer> reliable{};
+    std::shared_ptr<VideoMemory> video_memory{};
+    std::shared_ptr<VideoPresenter> presenter{};
   };
   static constexpr unsigned slot_count = 128;
   std::array<Slot, slot_count> slots_;
   std::map<std::string, Ticket> tickets_;
+  struct VideoFailure {
+    int window;
+    uint64_t generation;
+    Json diagnostics;
+    std::chrono::steady_clock::time_point created = std::chrono::steady_clock::now();
+  };
+  std::map<std::string, VideoFailure> video_failures_;
   mutable std::mutex mutex_;
   mutable size_t allocated_ = 0;
   mutable std::vector<std::pair<std::weak_ptr<StreamBuffer>, size_t>> retired_;
+  std::vector<std::weak_ptr<VideoMemory>> video_memory_;
   void reap() const;
   uint64_t serial_ = 0;
   std::thread::id main_ = std::this_thread::get_id();
   std::unique_ptr<class StreamTransport> transport_;
-  Json attach_consumer(const std::string& name, int window, uint64_t generation, const std::string& origin, uint64_t external);
+  Json attach_consumer(const std::string& name, int window, uint64_t generation, const std::string& origin, uint64_t external,
+                       const VideoMemoryFactory& video_memory = {});
 };
 }

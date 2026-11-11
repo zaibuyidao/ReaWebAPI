@@ -1,11 +1,26 @@
 #pragma once
 #include "web/web_resources.hpp"
+#include "runtime/video_memory.hpp"
+#include <mutex>
 #import <WebKit/WebKit.h>
+
+namespace reaweb {
+struct MacVideoMemory final : VideoMemory {
+  mutable std::mutex mutex;
+  std::vector<unsigned char> storage;
+  explicit MacVideoMemory(uint32_t size) : storage(size_t(size) * 2) { data = storage.data(); frame_bytes = size; }
+  void write_slot(unsigned slot, const void* bytes) const override {
+    std::lock_guard<std::mutex> lock(mutex);
+    VideoMemory::write_slot(slot, bytes);
+  }
+};
+}
 
 @interface ReaWebSchemeHandler : NSObject <WKURLSchemeHandler> {
 @public
   std::shared_ptr<reaweb::WebResources> resources;
   NSMutableSet* mediaTasks;
+  std::map<std::string, std::weak_ptr<reaweb::MacVideoMemory>> videoSlots;
 }
 @end
 @implementation ReaWebSchemeHandler
@@ -34,6 +49,32 @@
   (void)view;
   if (!resources) {
     [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorResourceUnavailable userInfo:nil]];
+    return;
+  }
+  const std::string uri = task.request.URL.absoluteString.UTF8String ?: "";
+  const auto videoPrefix = resources->origin() + "/__reaweb_video__/";
+  if (uri.compare(0, videoPrefix.size(), videoPrefix) == 0) {
+    const auto key = uri.substr(videoPrefix.size());
+    const auto slash = key.find('/');
+    const auto found = videoSlots.find(key.substr(0, slash));
+    auto memory = found == videoSlots.end() ? nullptr : found->second.lock();
+    const bool valid = memory && task.request.HTTPMethod && [task.request.HTTPMethod isEqualToString:@"GET"] &&
+      slash != std::string::npos && (key.substr(slash) == "/0" || key.substr(slash) == "/1");
+    if (!valid) {
+      [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorResourceUnavailable userInfo:nil]];
+      return;
+    }
+    auto fields = @{@"Content-Type": @"application/octet-stream", @"Cache-Control": @"no-store",
+      @"Content-Length": [NSString stringWithFormat:@"%u", memory->frame_bytes]};
+    [task didReceiveResponse:[[NSHTTPURLResponse alloc] initWithURL:task.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:fields]];
+    NSData* data;
+    {
+      std::lock_guard<std::mutex> lock(memory->mutex);
+      data = [[NSData alloc] initWithBytesNoCopy:memory->data + (key.back() - '0') * size_t(memory->frame_bytes) length:memory->frame_bytes
+        deallocator:^(void*, NSUInteger) { (void)memory; }];
+    }
+    [task didReceiveData:data];
+    [task didFinish];
     return;
   }
   std::map<std::string, std::string> headers;

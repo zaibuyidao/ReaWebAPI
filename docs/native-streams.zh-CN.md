@@ -19,6 +19,8 @@ await stream.close();
 
 公共 C ABI 见 [reaweb_stream.h](../src/public/reaweb_stream.h)，示例见 [synthetic producer](../tests/native_stream_extension.cpp)。创建与关闭在 REAPER 主线程执行，每个 Stream 由单个 producer 发布。第三方扩展应注册 `ReaWeb_SetServiceShutdown` 回调，先停止并等待 producer 退出，再关闭 Stream、注销 Service、释放资源。低延迟输入方法可通过 `ReaWeb_SetServiceInput` 注册，回调只更新最新输入状态，不执行耗时命令。
 
+`REAWEB_PIXEL_I420` 仅标识内建[工程视频](video-preview.zh-CN.md)的可选布局。外部 `CreateFrameStream` 仍仅接受 RGBA8/BGRA8，ABI 版本和描述结构大小不变。
+
 内建 `audio.openStream` 提供 PCM、FFT、Peak/RMS/LUFS 和实时 min/max 波形。`master` 采集硬件输出，`input` 采集硬件输入。Meter 保留实际通道布局，最多 32 通道。其他分析类型保留原有双声道行为。`selected-track` 或 `track:<GUID>` 使用绑定轨道的 **pre-FX Audio Accessor**，不代表轨道 FX 后或实时输入电平。Accessor 在主线程采样，分析和传输在原生线程执行。已有 `audio.getTrackMeter` 保留 REAPER 瞬时 Peak 语义。文件概览、缓存峰值与缩放查询继续使用 `audio.getWaveform`。
 
 轨道 Source 支持 `aggregate: true`，适用于 `audio`、`spectrum`、`meter` 和 `waveform`：

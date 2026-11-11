@@ -1,5 +1,6 @@
 #include "runtime/video.hpp"
 #include "video/pixels.hpp"
+#include "video/position_clock.hpp"
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -34,7 +35,10 @@ void* lookup(const char* name) {
 }
 struct BackendState {
   bool supported = true, active = false, malformed = false, throws = false;
-  int support_checks = 0, reads = 0, stops = 0;
+  bool i420 = false;
+  int matrix = 1;
+  VideoColorConversion conversion = VideoColorConversion::reaper_neon;
+  int support_checks = 0, reads = 0, stops = 0, width = 2, height = 1;
   VideoRead next = VideoRead::ready;
   std::vector<bool> discontinuities;
 };
@@ -42,12 +46,24 @@ struct Backend final : VideoBackend {
   std::shared_ptr<BackendState> state;
   explicit Backend(std::shared_ptr<BackendState> s) : state(std::move(s)) {}
   bool supported() override { ++state->support_checks; return state->supported; }
+  bool supports_i420() const override { return state->i420; }
   VideoRead read(bool changed, const Capture& capture) override {
     ++state->reads; state->active = true; state->discontinuities.push_back(changed);
     if (state->throws) throw std::runtime_error("Decoder failure");
     if (state->next == VideoRead::ready) {
-      const unsigned char bgra[] = {20, 40, 80, 255, 30, 50, 90, 255};
-      capture({bgra, 2, 1, state->malformed ? 1 : 8});
+      std::vector<unsigned char> bgra(size_t(state->width) * state->height * 4, 80);
+      capture({bgra.data(), state->width, state->height, state->malformed ? 1 : state->width * 4,
+        VideoPixelFormat::bgra8, state->i420, state->i420 ? state->matrix : -1, state->conversion});
+    }
+    return state->next;
+  }
+  VideoRead read_i420(bool changed, const Capture& capture) override {
+    ++state->reads; state->active = true; state->discontinuities.push_back(changed);
+    if (!state->i420 || state->malformed || state->matrix != 1) return VideoRead::format_unsupported;
+    if (state->next == VideoRead::ready) {
+      const int stride = (state->width + 3) & ~1;
+      std::vector<unsigned char> planes(size_t(stride) * state->height * 3 / 2, 128);
+      capture({planes.data(), state->width, state->height, stride, VideoPixelFormat::i420, true, state->matrix, state->conversion});
     }
     return state->next;
   }
@@ -158,11 +174,18 @@ void pixel_conversion() {
   copy_video_pixels(image, 4, 2, actual);
   CHECK(actual == std::vector<unsigned char>({0, 0, 0, 255, 3, 2, 1, 255, 6, 5, 4, 255, 0, 0, 0, 255,
                                              0, 0, 0, 255, 9, 8, 7, 255, 12, 11, 10, 255, 0, 0, 0, 255}));
-  // Compare awkward fractional scales and aspect ratios against direct nearest-neighbor sampling.
+  // Compare fractional scales against a floating-point bilinear reference.
   for (int w : {1, 2, 3, 7, 13}) for (int h : {1, 2, 5, 11}) {
     const int stride = w * 4 + 8;
     std::vector<unsigned char> source(size_t(stride) * h);
     for (size_t i = 0; i < source.size(); ++i) source[i] = static_cast<unsigned char>(i * 37);
+    actual.resize(size_t(w) * h * 4);
+    copy_video_pixels({source.data(), w, h, stride}, w, h, actual);
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+      const auto offset = (size_t(y) * w + x) * 4;
+      for (int c = 0; c < 3; ++c) CHECK(actual[offset + c] == source[size_t(y) * stride + x * 4 + 2 - c]);
+      CHECK(actual[offset + 3] == 255);
+    }
     for (int width : {1, 2, 4, 9, 16}) for (int height : {1, 3, 8, 17}) {
       actual.assign(size_t(width) * height * 4, 42);
       copy_video_pixels({source.data(), w, h, stride}, width, height, actual);
@@ -175,11 +198,59 @@ void pixel_conversion() {
         if (x < left || x >= left + dw || y < top || y >= top + dh) {
           CHECK(actual[offset] == 0 && actual[offset + 1] == 0 && actual[offset + 2] == 0);
         } else {
-          const auto at = size_t((y - top) * h / dh) * stride + (x - left) * w / dw * 4;
-          CHECK(actual[offset] == source[at + 2] && actual[offset + 1] == source[at + 1] && actual[offset + 2] == source[at]);
+          const double sx = std::clamp((x - left + 0.5) * w / dw - 0.5, 0.0, double(w - 1));
+          const double sy = std::clamp((y - top + 0.5) * h / dh - 0.5, 0.0, double(h - 1));
+          const int x0 = int(sx), x1 = std::min(x0 + 1, w - 1), y0 = int(sy), y1 = std::min(y0 + 1, h - 1);
+          for (int c = 0; c < 3; ++c) {
+            const auto value = [&](int px, int py) { return source[py * stride + px * 4 + 2 - c]; };
+            const double upper = value(x0, y0) * (1 - sx + x0) + value(x1, y0) * (sx - x0);
+            const double lower = value(x0, y1) * (1 - sx + x0) + value(x1, y1) * (sx - x0);
+            CHECK(std::abs(actual[offset + c] - (upper * (1 - sy + y0) + lower * (sy - y0))) <= 1.5);
+          }
         }
       }
     }
+  }
+}
+void resolution_profiles() {
+  Fixture f;
+  const auto caps = f.video->capabilities();
+  CHECK(caps["maxWidth"] == 8192 && caps["maxFrameBytes"] == 40 * 1024 * 1024);
+  auto info = f.video->source_info();
+  CHECK(info["available"] == true && info["width"] == 2 && info["height"] == 1 && info["originalSupported"] == true);
+  CHECK(!f.backend->active && f.streams.info()["streams"].empty());
+  f.backend->next = VideoRead::pending;
+  info = f.video->source_info();
+  CHECK(info["available"] == false && info["width"] == 0 && info["height"] == 0);
+  bool pending = false;
+  try { f.video->open({{"resolution", "source"}}, 1); } catch (const Error& e) { pending = e.code == "VIDEO_FRAME_PENDING"; }
+  CHECK(pending && f.streams.info()["streams"].empty());
+  f.backend->next = VideoRead::ready;
+  const auto name = f.video->open({{"resolution", "source"}}, 1); f.attach(name); f.ready();
+  CHECK(f.video->state()["width"] == 2 && f.video->state()["height"] == 1);
+  CHECK(f.video->open({{"resolution", "source"}}, 2) == name);
+  bool conflict = false;
+  try { f.video->open({{"width", 2}, {"height", 1}}, 2); } catch (const Error& e) { conflict = e.code == "VIDEO_PROFILE_CONFLICT"; }
+  CHECK(conflict && f.video->state()["subscribers"] == 1);
+  f.backend->width = 3; f.step();
+  CHECK(f.video->state()["status"] == "closed" && f.video->state()["error"] == "VIDEO_RESOLUTION_CHANGED");
+  CHECK(f.video->source_info()["width"] == 3);
+  f.backend->width = 2;
+  f.video->close_window(1); f.video->tick();
+  const auto fitted = f.video->open({{"resolution", "fit"}, {"width", 1}, {"height", 8}}, 1);
+  f.attach(fitted); f.ready(); CHECK(f.video->state()["width"] == 1 && f.video->state()["height"] == 1);
+  f.video->close_window(1); f.video->tick();
+  const auto large = f.video->open({{"resolution", "fit"}, {"width", 4000}, {"height", 3000}}, 1);
+  f.attach(large); f.ready(); CHECK(f.video->state()["width"] == 2 && f.video->state()["height"] == 1);
+  f.video->close_window(1); f.video->tick();
+  bool limit = false;
+  try { f.video->open({{"width", 8192}, {"height", 8192}}, 1); } catch (const Error& e) { limit = e.code == "VIDEO_RESOLUTION_LIMIT"; }
+  CHECK(limit && f.streams.info()["streams"].empty());
+  for (const auto& options : std::vector<Json>{{{"resolution", "bad"}}, {{"resolution", "fit"}},
+      {{"resolution", "source"}, {"width", 100}}, {{"preserveAspect", 1}}}) {
+    bool invalid = false;
+    try { f.video->open(options, 1); } catch (const Error& e) { invalid = e.code == "INVALID_ARGUMENT"; }
+    CHECK(invalid);
   }
 }
 void unused_and_rejection() {
@@ -188,8 +259,8 @@ void unused_and_rejection() {
   CHECK(f.video->state()["status"] == "closed");
   CHECK(f.backend->reads == 0 && f.backend->support_checks == 0 && !f.backend->active);
   CHECK(f.streams.info()["streams"].empty());
-  const std::vector<Json> invalid = {nullptr, Json::array(), {{"width", 0}}, {{"width", 1921}},
-    {{"height", -1}}, {{"height", 1081}}, {{"updateRate", 0}}, {{"updateRate", 75.001}},
+  const std::vector<Json> invalid = {nullptr, Json::array(), {{"width", 0}}, {{"width", 8193}},
+    {{"height", -1}}, {{"height", 8193}}, {{"updateRate", 0}}, {{"updateRate", 75.001}},
     {{"width", 1.5}}, {{"width", true}}, {{"updateRate", "AUTO"}}, {{"updateRate", 0.999}},
     {{"updateRate", std::numeric_limits<double>::quiet_NaN()}}, {{"updateRate", std::numeric_limits<double>::infinity()}},
     {{"updateRate", true}}, {{"updateRate", nullptr}}, {{"source", "file"}}, {{"extra", true}}};
@@ -274,13 +345,16 @@ void clocks_and_invalidations() {
   before = f.cleared();
   f.state.play = 1; f.ready(); before = f.cleared();
   const auto captured = f.video->diagnostics()["capturedFrames"];
+  const auto capture_ms = f.video->diagnostics()["captureMs"];
   f.backend->next = VideoRead::unchanged; f.step();
   CHECK(f.video->state()["status"] == "ready" && f.cleared() == before);
   CHECK(f.video->diagnostics()["capturedFrames"] == captured);
+  CHECK(f.video->diagnostics()["captureMs"] == capture_ms);
   auto reads = f.backend->reads;
   f.video->tick(); CHECK(f.backend->reads == reads + 1);
   f.backend->next = VideoRead::pending; f.video->tick();
   CHECK(f.video->state()["status"] == "ready" && f.cleared() == before);
+  CHECK(f.video->diagnostics()["captureMs"] == capture_ms);
   reads = f.backend->reads;
   f.backend->next = VideoRead::ready; f.video->tick();
   CHECK(f.backend->reads == reads + 1 && f.video->diagnostics()["capturedFrames"] == captured.get<int>() + 1);
@@ -386,10 +460,114 @@ void automatic_frame_clock() {
   f.state.speed = 2; const auto throttled = f.backend->reads; f.video->tick();
   CHECK(f.backend->reads == throttled);
 }
+void native_i420_profiles() {
+  const Json options{{"format", "i420"}, {"resolution", "source"}, {"updateRate", "auto"}};
+  const auto rejected = [&](Fixture& f, const Json& request, const char* code) {
+    try { f.video->open(request, 1); CHECK(false); }
+    catch (const Error& error) { CHECK(error.code == code); }
+  };
+  {
+    Fixture f;
+    CHECK(f.video->capabilities()["formats"] == Json::array({"rgba8"}));
+    rejected(f, options, "VIDEO_FORMAT_UNSUPPORTED");
+    rejected(f, {{"format", "i420"}}, "INVALID_ARGUMENT");
+    rejected(f, {{"format", "yuv"}}, "INVALID_ARGUMENT");
+  }
+  for (int invalid : {0, 2, 3}) {
+    Fixture f; f.backend->i420 = true; f.backend->height = 2; f.backend->matrix = invalid;
+    rejected(f, options, "VIDEO_FORMAT_UNSUPPORTED");
+  }
+  for (int width : {3, 18}) {
+    Fixture f; f.backend->i420 = true; f.backend->width = width; f.backend->height = 2;
+    rejected(f, options, "VIDEO_FORMAT_UNSUPPORTED");
+  }
+  {
+    Fixture f; f.backend->i420 = true; f.backend->width = 16; f.backend->height = 3;
+    rejected(f, options, "VIDEO_FORMAT_UNSUPPORTED");
+  }
+  {
+    Fixture f; f.backend->i420 = true; f.backend->width = 16; f.backend->height = 2;
+    f.backend->conversion = VideoColorConversion::unknown;
+    rejected(f, options, "VIDEO_FORMAT_UNSUPPORTED");
+  }
+  for (const auto conversion : {VideoColorConversion::reaper_neon, VideoColorConversion::reaper_sse})
+  for (int change = 0; change < 4; ++change) {
+    Fixture f; f.backend->i420 = true; f.backend->width = 16; f.backend->height = 2;
+    CHECK(f.video->capabilities()["formats"] == Json::array({"rgba8", "i420"}));
+    f.backend->conversion = conversion;
+    const auto expected = conversion == VideoColorConversion::reaper_neon ? "reaper-neon" : "reaper-sse";
+    const auto source = f.video->source_info();
+    CHECK(source["colorConversion"] == expected);
+    CHECK(source["nativeFormat"] == "i420" && source["colorMatrix"] == "bt709" && source["colorRange"] == "limited");
+    const auto name = f.video->open(options, 1); const auto ticket = f.attach(name);
+    CHECK(ticket["format"] == "i420" && ticket["maxBytes"] == 48 && ticket["stride"] == 16);
+    CHECK(ticket["colorMatrix"] == "bt709" && ticket["colorRange"] == "limited");
+    CHECK(ticket["colorConversion"] == expected);
+    f.video->tick(); CHECK(f.video->state()["status"] == "ready");
+    CHECK(f.video->state()["colorConversion"] == expected);
+    CHECK(f.video->diagnostics()["captureFailures"] == 0);
+    CHECK(f.video->diagnostics()["producedFrames"].get<int>() >= 2 && f.video->diagnostics()["droppedFrames"] == 0);
+    CHECK(f.video->open(options, 2) == name);
+    rejected(f, {{"resolution", "source"}}, "VIDEO_PROFILE_CONFLICT");
+    if (change == 0) f.backend->i420 = false;
+    else if (change == 1) f.backend->matrix = 0;
+    else if (change == 2) f.backend->width = 4;
+    else f.backend->conversion = conversion == VideoColorConversion::reaper_neon ? VideoColorConversion::reaper_sse : VideoColorConversion::reaper_neon;
+    f.step(); CHECK(f.video->state()["status"] == "closed" && f.video->state()["error"] == "VIDEO_FORMAT_CHANGED");
+    CHECK(f.streams.info()["streams"].empty());
+    const auto fallback = f.video->open({{"resolution", "source"}}, 1);
+    CHECK(f.attach(fallback)["format"] == "rgba8");
+  }
+  {
+    StreamHub streams; ReaWeb_StreamDesc desc{}; uint64_t handle = 0;
+    desc.size = sizeof(desc); desc.abi_version = REAWEB_STREAM_ABI; desc.format = REAWEB_PIXEL_I420;
+    desc.width = desc.height = desc.stride = 2; desc.max_bytes = 6; desc.capacity = 3;
+    const Json color{{"colorMatrix", "bt709"}, {"colorRange", "limited"}, {"colorConversion", "reaper-neon"}};
+    CHECK(streams.create(REAWEB_FRAME, "i420.external", &desc, &handle) == REAWEB_UNSUPPORTED_FORMAT);
+    CHECK(streams.create(REAWEB_FRAME, "i420.unknown", &desc, &handle, true) == REAWEB_UNSUPPORTED_FORMAT);
+    auto unknown = color; unknown["colorConversion"] = "unknown";
+    CHECK(streams.create(REAWEB_FRAME, "i420.converter", &desc, &handle, true, unknown) == REAWEB_UNSUPPORTED_FORMAT);
+    ++desc.max_bytes;
+    CHECK(streams.create(REAWEB_FRAME, "i420.invalid", &desc, &handle, true, color) == REAWEB_INVALID_ARGUMENT);
+    --desc.max_bytes;
+    CHECK(streams.create(REAWEB_FRAME, "i420.valid", &desc, &handle, true, color) == REAWEB_OK);
+    CHECK(streams.attach("i420.valid", 1, 0, "http://localhost")["colorMatrix"] == "bt709");
+    const std::vector<unsigned char> planes{16, 32, 48, 64, 127, 129};
+    StreamBuffer buffer(REAWEB_FRAME, desc, true); StreamBuffer::Packet packet;
+    CHECK(buffer.publish(planes.data(), 4, 1, 0) == REAWEB_INVALID_ARGUMENT);
+    CHECK(buffer.publish(planes.data(), uint32_t(planes.size()), 2, 0) == REAWEB_OK);
+    CHECK(buffer.consume(packet) && packet.sequence == 2 && packet.data == planes);
+  }
+}
 }
 int main() {
   try {
-    pixel_conversion(); scheduler_lifetime(); missing_native_prerequisites(); unused_and_rejection(); sharing_and_lifetime(); clocks_and_invalidations(); source_and_host_changes(); automatic_rate(); fixed_fractional_rates(); automatic_frame_clock();
+    {
+      Fixture f;
+      bool created = false;
+      const auto name = f.video->open(f.profile, 1, &created); CHECK(created);
+      CHECK(f.video->open(f.profile, 2, &created) == name && !created);
+      f.video->discard_unattached("unrelated"); CHECK(f.video->state()["status"] != "closed");
+      f.video->discard_unattached(name); CHECK(f.video->state()["status"] == "closed");
+      auto changed = f.profile; changed["width"] = 8;
+      const auto fallback = f.video->open(changed, 1, &created); CHECK(created && fallback != name);
+      f.attach(fallback);
+      f.video->discard_unattached(fallback); CHECK(f.video->state()["status"] != "closed");
+      CHECK(f.video->open(changed, 2, &created) == fallback && !created);
+    }
+    VideoPositionClock clock;
+    CHECK(clock.update(10, 1, 1, 1, 0));
+    CHECK(!clock.update(10, 1.1, 1, 1, 0));
+    CHECK(!clock.update(10, 1.3, 1, 1, 0));
+    CHECK(!clock.update(10.32, 1.32, 1, 1, 0));
+    CHECK(clock.update(12, 1.34, 1, 1, 0));
+    CHECK(clock.update(11, 1.35, 1, 1, 0));
+    CHECK(clock.update(11, 1.36, 2, 1, 0));
+    CHECK(!clock.update(11, 2, 2, 1, 0));
+    CHECK(clock.update(11.01, 2.01, 2, 1, 0));
+    CHECK(clock.update(11.01, 2.02, 2, 1, 1));
+    pixel_conversion(); native_i420_profiles();
+    resolution_profiles(); scheduler_lifetime(); missing_native_prerequisites(); unused_and_rejection(); sharing_and_lifetime(); clocks_and_invalidations(); source_and_host_changes(); automatic_rate(); fixed_fractional_rates(); automatic_frame_clock();
     std::cout << "Video host rejection, consumer ownership, invalidation, clocks and cleanup passed\n";
   } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

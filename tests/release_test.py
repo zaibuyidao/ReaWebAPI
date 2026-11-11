@@ -20,19 +20,19 @@ class ReleaseTests(unittest.TestCase):
         self.directory = Path(self.temp.name)
         self.version = release.source_version()
         for platform, arch, _, name in release.TARGETS:
-            files = [name] + ([f'reawebapi-webview-{arch}'] if platform == 'linux' else [])
+            files = [name] + ([f'reawebapi-webview-{arch}', f'reawebapi-video-{arch}/reawebapi-video-{arch}.so'] if platform == 'linux' else [])
             with zipfile.ZipFile(self.directory / f'ReaWebAPI-{platform}-{arch}-v{self.version}.zip', 'w') as bundle:
                 metadata = dict(version=self.version, platform=platform, architecture=arch, revision='test-sha', extension=name)
                 bundle.writestr('ReaWebAPI/BUILD.json', json.dumps(metadata))
                 for item in files:
                     data = ('TEST FIXTURE ' + item).encode()
-                    (self.directory / item).write_bytes(data)
+                    (self.directory / Path(item).name).write_bytes(data)
                     bundle.writestr('UserPlugins/' + item, data)
     def tearDown(self):
         self.temp.cleanup()
     def test_exact_reapack_layout(self):
         assets = release.assemble(self.directory, self.version, 'test-sha')
-        self.assertEqual(len(assets), 15)
+        self.assertEqual(len(assets), 17)
         self.assertNotIn(self.directory / 'ReaWebAPI.ext', assets)
         self.assertFalse((self.directory / 'ReaWebAPI.ext').exists())
         self.assertIn(self.directory / f'ReaWebAPI-SDK-v{self.version}.zip', assets)
@@ -50,7 +50,7 @@ class ReleaseTests(unittest.TestCase):
             for name, data in demo_files.items():
                 self.assertEqual(bundle.read(name), data)
             for _, name in release.native_files():
-                self.assertEqual(bundle.read(f'extension/{name}'), (self.directory / name).read_bytes())
+                self.assertEqual(bundle.read(f'extension/{name}'), (self.directory / Path(name).name).read_bytes())
                 self.assertEqual(bundle.getinfo(f'extension/{name}').external_attr >> 16, 0o100755)
             descriptor = bundle.read('ReaWebAPI.ext').decode()
             self.assertEqual([line for line in descriptor.splitlines() if line.startswith('@description ')],
@@ -75,7 +75,7 @@ class ReleaseTests(unittest.TestCase):
             expected_changes = ['  ' + line[2:] for line in english_notes.splitlines() if line.startswith('- ')]
             self.assertTrue(expected_changes)
             self.assertEqual(changelog.splitlines(), expected_changes)
-            self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 7)
+            self.assertEqual(bundle.read('ReaWebAPI.ext').decode().count(' extension] '), 9)
             self.assertIn(f'@version {self.version}\n', bundle.read('ReaWebAPI.ext').decode())
         body = release.release_body('test/repo', self.version)
         links = release.re.findall(r'https://github.com/test/repo/releases/download/v[^/]+/([^\s)]+)', body)

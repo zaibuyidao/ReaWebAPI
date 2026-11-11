@@ -7,6 +7,7 @@
 #include "platform/linux/linux_overlay.hpp"
 #include "platform/linux/linux_corners.hpp"
 #include "platform/linux/linux_geometry.hpp"
+#include "platform/linux/video_memory.hpp"
 #include "platform/shared/transparency.hpp"
 #include "platform/shared/idle_pool.hpp"
 #include <chrono>
@@ -51,6 +52,7 @@ public:
   bool frameless_supported = false;
   Json idle_state;
   std::map<int, bool> prewarmed;
+  std::set<int> video_native;
   std::map<int, unsigned long> alpha_frames;
   std::map<int, WindowOptions> listeners;
   std::map<int, Json> inspectors;
@@ -130,6 +132,7 @@ public:
           frameless_supported = message.value("frameless", false); ready_ = true; return;
         }
         if (op == "parked") { parked_.insert(message.at("id").get<int>()); return; }
+        if (op == "video-native-ready") { video_native.insert(message.at("id").get<int>()); return; }
         auto it = listeners.find(message.at("id").get<int>());
         if (it == listeners.end()) return;
         if (op == "container") { prewarmed[it->first] = message.at("prewarmed").get<bool>(); return; }
@@ -197,6 +200,7 @@ public:
   }
 };
 class LinuxWindow final : public Window, public std::enable_shared_from_this<LinuxWindow> {
+  std::string video_origin_;
   std::shared_ptr<LinuxProcess> process_;
   int id_;
   std::unique_ptr<SwellWindow> window_;
@@ -267,6 +271,7 @@ public:
     return true;
   }
   LinuxWindow(std::shared_ptr<LinuxProcess> process, int id, WindowOptions options) : process_(std::move(process)), id_(id), initial_hidden_(options.hidden), wants_visible_(!options.hidden) {
+    if (options.resources) video_origin_ = options.resources->origin();
     if (options.startup_timing) options.startup_timing->mark(StartupTiming::ControllerStart);
     frameless_ = options.frameless; resizable_ = options.resizable;
     transparent_ = options.transparent;
@@ -373,6 +378,7 @@ public:
     window_->before_destroy = {};
     process_->listeners.erase(id_);
     process_->prewarmed.erase(id_);
+    process_->video_native.erase(id_);
     process_->inspectors.erase(id_);
     process_->backgrounds.erase(id_);
     process_->mouse_scales.erase(id_);
@@ -648,6 +654,15 @@ public:
   void reload() override { process_->send({{"id", id_}, {"op", "reload"}}); }
   void set_drop_enabled(bool enabled) override { process_->send({{"id", id_}, {"op", "drop-enabled"}, {"enabled", enabled}}); }
   void start_drag(const Json& payload, Reply reply) override { process_->desktop("ReaWeb_Drag", payload, std::move(reply), id_); }
+  std::shared_ptr<VideoMemory> video_memory(const std::string& token, uint32_t bytes) override {
+    if (closed() || video_origin_.empty() || !process_->video_native.count(id_)) return {};
+    auto memory = std::make_shared<LinuxVideoMemory>(bytes);
+    if (!memory->data) return {};
+    memory->script_copy = true;
+    process_->send({{"id", id_}, {"op", "video-memory"}, {"token", token}, {"origin", video_origin_}, {"pid", getpid()},
+      {"fd", memory->fd}, {"bytes", bytes}, {"device", uint64_t(memory->identity.st_dev)}, {"inode", uint64_t(memory->identity.st_ino)}});
+    return memory;
+  }
   void media(const std::string& method, const Json& args, Reply reply) override { process_->desktop(method, args, std::move(reply), id_); }
   void clear_media() override {
     Window::clear_media();

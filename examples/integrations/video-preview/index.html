@@ -1,6 +1,18 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Video Preview</title><link rel="stylesheet" href="style.css"></head>
-<body><header><h1>Project video</h1><button id="open">Open stream</button><button id="close" disabled>Close stream</button></header>
-<canvas width="1280" height="720" aria-label="REAPER project video"></canvas>
-<p id="status" role="status">Connecting…</p><pre id="diagnostics"></pre>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Video Preview</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><div><span class="eyebrow">REAWEBAPI / <span data-i18n="projectMonitor">PROJECT MONITOR</span></span><h1 data-i18n="title">Video preview</h1></div>
+<div class="actions"><div class="language" aria-label="Language"><button id="en" lang="en" aria-pressed="true">EN</button><button id="cn" lang="zh-CN" aria-pressed="false">CN</button></div>
+<details id="menu"><summary data-i18n="options">Options</summary><div class="menu">
+<div class="menu-heading" data-i18n="display">Display</div>
+<label><input type="checkbox" id="fullscreen"><span data-i18n="fullscreen">Fullscreen</span><small data-i18n="doubleClick">Double-click video</small></label>
+<label><input type="checkbox" id="aspect" checked><span data-i18n="aspect">Keep video aspect ratio</span></label>
+<label><input type="checkbox" id="original"><span data-i18n="original">Size window to original video</span></label>
+<div class="menu-group"><label class="setting"><span data-i18n="output">Output</span><select id="resolution"><option value="fit" data-i18n="fit">Fit viewport</option><option value="source" data-i18n="sourceMode">Original resolution</option><option value="custom" data-i18n="custom">Custom resolution</option></select></label>
+<div id="custom" hidden><label><span data-i18n="width">Width</span><input id="width" type="number" min="1" max="8192" value="1920"></label><span>×</span><label><span data-i18n="height">Height</span><input id="height" type="number" min="1" max="8192" value="1080"></label><button id="apply" data-i18n="apply">Apply</button></div></div>
+<div class="menu-group"><label class="setting"><span data-i18n="theme">Appearance</span><select id="theme"><option value="dark" data-i18n="dark">Dark</option><option value="light" data-i18n="light">Light</option></select></label></div>
+</div></details></div></header>
+<section id="stage"><div id="surface"><canvas width="1" height="1"></canvas></div><p id="placeholder"><strong data-i18n="placeholder">Your project, in focus.</strong><span data-i18n="placeholderHint">Waiting for the final project video output.</span></p><button id="exit-fullscreen" data-i18n="exitFullscreen">Exit fullscreen · Esc</button></section>
+<p id="status" role="status">Connecting…</p><section id="metrics"></section>
+<details class="diagnostic"><summary data-i18n="details">Technical details</summary><pre id="diagnostics"></pre></details>
 <script type="module" src="app.js"></script></body></html>

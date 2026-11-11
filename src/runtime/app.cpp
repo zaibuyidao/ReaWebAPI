@@ -21,6 +21,11 @@ bool app_daw_keyboard(const fs::path& root) {
   if (!value.is_boolean()) throw Error("APP_MANIFEST_INVALID", "dawKeyboard must be a boolean");
   return value.get<bool>();
 }
+bool app_video_high_refresh_rate(const fs::path& root) {
+  const auto value = app_manifest(root).value("videoHighRefreshRate", Json(false));
+  if (!value.is_boolean()) throw Error("APP_MANIFEST_INVALID", "videoHighRefreshRate must be a boolean");
+  return value.get<bool>();
+}
 Json app_info(const fs::path& root, const fs::path& data, const std::string& id) {
   Json result = {{"id", id}, {"name", root.filename().u8string()}, {"version", nullptr},
     {"rootPath", fs::canonical(root).u8string()}, {"dataPath", fs::absolute(data).lexically_normal().u8string()}};

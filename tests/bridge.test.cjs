@@ -76,7 +76,7 @@ test('The public SDK has exactly 730 unchanged Mirror methods and seventeen froz
   const expected = {
   "host": ["send", "service"],
   "stream": ["open", "getDiagnostics"],
-  "video": ["getCapabilities", "openStream", "getState", "getDiagnostics"],
+  "video": ["getCapabilities", "getSourceInfo", "openStream", "openWorkerStream", "openSurface", "getState", "getDiagnostics"],
   "realtime": ["subscribe", "getCapabilities", "getDiagnostics"],
   "window": [
     "open",
@@ -334,21 +334,25 @@ test('a frame never replays to a listener that subscribes later', async () => {
   t.event('frame', 2, { sequence: 8, playing: 0 }); await flush();
   assert.deepEqual(seen, [['first', 7], ['first', 8], ['second', 8]]);
 });
-function setup(engine = 'windows') {
-  const messages = [], reports = [], timers = new Map(), listeners = {};
+function setup(engine = 'windows', document) {
+  const messages = [], reports = [], timers = new Map(), listeners = {}, releasedBuffers = [], nativeListeners = {};
   let timerId = 0;
   const post = message => message.startsWith('__reawebDiagnostic:')
     ? reports.push(JSON.parse(message.slice(19))) : messages.push(JSON.parse(message));
   const window = { addEventListener: (event, handler) => { listeners[event] = handler; } };
   window.top = window;
-  if (engine === 'windows') window.chrome = { webview: { postMessage: post } };
+  if (engine === 'windows' || engine === 'windows-shared') window.chrome = { webview: { postMessage: post } };
   else if (engine === 'webkit') window.webkit = { messageHandlers: { reaweb: { postMessage: post } } };
-  const context = vm.createContext({ window, crypto: webcrypto, TextEncoder, console, Uint8Array, Float32Array, Float64Array, DataView, btoa, atob,
+  if (engine === 'windows-shared') Object.assign(window.chrome.webview, {
+    addEventListener: (name, handler) => { nativeListeners[name] = handler; },
+    releaseBuffer: buffer => releasedBuffers.push(buffer)
+  });
+  const context = vm.createContext({ window, document, crypto: webcrypto, TextEncoder, console, Uint8Array, Float32Array, Float64Array, DataView, btoa, atob,
     setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id) });
   vm.runInContext(script, context);
   const reply = (index, payload) => window.__reawebReceive({ id: messages[index].id, document: messages[index].document, ...payload });
   const event = (name, sequence, data) => window.__reawebReceive({ document: messages[0].document, event: name, sequence, data });
-  return { window, messages, reports, timers, listeners, reply, event, context };
+  return { window, messages, reports, timers, listeners, reply, event, context, releasedBuffers, nativeListeners };
 }
 async function connected(engine) {
   const t = setup(engine);
@@ -927,6 +931,181 @@ test('Native streams cache binary frames, ACK delivery and detach only one consu
   assert.equal(stream.closed, true); assert.equal(stream.latest(), null); assert.deepEqual(ended, ['STREAM_CLOSED']);
   await stream.close(); assert.equal(t.messages.length, requests + 1);
 });
+test('Shared video ACKs immutable snapshots and releases mappings on invalid slots or close', async () => {
+  for (const early of [true, false]) {
+    const t = await connected('windows-shared'), sockets = streamSockets(t), buffer = new ArrayBuffer(32);
+    const deliver = () => t.nativeListeners.sharedbufferreceived({ additionalData: { reawebVideo: 'ticket' }, getBuffer: () => buffer });
+    const pending = t.window.reaper.stream.open('reaweb.video.project.test'); await flush();
+    if (early) deliver();
+    t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), sharedVideo: true } }); await flush();
+    if (!early) { assert.equal(sockets.length, 0); deliver(); await flush(); }
+    const socket = sockets[0]; socket.onopen(); const stream = await pending, frames = [];
+    stream.on('data', frame => frames.push(frame));
+    for (let i = 0; i < 5; ++i) {
+      new Uint8Array(buffer, (i % 2) * 16, 16).fill(i);
+      const message = streamPacket(i, 1, new Uint8Array(4)), view = new DataView(message.data);
+      view.setUint8(5, 2); view.setBigUint64(32, 16n, true); view.setUint32(40, i % 2, true);
+      socket.onmessage(message);
+    }
+    assert.equal(socket.sent.length, 5);
+    frames.forEach((frame, i) => assert.deepEqual([...frame.bytes], Array(16).fill(i)));
+    assert.equal(stream.info.sharedVideo, undefined);
+    if (early) {
+      const malformed = streamPacket(6, 1, new Uint8Array(4)), view = new DataView(malformed.data);
+      view.setUint8(5, 2); view.setBigUint64(32, 16n, true); view.setUint32(40, 2, true);
+      socket.onmessage(malformed); assert.equal(stream.error.code, 'UNSUPPORTED_FORMAT');
+    } else {
+      const close = stream.close(); await flush(); t.reply(t.messages.length - 1, { result: true }); await close;
+    }
+    assert.deepEqual(t.releasedBuffers, [buffer]);
+  }
+});
+
+async function workerVideo(shared = true, format = 'rgba8') {
+  const t = await connected('windows-shared');
+  class Port {
+    postMessage(data, transfer = []) {
+      const message = structuredClone(data, { transfer });
+      queueMicrotask(() => { if (!this.other.closed) this.other.onmessage?.({ data: message }); });
+    }
+    close() { this.closed = true; }
+  }
+  t.context.MessageChannel = class {
+    constructor() { this.port1 = new Port(); this.port2 = new Port(); this.port1.other = this.port2; this.port2.other = this.port1; }
+  };
+  t.context.Worker = class {
+    addEventListener(name, fn) { this[name] = fn; }
+    removeEventListener(name) { delete this[name]; }
+    terminate() { this.terminated = true; }
+    postMessage(data) {
+      this.port = data.port;
+      this.buffer = data.buffer ? structuredClone(data.buffer, { transfer: [data.buffer] }) : null;
+      this.port.onmessage = ({ data }) => {
+        if (data.type === 'close' && !this.unresponsive) {
+          this.port.postMessage({ type: 'closed', buffer: this.buffer }, this.buffer ? [this.buffer] : []);
+          this.buffer = null;
+        }
+      };
+      this.port.postMessage({ type: 'ready' });
+    }
+  };
+  const worker = new t.context.Worker(), buffer = new ArrayBuffer(format === 'i420' ? 12 : 32);
+  const pending = t.window.reaper.video.openWorkerStream(worker, { resolution: 'source', format }); await flush();
+  assert.equal(t.messages.at(-1).method, 'ReaWeb_VideoOpen');
+  t.reply(t.messages.length - 1, { result: 'reaweb.video.project.test' }); await flush();
+  if (shared) t.nativeListeners.sharedbufferreceived({ additionalData: { reawebVideo: 'ticket' }, getBuffer: () => buffer });
+  t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), sharedVideo: shared, ...(format === 'i420' ? { format, stride: 2, maxBytes: 6, colorMatrix: 'bt709', colorRange: 'limited', colorConversion: 'reaper-sse' } : {}) } });
+  const stream = await pending;
+  return { t, worker, buffer, stream };
+}
+test('Worker video transfers native ownership once, returns it on close and preserves the regular stream contract', async () => {
+  for (const shared of [true, false]) {
+    const { t, worker, buffer, stream } = await workerVideo(shared);
+    assert.equal(buffer.byteLength, shared ? 0 : 32);
+    assert.equal(stream.info.token, undefined); assert.equal(stream.info.sharedVideo, undefined);
+    const frames = []; stream.on('data', frame => frames.push(frame));
+    worker.port.postMessage({ type: 'frame', frame: { sequence: 7n, timestamp: 1, producerDropped: 0n, bytes: new Uint8Array(16) } }); await flush();
+    assert.equal(frames[0].sequence, 7n); assert.equal(frames[0].bytes, undefined); assert.ok(Object.isFrozen(frames[0]));
+    await assert.rejects(t.window.reaper.video.openWorkerStream(worker), { code: 'INVALID_ARGUMENT' });
+    const closing = stream.close(); await flush();
+    assert.equal(t.releasedBuffers.length, shared ? 1 : 0);
+    if (shared) assert.equal(t.releasedBuffers[0].byteLength, 32);
+    assert.equal(t.messages.at(-1).method, 'ReaWeb_StreamDetach');
+    t.reply(t.messages.length - 1, { result: true }); await closing;
+    const count = t.messages.length; await stream.close(); assert.equal(t.messages.length, count);
+    assert.ok(stream.closed); assert.ok(!worker.terminated);
+  }
+});
+test('I420 worker connections preserve conversion metadata and planar memory ownership', async () => {
+  for (const shared of [true, false]) {
+    const { t, worker, stream } = await workerVideo(shared, 'i420');
+    assert.equal(stream.info.colorConversion, 'reaper-sse'); assert.equal(stream.info.maxBytes, 6);
+    assert.equal(worker.buffer?.byteLength || 0, shared ? 12 : 0);
+    const closing = stream.close(); await flush();
+    t.reply(t.messages.length - 1, { result: true }); await closing;
+    assert.equal(t.releasedBuffers[0]?.byteLength || 0, shared ? 12 : 0);
+  }
+});
+
+test('Worker failures and unresponsive closure release native consumers without releasing detached buffers', async () => {
+  for (const crash of [true, false]) {
+    const { t, worker, stream } = await workerVideo();
+    if (crash) worker.error({ message: 'worker crashed' });
+    else { worker.unresponsive = true; void stream.close(); for (const fn of [...t.timers.values()]) fn(); }
+    await flush();
+    assert.equal(worker.terminated, true); assert.equal(t.releasedBuffers.length, 0);
+    assert.equal(t.messages.at(-1).method, 'ReaWeb_StreamDetach');
+    t.reply(t.messages.length - 1, { result: true }); await stream.close();
+    assert.equal(stream.closed, true);
+  }
+});
+
+test('Native I420 resources retain their complete planar payload and color metadata', async () => {
+  const t = await connected('webkit'), sockets = streamSockets(t);
+  t.context.AbortController = AbortController;
+  t.context.fetch = async () => ({ ok: true, arrayBuffer: async () => new Uint8Array(24).fill(128).buffer });
+  const opening = t.window.reaper.video.openStream({ resolution: 'source', format: 'i420' }); await flush();
+  t.reply(t.messages.length - 1, { result: 'reaweb.video.project.test' }); await flush();
+  t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), width: 4, height: 4, stride: 4, maxBytes: 24,
+    format: 'i420', colorMatrix: 'bt709', colorRange: 'limited', sharedVideo: true, videoResource: 'reaweb://test/video/' } }); await flush();
+  sockets[0].onopen(); const stream = await opening;
+  assert.equal(stream.info.format, 'i420'); assert.equal(stream.info.colorMatrix, 'bt709');
+  const packet = streamPacket(1, 1, new Uint8Array(4)), view = new DataView(packet.data);
+  view.setUint8(5, 2); view.setBigUint64(32, 24n, true);
+  sockets[0].onmessage(packet); await flush(); await flush();
+  assert.equal(stream.latest().bytes.length, 24); assert.equal(stream.latest().bytes[23], 128);
+  assert.equal(sockets[0].sent.length, 1);
+  const closing = stream.close(); await flush(); t.reply(t.messages.length - 1, { result: true }); await closing;
+});
+
+test('Native video copies remain immutable and release mappings on invalid frames or close', async () => {
+  for (const format of ['rgba8', 'i420']) for (const invalid of [false, true]) {
+    const bytes = format === 'i420' ? 6 : 16;
+    const t = await connected('webkit'), sockets = streamSockets(t), slots = new Uint8Array(bytes * 2), releases = [];
+    t.context.ArrayBuffer = ArrayBuffer;
+    let available = false;
+    t.window.__reawebVideoCopy = (token, slot) => {
+      assert.equal(token, 'ticket');
+      if (slot === -2) { releases.push(token); return null; }
+      if (slot === -1) return available ? bytes : null;
+      return slots.slice(slot * bytes, slot * bytes + (invalid ? bytes - 1 : bytes)).buffer;
+    };
+    const pending = t.window.reaper.stream.open('reaweb.video.project.test'); await flush();
+    t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), format, maxBytes: bytes, stride: format === 'i420' ? 2 : 8, sharedVideo: true, videoNativeCopy: true } });
+    await flush(); assert.equal(sockets.length, 0);
+    available = true;
+    const timer = [...t.timers.keys()].at(-1), wake = t.timers.get(timer);
+    t.timers.delete(timer); wake(); await flush();
+    const socket = sockets[0]; socket.onopen(); const stream = await pending, frames = [];
+    stream.on('data', frame => frames.push(frame));
+    assert.equal(stream.info.videoNativeCopy, undefined);
+    for (let i = 0; i < 5; ++i) {
+      slots.fill(i);
+      const packet = streamPacket(i, 1, new Uint8Array(4)), view = new DataView(packet.data);
+      view.setUint8(5, 2); view.setBigUint64(32, BigInt(bytes), true); view.setUint32(40, i % 2, true);
+      socket.onmessage(packet);
+    }
+    if (invalid) {
+      assert.equal(stream.error.code, 'UNSUPPORTED_FORMAT'); assert.equal(socket.sent.length, 0);
+      assert.equal(frames.length, 0); assert.ok(releases.length);
+    } else {
+      assert.equal(socket.sent.length, 5);
+      frames.forEach((frame, i) => assert.deepEqual([...frame.bytes], Array(bytes).fill(i)));
+      const closing = stream.close(); await flush(); t.reply(t.messages.length - 1, { result: true }); await closing;
+      assert.ok(releases.length); assert.equal(stream.closed, true);
+    }
+  }
+});
+
+test('Unavailable native video mapping fails without masking the transport error', async () => {
+  const t = await connected('webkit'); t.window.__reawebVideoCopy = {};
+  const pending = t.window.reaper.stream.open('reaweb.video.project.test'); await flush();
+  t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), sharedVideo: true, videoNativeCopy: true } });
+  await flush(); assert.equal(t.messages.at(-1).method, 'ReaWeb_StreamDetach');
+  t.reply(t.messages.length - 1, { result: true });
+  await assert.rejects(pending, { code: 'TRANSPORT_ERROR' });
+});
+
 test('Audio consumers bound FIFO, drop incoming on overrun and return null on underrun', async () => {
   const t = await connected(), sockets = streamSockets(t);
   const pending = t.window.reaper.stream.open('test.audio'); await flush();
@@ -939,6 +1118,48 @@ test('Audio consumers bound FIFO, drop incoming on overrun and return null on un
   sockets[0].onmessage(streamPacket(6, 2)); assert.equal(stream.read().sequence, 6n);
   sockets[0].onclose({ reason: 'EXTENSION_UNLOADED' });
   assert.equal(stream.closed, true); assert.equal(stream.error.code, 'EXTENSION_UNLOADED'); assert.equal(stream.read(), null);
+});
+
+test('Video resource reads preserve order, ACK after copying and abort on detach', async () => {
+  const t = await connected('webkit'), sockets = streamSockets(t), reads = [];
+  t.context.AbortController = AbortController;
+  t.context.fetch = (url, options) => new Promise(resolve => reads.push({ url, options, resolve }));
+  const pending = t.window.reaper.stream.open('reaweb.video.project.test'); await flush();
+  t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), sharedVideo: true, videoResource: 'reaweb://test/__reaweb_video__/ticket/' } });
+  await flush(); const socket = sockets[0]; socket.onopen(); const stream = await pending, frames = [];
+  stream.on('data', f => frames.push(f));
+  const packet = i => {
+    const message = streamPacket(i, 1, new Uint8Array(4)), view = new DataView(message.data);
+    view.setUint8(5, 2); view.setBigUint64(32, 16n, true); view.setUint32(40, i % 2, true);
+    return message;
+  };
+  socket.onmessage(packet(0)); socket.onmessage(packet(1)); await flush();
+  assert.equal(reads.length, 1, 'Resource requests are ordered with their stream metadata');
+  assert.equal(socket.sent.length, 0, 'Native slots cannot be reused during a resource read');
+  reads[0].resolve({ ok: true, arrayBuffer: async () => new Uint8Array(16).fill(7).buffer }); await flush();
+  assert.equal(socket.sent.length, 1); assert.equal(reads.length, 2);
+  reads[1].resolve({ ok: true, arrayBuffer: async () => new Uint8Array(16).fill(8).buffer }); await flush();
+  assert.equal(socket.sent.length, 2); assert.deepEqual(frames.map(f => [...f.bytes]), [Array(16).fill(7), Array(16).fill(8)]);
+  assert.equal(stream.info.videoResource, undefined);
+  socket.onmessage(packet(2)); await flush();
+  const closing = stream.close(); await flush();
+  assert.equal(reads[2].options.signal.aborted, true);
+  t.reply(t.messages.length - 1, { result: true }); await closing;
+  reads[2].resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(16) }); await flush();
+  assert.equal(frames.length, 2); assert.equal(socket.sent.length, 2, 'Closing cannot deliver a late resource or ACK its slot');
+});
+
+test('Malformed video resources close without ACKing incomplete pixels', async () => {
+  const t = await connected('webkit'), sockets = streamSockets(t);
+  t.context.AbortController = AbortController;
+  t.context.fetch = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(15) });
+  const pending = t.window.reaper.stream.open('reaweb.video.project.test'); await flush();
+  t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), sharedVideo: true, videoResource: 'reaweb://test/__reaweb_video__/ticket/' } });
+  await flush(); sockets[0].onopen(); const stream = await pending;
+  const message = streamPacket(0, 1, new Uint8Array(4)), view = new DataView(message.data);
+  view.setUint8(5, 2); view.setBigUint64(32, 16n, true);
+  sockets[0].onmessage(message); await flush();
+  assert.equal(stream.error.code, 'UNSUPPORTED_FORMAT'); assert.equal(sockets[0].sent.length, 0);
 });
 test('Stream format mismatch and connection failure expose typed errors', async () => {
   const t = await connected(), sockets = streamSockets(t);
@@ -1113,4 +1334,99 @@ test('Realtime rejects invalid options before allocation and cleans up failed at
   await flush();t.reply(t.messages.length-1,{error:{code:'STREAM_NOT_FOUND',message:'missing'}});
   await flush();assert.equal(t.messages.at(-1).method,'ReaWeb_RealtimeUnsubscribe');
   t.reply(t.messages.length-1,{result:true});await pending;
+});
+
+test('Video source metadata preserves final dimensions and unavailable states', async () => {
+  const t = await connected();
+  for (const value of [{available:true,width:2560,height:1440,originalSupported:true,error:null},
+      {available:false,width:0,height:0,originalSupported:false,error:'VIDEO_FRAME_PENDING'}]) {
+    const result = await answer(t, 'ReaWeb_VideoSourceInfo', [], value, t.window.reaper.video.getSourceInfo());
+    assert.equal(result.width, value.width); assert.equal(result.available, value.available); assert.equal(result.error, value.error);
+  }
+});
+
+async function surfaceFixture() {
+  const events = {}, document = { hidden: false, addEventListener: (name, callback) => { events[name] = callback; } };
+  const t = setup('webkit', document);
+  t.reply(0, { result: { protocol: 1, projectEpoch: 1, methods, batchMethods, events: hostEvents } });
+  await t.window.reaper.lifecycle.ready;
+  return { ...t, document, documentEvents: events };
+}
+const surfaceDescriptor = (renderer = 'native-metal') => ({ ...streamDescriptor(), renderer, width: 3840, height: 2160 });
+async function openSurfaceFixture(t, renderer = 'native-metal') {
+  return answer(t, 'ReaWeb_VideoSurfaceOpen', [{ resolution: 'source' }], surfaceDescriptor(renderer), t.window.reaper.video.openSurface({ resolution: 'source' }));
+}
+for (const renderer of ['native-metal', 'native-d3d11']) test(`${renderer} surfaces preserve their explicit non-pixel contract and close once`, async () => {
+  const t = await surfaceFixture(), surface = await openSurfaceFixture(t, renderer);
+  assert.ok(Object.isFrozen(surface)); assert.ok(Object.isFrozen(surface.info));
+  assert.equal(surface.info.renderer, renderer); assert.equal(surface.info.token, undefined); assert.equal(surface.info.url, undefined);
+  assert.equal(surface.readablePixels, false); assert.equal(surface.read, undefined); assert.equal(surface.latest, undefined);
+  assert.throws(() => surface.on('data', () => {}), { code: 'INVALID_ARGUMENT' });
+  const layout = { rect: { x: -100, y: 25, width: 1920, height: 1080 }, clip: { x: 0, y: 25, width: 800, height: 600 }, preserveAspect: true };
+  await answer(t, 'ReaWeb_VideoSurfaceLayout', ['ticket', layout], true, surface.setLayout(layout));
+  const diagnostics = { closed: false, hasFrame: true, presentedFrames: 60, submittedFrames: 61, renderer };
+  assert.deepEqual(JSON.parse(JSON.stringify(await answer(t, 'ReaWeb_VideoSurfaceDiagnostics', ['ticket'], diagnostics, surface.getDiagnostics()))), diagnostics);
+  if (renderer === 'native-d3d11') {
+    const unavailable = { closed: false, renderer, presentationCounter: 'dxgi-observed', presentationAvailable: false, presentedFrames: null, presentationFPS: null };
+    assert.deepEqual(JSON.parse(JSON.stringify(await answer(t, 'ReaWeb_VideoSurfaceDiagnostics', ['ticket'], unavailable, surface.getDiagnostics()))), unavailable);
+    assert.equal(surface.closed, false);
+  }
+  let closed = 0; surface.on('close', () => ++closed);
+  const closing = surface.close(); assert.equal(surface.close(), closing);
+  await answer(t, 'ReaWeb_VideoSurfaceClose', ['ticket'], true, closing);
+  const count = t.messages.length; await surface.close(); assert.equal(t.messages.length, count);
+  assert.equal(closed, 1); assert.equal(surface.closed, true);
+  await assert.rejects(surface.setLayout(layout), { code: 'STREAM_CLOSED' });
+});
+test('Native surface diagnostics close remote-ended subscriptions without a fake data event', async () => {
+  const t = await surfaceFixture(), surface = await openSurfaceFixture(t), events = [];
+  surface.on('error', error => events.push(error.code)); surface.on('close', error => events.push(error.code));
+  const pending = surface.getDiagnostics(); await flush();
+  t.reply(t.messages.length - 1, { result: { closed: true, hasFrame: false, errorCode: 'VIDEO_PROJECT_CHANGED', error: 'Project changed' } });
+  await flush(); assert.equal(t.messages.at(-1).method, 'ReaWeb_VideoSurfaceClose');
+  t.reply(t.messages.length - 1, { result: true });
+  assert.equal((await pending).closed, true); assert.equal(surface.closed, true);
+  assert.deepEqual(events, ['VIDEO_PROJECT_CHANGED', 'VIDEO_PROJECT_CHANGED']);
+});
+test('Native surface failures preserve stable renderer error codes and messages', async () => {
+  for (const result of [
+    { closed: true, errorCode: 'VIDEO_RENDERER_UNAVAILABLE', error: 'D3D initialization failed' },
+    { closed: true, error: 'Metal command buffer failed' },
+    { closed: true }
+  ]) {
+    const t = await surfaceFixture(), surface = await openSurfaceFixture(t), errors = [], closes = [];
+    surface.on('error', error => errors.push(error)); surface.on('close', error => closes.push(error));
+    const pending = surface.getDiagnostics(); await flush(); t.reply(t.messages.length - 1, { result });
+    await flush(); assert.equal(t.messages.at(-1).method, 'ReaWeb_VideoSurfaceClose');
+    t.reply(t.messages.length - 1, { result: true }); await pending;
+    assert.equal(closes.length, 1); assert.equal(errors.length, result.error ? 1 : 0);
+    assert.equal(closes[0].code, result.error ? 'VIDEO_RENDERER_UNAVAILABLE' : 'STREAM_CLOSED');
+    assert.equal(closes[0].message, result.error || 'Video surface closed');
+  }
+});
+test('Native surfaces close on hidden pages and release an attachment arriving after hiding', async () => {
+  for (const duringOpen of [false, true]) {
+    const t = await surfaceFixture();
+    const opening = t.window.reaper.video.openSurface({ resolution: 'source' }); await flush();
+    const index = t.messages.length - 1;
+    let surface, rejected;
+    if (!duringOpen) { t.reply(index, { result: surfaceDescriptor() }); surface = await opening; }
+    else rejected = assert.rejects(opening, { code: 'STREAM_CLOSED' });
+    t.document.hidden = true; t.documentEvents.visibilitychange();
+    if (duringOpen) t.reply(index, { result: surfaceDescriptor() });
+    await flush(); assert.equal(t.messages.at(-1).method, 'ReaWeb_VideoSurfaceClose');
+    t.reply(t.messages.length - 1, { result: true });
+    if (duringOpen) await rejected; else { await surface.close(); assert.equal(surface.closed, true); }
+    const count = t.messages.length;
+    await assert.rejects(t.window.reaper.video.openSurface(), { code: 'VIDEO_PAGE_HIDDEN' });
+    assert.equal(t.messages.length, count);
+  }
+});
+test('Surface failures retain profile conflicts and page unload clears ownership without new RPCs', async () => {
+  const t = await surfaceFixture();
+  const rejected = assert.rejects(t.window.reaper.video.openSurface(), { code: 'VIDEO_PROFILE_CONFLICT' });
+  await flush(); t.reply(t.messages.length - 1, { error: { code: 'VIDEO_PROFILE_CONFLICT', message: 'Active profile' } }); await rejected;
+  const surface = await openSurfaceFixture(t), count = t.messages.length;
+  t.listeners.pagehide(); await flush();
+  assert.equal(surface.closed, true); assert.equal(t.messages.length, count);
 });

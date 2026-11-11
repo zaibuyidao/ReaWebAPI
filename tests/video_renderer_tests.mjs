@@ -90,4 +90,31 @@ for (const timestamp of [0, 2]) {
   renderer.push(frame(1)); wake(now + 16);
   assert.equal(callbacks.size, 0, 'Cleanup during drawing cancels the next RAF');
 }
-console.log('Video renderer queue, startup, discontinuity and cleanup tests passed');
+{
+  const drawn = [], renderer = createFrameRenderer(value => drawn.push(value));
+  for (let i = 1; i <= 4; ++i) renderer.push({ timestamp: i / 60, bytes: { byteLength: 40 * 1024 * 1024 }, id: i });
+  wake(now + 16); wake(now + 16); wake(now + 16);
+  assert.deepEqual(drawn.map(value => value.id), [2, 3, 4], 'Large frames obey the 128 MiB queue budget');
+  assert.equal(renderer.dropped, 1);
+  renderer.clear();
+}
+{
+  const drawn = [], renderer = createFrameRenderer(value => drawn.push(value));
+  renderer.push(frame(1, 1));
+  now += 180; renderer.push(frame(2, 1));
+  now += 20; renderer.push(frame(3, 1.2));
+  wake(now + 16); wake(now + 16); wake(now + 16);
+  assert.deepEqual(drawn.map(value => value.bytes[0]), [1, 2, 3], 'A coarse host position catching up does not discard valid queued frames');
+  renderer.clear();
+}
+{
+  const released = [], renderer = createFrameRenderer(() => {}, frame => released.push(frame.bytes[0]));
+  for (let n = 1; n <= 7; ++n) renderer.push(frame(n));
+  assert.deepEqual(released, [1]);
+  wake(now + 17); assert.deepEqual(released, [1, 2]);
+  renderer.clear(); renderer.clear(); assert.deepEqual(released, [1, 2, 3, 4, 5, 6, 7]);
+  const failed = createFrameRenderer(() => { throw Error('upload failed'); }, frame => released.push(frame.bytes[0]));
+  failed.push(frame(8)); assert.throws(() => wake(now + 17), /upload failed/); failed.clear();
+  assert.equal(released.filter(n => n === 8).length, 1);
+}
+console.log('Video renderer queue, startup, discontinuity, ownership and cleanup tests passed');

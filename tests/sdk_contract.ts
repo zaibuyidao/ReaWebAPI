@@ -3,6 +3,9 @@ async function projectVideo() {
   const caps: ReaWebVideoCapabilities = await reaper.video.getCapabilities();
   await reaper.video.openStream({updateRate: 30000 / 1001});
   await reaper.video.openStream({updateRate: 75});
+  const source: ReaWebVideoSourceInfo = await reaper.video.getSourceInfo(); void source;
+  await reaper.video.openStream({resolution:'source'});
+  await reaper.video.openStream({resolution:'fit',width:1920,height:1080,preserveAspect:true});
   const stream: ReaWebStream = await reaper.video.openStream({source: 'project', width: 1280, height: 720, updateRate: 'auto'});
   stream.on('data', frame => { const bytes: Uint8Array = frame.bytes; const reset: boolean | undefined = frame.discontinuity; void bytes; void reset; });
   await stream.close();
@@ -341,6 +344,51 @@ async function jsfxContract() {
   // @ts-expect-error Writes accept normalized numbers only.
   await jsfx.params.set(0, { value: .4 });
   await jsfx.dispose();
+}
+
+async function workerVideoContract(reaper: ReaWebAPI, worker: Worker) {
+  const stream = await reaper.video.openWorkerStream(worker, { resolution: 'source' });
+  stream.on('data', frame => {
+    const sequence: bigint = frame.sequence;
+    void sequence;
+    // @ts-expect-error Pixels belong to the rendering worker.
+    frame.bytes;
+  });
+  await stream.close();
+}
+
+async function nativeVideoSurfaceContract(reaper: ReaWebAPI) {
+  const capabilities = await reaper.video.getCapabilities();
+  const backend: 'metal' | 'd3d11' | null = capabilities.nativePresentation.backend;
+  const windowsPresentation: typeof capabilities.nativePresentation = { available: true, backend: 'd3d11' };
+  const surface: ReaWebVideoSurface = await reaper.video.openSurface({ resolution: 'source', format: 'i420' });
+  const renderer: 'native-metal' | 'native-d3d11' = surface.info.renderer;
+  const readable: false = surface.readablePixels;
+  const layout: ReaWebVideoSurfaceLayout = {
+    rect: { x: -100, y: 20, width: 1920, height: 1080 },
+    clip: { x: 0, y: 20, width: 800, height: 500 }
+  };
+  const applied: boolean = await surface.setLayout(layout);
+  await surface.setLayout({ ...layout, preserveAspect: true });
+  const diagnostics: ReaWebVideoSurfaceDiagnostics = await surface.getDiagnostics();
+  const windowsDiagnostics: ReaWebVideoSurfaceDiagnostics = { closed: false, renderer: 'native-d3d11',
+    presentationCounter: 'dxgi-observed', presentationAvailable: false, presentedFrames: null, presentationFPS: null };
+  const failedSurface: ReaWebVideoSurfaceDiagnostics = { closed: true, errorCode: 'VIDEO_RENDERER_UNAVAILABLE', error: 'Device initialization failed' };
+  const closed: boolean = diagnostics.closed;
+  const off = surface.on('close', error => console.log(error.code)); off();
+  surface.on('error', error => console.log(error.message));
+  await surface.close();
+  void readable; void applied; void closed; void backend; void renderer; void windowsPresentation; void windowsDiagnostics; void failedSurface;
+  // @ts-expect-error Native surfaces do not expose pixel data events.
+  surface.on('data', () => {});
+  // @ts-expect-error Native surfaces do not expose a byte-frame cache.
+  surface.latest();
+  // @ts-expect-error Native surfaces do not expose a readable stream queue.
+  surface.read();
+  // @ts-expect-error Native presentation does not become a readable canvas.
+  surface.readablePixels = true;
+  // @ts-expect-error Only implemented native presentation backends are exposed.
+  const unsupportedRenderer: ReaWebVideoSurfaceDiagnostics = { closed: false, renderer: 'native-webgpu' };
 }
 
 async function realtimeContract(reaper: ReaWebAPI) {

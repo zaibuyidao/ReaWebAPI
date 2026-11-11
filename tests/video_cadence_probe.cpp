@@ -24,13 +24,13 @@ namespace {
 namespace fs = std::filesystem;
 #if defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))
 constexpr const char* fingerprint = "b50bc6486f996acc2731acc6889217fdfb8f55dd8e6524746e7d7582ff705f59";
-constexpr size_t processed_offset = 0x26bda8, frame_offset = 0x26bdb0;
+constexpr size_t processed_offset = 0x26bda8, frame_offset = 0x26bdb0, transform_offset = 0x1a6ffc;
 #elif defined(__APPLE__) && defined(__aarch64__)
 constexpr const char* fingerprint = "318fef1c8d990840587b26cc58e2b7e9659844156b8578ba540e493c09f32ba0";
-constexpr size_t processed_offset = 0x110ad0, frame_offset = 0x110ac8;
+constexpr size_t processed_offset = 0x110ad0, frame_offset = 0x110ac8, transform_offset = 0x14fdc;
 #elif defined(__linux__) && defined(__x86_64__)
 constexpr const char* fingerprint = "29efc78f2099a22a5a5c3cd31c0136f31af0d14ad619901fd7d0e914a2a7f3fd";
-constexpr size_t processed_offset = 0x3f7e70, frame_offset = 0x3f7e78;
+constexpr size_t processed_offset = 0x3f7e70, frame_offset = 0x3f7e78, transform_offset = 0x12e5c0;
 #else
 #error No cadence probe offsets for this platform
 #endif
@@ -86,6 +86,31 @@ bool verify_module() {
   input.seekg(0); input.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
   return input && reaweb::video_module_fingerprint(std::move(bytes)) == fingerprint;
 }
+reaweb::Json snapshot() {
+  const auto loaded = find_module();
+  if (!prepared || loaded.base != module.base || loaded.path != module.path) return {{"error", "VIDEO_HOST_UNSUPPORTED"}};
+  IVideoFrame* frame = nullptr;
+  std::memcpy(&frame, module.base + processed_offset, sizeof(frame));
+  if (!frame) std::memcpy(&frame, module.base + frame_offset, sizeof(frame));
+  if (!frame) return {{"error", "NO_FRAME"}};
+  frame->AddRef();
+  frame = reinterpret_cast<IVideoFrame*(*)(IVideoFrame*, bool, int, void**, const char*)>(module.base + transform_offset)
+    (frame, false, 0x52474241, nullptr, nullptr);
+  if (!frame) return {{"error", "NO_RGBA_FRAME"}};
+  const int width = frame->get_w(), height = frame->get_h(), stride = frame->get_rowspan();
+  const auto* pixels = reinterpret_cast<const unsigned char*>(frame->get_bits());
+  reaweb::Json result{{"error", "INVALID_FRAME"}};
+  if (pixels && frame->get_fmt() == 0x52474241 && width > 0 && height > 0 && width <= 8192 && height <= 8192 && stride >= width * 4) {
+    uint32_t hash = 2166136261u;
+    for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+      const auto* pixel = pixels + size_t(y) * stride + x * 4;
+      for (int channel : {2, 1, 0}) hash = (hash ^ pixel[channel]) * 16777619u;
+    }
+    result = {{"width", width}, {"height", height}, {"position", frame->time_start}, {"rgbHash", hash}};
+  }
+  frame->Release();
+  return result;
+}
 void tick() {
   const auto value = get_state("CadenceProbe", "request");
   const std::string command = value ? value : "";
@@ -93,6 +118,10 @@ void tick() {
     active = false;
     prepared = verify_module();
     set_state("CadenceProbe", "prepared", prepared ? "1" : "0", false);
+    set_state("CadenceProbe", "request", "", false);
+  } else if (command == "snapshot") {
+    const auto result = snapshot();
+    set_state("CadenceProbe", "snapshot", result.dump().c_str(), false);
     set_state("CadenceProbe", "request", "", false);
   } else if (command == "start") {
     set_state("CadenceProbe", "request", "", false);
@@ -130,7 +159,7 @@ void tick() {
   if (!frame) std::memcpy(&frame, module.base + frame_offset, sizeof(frame));
   if (!frame || !std::isfinite(frame->time_start) || (has_frame && frame->time_start == last_time)) return;
   last_time = frame->time_start; has_frame = true; ++changes;
-  if (frame->get_w() != 1280 || frame->get_h() != 720) return;
+  if (frame->get_w() < 1280 || frame->get_h() < 720) return;
   const int format = frame->get_fmt(), stride = frame->get_rowspan();
   const int bytes_per_pixel = format == 0x52474241 ? 4 : format == 0x59563132 ? 1 : format == 0x59555932 ? 2 : 0;
   const auto* bits = reinterpret_cast<const unsigned char*>(frame->get_bits());

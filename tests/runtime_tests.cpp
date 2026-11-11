@@ -368,6 +368,34 @@ int main() {
       runtime.tick();
     }
     {
+      const auto directory = root / "Scripts" / "VideoRefreshConfig";
+      fs::create_directories(directory);
+      const auto page = directory / "index.html", manifest = directory / "app.json";
+      std::ofstream(page) << "<!doctype html>";
+      Json config{{"id", "video-refresh-config"}};
+      std::ofstream(manifest) << config;
+      Runtime runtime(host, root, [](const std::string&) {}, docks);
+      auto id = runtime.open(page.u8string());
+      CHECK(!windows.back().lock()->options.video_high_refresh_rate);
+      auto video_window = windows.back().lock();
+      result(runtime, *video_window, video_window->send("__reawebHello", {1}));
+      const auto video_caps = result(runtime, *video_window, video_window->send("ReaWeb_VideoCapabilities", Json::array()));
+      CHECK(video_caps["result"]["nativePresentation"]["available"] == false);
+      CHECK(video_caps["result"]["nativePresentation"]["backend"].is_null());
+      CHECK(result(runtime, *video_window, video_window->send("ReaWeb_VideoSurfaceOpen", Json::array({Json::object()})))["error"]["code"] == "VIDEO_PRESENTATION_UNAVAILABLE");
+      CHECK(result(runtime, *video_window, video_window->send("ReaWeb_VideoSurfaceDiagnostics", {"missing"}))["result"] == Json({{"closed", true}}));
+      CHECK(result(runtime, *video_window, video_window->send("ReaWeb_VideoSurfaceClose", {"missing"}))["result"] == true);
+      runtime.close(id); runtime.tick();
+      config["videoHighRefreshRate"] = true; std::ofstream(manifest) << config;
+      id = runtime.open(page.u8string());
+      CHECK(windows.back().lock()->options.video_high_refresh_rate);
+      runtime.close(id); runtime.tick();
+      config["videoHighRefreshRate"] = "true"; std::ofstream(manifest) << config;
+      bool rejected = false;
+      try { runtime.open(page.u8string()); } catch (const Error& error) { rejected = error.code == "APP_MANIFEST_INVALID"; }
+      CHECK(rejected);
+    }
+    {
       const auto directory = root / "Scripts" / "KeyboardConfig";
       fs::create_directories(directory);
       const auto page = directory / "index.html", manifest = directory / "app.json";

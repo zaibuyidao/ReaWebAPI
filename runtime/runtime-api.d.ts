@@ -3,17 +3,31 @@ type ReaWebDispose = () => Promise<void>;
 interface ReaWebVideoOptions {
   /** updateRate follows the project by default, or accepts a fixed finite rate from 1 to 75 FPS. */
   source?: 'project'; width?: number; height?: number; updateRate?: number | 'auto';
+  resolution?: 'custom' | 'fit' | 'source'; preserveAspect?: boolean;
+  /** I420 is opt-in, source-resolution only, on verified Windows x64, macOS ARM64 and Linux x86_64 converters. */
+  format?: 'rgba8' | 'i420';
+}
+interface ReaWebVideoSourceInfo {
+  available: boolean; width: number; height: number; originalSupported: boolean; error: string | null;
+  nativeFormat: 'i420' | null; colorMatrix: 'bt601' | 'bt709' | 'bt2020' | null; colorRange: 'limited' | null;
+  colorConversion: 'reaper-neon' | 'reaper-sse' | null;
 }
 interface ReaWebVideoCapabilities {
   available: boolean; backend: 'reaper-internal'; source: 'project';
   backendAvailable: boolean; companionInstalled: false; platform: 'windows' | 'macos' | 'linux';
   requiresVideoWindow: false; requiresCompanion: false; companion: null; hiddenVideoWindow: true;
-  maxWidth: number; maxHeight: number; maxUpdateRate: number;
+  maxWidth: number; maxHeight: number; maxUpdateRate: number; maxFrameBytes: number; maxPixels: number;
+  resolutionModes: ('custom' | 'fit' | 'source')[];
   defaultWidth: number; defaultHeight: number; defaultUpdateRate: 'auto'; autoUpdateRate: true;
   profiles: 1; profilePolicy: 'first-consumer'; format: 'rgba8'; error: string | null;
+  formats: ('rgba8' | 'i420')[];
+  nativePresentation: { available: boolean; backend: 'metal' | 'd3d11' | null };
 }
 interface ReaWebVideoState {
   updateRate: number | 'auto'; targetUpdateRate: number;
+  resolution: 'custom' | 'fit' | 'source'; preserveAspect: boolean;
+  format: 'rgba8' | 'i420'; colorMatrix: 'bt709' | null; colorRange: 'limited' | null;
+  colorConversion: 'reaper-neon' | 'reaper-sse' | null;
   source: 'project'; backend: 'reaper-internal'; status: 'closed' | 'idle' | 'waiting' | 'ready';
   epoch: number; width: number; height: number; sourceWidth: number; sourceHeight: number;
   position: number | null; sourceFrameRate: number; frameAgeMs: number | null;
@@ -25,7 +39,9 @@ interface ReaWebVideoDiagnostics extends ReaWebVideoState {
 }
 interface ReaWebStreamInfo {
   name: string; kind: 'frame' | 'audio' | 'spectrum' | 'meter' | 'waveform' | 'binary' | 'midi';
-  format: 'rgba8' | 'bgra8' | 'float32' | 'bytes'; capacity: number; maxBytes: number;
+  format: 'rgba8' | 'bgra8' | 'float32' | 'bytes' | 'i420'; capacity: number; maxBytes: number;
+  colorMatrix?: 'bt709'; colorRange?: 'limited';
+  colorConversion?: 'reaper-neon' | 'reaper-sse';
   width: number; height: number; stride: number; channels: number; sampleRate: number;
   blockFrames: number; fftSize: number; binHz: number; updateRate: number; source: string;
   policy: 'latest' | 'drop-new';
@@ -52,6 +68,45 @@ interface ReaWebStream {
   on(event: 'data', callback: (packet: ReaWebStreamPacket) => void): () => void;
   on(event: 'close' | 'error', callback: (error: Error & { code: string }) => void): () => void;
   /** Detaches this consumer. The native producer and other consumers remain active. */
+  close(): Promise<void>;
+}
+/** WebView2 video connection. Pixel ownership stays in the dedicated rendering worker. */
+interface ReaWebWorkerVideoStream {
+  readonly info: Readonly<ReaWebStreamInfo>;
+  readonly closed: boolean;
+  readonly error: (Error & { code: string }) | null;
+  on(event: 'data', callback: (frame: Readonly<Omit<ReaWebStreamPacket, 'bytes' | 'data' | 'timing'>>) => void): () => void;
+  on(event: 'close' | 'error', callback: (error: Error & { code: string }) => void): () => void;
+  /** Return worker-owned native memory before terminating or reusing the worker. */
+  close(): Promise<void>;
+}
+interface ReaWebVideoSurfaceLayout {
+  /** CSS viewport coordinates. Zero width or height hides presentation. */
+  rect: { x: number; y: number; width: number; height: number };
+  clip: { x: number; y: number; width: number; height: number };
+  /** Defaults to true. */
+  preserveAspect?: boolean;
+}
+interface ReaWebVideoSurfaceDiagnostics {
+  closed: boolean;
+  /** A detached surface returns only closed: true. */
+  renderer?: 'native-metal' | 'native-d3d11'; hasFrame?: boolean;
+  submittedFrames?: number; presentedFrames?: number | null; droppedFrames?: number;
+  /** Shared source counters, repeated for surfaces using the same video profile. */
+  sourceUploadedFrames?: number; sourceConvertedFrames?: number; sourceDroppedFrames?: number;
+  sourceWidth?: number; sourceHeight?: number; sequence?: number;
+  presentationFPS?: number | null; presentationCounter?: 'dxgi-observed'; presentationAvailable?: boolean;
+  maxDrawableAcquireMs?: number; errorCode?: string; error?: string;
+}
+/** Native video presentation beneath page content. Pixels are not exposed to JavaScript or Canvas. */
+interface ReaWebVideoSurface {
+  readonly info: Readonly<ReaWebStreamInfo & { renderer: 'native-metal' | 'native-d3d11' }>;
+  readonly readablePixels: false;
+  readonly closed: boolean;
+  readonly error: (Error & { code: string }) | null;
+  setLayout(layout: ReaWebVideoSurfaceLayout): Promise<boolean>;
+  getDiagnostics(): Promise<ReaWebVideoSurfaceDiagnostics>;
+  on(event: 'close' | 'error', callback: (error: Error & { code: string }) => void): () => void;
   close(): Promise<void>;
 }
 interface ReaWebFileChange {
@@ -236,8 +291,13 @@ interface ReaWebEvents {
 }
 interface ReaWebAPI {
   readonly video: {
+    getSourceInfo(): Promise<ReaWebVideoSourceInfo>;
     getCapabilities(): Promise<ReaWebVideoCapabilities>;
     openStream(options?: ReaWebVideoOptions): Promise<ReaWebStream>;
+    /** Requires the video worker protocol used by the bundled video preview. */
+    openWorkerStream(worker: Worker, options?: ReaWebVideoOptions): Promise<ReaWebWorkerVideoStream>;
+    /** Requires nativePresentation.available. One native surface per window. */
+    openSurface(options?: ReaWebVideoOptions): Promise<ReaWebVideoSurface>;
     getState(): Promise<ReaWebVideoState>;
     getDiagnostics(): Promise<ReaWebVideoDiagnostics>;
   };

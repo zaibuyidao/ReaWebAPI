@@ -535,20 +535,48 @@
     };
     drain(request);
   });
+  const sharedVideo = new Map();
+  const nativeBuffers = window.chrome?.webview;
+  if (nativeBuffers?.releaseBuffer) nativeBuffers.addEventListener('sharedbufferreceived', event => {
+    const token = event.additionalData?.reawebVideo;
+    if (typeof token !== 'string') return;
+    const buffer = event.getBuffer();
+    if (closed) { nativeBuffers.releaseBuffer(buffer); return; }
+    const waiting = sharedVideo.get(token);
+    if (waiting?.resolve) { sharedVideo.delete(token); clearTimeout(waiting.timer); waiting.resolve(buffer); }
+    else {
+      if (waiting) { clearTimeout(waiting.timer); nativeBuffers.releaseBuffer(waiting.buffer); }
+      const timer = setTimeout(() => { sharedVideo.delete(token); nativeBuffers.releaseBuffer(buffer); }, 10000);
+      sharedVideo.set(token, { buffer, timer });
+    }
+  });
+  const takeVideoBuffer = token => {
+    const pending = sharedVideo.get(token);
+    if (pending?.buffer) { sharedVideo.delete(token); clearTimeout(pending.timer); return Promise.resolve(pending.buffer); }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { sharedVideo.delete(token); reject(failure('TIMEOUT', 'Video memory mapping timed out')); }, 10000);
+      sharedVideo.set(token, { resolve, timer });
+    });
+  };
   const openStream = async name => {
     if (typeof name !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(name)) throw failure('INVALID_ARGUMENT', 'Expected a native stream name');
     const descriptor = await call('ReaWeb_StreamOpen', [name]);
-    let socket, active = true, last = null, status = null, consumerDrops = 0;
+    const nativeVideoCopy = descriptor.videoNativeCopy ? window.__reawebVideoCopy : null;
+    let socket, videoBuffer, active = true, last = null, status = null, consumerDrops = 0;
+    const videoRequest = descriptor.videoResource ? new AbortController() : null;
     const listeners = new Map(), queue = [];
     const ordered = ['audio', 'midi'].includes(descriptor.kind);
     const announce = (event, data) => { for (const listener of listeners.get(event) || []) notify(listener, data); };
     const finish = (code, message) => {
+      if (typeof nativeVideoCopy === 'function') nativeVideoCopy(descriptor.token, -2);
+      videoRequest?.abort();
+      if (videoBuffer) { nativeBuffers.releaseBuffer(videoBuffer); videoBuffer = null; }
       if (!active) return;
       active = false; status = failure(code, message || code); queue.length = 0; last = null;
       streamConsumers.delete(consumer); announce('close', status); listeners.clear();
     };
     const consumer = Object.freeze({
-      info: Object.freeze(Object.fromEntries(Object.entries(descriptor).filter(([key]) => key !== 'token' && key !== 'url'))),
+      info: Object.freeze(Object.fromEntries(Object.entries(descriptor).filter(([key]) => !['token', 'url', 'sharedVideo', 'videoResource', 'videoNativeCopy'].includes(key)))),
       latest: () => last,
       read: () => ordered ? queue.shift() || null : last,
       get closed() { return !active; },
@@ -568,6 +596,20 @@
     });
     streamConsumers.add(consumer);
     try {
+      if (descriptor.videoNativeCopy) {
+        if (typeof nativeVideoCopy !== 'function') throw failure('TRANSPORT_ERROR', 'Native video mapping unavailable');
+        const deadline = Date.now() + 10000;
+        while (active && nativeVideoCopy(descriptor.token, -1) === null && Date.now() < deadline)
+          await new Promise(resolve => setTimeout(resolve, 10));
+        if (!active) throw status || failure('STREAM_CLOSED', 'Video stream closed');
+        if (nativeVideoCopy(descriptor.token, -1) === null) throw failure('TIMEOUT', 'Native video mapping timed out');
+        if (!descriptor.sharedVideo || descriptor.kind !== 'frame' || !['rgba8', 'i420'].includes(descriptor.format) || nativeVideoCopy(descriptor.token, -1) !== descriptor.maxBytes)
+          throw failure('UNSUPPORTED_FORMAT', 'Invalid native video mapping');
+      } else if (descriptor.sharedVideo && !descriptor.videoResource) {
+        videoBuffer = await takeVideoBuffer(descriptor.token);
+        if (!active || descriptor.kind !== 'frame' || !['rgba8', 'i420'].includes(descriptor.format) || videoBuffer.byteLength !== descriptor.maxBytes * 2)
+          throw failure('UNSUPPORTED_FORMAT', 'Invalid shared video buffer');
+      }
       await new Promise((resolve, reject) => {
         socket = new WebSocket(descriptor.url); socket.binaryType = 'arraybuffer';
         const timeout = setTimeout(() => { socket.close(); reject(failure('TIMEOUT', 'Stream connection timed out')); }, 10000);
@@ -585,17 +627,35 @@
           finish(code, event.reason || 'Native stream connection closed');
           if (!connected) reject(status || failure(code, code));
         };
-        socket.onmessage = event => {
+        let videoReads = Promise.resolve();
+        const packetError = error => { if (!active) return; if (diagnosticEnabled) ++health.streamErrors; announce('error', error); finish(error.code || 'UNSUPPORTED_FORMAT', error.message); socket.close(); };
+        const receive = (event, resourceBytes) => {
           if (!active) return;
           try {
             const buffer = event.data, view = new DataView(buffer);
             const version = descriptor.layoutVersion === 2 ? 2 : 1, header = version === 2 ? 80 : 40;
+            const shared = !!descriptor.sharedVideo;
             if (buffer.byteLength < header || view.getUint32(0, true) !== (version << 24 | 0x535752) ||
                 view.getUint8(4) !== ['', 'frame', 'audio', 'spectrum', 'meter', 'waveform', 'binary', 'midi'].indexOf(descriptor.kind) ||
-                Number(view.getBigUint64(32, true)) !== buffer.byteLength - header || buffer.byteLength - header > descriptor.maxBytes)
+                Number(view.getBigUint64(32, true)) !== (shared ? descriptor.maxBytes : buffer.byteLength - header) ||
+                (shared ? buffer.byteLength !== 44 || !(view.getUint8(5) & 2) || view.getUint32(40, true) > 1 : buffer.byteLength - header > descriptor.maxBytes))
               throw failure('UNSUPPORTED_FORMAT', 'Invalid stream packet');
             const sequence = view.getBigUint64(8, true), timestamp = view.getFloat64(16, true), dropped = view.getBigUint64(24, true);
-            const bytes = new Uint8Array(buffer, header);
+            // Copy before ACK so retained packets stay immutable when the host reuses a slot.
+            let bytes;
+            if (descriptor.videoResource && !resourceBytes) {
+              return fetch(descriptor.videoResource + view.getUint32(40, true), { cache: 'no-store', signal: videoRequest.signal })
+                .then(response => { if (!response.ok) throw failure('TRANSPORT_ERROR', 'Video resource unavailable'); return response.arrayBuffer(); })
+                .then(buffer => receive(event, new Uint8Array(buffer))).catch(packetError);
+            }
+            if (descriptor.videoNativeCopy) {
+              const copy = nativeVideoCopy(descriptor.token, view.getUint32(40, true));
+              if (!(copy instanceof ArrayBuffer) || copy.byteLength !== descriptor.maxBytes) throw failure('UNSUPPORTED_FORMAT', 'Invalid native video frame');
+              bytes = new Uint8Array(copy);
+            } else if (descriptor.videoResource) {
+              bytes = resourceBytes;
+              if (bytes.byteLength !== descriptor.maxBytes) throw failure('UNSUPPORTED_FORMAT', 'Invalid video resource size');
+            } else bytes = shared ? new Uint8Array(videoBuffer, view.getUint32(40, true) * descriptor.maxBytes, descriptor.maxBytes).slice() : new Uint8Array(buffer, header);
             const data = descriptor.format === 'float32' ? new Float32Array(buffer, header) : bytes;
             const timing = version === 2 ? Object.freeze({ clockEpoch: view.getBigUint64(40, true),
               firstSample: view.getBigUint64(48, true), sourceDropped: view.getBigUint64(56, true),
@@ -608,7 +668,11 @@
             if (ordered) { if (queue.length < descriptor.capacity) queue.push(packet); else ++consumerDrops; }
             announce('data', packet);
             socket.send(new Uint8Array([1]));
-          } catch (error) { if (diagnosticEnabled) ++health.streamErrors; announce('error', error); finish(error.code || 'UNSUPPORTED_FORMAT', error.message); socket.close(); }
+          } catch (error) { packetError(error); }
+        };
+        socket.onmessage = event => {
+          if (descriptor.videoResource) videoReads = videoReads.then(() => receive(event));
+          else receive(event);
         };
       });
       return consumer;
@@ -620,13 +684,182 @@
   };
   api.stream = Object.freeze({ open: openStream, getDiagnostics: () => call('ReaWeb_StreamDiagnostics', []) });
   const videoConsumers = new Set();
+  const videoWorkers = new WeakSet();
+  const openVideoSurface = async (options = {}) => {
+    if (globalThis.document?.hidden) throw failure('VIDEO_PAGE_HIDDEN', 'Show the page before opening project video');
+    let descriptor, active = true, status = null, closing, released = false;
+    const listeners = new Map();
+    const announce = (event, value) => { for (const callback of listeners.get(event) || []) notify(callback, value); };
+    const release = () => {
+      if (typeof descriptor?.token !== 'string' || released || closed) return Promise.resolve();
+      released = true;
+      return call('ReaWeb_VideoSurfaceClose', [descriptor.token]).then(() => {});
+    };
+    const stop = (error = failure('STREAM_CLOSED', 'Video surface detached')) => {
+      if (active) {
+        active = false; status = error;
+        streamConsumers.delete(surface); videoConsumers.delete(surface);
+        if (error.code !== 'STREAM_CLOSED') announce('error', error);
+        announce('close', error); listeners.clear();
+      }
+      return closing || (closing = release());
+    };
+    const invoke = async (method, args) => {
+      if (!active) throw status;
+      try { return await call(method, [descriptor.token, ...args]); }
+      catch (error) {
+        if (['STREAM_CLOSED', 'STREAM_NOT_FOUND', 'VIDEO_SURFACE_CLOSED', 'VIDEO_PROJECT_CHANGED', 'WINDOW_CLOSED'].includes(error.code))
+          await stop(error).catch(() => {});
+        else announce('error', error);
+        throw error;
+      }
+    };
+    const surface = Object.freeze({
+      get info() { return Object.freeze(Object.fromEntries(Object.entries(descriptor || {}).filter(([key]) => key !== 'token' && key !== 'url'))); },
+      readablePixels: false,
+      get closed() { return !active; }, get error() { return status; },
+      on: (event, callback) => {
+        if (!['close', 'error'].includes(event) || typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected close or error and a callback');
+        if (!active) { if (event === 'close') notify(callback, status); return () => {}; }
+        if (!listeners.has(event)) listeners.set(event, new Set());
+        listeners.get(event).add(callback); return () => listeners.get(event)?.delete(callback);
+      },
+      setLayout: layout => invoke('ReaWeb_VideoSurfaceLayout', [layout]),
+      getDiagnostics: async () => {
+        const result = await invoke('ReaWeb_VideoSurfaceDiagnostics', []);
+        if (result.closed) await stop(failure(result.errorCode || (result.error ? 'VIDEO_RENDERER_UNAVAILABLE' : 'STREAM_CLOSED'), result.error || 'Video surface closed')).catch(() => {});
+        return result;
+      },
+      close: () => stop()
+    });
+    streamConsumers.add(surface); videoConsumers.add(surface);
+    try {
+      descriptor = await call('ReaWeb_VideoSurfaceOpen', [options]);
+      if (!descriptor || typeof descriptor.token !== 'string' || !['native-metal', 'native-d3d11'].includes(descriptor.renderer))
+        throw failure('VIDEO_RENDER_UNSUPPORTED', 'Invalid native video surface descriptor');
+      if (!active) { closing = release(); await closing; throw status; }
+      if (closed || globalThis.document?.hidden) await stop();
+      return surface;
+    } catch (error) {
+      await stop(error).catch(() => {});
+      throw error;
+    }
+  };
+  const openWorkerVideo = async (worker, options = {}) => {
+    if (typeof Worker !== 'function' || !(worker instanceof Worker) || videoWorkers.has(worker))
+      throw failure('INVALID_ARGUMENT', 'Expected an idle dedicated video Worker');
+    if (!nativeBuffers) throw failure('UNSUPPORTED_FORMAT', 'Worker video delivery requires WebView2');
+    if (globalThis.document?.hidden) throw failure('VIDEO_PAGE_HIDDEN', 'Show the page before opening project video');
+    videoWorkers.add(worker);
+    let descriptor, buffer, port, active = true, transferred = false, finished = false, closing, status = null, timeout;
+    let readyResolve, readyReject, closeResolve;
+    const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
+    // Opening can fail before a worker receives its port.
+    ready.catch(() => {});
+    const listeners = new Map();
+    const announce = (name, value) => { for (const listener of listeners.get(name) || []) notify(listener, value); };
+    const release = returned => {
+      if (returned?.byteLength) {
+        try { nativeBuffers.releaseBuffer(returned); }
+        catch { worker.terminate(); }
+      }
+    };
+    const finish = async returned => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout); release(returned); release(buffer); buffer = null;
+      port?.close(); worker.removeEventListener('error', crashed);
+      streamConsumers.delete(consumer); videoConsumers.delete(consumer); videoWorkers.delete(worker);
+      try { if (descriptor && !closed) await call('ReaWeb_StreamDetach', [descriptor.token]); }
+      finally { closeResolve?.(); }
+    };
+    const stop = (code = 'STREAM_CLOSED', message = 'Consumer detached', terminate = false) => {
+      if (closing) return closing;
+      if (finished) return Promise.resolve();
+      active = false; status = failure(code, message);
+      readyReject(status);
+      closing = new Promise(resolve => { closeResolve = resolve; });
+      if (code !== 'STREAM_CLOSED') announce('error', status);
+      announce('close', status); listeners.clear();
+      if (transferred && !terminate) {
+        timeout = setTimeout(() => { worker.terminate(); void finish().catch(() => {}); }, 1000);
+        try { port.postMessage({ type: 'close' }); }
+        catch { clearTimeout(timeout); worker.terminate(); void finish().catch(() => {}); }
+      } else {
+        if (terminate) worker.terminate();
+        void finish().catch(() => {});
+      }
+      return closing;
+    };
+    const crashed = event => { void stop('TRANSPORT_ERROR', event.message || 'Video worker failed', true); };
+    const consumer = Object.freeze({
+      get info() { return Object.freeze(Object.fromEntries(Object.entries(descriptor || {}).filter(([key]) => !['token', 'url', 'sharedVideo', 'videoResource', 'videoNativeCopy'].includes(key)))); },
+      get closed() { return !active; }, get error() { return status; },
+      on: (event, callback) => {
+        if (!['data', 'close', 'error'].includes(event) || typeof callback !== 'function') throw failure('INVALID_ARGUMENT', 'Expected data, close or error and a callback');
+        if (!active) { if (event === 'close') notify(callback, status); return () => {}; }
+        if (!listeners.has(event)) listeners.set(event, new Set());
+        listeners.get(event).add(callback); return () => listeners.get(event)?.delete(callback);
+      },
+      close: () => stop()
+    });
+    streamConsumers.add(consumer); videoConsumers.add(consumer);
+    worker.addEventListener('error', crashed);
+    try {
+      const name = await call('ReaWeb_VideoOpen', [options]);
+      if (!active) throw status;
+      descriptor = await call('ReaWeb_StreamOpen', [name]);
+      if (!active) { if (!closed) await call('ReaWeb_StreamDetach', [descriptor.token]); throw status; }
+      if (descriptor.kind !== 'frame' || !['rgba8', 'i420'].includes(descriptor.format) || descriptor.videoResource || descriptor.videoNativeCopy)
+        throw failure('UNSUPPORTED_FORMAT', 'Expected project video memory or a binary video stream');
+      if (descriptor.sharedVideo) {
+        if (!nativeBuffers.releaseBuffer) throw failure('UNSUPPORTED_FORMAT', 'Native video mapping is unavailable');
+        buffer = await takeVideoBuffer(descriptor.token);
+        if (!active) { release(buffer); buffer = null; throw status; }
+        if (buffer.byteLength !== descriptor.maxBytes * 2) throw failure('UNSUPPORTED_FORMAT', 'Invalid shared video buffer');
+      }
+      const channel = new MessageChannel(); port = channel.port1;
+      port.onmessage = ({ data }) => {
+        if (!data || typeof data !== 'object') { void stop('UNSUPPORTED_FORMAT', 'Invalid video worker message'); return; }
+        if (data.type === 'closed') {
+          if (active) {
+            active = false; status = failure(data.code || 'STREAM_CLOSED', data.message || 'Video worker closed'); readyReject(status);
+            closing = new Promise(resolve => { closeResolve = resolve; });
+            if (status.code !== 'STREAM_CLOSED') announce('error', status);
+            announce('close', status); listeners.clear();
+          }
+          void finish(data.buffer).catch(() => {});
+        } else if (active && data.type === 'ready') { clearTimeout(timeout); readyResolve(consumer); }
+        else if (active && data.type === 'error') void stop(data.code || 'TRANSPORT_ERROR', data.message || 'Video worker failed');
+        else if (active && data.type === 'frame') {
+          const frame = data.frame;
+          if (typeof frame?.sequence !== 'bigint' || frame.sequence < 0n || typeof frame.producerDropped !== 'bigint' || frame.producerDropped < 0n ||
+              !Number.isFinite(frame.timestamp)) { void stop('UNSUPPORTED_FORMAT', 'Invalid video frame metadata'); return; }
+          announce('data', Object.freeze({ sequence: frame.sequence, frameId: frame.sequence, timestamp: frame.timestamp,
+            producerDropped: frame.producerDropped, discontinuity: !!frame.discontinuity }));
+        }
+      };
+      port.onmessageerror = () => { void stop('TRANSPORT_ERROR', 'Video worker message could not be read'); };
+      worker.postMessage({ type: 'reaweb-video', port: channel.port2, descriptor, buffer }, buffer ? [channel.port2, buffer] : [channel.port2]);
+      transferred = true; buffer = null;
+      timeout = setTimeout(() => { void stop('TIMEOUT', 'Video worker connection timed out'); }, 10000);
+      if (globalThis.document?.hidden || closed) void stop();
+      return await ready;
+    } catch (error) {
+      await stop(error.code || 'TRANSPORT_ERROR', error.message);
+      throw error;
+    }
+  };
   globalThis.document?.addEventListener?.('visibilitychange', () => {
     if (document.hidden) for (const consumer of videoConsumers) consumer.close().catch(() => {});
   });
   api.video = Object.freeze({
     getCapabilities: () => call('ReaWeb_VideoCapabilities', []),
+    getSourceInfo: () => call('ReaWeb_VideoSourceInfo', []),
     getState: () => call('ReaWeb_VideoState', []),
     getDiagnostics: () => call('ReaWeb_VideoDiagnostics', []),
+    openSurface: openVideoSurface,
+    openWorkerStream: openWorkerVideo,
     openStream: async (options = {}) => {
       if (globalThis.document?.hidden) throw failure('VIDEO_PAGE_HIDDEN', 'Show the page before opening project video');
       const consumer = await openStream(await call('ReaWeb_VideoOpen', [options]));

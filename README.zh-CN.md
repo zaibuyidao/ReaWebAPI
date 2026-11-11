@@ -54,7 +54,7 @@ Windows FX 链中的 JSFX Web UI 请使用 v0.3.8.28 或更高版本，避免切
 
 在 REAPER 中通过 **Options → Show REAPER resource path in explorer/finder** 打开资源目录。退出 REAPER，将平台 ZIP 解压到该目录，再启动 REAPER。
 
-手动安装时，将原生扩展放入 `UserPlugins/`。Linux 的同架构 `reawebapi-webview-<arch>` 辅助程序也放在该目录，并赋予执行权限。
+手动安装时，将原生扩展放入 `UserPlugins/`。Linux 的同架构 `reawebapi-webview-<arch>` 辅助程序也放在该目录，并赋予执行权限。保留 `reawebapi-video-<arch>/` 子目录，以启用工程视频的本地内存传输。
 
 Linux 复用未变化的 X11 几何信息，通过宿主事件循环读取 WebKit 入站消息。WSL 未提供 DRI3 时，辅助进程使用 GTK 图像后备缓冲以减少绘制停顿。显式设置的 `GDK_RENDERING` 优先。
 
@@ -117,4 +117,4 @@ Windows、macOS 和 Linux 支持原生[隐藏启动](docs/host-api.zh-CN.md#隐�
 
 ## 工程视频
 
-`reaper.video` 通过 Native Streams 提供共享工程视频帧。仅支持已验证的 REAPER 构建。安装、API、绘制和平台限制见[视频预览](docs/video-preview.zh-CN.md)。
+`reaper.video` 通过 Native Streams 提供共享工程视频帧，支持 Windows 视频工作线程直接接收及 Windows D3D11、macOS Metal 原生共享呈现。仅支持已验证的 REAPER 构建。安装、API、绘制和平台限制见[视频预览](docs/video-preview.zh-CN.md)。

@@ -14,10 +14,29 @@
 #include "platform/shared/swell_window.hpp"
 #include "platform/macos/mac_devtools.hpp"
 #include "platform/macos/mac_resources.hpp"
+#include "platform/macos/mac_video_presenter.hpp"
 #include <fstream>
 #include <cstring>
 
+@interface WKPreferences (ReaWebVideoRefresh)
++ (NSArray*)_features;
+- (void)_setEnabled:(BOOL)value forFeature:(id)feature;
+@end
+
 namespace {
+void configure_video_refresh(WKPreferences* preferences) {
+  @try {
+    if (![WKPreferences respondsToSelector:@selector(_features)] ||
+        ![preferences respondsToSelector:@selector(_setEnabled:forFeature:)]) return;
+    for (id feature in [WKPreferences _features]) {
+      if ([[feature valueForKey:@"key"] isEqualToString:@"PreferPageRenderingUpdatesNear60FPSEnabled"]) {
+        [preferences _setEnabled:NO forFeature:feature];
+        return;
+      }
+    }
+  } @catch (NSException* error) { (void)error; }
+}
+
 void open_external(const std::string& url) {
   reaweb::validate_external_url(url);
   NSString* text = [[NSString alloc] initWithBytes:url.data() length:url.size() encoding:NSUTF8StringEncoding];
@@ -140,10 +159,19 @@ void open_external(const std::string& url) {
   std::function<std::string()> appName;
   std::function<NSInteger(NSMenu*, NSInteger)> devtoolsMenu;
   std::function<void(int)> windowMenuAction;
+  std::function<void()> videoLayoutChanged;
 }
 @end
 
 @implementation ReaWebNativeView
+- (void)viewDidMoveToSuperview {
+  [super viewDidMoveToSuperview];
+  if (videoLayoutChanged) videoLayoutChanged();
+}
+- (void)viewDidMoveToWindow {
+  [super viewDidMoveToWindow];
+  if (videoLayoutChanged) videoLayoutChanged();
+}
 - (void)updateLayer {
   [super updateLayer];
   // Keep newly exposed pixels consistent while WebKit's resized tiles arrive.
@@ -260,6 +288,24 @@ class MacWindow final : public Window, public std::enable_shared_from_this<MacWi
   std::unique_ptr<SwellWindow> window_;
   std::unique_ptr<MacOverlay> overlay_;
   ReaWebNativeView* webview_;
+  std::shared_ptr<MacVideoPresenter> video_presenter_;
+  NSColor* video_background_;
+  NSColor* video_resize_background_;
+  bool video_background_active_ = false;
+  bool video_draws_background_ = true;
+  void release_video_presenter() {
+    webview_->videoLayoutChanged = {};
+    if (video_presenter_) video_presenter_->invalidate();
+    video_presenter_.reset();
+    if (!video_background_active_) return;
+    @try { [webview_ setValue:@(video_draws_background_) forKey:@"drawsBackground"]; }
+    @catch (NSException* error) { (void)error; }
+    webview_.underPageBackgroundColor = video_background_;
+    webview_->resizeBackground = video_resize_background_;
+    webview_.layer.backgroundColor = (video_resize_background_ ?: NSColor.clearColor).CGColor;
+    webview_.needsDisplay = YES;
+    video_background_active_ = false;
+  }
   id mouse_monitor_;
   id focus_observer_;
   DragRegions drag_regions_;
@@ -440,6 +486,8 @@ public:
       auto handler = [ReaWebSchemeHandler new]; handler->resources = delegate_->options.resources;
       [config setURLSchemeHandler:handler forURLScheme:@"reaweb"];
     }
+    if (delegate_->options.video_high_refresh_rate) configure_video_refresh(config.preferences);
+    config.preferences.elementFullscreenEnabled = YES;
     [config.userContentController addScriptMessageHandler:delegate_ name:@"reaweb"];
     auto script = [[WKUserScript alloc] initWithSource:ns(delegate_->options.script +
       (delegate_->options.transparent ? transparent_page_script("webkit.messageHandlers.reaweb.postMessage('__reawebPresent');") :
@@ -498,7 +546,7 @@ public:
       const auto& capture = delegate_->options.captures_keyboard;
       if (!webview_->sourceClosed && capture && capture()) [webview_.window makeFirstResponder:webview_];
     }, delegate_->options.on_close, true, delegate_->options.hosted);
-    delegate_->navigationStarted = [this] { startup_.navigate(delegate_->options.hosted); drag_regions_.clear(); };
+    delegate_->navigationStarted = [this] { release_video_presenter(); startup_.navigate(delegate_->options.hosted); drag_regions_.clear(); };
     delegate_->options.on_message = [this, receive = delegate_->options.on_message](std::string message) {
       if (message == "__reawebPresent") { prepare_startup(); return; }
       if (drag_regions_.message(message)) return;
@@ -507,6 +555,11 @@ public:
         window_->set_background(color);
         auto background = [NSColor colorWithSRGBRed:((color >> 16) & 255) / 255.0
           green:((color >> 8) & 255) / 255.0 blue:(color & 255) / 255.0 alpha:1.0];
+        if (video_background_active_) {
+          video_background_ = video_resize_background_ = background;
+          webview_.superview.layer.backgroundColor = background.CGColor;
+          return;
+        }
         webview_.underPageBackgroundColor = background;
         webview_->resizeBackground = background;
         webview_.needsDisplay = YES;
@@ -568,6 +621,7 @@ public:
     } else [webview_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:ns(delegate_->options.url)]]];
   }
   ~MacWindow() override {
+    release_video_presenter();
     overlay_.reset();
     set_host_visible(false);
     if (focus_observer_) [NSNotificationCenter.defaultCenter removeObserver:focus_observer_];
@@ -589,6 +643,47 @@ public:
     [webview_.configuration.userContentController removeScriptMessageHandlerForName:@"reaweb"];
     [webview_ removeFromSuperview];
     window_.reset();
+  }
+  std::shared_ptr<VideoMemory> video_memory(const std::string& token, uint32_t bytes) override {
+    auto handler = (ReaWebSchemeHandler*)[webview_.configuration urlSchemeHandlerForURLScheme:@"reaweb"];
+    if (delegate_->isClosed || !handler || !handler->resources) return {};
+    auto mapping = std::make_shared<MacVideoMemory>(bytes);
+    mapping->resource_url = handler->resources->origin() + "/__reaweb_video__/" + token + "/";
+    for (auto it = handler->videoSlots.begin(); it != handler->videoSlots.end();) {
+      if (it->second.expired()) it = handler->videoSlots.erase(it); else ++it;
+    }
+    handler->videoSlots[token] = mapping;
+    return mapping;
+  }
+  const char* video_presenter_backend() const override { return "metal"; }
+  bool video_presenter_available() const override {
+    return !closed() && !delegate_->options.hosted && mac_video_presenter_available() && alpha_supported();
+  }
+  std::shared_ptr<VideoPresenter> video_presenter(const Json& descriptor) override {
+    if (!video_presenter_available()) throw Error("VIDEO_RENDERER_UNAVAILABLE", "Native video presentation is unavailable in this window");
+    if (video_presenter_ && !video_presenter_->closed()) throw Error("VIDEO_SURFACE_IN_USE", "This window already has a native video surface");
+    release_video_presenter();
+    auto presenter = make_mac_video_presenter(webview_, descriptor);
+    video_background_ = webview_.underPageBackgroundColor;
+    video_resize_background_ = webview_->resizeBackground;
+    @try {
+      video_draws_background_ = [[webview_ valueForKey:@"drawsBackground"] boolValue];
+      [webview_ setValue:@NO forKey:@"drawsBackground"];
+      if ([[webview_ valueForKey:@"drawsBackground"] boolValue])
+        throw Error("VIDEO_RENDERER_UNAVAILABLE", "WKWebView did not enable native video composition");
+    } @catch (NSException* error) {
+      @try { [webview_ setValue:@(video_draws_background_) forKey:@"drawsBackground"]; }
+      @catch (NSException* restore_error) { (void)restore_error; }
+      throw Error("VIDEO_RENDERER_UNAVAILABLE", error.reason.UTF8String ?: "WKWebView native video composition failed");
+    }
+    video_background_active_ = true;
+    webview_.underPageBackgroundColor = NSColor.clearColor;
+    webview_->resizeBackground = NSColor.clearColor;
+    webview_.layer.backgroundColor = NSColor.clearColor.CGColor;
+    video_presenter_ = presenter;
+    std::weak_ptr<MacVideoPresenter> weak = presenter;
+    webview_->videoLayoutChanged = [weak] { if (auto video = weak.lock()) video->update_view(); };
+    return presenter;
   }
   void evaluate(const std::string& script) override {
     if (!closed()) [webview_ evaluateJavaScript:ns(script) completionHandler:nil];
@@ -667,6 +762,10 @@ public:
   }
   void tick() override {
     if (closed()) return;
+    if (video_presenter_) {
+      if (video_presenter_->closed()) release_video_presenter();
+      else video_presenter_->update_view();
+    }
     if (startup_.expired()) {
       delegate_->isClosed = true;
       delegate_->options.on_error("WKWebView initial frame did not become available within 15 seconds"); return;
@@ -864,7 +963,11 @@ public:
     }
   }
   std::shared_ptr<Window> open(WindowOptions options) override {
-    @autoreleasepool { return std::make_shared<MacWindow>(std::move(options), data_, pool_, idle_.take()); }
+    @autoreleasepool {
+      // This WebKit preference must be set before the video view is constructed.
+      auto prepared = options.video_high_refresh_rate ? std::shared_ptr<MacIdleView>{} : idle_.take();
+      return std::make_shared<MacWindow>(std::move(options), data_, pool_, std::move(prepared));
+    }
   }
   void set_idle_capacity(unsigned count) override { idle_.capacity(count); }
   Json idle_diagnostics() const override { return idle_.diagnostics(); }

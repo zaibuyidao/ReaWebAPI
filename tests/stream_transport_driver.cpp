@@ -5,19 +5,31 @@ using namespace reaweb;
 int main(int argc,char** argv) {
   const bool timing_packets=argc>1 && std::string(argv[1])=="timing";
   const bool video=argc>1 && std::string(argv[1]).rfind("video",0)==0;
+  const bool shared_video=argc>1 && std::string(argv[1])=="video-shared";
+  const bool pressure=argc>1 && std::string(argv[1])=="video-pressure";
   const bool jitter=argc>2 && std::string(argv[2])=="jitter";
   const bool burst=argc>2 && std::string(argv[2])=="burst";
   const char* name = video ? "reaweb.video.project.test" : "test.frame";
   StreamHub hub; ReaWeb_StreamDesc desc{}; desc.size = sizeof(desc); desc.abi_version = 1;
   desc.format = REAWEB_PIXEL_RGBA8; desc.width = 240; desc.height = 160; desc.stride = 960;
   if(video) { desc.width=1280;desc.height=720;desc.stride=5120; }
+  if(argc>1 && std::string(argv[1])=="video-4k") { desc.width=3840;desc.height=2160;desc.stride=15360; }
   if(argc>1 && std::string(argv[1])=="video-small") { desc.width=4;desc.height=4;desc.stride=16; }
   if(argc>1 && std::string(argv[1])=="video-medium") { desc.width=64;desc.height=64;desc.stride=256; }
+  if(argc>1 && std::string(argv[1])=="frame-max") { desc.width=2048;desc.height=2048;desc.stride=8192; }
   desc.max_bytes = desc.stride * desc.height; desc.capacity = 3; desc.update_rate = 60;
+  if(pressure) { desc.width=3840;desc.height=2160;desc.stride=15360;desc.max_bytes=desc.stride*desc.height; }
   uint64_t handle = 0;
   const auto created=timing_packets?hub.create_jsfx(REAWEB_FRAME,name,&desc,&handle,1,0,{{"sessionId","test"}}):hub.create(REAWEB_FRAME,name,&desc,&handle,video);
   if(created)return 1;
-  std::cout << Json::array({hub.attach(name, 1, 0, "http://127.0.0.1:9000"), hub.attach(name, timing_packets?1:2, 0, "http://127.0.0.1:9000")}).dump() << std::endl;
+  struct Memory : VideoMemory {
+    std::vector<unsigned char> storage;
+    explicit Memory(uint32_t bytes) : storage(size_t(bytes) * 2) { data = storage.data(); frame_bytes = bytes; }
+  };
+  const VideoMemoryFactory memory = shared_video || pressure ? VideoMemoryFactory([](const std::string&, uint32_t bytes) { return std::make_shared<Memory>(bytes); }) : VideoMemoryFactory{};
+  auto tickets = Json::array({hub.attach(name, 1, 0, "http://127.0.0.1:9000", memory), hub.attach(name, timing_packets?1:2, 0, "http://127.0.0.1:9000")});
+  if(pressure) for(int window=3;window<=8;++window) tickets.push_back(hub.attach(name,window,0,"http://127.0.0.1:9000"));
+  std::cout << tickets.dump() << std::endl;
   std::vector<unsigned char> pixels(desc.max_bytes);
   auto begin = std::chrono::steady_clock::now();
   auto publish = [&](unsigned sequence) {
@@ -31,7 +43,7 @@ int main(int argc,char** argv) {
     }
     return true;
   };
-  if (jitter || burst) {
+  if (jitter || burst || pressure) {
     if (!publish(1)) return 2;
     std::string command;
     while (std::getline(std::cin, command) && command != "close") {

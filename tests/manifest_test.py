@@ -26,13 +26,16 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(before, (self.path.read_bytes(), self.path.stat().st_mtime_ns))
 
     def test_shipped_example_manifests(self):
-        examples = Path(__file__).resolve().parents[1] / 'examples'
+        root = Path(__file__).resolve().parents[1]
+        examples = root / 'examples'
+        properties = json.loads((root / 'runtime/app-manifest.schema.json').read_text(encoding='utf-8'))['properties']
         paths = sorted(path for group in ('main-demo', 'backends', 'integrations', 'windows')
                        for path in (examples / group).rglob('app.json'))
         self.assertTrue(paths)
         for path in paths:
             with self.subTest(app=path.relative_to(examples).as_posix()):
-                validate(path)
+                manifest, _ = validate(path)
+                self.assertFalse(set(manifest) - properties.keys(), 'Shipped manifest fields must be declared by the SDK schema')
 
     def test_daw_keyboard_boolean(self):
         for enabled in (True, False):
@@ -43,6 +46,15 @@ class ManifestTests(unittest.TestCase):
         for value in ('true', 0, 1, None, [], {}):
             self.write(dawKeyboard=value)
             with self.assertRaises(ValueError):
+                validate(self.path)
+
+    def test_video_high_refresh_rate_boolean(self):
+        for enabled in (True, False):
+            self.write(videoHighRefreshRate=enabled)
+            self.assertIs(validate(self.path)[0]['videoHighRefreshRate'], enabled)
+        for value in ('true', 0, 1, None, [], {}):
+            self.write(videoHighRefreshRate=value)
+            with self.assertRaisesRegex(ValueError, 'videoHighRefreshRate must be a boolean'):
                 validate(self.path)
 
     def test_invalid_fields_and_entry_paths(self):

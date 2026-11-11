@@ -30,6 +30,7 @@ def native_files():
         yield reapack, binary
         if platform == 'linux':
             yield reapack, f'reawebapi-webview-{arch}'
+            yield reapack, f'reawebapi-video-{arch}/reawebapi-video-{arch}.so'
 
 
 def version_notes(version):
@@ -55,9 +56,9 @@ def release_body(repo, version):
             f'[ReaPack]({base}/ReaWebAPI-ReaPack-v{version}.zip) · '
             f'[SHA-256]({base}/SHA256SUMS.txt)\n\n'
             'Platform packages include the extension, SDK and examples. Extract into the REAPER resource directory and restart REAPER. '
-            'On Linux, keep the matching WebKit helper beside the extension with execute permission.\n\n'
+            'On Linux, keep the matching WebKit helper beside the extension with execute permission, and retain the `reawebapi-video-<arch>/` subdirectory.\n\n'
             '平台安装包包含扩展、SDK 和示例。解压到 REAPER 资源目录后重启。'
-            'Linux 的同架构 WebKit 辅助程序与扩展放在同一目录，并赋予执行权限。\n\n'
+            'Linux 的同架构 WebKit 辅助程序与扩展放在同一目录，并赋予执行权限，保留 `reawebapi-video-<arch>/` 子目录。\n\n'
             'The SDK provides type declarations and templates. The ReaPack package provides binaries, the complete Demo and repository metadata.\n\n'
             'SDK 提供类型声明和开发模板，ReaPack 包提供二进制文件、完整 Demo 和仓库索引元数据。\n\n'
             f'[Documentation / 文档](https://github.com/{repo}#readme)\n')
@@ -108,7 +109,7 @@ def add_demo(archive, directory):
 def assemble(directory, version, revision):
     assets = []
     for platform, arch, _, binary in TARGETS:
-        files = [binary] + ([f'reawebapi-webview-{arch}'] if platform == 'linux' else [])
+        files = [binary] + ([f'reawebapi-webview-{arch}', f'reawebapi-video-{arch}/reawebapi-video-{arch}.so'] if platform == 'linux' else [])
         bundle = directory / f'ReaWebAPI-{platform}-{arch}-v{version}.zip'
         with zipfile.ZipFile(bundle) as archive:
             if any(name.endswith(('.clap', '/ReaWebAPI_InstallVideoBackend.lua', '/CLAP-LICENSE.txt', '/licenses/clap.txt'))
@@ -119,7 +120,7 @@ def assemble(directory, version, revision):
             if metadata != expected:
                 raise ValueError(f'Build metadata mismatch: {bundle.name}')
             for name in files:
-                file = directory / name
+                file = directory / Path(name).name
                 if not file.is_file() or not file.stat().st_size or archive.read(f'UserPlugins/{name}') != file.read_bytes():
                     raise ValueError(f'Missing or mismatched native asset: {name}')
                 assets.append(file)
@@ -134,7 +135,7 @@ def assemble(directory, version, revision):
             info.create_system = 3
             info.external_attr = 0o100755 << 16
             info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, (directory / name).read_bytes())
+            archive.writestr(info, (directory / Path(name).name).read_bytes())
     assets += [reapack, build_sdk(directory, version, revision)]
     checksums = directory / 'SHA256SUMS.txt'
     checksums.write_text(''.join(f'{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.name}\n'

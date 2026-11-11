@@ -47,4 +47,4 @@ The [SVG overlay example](../examples/windows/overlay/README.md) is a bilingual,
 
 ## Project video
 
-`reaper.video` exposes shared project video frames through Native Streams. Only verified REAPER builds are supported. See [Video Preview](../docs/video-preview.md) for installation, API, rendering and platform limits.
+`reaper.video` exposes shared project video frames, with Windows worker delivery, shared native D3D11/Metal presentation on Windows/macOS and optional native I420 on verified Windows x64, macOS ARM64 and Linux x86_64 converters. Only verified REAPER builds are supported. See [Video Preview](../docs/video-preview.md) for installation, API, rendering and platform limits.

@@ -273,7 +273,8 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
         dock_.activate(s->window->native_handle());
     }, hidden, frameless, resizable, transparent, bool(session->jsfx), session->startup_timing,
     [weak] { auto s = weak.lock(); return s && !s->closing && (s->capture_keyboard || s->shortcut_routing); }, overlay,
-    [weak] { auto s = weak.lock(); return s && !s->closing && s->shortcut_routing; }});
+    [weak] { auto s = weak.lock(); return s && !s->closing && s->shortcut_routing; },
+    !session->jsfx && app_video_high_refresh_rate(entry.parent_path())});
   trace(*session, "webview.create.end");
   trace(*session, "webview.load.begin");
   session->window->set_media_resources(window_resources);

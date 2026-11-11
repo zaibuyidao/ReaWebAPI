@@ -90,10 +90,44 @@ Json Runtime::web_runtime(const Session& session) const {
 }
 Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   auto& s = *sessions_.at(id);
-  if (method == "ReaWeb_VideoCapabilities") return video_.capabilities();
+  if (method == "ReaWeb_VideoCapabilities") {
+    auto result = video_.capabilities();
+    const bool native = !s.jsfx && s.window && s.window->video_presenter_available();
+    result["nativePresentation"] = {{"available", native}, {"backend", native ? Json(s.window->video_presenter_backend()) : Json(nullptr)}};
+    return result;
+  }
+  if (method == "ReaWeb_VideoSourceInfo") return video_.source_info();
   if (method == "ReaWeb_VideoState") return video_.state();
   if (method == "ReaWeb_VideoDiagnostics") return video_.diagnostics();
   if (method == "ReaWeb_VideoOpen") return video_.open(args[0], id);
+  if (method == "ReaWeb_VideoSurfaceOpen") {
+    if (s.jsfx || !s.window || !s.window->video_presenter_available())
+      throw Error("VIDEO_PRESENTATION_UNAVAILABLE", "Native video presentation is unavailable in this window");
+    if (!s.window->visible()) throw Error("VIDEO_PAGE_HIDDEN", "Show the window before opening project video");
+    bool created = false;
+    const auto name = video_.open(args[0], id, &created);
+    try {
+      return streams_.attach_video_presenter(name, id, s.generation, s.app->origin,
+        [&s](const Json& descriptor) { return s.window->video_presenter(descriptor); });
+    } catch (...) {
+      if (created) video_.discard_unattached(name);
+      throw;
+    }
+  }
+  if (method == "ReaWeb_VideoSurfaceLayout" || method == "ReaWeb_VideoSurfaceDiagnostics" || method == "ReaWeb_VideoSurfaceClose") {
+    if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected a video surface token");
+    const auto token = args[0].get<std::string>();
+    auto presenter = streams_.video_presenter(token, id, s.generation);
+    if (method == "ReaWeb_VideoSurfaceClose") {
+      if (presenter) streams_.detach(token, id);
+      return true;
+    }
+    if (method == "ReaWeb_VideoSurfaceDiagnostics") return streams_.video_presenter_diagnostics(token, id, s.generation);
+    if (!presenter || presenter->closed()) throw Error("STREAM_CLOSED", "Video surface is closed");
+    validate_video_surface_layout(args[1]);
+    presenter->layout(args[1]);
+    return true;
+  }
   if (method == "ReaWeb_RealtimeCapabilities") return realtime_.capabilities();
   if (method == "ReaWeb_RealtimeDiagnostics") return realtime_.diagnostics(id);
   if (method == "ReaWeb_RealtimeSubscribe") {
@@ -120,7 +154,8 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   if (method == "ReaWeb_GetDevices") return producers_.devices();
   if (method == "ReaWeb_StreamOpen") {
     if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected a stream name");
-    auto descriptor = streams_.attach(args[0].get<std::string>(), id, s.generation, s.app->origin);
+    auto descriptor = streams_.attach(args[0].get<std::string>(), id, s.generation, s.app->origin,
+      [&s](const std::string& token, uint32_t bytes) { return s.jsfx ? std::shared_ptr<VideoMemory>{} : s.window->video_memory(token, bytes); });
     producers_.attached(args[0].get<std::string>());
     return descriptor;
   }

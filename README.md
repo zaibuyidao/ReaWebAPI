@@ -53,7 +53,7 @@ REAPER 6.68+ is supported. REAPER 7.80+ provides the complete API catalogue.
 
 Quit REAPER and extract the platform ZIP into its resource directory, available from **Options → Show REAPER resource path in explorer/finder**. Restart REAPER to load the extension.
 
-For manual installation, place the native binary in `UserPlugins/`. On Linux, place the matching `reawebapi-webview-<arch>` helper in the same directory and grant it execute permission.
+For manual installation, place the native binary in `UserPlugins/`. On Linux, place the matching `reawebapi-webview-<arch>` helper in the same directory and grant it execute permission. Keep the `reawebapi-video-<arch>/` subdirectory for accelerated project-video transport.
 
 Linux reuses unchanged X11 geometry and reads incoming WebKit messages through the host event loop. In WSL without DRI3, the helper uses GTK image backing surfaces to reduce drawing stalls. An explicit `GDK_RENDERING` setting takes precedence.
 
@@ -118,4 +118,4 @@ The [SVG overlay example](examples/windows/overlay/README.md) is a bilingual, si
 
 ## Project video
 
-`reaper.video` exposes shared project video frames through Native Streams. Only verified REAPER builds are supported. See [Video Preview](docs/video-preview.md) for installation, API, rendering and platform limits.
+`reaper.video` exposes shared project video frames through Native Streams, including direct Windows video-worker delivery and shared native D3D11/Metal presentation on Windows/macOS. Only verified REAPER builds are supported. See [Video Preview](docs/video-preview.md) for installation, API, rendering and platform limits.

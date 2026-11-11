@@ -43,6 +43,10 @@ if args.platform == 'linux':
     if not helper.is_file() or not helper.stat().st_size:
         raise SystemExit(f'Missing WebKit helper: {helper}')
     native_files.append(helper)
+    video = args.stage / 'UserPlugins' / f'reawebapi-video-{args.arch}' / f'reawebapi-video-{args.arch}.so'
+    if not video.is_file() or not video.stat().st_size:
+        raise SystemExit(f'Missing video WebKit module: {video}')
+    native_files.append(video)
 for relative in required:
     if not (args.stage / relative).is_file():
         raise SystemExit(f'Missing bundle file: {relative}')

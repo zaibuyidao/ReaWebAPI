@@ -1,8 +1,8 @@
 # Runtime API 完整清单 / Complete API inventory
 
-JavaScript Runtime 公开以下 **17 个命名空间、91 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
+JavaScript Runtime 公开以下 **17 个命名空间、92 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。730 项 REAPER Mirror 保持原始根级名称、参数顺序、Promise 和返回值规则。
 
-The JavaScript Runtime exposes seventeen namespaces: 91 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
+The JavaScript Runtime exposes seventeen namespaces: 92 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. The 730 REAPER Mirror functions keep their original root-level names and signatures. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
@@ -250,11 +250,14 @@ See [Realtime sources](realtime.md). This additive namespace does not change JSF
 
 ## reaper.video
 
-Project video through Native Frame Streams. [English](video-preview.md) · [中文](video-preview.zh-CN.md).
+Project video through Native Frame Streams or native presentation surfaces. [English](video-preview.md) · [中文](video-preview.zh-CN.md).
 
 | API | Result | Purpose |
 | --- | --- | --- |
 | `reaper.video.getCapabilities()` | `Promise<ReaWebVideoCapabilities>` | Backend compatibility, platform and profile limits |
+| `reaper.video.getSourceInfo()` | `Promise<ReaWebVideoSourceInfo>` | Final project frame dimensions and original-output budget availability |
 | `reaper.video.openStream(options?)` | `Promise<ReaWebStream>` | Shared current-project RGBA8 video |
+| `reaper.video.openWorkerStream(worker, options?)` | `Promise<ReaWebWorkerVideoStream>` | WebView2 video with pixel ownership in a dedicated rendering worker |
+| `reaper.video.openSurface(options?)` | `Promise<ReaWebVideoSurface>` | Shared D3D11 presentation on Windows and Metal presentation on macOS, without JavaScript pixel delivery |
 | `reaper.video.getState()` | `Promise<ReaWebVideoState>` | Source, position, resolution and availability |
 | `reaper.video.getDiagnostics()` | `Promise<ReaWebVideoDiagnostics>` | Frames, capture timing, drops and subscriptions |
