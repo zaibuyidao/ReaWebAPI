@@ -121,6 +121,6 @@ private:
   std::thread::id main_ = std::this_thread::get_id();
   std::unique_ptr<class StreamTransport> transport_;
   Json attach_consumer(const std::string& name, int window, uint64_t generation, const std::string& origin, uint64_t external,
-                       const VideoMemoryFactory& video_memory = {});
+                      const VideoMemoryFactory& video_memory = {}, bool native_display = false);
 };
 }

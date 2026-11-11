@@ -24,20 +24,20 @@ void require(HRESULT hr, const char* message) {
 }
 const char* shaders = R"HLSL(
 cbuffer Settings : register(b0) { float4 outputSize; float4 sourceRect; };
-Texture2D<uint> planes : register(t0);
-RWTexture2D<float4> converted : register(u0);
-[numthreads(16,16,1)] void convertI420(uint3 at:SV_DispatchThreadID) {
- uint w=(uint)outputSize.x,h=(uint)outputSize.y;
- if(at.x>=w||at.y>=h)return;
- uint ur=at.y/2,vr=ur+h/2;
- int y=int(planes.Load(int3(at.xy,0)))-16;
- int u=int(planes.Load(int3(at.x/2+(ur&1)*(w/2),h+ur/2,0)))-128;
- int v=int(planes.Load(int3(at.x/2+(vr&1)*(w/2),h+vr/2,0)))-128;
- int yy=(y*9539)>>13;
- int r=yy+((v*14686)>>13);
- int g=yy+((u*-1747)>>13)+((v*-4366)>>13);
- int b=yy+((u*17305)>>13);
- converted[at.xy]=float4(float3(clamp(int3(r,g,b),0,255))/255.0,1);
+Texture2D<float> luma : register(t0);
+Texture2D<float> chromaU : register(t1);
+Texture2D<float> chromaV : register(t2);
+SamplerState linearClamp : register(s0);
+float4 presentI420(float4 at:SV_Position):SV_Target {
+ uint w,h;luma.GetDimensions(w,h);
+ float2 pointInSource=sourceRect.xy+at.xy*sourceRect.zw/outputSize.xy;
+ if(any(pointInSource<0)||any(pointInSource>=float2(w,h)))return float4(0,0,0,1);
+ float2 uv=pointInSource/float2(w,h);
+ // Match REAPER's OpenGL viewport by filtering YUV before the matrix and RGB quantization.
+ float y=(luma.SampleLevel(linearClamp,uv,0)*255.0-16.0)/219.0;
+ float u=(chromaU.SampleLevel(linearClamp,uv,0)*255.0-128.0)/224.0;
+ float v=(chromaV.SampleLevel(linearClamp,uv,0)*255.0-128.0)/224.0;
+ return float4(saturate(y+u*float3(0,-0.187324273,1.8556)+v*float3(1.5748,-0.468124273,0)),1);
 }
 float4 videoVertex(uint index:SV_VertexID):SV_Position {
  return float4(index==2?3:-1,index==1?3:-1,0,1);
@@ -115,9 +115,9 @@ struct Slot {
   std::vector<unsigned char> bytes;
   uint64_t sequence = 0, epoch = 0;
   bool clear = false;
-  ComPtr<ID3D11Texture2D> input, rgb;
-  ComPtr<ID3D11ShaderResourceView> input_view, rgb_view;
-  ComPtr<ID3D11UnorderedAccessView> output_view;
+  bool conversion_counted = false;
+  std::array<ComPtr<ID3D11Texture2D>, 3> textures;
+  std::array<ComPtr<ID3D11ShaderResourceView>, 3> views;
   ComPtr<ID3D11Query> completion;
 };
 struct Worker {
@@ -133,7 +133,7 @@ struct Worker {
   ComPtr<ID3D11Device> device;
   ComPtr<ID3D11DeviceContext> context;
   ComPtr<IDXGIFactory2> factory;
-  ComPtr<ID3D11ComputeShader> convert;
+  ComPtr<ID3D11SamplerState> sampler;
   ComPtr<ID3D11VertexShader> vertex;
   ComPtr<ID3D11PixelShader> pixel;
   ComPtr<ID3D11Buffer> constants;
@@ -168,22 +168,27 @@ struct Worker {
     ComPtr<IDXGIDevice> dxgi; require(device.As(&dxgi), "Cannot query video DXGI device");
     ComPtr<IDXGIAdapter> adapter; require(dxgi->GetAdapter(&adapter), "Cannot query video adapter");
     require(adapter->GetParent(IID_PPV_ARGS(&factory)), "Cannot query video factory");
-    auto vs = compile("videoVertex", "vs_5_0"), ps = compile("presentRGB", "ps_5_0");
+    auto vs = compile("videoVertex", "vs_5_0"), ps = compile(i420 ? "presentI420" : "presentRGB", "ps_5_0");
     require(device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &vertex), "Cannot create video vertex shader");
     require(device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &pixel), "Cannot create video pixel shader");
-    if (i420) { auto cs = compile("convertI420", "cs_5_0"); require(device->CreateComputeShader(cs->GetBufferPointer(), cs->GetBufferSize(), nullptr, &convert), "Cannot create video conversion shader"); }
+    if (i420) {
+      D3D11_SAMPLER_DESC desc{};
+      desc.Filter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+      desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+      desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+      require(device->CreateSamplerState(&desc, &sampler), "Cannot create video sampler");
+    }
     D3D11_BUFFER_DESC cb{}; cb.ByteWidth = 32; cb.Usage = D3D11_USAGE_DEFAULT; cb.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     require(device->CreateBuffer(&cb, nullptr, &constants), "Cannot create video constants");
     for (auto& slot : slots) {
-      D3D11_TEXTURE2D_DESC desc{}; desc.Width = width; desc.Height = height; desc.MipLevels = desc.ArraySize = 1;
-      desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | (i420 ? D3D11_BIND_UNORDERED_ACCESS : 0);
-      require(device->CreateTexture2D(&desc, nullptr, &slot.rgb), "Cannot allocate shared video RGB texture");
-      require(device->CreateShaderResourceView(slot.rgb.Get(), nullptr, &slot.rgb_view), "Cannot create shared video RGB view");
-      if (i420) {
-        require(device->CreateUnorderedAccessView(slot.rgb.Get(), nullptr, &slot.output_view), "Cannot create video conversion output");
-        desc.Height = height*3/2; desc.Format = DXGI_FORMAT_R8_UINT; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        require(device->CreateTexture2D(&desc, nullptr, &slot.input), "Cannot allocate video I420 texture");
-        require(device->CreateShaderResourceView(slot.input.Get(), nullptr, &slot.input_view), "Cannot create video I420 view");
+      for (int plane = 0; plane < (i420 ? 3 : 1); ++plane) {
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = plane ? width / 2 : width; desc.Height = plane ? height / 2 : height;
+        desc.MipLevels = desc.ArraySize = 1; desc.SampleDesc.Count = 1;
+        desc.Format = i420 ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        require(device->CreateTexture2D(&desc, nullptr, &slot.textures[plane]), "Cannot allocate shared video texture");
+        require(device->CreateShaderResourceView(slot.textures[plane].Get(), nullptr, &slot.views[plane]), "Cannot create shared video view");
       }
       D3D11_QUERY_DESC query{D3D11_QUERY_EVENT, 0}; require(device->CreateQuery(&query, &slot.completion), "Cannot create video completion query");
     }
@@ -262,8 +267,15 @@ struct Worker {
     float values[8]={float(layout.width),float(layout.height),0,0,layout.uv[0]*width,layout.uv[1]*height,layout.uv[2]*width,layout.uv[3]*height};
     context->UpdateSubresource(constants.Get(), 0, nullptr, values, 0, 0); auto* cb=constants.Get(); context->PSSetConstantBuffers(0,1,&cb);
     context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); context->VSSetShader(vertex.Get(),nullptr,0); context->PSSetShader(pixel.Get(),nullptr,0);
-    auto* rgb = slot.rgb_view.Get(); context->PSSetShaderResources(0,1,&rgb); auto* render_target=target.Get(); context->OMSetRenderTargets(1,&render_target,nullptr);
-    context->Draw(3,0); ID3D11ShaderResourceView* empty=nullptr; context->PSSetShaderResources(0,1,&empty); context->OMSetRenderTargets(0,nullptr,nullptr);
+    ID3D11ShaderResourceView* views[] = {slot.views[0].Get(), slot.views[1].Get(), slot.views[2].Get()};
+    const UINT plane_count = i420 ? 3 : 1;
+    context->PSSetShaderResources(0, plane_count, views);
+    if (i420) { auto* filter = sampler.Get(); context->PSSetSamplers(0, 1, &filter); }
+    auto* render_target = target.Get(); context->OMSetRenderTargets(1, &render_target, nullptr);
+    context->Draw(3, 0);
+    ID3D11ShaderResourceView* empty[3]{};
+    context->PSSetShaderResources(0, plane_count, empty); context->OMSetRenderTargets(0, nullptr, nullptr);
+    if (i420 && !slot.conversion_counted) { slot.conversion_counted = true; ++converted; }
     if (state.invalidated || slot.epoch != epoch) return true;
     const auto started=std::chrono::steady_clock::now();
     // A replacement must have a front buffer before the visual switches to it.
@@ -285,13 +297,14 @@ struct Worker {
     return true;
   }
   void upload(Slot& slot) {
-    if(i420){
-      context->UpdateSubresource(slot.input.Get(),0,nullptr,slot.bytes.data(),width,0);
-      float values[8]={float(width),float(height),0,0,0,0,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
-      auto* cb=constants.Get();context->CSSetConstantBuffers(0,1,&cb);context->CSSetShader(convert.Get(),nullptr,0);
-      auto* input=slot.input_view.Get();auto* output=slot.output_view.Get();context->CSSetShaderResources(0,1,&input);context->CSSetUnorderedAccessViews(0,1,&output,nullptr);
-      context->Dispatch((width+15)/16,(height+15)/16,1);input=nullptr;output=nullptr;context->CSSetShaderResources(0,1,&input);context->CSSetUnorderedAccessViews(0,1,&output,nullptr);++converted;
-    }else context->UpdateSubresource(slot.rgb.Get(),0,nullptr,slot.bytes.data(),width*4,0);
+    if (i420) {
+      const size_t luma_bytes = size_t(width) * height;
+      const auto* data = slot.bytes.data();
+      context->UpdateSubresource(slot.textures[0].Get(), 0, nullptr, data, width, 0);
+      context->UpdateSubresource(slot.textures[1].Get(), 0, nullptr, data + luma_bytes, width / 2, 0);
+      context->UpdateSubresource(slot.textures[2].Get(), 0, nullptr, data + luma_bytes + luma_bytes / 4, width / 2, 0);
+      slot.conversion_counted = false;
+    } else context->UpdateSubresource(slot.textures[0].Get(), 0, nullptr, slot.bytes.data(), width * 4, 0);
     ++uploaded;
   }
   void draw_surfaces(const std::vector<std::shared_ptr<Surface>>& states, Slot& slot, bool fresh, bool retry_only = false) {
@@ -335,8 +348,8 @@ struct Worker {
     }catch(const std::exception& error){fail(error.what());}
     for(auto& state:attached())release_surface(*state);
     if(context){context->ClearState();context->Flush();}
-    for(auto& slot:slots){slot.input_view.Reset();slot.rgb_view.Reset();slot.output_view.Reset();slot.input.Reset();slot.rgb.Reset();slot.completion.Reset();}
-    constants.Reset();convert.Reset();vertex.Reset();pixel.Reset();factory.Reset();context.Reset();device.Reset();
+    for (auto& slot : slots) { slot.views = {}; slot.textures = {}; slot.completion.Reset(); }
+    constants.Reset();sampler.Reset();vertex.Reset();pixel.Reset();factory.Reset();context.Reset();device.Reset();
     CoUninitialize();
   }
 };
@@ -413,7 +426,9 @@ std::shared_ptr<WinVideoHost> make_win_video_host(HWND window){return std::make_
 std::shared_ptr<WinVideoPresenter> make_win_video_presenter(const std::shared_ptr<WinVideoHost>& host,const Json& descriptor) {
   const int width=descriptor.at("width"),height=descriptor.at("height");const bool i420=descriptor.value("format","")=="i420";
   if((!i420&&descriptor.value("format","")!="rgba8")||width<=0||height<=0||uint64_t(width)*height>10485760||descriptor.value("stride",0)!=width*(i420?1:4))throw Error("VIDEO_FORMAT_UNSUPPORTED","Native D3D presentation requires tightly packed project video frames");
-  if(i420&&(descriptor.value("colorMatrix","")!="bt709"||descriptor.value("colorRange","")!="limited"||descriptor.value("colorConversion","")!="reaper-sse"||width%16||height%2))throw Error("VIDEO_FORMAT_UNSUPPORTED","Native D3D I420 presentation requires the verified REAPER conversion");
+  const auto conversion=descriptor.value("colorConversion","");
+  if(i420&&(descriptor.value("colorMatrix","")!="bt709"||descriptor.value("colorRange","")!="limited"||
+      (conversion!="reaper-sse"&&conversion!="reaper-directdraw")||width%16||height%2))throw Error("VIDEO_FORMAT_UNSUPPORTED","Native D3D I420 presentation requires the verified REAPER conversion");
   const auto name=descriptor.at("name").get<std::string>();if(name.empty())throw Error("INVALID_ARGUMENT","Video source name is required");
   static std::mutex mutex;static std::map<std::string,std::weak_ptr<Source>> registry;std::shared_ptr<Source> source;
   {std::lock_guard<std::mutex> guard(mutex);for(auto it=registry.begin();it!=registry.end();)if(it->second.expired())it=registry.erase(it);else ++it;

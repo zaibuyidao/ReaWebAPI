@@ -21,12 +21,13 @@ struct Build {
   size_t display, visible, window, frame, processed, monitor_hash;
   size_t query, source_hash, cached, destroy_sources, frame_index, is_visible, transform;
   size_t yuv_gamut = 0, converter = 0, codec_version = 0, sources_at = 0;
+  size_t renderer = 0, directdraw_vtable = 0, video_colorspace = 0;
 };
 // Internal offsets are selected by the normalized module fingerprint.
 #if defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))
 constexpr Build builds[]{{"b50bc6486f996acc2731acc6889217fdfb8f55dd8e6524746e7d7582ff705f59",
   0x1a8848, 0x26c14c, 0x26bd70, 0x26bdb0, 0x26bda8, 0x26bda0,
-  0x1a9738, 0x1a5fc0, 0x1af738, 0x1ad4dc, 0x26bd98, 0x211810, 0x1a6ffc, 0x1a70e8, 0x266af4, 0x266af0, 0x1a50a0}};
+  0x1a9738, 0x1a5fc0, 0x1af738, 0x1ad4dc, 0x26bd98, 0x211810, 0x1a6ffc, 0x1a70e8, 0x266af4, 0x266af0, 0x1a50a0, 0x26bdb8, 0x280148, 0x26be30}};
 #elif defined(__APPLE__) && defined(__aarch64__)
 constexpr Build builds[]{{"318fef1c8d990840587b26cc58e2b7e9659844156b8578ba540e493c09f32ba0",
   0x13868, 0x110860, 0x110858, 0x110ac8, 0x110ad0, 0x110ad8,
@@ -157,7 +158,10 @@ public:
     if (!supports_i420()) return VideoRead::format_unsupported;
     return read_frame(discontinuity, capture, true);
   }
-  VideoRead read_frame(bool discontinuity, const Capture& capture, bool planar) {
+  VideoRead read_display_i420(bool discontinuity, const Capture& capture) override {
+    return read_frame(discontinuity, capture, true, true);
+  }
+  VideoRead read_frame(bool discontinuity, const Capture& capture, bool planar, bool display = false) {
     if (discontinuity) has_frame = false;
     if (!supported()) { stop(); return VideoRead::unsupported; }
     const auto projects = api<void*(*)(int, char*, int)>("EnumProjects");
@@ -215,6 +219,7 @@ public:
     auto frame = processed ? processed : base;
     if (!frame) return VideoRead::pending;
     bool native_i420 = false;
+    bool directdraw_hd = false;
     int matrix = -1;
     auto conversion = VideoColorConversion::unknown;
 #if (defined(__APPLE__) && defined(__aarch64__)) || (defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))) || (defined(__linux__) && defined(__x86_64__))
@@ -230,9 +235,26 @@ public:
     const auto codec_version = read_at<unsigned char>(module.base, build->codec_version);
     if (read_at<int>(module.base, build->converter) == 1 &&
         (codec_version == 54 || codec_version == 62)) conversion = VideoColorConversion::reaper_sse;
+    if (native_i420 && frame->get_w() >= 1280 && frame->get_h() >= 720 && build->renderer) {
+      const auto renderer = read_at<const unsigned char*>(module.base, build->renderer);
+      if (renderer) directdraw_hd = read_at<const unsigned char*>(renderer, 0) == module.base + build->directdraw_vtable;
+      else {
+        // REAPER only creates the renderer when its Video Window is shown.
+        const auto settings = read_at<const unsigned char*>(module.base, build->video_colorspace);
+        const int flags = settings ? read_at<int>(settings, 0) : 0;
+        constexpr int alternate_renderer = 0x50000, yv12_output = 1;
+        directdraw_hd = !(flags & alternate_renderer) && (flags & yv12_output);
+      }
+    }
 #else
     conversion = VideoColorConversion::reaper_neon;
 #endif
+    if (display) {
+      if (!directdraw_hd) return VideoRead::format_unsupported;
+      // The native DirectDraw YUV renderer uses the HD display matrix regardless of project conversion.
+      matrix = 1;
+      conversion = VideoColorConversion::reaper_directdraw;
+    }
 #endif
     // Other widths retain RGBA until the scalar conversion tail is verified.
     if (planar && (!native_i420 || matrix != 1 || conversion == VideoColorConversion::unknown || frame->get_w() <= 0 || frame->get_h() <= 0 ||
@@ -244,7 +266,7 @@ public:
         start == last_start && end == last_end && (!planar || (matrix == last_matrix && conversion == last_conversion))) return VideoRead::unchanged;
     if (planar) {
       capture({reinterpret_cast<const unsigned char*>(frame->get_bits()), frame->get_w(), frame->get_h(), frame->get_rowspan(),
-        VideoPixelFormat::i420, true, matrix, conversion});
+        VideoPixelFormat::i420, true, matrix, conversion, directdraw_hd});
     } else {
     // transformFrame consumes this additional reference, including on failure.
     frame->AddRef();
@@ -255,7 +277,7 @@ public:
     const int w = frame->get_w(), h = frame->get_h(), stride = frame->get_rowspan();
     if (w <= 0 || h <= 0 || w > 16384 || h > 16384 || stride <= 0 || stride > 262144 || !frame->get_bits()) return VideoRead::empty;
     if (frame->get_fmt() != rgba || stride < int64_t(w) * 4) return VideoRead::pending;
-    capture({reinterpret_cast<const unsigned char*>(frame->get_bits()), w, h, stride, VideoPixelFormat::bgra8, native_i420, matrix, conversion});
+    capture({reinterpret_cast<const unsigned char*>(frame->get_bits()), w, h, stride, VideoPixelFormat::bgra8, native_i420, matrix, conversion, directdraw_hd});
     }
     has_frame = true; last_index = index; last_source = source_key; last_monitor = monitor_key;
     last_start = start; last_end = end; last_matrix = matrix; last_conversion = conversion;

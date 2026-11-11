@@ -152,7 +152,8 @@ int StreamHub::create(int kind, const char* name, const ReaWeb_StreamDesc* input
       if (!project_video || !video_metadata.is_object() || video_metadata.value("colorMatrix", Json()) != "bt709" ||
           video_metadata.value("colorRange", Json()) != "limited" ||
           (video_metadata.value("colorConversion", Json()) != "reaper-neon" &&
-           video_metadata.value("colorConversion", Json()) != "reaper-sse")) return REAWEB_UNSUPPORTED_FORMAT;
+           video_metadata.value("colorConversion", Json()) != "reaper-sse" &&
+           video_metadata.value("colorConversion", Json()) != "reaper-directdraw")) return REAWEB_UNSUPPORTED_FORMAT;
       if (!desc.width || !desc.height || desc.width > 8192 || desc.height > 8192 || (desc.width & 1) || (desc.height & 1) ||
           desc.stride != desc.width || uint64_t(desc.width) * desc.height * 3 / 2 != desc.max_bytes) return REAWEB_INVALID_ARGUMENT;
     } else {
@@ -243,7 +244,7 @@ Json StreamHub::attach_video_presenter(const std::string& name, int window, uint
                                        const std::string& origin, const VideoPresenterFactory& factory) {
   if (std::this_thread::get_id() != main_) throw Error("WRONG_THREAD", "Video presentation requires the main thread");
   if (window <= 0 || origin.empty() || !factory) throw Error("INVALID_ARGUMENT", "Video presentation requires an App document");
-  auto descriptor = attach_consumer(name, window, generation, origin, 0);
+  auto descriptor = attach_consumer(name, window, generation, origin, 0, {}, true);
   const auto token = descriptor.at("token").get<std::string>();
   std::shared_ptr<VideoPresenter> presenter;
   try {
@@ -309,11 +310,14 @@ void StreamHub::detach_external(uint64_t session, const std::string& token) {
     else ++it;
 }
 Json StreamHub::attach_consumer(const std::string& name, int window, uint64_t generation, const std::string& origin, uint64_t external,
-                               const VideoMemoryFactory& video_memory) {
+                               const VideoMemoryFactory& video_memory, bool native_display) {
   if (!transport_) transport_ = std::make_unique<StreamTransport>(*this);
   std::lock_guard<std::mutex> lock(mutex_);
   if (tickets_.size() >= 64) throw Error("QUEUE_LIMIT", "At most 64 stream consumers may be attached");
   for (const auto& slot : slots_) if (slot.owned && slot.name == name) {
+    if (!native_display && slot.owned->project_video && slot.owned->descriptor.format == REAWEB_PIXEL_I420 &&
+        slot.metadata["colorConversion"] == "reaper-directdraw")
+      throw Error("UNSUPPORTED_FORMAT", "This video profile requires native presentation");
     if (slot.protected_window && (external || window != slot.protected_window || generation != slot.protected_generation))
       throw Error("FX_UNBOUND", "This stream belongs to another JSFX document");
     std::random_device random; std::string token;

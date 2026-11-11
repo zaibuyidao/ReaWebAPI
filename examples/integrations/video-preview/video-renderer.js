@@ -57,7 +57,7 @@ export async function createVideoRenderer(canvas, { platform, format = 'rgba8', 
     } catch { worker?.terminate(); worker = null; }
   }
   if (!worker) {
-    const painter = format === 'i420' ? createI420Renderer(canvas) : createCanvasRenderer(canvas);
+    const painter = format === 'i420' ? createI420Renderer(canvas, { matchWindowsPreview: platform === 'windows' }) : createCanvasRenderer(canvas);
     const renderer = createFrameRenderer(frame => {
       try { if (painter.draw(frame)) onDraw(frame.sequence); } catch (error) { onError(error); }
     });
@@ -80,7 +80,7 @@ export async function createVideoRenderer(canvas, { platform, format = 'rgba8', 
     };
     worker.onerror = event => { clearTimeout(timeout); reject(new Error(event.message || 'Video worker initialization failed')); };
     const offscreen = canvas.transferControlToOffscreen();
-    worker.postMessage({ type: 'init', canvas: offscreen, format }, [offscreen]);
+    worker.postMessage({ type: 'init', canvas: offscreen, format, matchWindowsPreview: platform === 'windows' && format === 'i420' }, [offscreen]);
   }).catch(error => { worker.terminate(); throw error; });
   worker.onerror = event => { if (!disposed) onError(new Error(event.message || 'Video worker failed')); };
   worker.onmessage = ({ data }) => {

@@ -10,7 +10,7 @@ interface ReaWebVideoOptions {
 interface ReaWebVideoSourceInfo {
   available: boolean; width: number; height: number; originalSupported: boolean; error: string | null;
   nativeFormat: 'i420' | null; colorMatrix: 'bt601' | 'bt709' | 'bt2020' | null; colorRange: 'limited' | null;
-  colorConversion: 'reaper-neon' | 'reaper-sse' | null;
+  colorConversion: 'reaper-neon' | 'reaper-sse' | 'reaper-directdraw' | null;
 }
 interface ReaWebVideoCapabilities {
   available: boolean; backend: 'reaper-internal'; source: 'project';
@@ -27,7 +27,7 @@ interface ReaWebVideoState {
   updateRate: number | 'auto'; targetUpdateRate: number;
   resolution: 'custom' | 'fit' | 'source'; preserveAspect: boolean;
   format: 'rgba8' | 'i420'; colorMatrix: 'bt709' | null; colorRange: 'limited' | null;
-  colorConversion: 'reaper-neon' | 'reaper-sse' | null;
+  colorConversion: 'reaper-neon' | 'reaper-sse' | 'reaper-directdraw' | null;
   source: 'project'; backend: 'reaper-internal'; status: 'closed' | 'idle' | 'waiting' | 'ready';
   epoch: number; width: number; height: number; sourceWidth: number; sourceHeight: number;
   position: number | null; sourceFrameRate: number; frameAgeMs: number | null;
@@ -100,7 +100,9 @@ interface ReaWebVideoSurfaceDiagnostics {
 }
 /** Native video presentation beneath page content. Pixels are not exposed to JavaScript or Canvas. */
 interface ReaWebVideoSurface {
-  readonly info: Readonly<ReaWebStreamInfo & { renderer: 'native-metal' | 'native-d3d11' }>;
+  readonly info: Readonly<Omit<ReaWebStreamInfo, 'colorConversion'> & {
+    renderer: 'native-metal' | 'native-d3d11'; colorConversion?: 'reaper-neon' | 'reaper-sse' | 'reaper-directdraw';
+  }>;
   readonly readablePixels: false;
   readonly closed: boolean;
   readonly error: (Error & { code: string }) | null;

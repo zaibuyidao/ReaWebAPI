@@ -1,4 +1,4 @@
-export function createI420Renderer(canvas) {
+export function createI420Renderer(canvas, { matchWindowsPreview = false } = {}) {
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false });
   if (!gl) throw Object.assign(new Error('I420 video requires WebGL2'), { code: 'VIDEO_RENDER_UNSUPPORTED' });
   let sourceWidth = 0, sourceHeight = 0, rectUniform, keepAspect = false, hasTexture = false;
@@ -12,6 +12,7 @@ export function createI420Renderer(canvas) {
     };
     const vertex = shader(gl.VERTEX_SHADER, '#version 300 es\nin vec2 position;void main(){gl_Position=vec4(position,0.,1.);}');
     const fragment = shader(gl.FRAGMENT_SHADER, `#version 300 es
+${matchWindowsPreview ? '#define WINDOWS_PREVIEW' : ''}
 precision highp float;
 precision highp int;
 uniform highp usampler2D planes;
@@ -20,12 +21,12 @@ uniform vec4 imageRect;
 uniform ivec4 coefficients;
 uniform bool sse;
 out vec4 color;
-int chromaAt(ivec2 at,int row){return int(texelFetch(planes,ivec2(at.x/2+(row&1)*(size.x/2),size.y+row/2),0).r)-128;}
+int chromaAt(int x,int row){return int(texelFetch(planes,ivec2(x+(row&1)*(size.x/2),size.y+row/2),0).r)-128;}
 ivec3 rgbAt(ivec2 at){
   at=clamp(at,ivec2(0),size-1);
   int y=int(texelFetch(planes,at,0).r)-16;
-  int u=chromaAt(at,at.y/2);
-  int v=chromaAt(at,at.y/2+size.y/2);
+  int u=chromaAt(at.x/2,at.y/2);
+  int v=chromaAt(at.x/2,at.y/2+size.y/2);
   // Preserve the selected host converter's integer rounding.
   int shift=sse?13:12;
   int yy=(y*9539)>>shift;
@@ -35,15 +36,36 @@ ivec3 rgbAt(ivec2 at){
   if(!sse){r=(r+1)>>1;g=(g+1)>>1;b=(b+1)>>1;}
   return clamp(ivec3(r,g,b),ivec3(0),ivec3(255));
 }
+#ifdef WINDOWS_PREVIEW
+float yAt(ivec2 at){
+  return float(texelFetch(planes,clamp(at,ivec2(0),size-1),0).r);
+}
+vec2 uvAt(ivec2 at){
+  at=clamp(at,ivec2(0),size/2-1);
+  return vec2(chromaAt(at.x,at.y),chromaAt(at.x,at.y+size.y/2));
+}
+vec3 displayRGB(vec2 pixel){
+  ivec2 p=ivec2(floor(pixel));vec2 f=fract(pixel);
+  float y=mix(mix(yAt(p),yAt(p+ivec2(1,0)),f.x),mix(yAt(p+ivec2(0,1)),yAt(p+ivec2(1,1)),f.x),f.y);
+  vec2 chroma=(pixel-.5)*.5;
+  p=ivec2(floor(chroma));f=fract(chroma);
+  vec2 uv=mix(mix(uvAt(p),uvAt(p+ivec2(1,0)),f.x),mix(uvAt(p+ivec2(0,1)),uvAt(p+ivec2(1,1)),f.x),f.y)/224.;
+  return clamp((y-16.)/219.+uv.x*vec3(0.,-.187324273,1.8556)+uv.y*vec3(1.5748,-.468124273,0.),0.,1.);
+}
+#endif
 void main(){
   vec2 at=gl_FragCoord.xy-imageRect.xy;
   if(any(lessThan(at,vec2(0)))||any(greaterThanEqual(at,imageRect.zw))){color=vec4(0,0,0,1);return;}
   vec2 pixel=vec2(at.x,imageRect.w-at.y)*vec2(size)/imageRect.zw-.5;
+#ifdef WINDOWS_PREVIEW
+  color=vec4(displayRGB(pixel),1.);
+#else
   ivec2 p=ivec2(floor(pixel));vec2 f=fract(pixel);
   if(all(equal(f,vec2(0)))){color=vec4(vec3(rgbAt(p))/255.,1.);return;}
   vec3 top=mix(vec3(rgbAt(p)),vec3(rgbAt(p+ivec2(1,0))),f.x);
   vec3 bottom=mix(vec3(rgbAt(p+ivec2(0,1))),vec3(rgbAt(p+ivec2(1,1))),f.x);
   color=vec4(mix(top,bottom,f.y)/255.,1.);
+#endif
 }`);
     program = gl.createProgram(); gl.attachShader(program, vertex); gl.attachShader(program, fragment); gl.linkProgram(program);
     gl.deleteShader(vertex); gl.deleteShader(fragment);

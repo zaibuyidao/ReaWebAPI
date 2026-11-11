@@ -81,15 +81,15 @@ Demo 的网页绘制路径使用持续的 `requestAnimationFrame` 循环，按�
 
 `format` 默认为 `rgba8`。转换器已验证的 Windows x64、macOS ARM64 和 Linux x86_64 主机可使用 `format: 'i420'` 与 `resolution: 'source'`，直接复制最终原生 Y/U/V 平面，不进行 RGB 转换或新增色度采样。宽度须为 16 的倍数，高度须为偶数，目前已验证的转换为有限范围 BT.709。Windows 对应已验证的 FFmpeg 54、62 SSE 转换，Linux x86_64 对应已验证的 FFmpeg 60 SSE 转换，macOS ARM64 对应原生 NEON 转换，其他转换器配置保留 RGBA。其他原生格式、矩阵和平台返回 `VIDEO_FORMAT_UNSUPPORTED`。`capabilities.formats` 列出可用路径。`sourceInfo.colorMatrix` 也可识别 BT.601/BT.2020，但不代表开放对应 I420 输出。
 
-I420 数据包依次包含完整尺寸 Y 平面及各占四分之一尺寸的 U、V 平面，不含行填充。`info.stride === info.width`，`info.maxBytes === width * height * 3 / 2`，描述携带 `colorMatrix: 'bt709'`、`colorRange: 'limited'` 和 `colorConversion: 'reaper-sse' | 'reaper-neon'`，渲染器须保持对应转换器的整数舍入。像素预算仍按等尺寸 RGBA 计算。格式纳入首个消费者的共享配置。原生格式、色彩矩阵、转换器或尺寸改变时关闭 I420 流，视频状态报告 `VIDEO_FORMAT_CHANGED`，消费者应重新打开或回退 RGBA。
+I420 数据包依次包含完整尺寸 Y 平面及各占四分之一尺寸的 U、V 平面，不含行填充。`info.stride === info.width`，`info.maxBytes === width * height * 3 / 2`，描述携带 `colorMatrix: 'bt709'`、`colorRange: 'limited'` 和 `colorConversion: 'reaper-sse' | 'reaper-neon'`。复现 CPU RGBA 读回值时，使用对应转换器的整数舍入。像素预算仍按等尺寸 RGBA 计算。格式纳入首个消费者的共享配置。原生格式、色彩矩阵、转换器或尺寸改变时关闭 I420 流，视频状态报告 `VIDEO_FORMAT_CHANGED`，消费者应重新打开或回退 RGBA。
 
-Demo 的网页绘制路径保留原始分辨率 I420 纹理，将匹配宿主的 RGB 转换与双线性采样合并到实际显示像素大小的绘制表面。原始像素模式保持 1:1 绘制，显示尺寸变化不改变视频流尺寸。未支持的源与 WebView 保留 RGBA 绘制。现有 `openStream()` 调用省略 `format` 时，RGBA 数据布局保持不变。
+Demo 的网页绘制路径保留原始分辨率 I420 纹理，并按实际显示像素绘制。Windows D3D11 和 Demo 的 Windows WebGL 回退路径使用 REAPER OpenGL 的 BT.709 显示矩阵，按显示尺寸采样 YUV 平面，再转换并量化 RGB。原始像素模式保持 1:1 绘制，显示尺寸变化不改变视频流尺寸。未支持的源与 WebView 保留 RGBA 绘制。
 
 ## Windows 与 macOS 原生呈现
 
 Windows x64 与 macOS ARM64 分别使用 D3D11 和 Metal，支持 RGBA8 纹理直接上传和上述已验证的 I420 转换。RGBA8 无需再次转换 RGB。
 
-`getCapabilities().nativePresentation` 返回 `{available, backend: 'd3d11' | 'metal' | null}`。可用时，`openSurface(options?)` 在页面 HTML 内容下方打开原生视频层。它接受视频配置参数，相同配置的原生预览共享采集、帧上传与 RGB 转换，各窗口将共享 RGB 纹理绘制到自己的显示区域。视频区域上方的页面背景需透明，覆盖的控件应设置独立背景，可参考 Demo。现有 `openStream()` 像素访问、Windows 工作线程接收及 Linux 网页绘制路径保留。
+`getCapabilities().nativePresentation` 返回 `{available, backend: 'd3d11' | 'metal' | null}`。可用时，`openSurface(options?)` 在页面 HTML 内容下方打开原生视频层。它接受视频配置参数，相同配置的原生预览共享采集与帧上传。Windows I420 表面按各自显示区域采样共享的 YUV 平面。REAPER 对高清 I420 使用 DirectDraw 输出时，原始分辨率的 D3D11 表面可独立于工程矩阵，选择 BT.709 显示路径（`colorConversion: 'reaper-directdraw'`）。该配置仅用于原生呈现，硬件舍入可能产生 1 级 RGB 差异。Metal 表面共享转换后的 RGB 纹理。视频区域上方的页面背景需透明，覆盖的控件应设置独立背景，可参考 Demo。现有 `openStream()` 像素访问、Windows 工作线程接收及 Linux 网页绘制路径保留。
 
 返回表面提供冻结的 `info`，包含视频描述和 `renderer: 'native-d3d11' | 'native-metal'`，只读的 `closed`、`error` 与 `readablePixels: false`，以及异步 `setLayout({rect, clip, preserveAspect})`、`getDiagnostics()` 和 `close()`。`rect` 与 `clip` 均包含有限数值 `x`、`y`、`width`、`height`，使用 CSS 视口坐标，不乘设备像素比。宽高必须非负，零宽高隐藏画面。`preserveAspect` 默认为 `true`。`on('close' | 'error', callback)` 返回取消订阅函数。不提供像素事件、`latest()` 或 `read()`，`info` 不暴露传输令牌或 URL。原生表面不是 Canvas，Canvas 像素读取及网页快照不包含其原生画面。
 
@@ -97,7 +97,7 @@ Windows x64 与 macOS ARM64 分别使用 D3D11 和 Metal，支持 RGBA8 纹理�
 
 原生呈现的全屏容器需设置透明的 `::backdrop`，全屏期间隐藏周围页面内容。控件间距应使用不透明背景内部的 padding，避免 margin 暴露底层背景。Demo 仅在原生呈现模式应用这些样式。
 
-原生呈现诊断统计提交与呈现活动，不代表屏幕实际扫描输出。`sourceUploadedFrames`、`sourceConvertedFrames` 与 `sourceDroppedFrames` 属于共享源，不应跨表面累加。已分离的表面返回 `{closed: true}`，呈现失败时可附带 `errorCode` 与 `error`。吞吐量仍受源解码、GPU 负载与屏幕刷新率限制，不保证任意数量窗口均达到固定帧率。
+原生呈现诊断统计提交与呈现活动，不代表屏幕实际扫描输出。`sourceUploadedFrames`、`sourceConvertedFrames` 与 `sourceDroppedFrames` 属于共享源，不应跨表面累加。Windows 的 `sourceConvertedFrames` 在每个 I420 帧首次绘制时计数。已分离的表面返回 `{closed: true}`，呈现失败时可附带 `errorCode` 与 `error`。吞吐量仍受源解码、GPU 负载与屏幕刷新率限制，不保证任意数量窗口均达到固定帧率。
 
 Windows 返回 `presentationCounter: 'dxgi-observed'`，仅统计 DXGI 呈现信息中观察到的新源帧，不以 `Present()` 成功次数或提交编号差值推断显示帧数，也不补计未观察到的中间帧，因此计数与 FPS 可能低于屏幕实际呈现值。统计不可用时，`presentationAvailable` 为 `false`，`presentedFrames` 与 `presentationFPS` 为 `null`，`hasFrame` 不依赖这些计数。macOS 统计 Metal 呈现回调。这些指标不能证明每一帧都已在屏幕上可见。
 

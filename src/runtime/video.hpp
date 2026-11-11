@@ -10,10 +10,10 @@ public:
     std::unique_ptr<VideoScheduler> scheduler = {}, std::function<void()> wake = {});
   ~VideoManager();
   Json capabilities() const;
-  Json source_info();
+  Json source_info(bool native_display = false);
   Json state() const;
   Json diagnostics() const;
-  std::string open(const Json&, int window, bool* created = nullptr);
+  std::string open(const Json&, int window, bool* created = nullptr, bool native_display = false);
   void discard_unattached(const std::string& name);
   void tick();
   void close_window(int window);

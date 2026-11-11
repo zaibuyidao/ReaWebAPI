@@ -36,6 +36,7 @@ void* lookup(const char* name) {
 struct BackendState {
   bool supported = true, active = false, malformed = false, throws = false;
   bool i420 = false;
+  bool directdraw_hd = false;
   int matrix = 1;
   VideoColorConversion conversion = VideoColorConversion::reaper_neon;
   int support_checks = 0, reads = 0, stops = 0, width = 2, height = 1;
@@ -53,7 +54,7 @@ struct Backend final : VideoBackend {
     if (state->next == VideoRead::ready) {
       std::vector<unsigned char> bgra(size_t(state->width) * state->height * 4, 80);
       capture({bgra.data(), state->width, state->height, state->malformed ? 1 : state->width * 4,
-        VideoPixelFormat::bgra8, state->i420, state->i420 ? state->matrix : -1, state->conversion});
+        VideoPixelFormat::bgra8, state->i420, state->i420 ? state->matrix : -1, state->conversion, state->directdraw_hd});
     }
     return state->next;
   }
@@ -537,6 +538,21 @@ void native_i420_profiles() {
     CHECK(buffer.publish(planes.data(), 4, 1, 0) == REAWEB_INVALID_ARGUMENT);
     CHECK(buffer.publish(planes.data(), uint32_t(planes.size()), 2, 0) == REAWEB_OK);
     CHECK(buffer.consume(packet) && packet.sequence == 2 && packet.data == planes);
+  }
+  {
+    Fixture f; f.backend->i420 = f.backend->directdraw_hd = true;
+    f.backend->width = 1280; f.backend->height = 720; f.backend->matrix = 0;
+    f.backend->conversion = VideoColorConversion::reaper_sse;
+    const Json source{{"resolution", "source"}};
+    CHECK(f.video->source_info()["colorMatrix"] == "bt601");
+    rejected(f, options, "VIDEO_FORMAT_UNSUPPORTED");
+    const auto native = f.video->open(source, 1, nullptr, true);
+    CHECK(f.video->state()["colorConversion"] == "reaper-directdraw");
+    try { f.attach(native); CHECK(false); }
+    catch (const Error& error) { CHECK(error.code == "UNSUPPORTED_FORMAT"); }
+    f.video->discard_unattached(native);
+    auto rgba = source; rgba["format"] = "rgba8";
+    CHECK(f.attach(f.video->open(rgba, 1, nullptr, true))["format"] == "rgba8");
   }
 }
 }

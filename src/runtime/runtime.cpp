@@ -105,7 +105,7 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
       throw Error("VIDEO_PRESENTATION_UNAVAILABLE", "Native video presentation is unavailable in this window");
     if (!s.window->visible()) throw Error("VIDEO_PAGE_HIDDEN", "Show the window before opening project video");
     bool created = false;
-    const auto name = video_.open(args[0], id, &created);
+    const auto name = video_.open(args[0], id, &created, std::string_view(s.window->video_presenter_backend()) == "d3d11");
     try {
       return streams_.attach_video_presenter(name, id, s.generation, s.app->origin,
         [&s](const Json& descriptor) { return s.window->video_presenter(descriptor); });

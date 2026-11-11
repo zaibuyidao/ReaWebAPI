@@ -14,7 +14,7 @@ self.onmessage = ({ data }) => {
       self.postMessage({ type: 'probe', supported });
     } else if (data.type === 'init') {
       canvas = data.canvas;
-      painter = data.format === 'i420' ? createI420Renderer(canvas) : createCanvasRenderer(canvas);
+      painter = data.format === 'i420' ? createI420Renderer(canvas, { matchWindowsPreview: data.matchWindowsPreview }) : createCanvasRenderer(canvas);
       renderer = createFrameRenderer(frame => {
         if (painter.draw(frame)) self.postMessage({ type: 'draw', generation, sequence: frame.sequence, dropped: renderer.dropped });
       }, frame => frame.release?.());

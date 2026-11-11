@@ -5,10 +5,10 @@ const messages = {
   en: {
     projectMonitor: 'PROJECT MONITOR', title: 'Video preview', options: 'Options', display: 'Display', theme: 'Appearance', dark: 'Dark', light: 'Light',
     fullscreen: 'Fullscreen', doubleClick: 'Double-click video', aspect: 'Keep video aspect ratio', original: 'Size window to original video',
-    placeholder: 'Your project, in focus.', placeholderHint: 'Waiting for the final project video output.', exitFullscreen: 'Exit fullscreen · Esc',
+    exitFullscreen: 'Exit fullscreen · Esc',
     output: 'OUTPUT', fit: 'Fit viewport', sourceMode: 'Original resolution', custom: 'Custom resolution', width: 'WIDTH', height: 'HEIGHT', apply: 'Apply',
     hint: 'Auto frame rate · Final project output', details: 'Technical details', connecting: 'Connecting…',
-    waiting: 'Waiting for REAPER to decode the final frame…', connected: 'Connected · waiting for the final project frame',
+    waiting: 'Waiting for REAPER to decode the final frame…', noVideo: 'No project video available', connected: 'Connected · waiting for the final project frame',
     ready: 'Preparing preview…', live: 'Live · double-click the video for fullscreen',
     originalStatus: 'Original pixels · scroll when the image exceeds the viewport', source: 'SOURCE', stream: 'STREAM', canvas: 'CANVAS BOX',
     fps: 'FPS · TARGET / CAPTURE / RECEIVE / DRAW', nativeFps: 'FPS · TARGET / CAPTURE / PRESENT', nativeObservedFps: 'FPS · TARGET / CAPTURE / OBSERVED PRESENT', nativeObservedHint: 'DXGI observations are a lower bound and may omit frames that were displayed.', nativeBox: 'DISPLAY AREA', pending: 'Waiting', stage: 'Video preview. Double-click to toggle fullscreen.',
@@ -18,10 +18,10 @@ const messages = {
   cn: {
     projectMonitor: '工程视频', title: '视频预览', options: '选项', display: '显示', theme: '外观', dark: '深色', light: '浅色',
     fullscreen: '全屏', doubleClick: '双击视频切换', aspect: '保持视频宽高比', original: '将窗口调整到原始视频大小',
-    placeholder: '预览工程画面', placeholderHint: '正在等待工程的最终视频输出。', exitFullscreen: '退出全屏 · Esc',
+    exitFullscreen: '退出全屏 · Esc',
     output: '输出', fit: '适应显示区域', sourceMode: '原始分辨率', custom: '自定义分辨率', width: '宽度', height: '高度', apply: '应用',
     hint: '自动跟随帧率 · 工程最终输出', details: '技术详情', connecting: '正在连接…',
-    waiting: '正在等待 REAPER 解码最终画面…', connected: '已连接，正在等待工程画面',
+    waiting: '正在等待 REAPER 解码最终画面…', noVideo: '当前工程没有可预览的视频', connected: '已连接，正在等待工程画面',
     ready: '正在准备预览…', live: '预览中，双击视频可切换全屏',
     originalStatus: '原始像素显示，画面超出显示区域时可滚动查看', source: '源画面', stream: '视频流', canvas: '画布区域',
     fps: '帧率 · 目标 / 捕获 / 接收 / 绘制', nativeFps: '帧率 · 目标 / 捕获 / 呈现', nativeObservedFps: '帧率 · 目标 / 捕获 / 观察呈现', nativeObservedHint: 'DXGI 观察计数为下限，可能漏计已显示的帧。', nativeBox: '显示区域', pending: '等待画面', stage: '视频预览，双击切换全屏。',
@@ -52,7 +52,14 @@ let nativeUnavailable = false, nativeLayout, nativeMetrics = null, previousPrese
 const preferNative = () => capabilities?.nativePresentation?.available && !nativeUnavailable && typeof reaper.video.openSurface === 'function';
 let stream, wanted = false, busy = false, dirty = false, closing = false, poll, resizeTimer, capabilities, profileKey = '', previousMode = 'fit', savedWindow;
 let sequenceGaps = 0, lastSequence, received = 0, painted = 0, sampledAt = performance.now(), source = { width: 0, height: 0 }, drawRate = 0, receiveRate = 0;
-const report = error => { statusError = error; $('status').classList.toggle('error', error.code !== 'VIDEO_FRAME_PENDING'); $('status').textContent = error.code === 'VIDEO_FRAME_PENDING' ? t('waiting') : `${error.code || 'VIDEO_ERROR'}: ${error.messageKey ? t(error.messageKey) : error.message}`; };
+function report(error) {
+  statusError = error;
+  const code = error.code || 'VIDEO_ERROR';
+  const waiting = code === 'VIDEO_FRAME_PENDING' ? 'waiting' : code === 'VIDEO_SOURCE_UNAVAILABLE' ? 'noVideo' : null;
+  const message = error.messageKey ? t(error.messageKey) : error.message;
+  $('status').classList.toggle('error', !waiting);
+  $('status').textContent = waiting ? t(waiting) : message && message !== code ? `${code}: ${message}` : code;
+}
 function clear() { renderer?.clear(); stage.classList.remove('ready');  }
 function layout() {
   const original = $('original').checked;
@@ -174,7 +181,7 @@ async function reconcile() {
         renderer.dispose(); renderer = null;
         const replacement = canvas.cloneNode(false); canvas.replaceWith(replacement); canvas = replacement;
       }
-      rendererFormat = format;
+      rendererFormat = next.info.format;
       if (nextOptions.resolution === 'source') source = { width: next.info.width, height: next.info.height };
       document.documentElement.classList.add('native-video');
       nativeLayout = createSurfaceLayout(next, canvas, stage, error => { if (stream === next) report(error); });

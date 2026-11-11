@@ -20,7 +20,8 @@ int option(const Json& options, const char* name, int fallback, int maximum) {
 }
 Json color_conversion(VideoColorConversion value) {
   return value == VideoColorConversion::reaper_neon ? Json("reaper-neon") :
-    value == VideoColorConversion::reaper_sse ? Json("reaper-sse") : Json();
+    value == VideoColorConversion::reaper_sse ? Json("reaper-sse") :
+    value == VideoColorConversion::reaper_directdraw ? Json("reaper-directdraw") : Json();
 }
 Json color_matrix(int matrix) {
   return matrix == 0 ? Json("bt601") : matrix == 1 ? Json("bt709") : matrix == 2 ? Json("bt2020") : Json();
@@ -39,6 +40,7 @@ struct VideoManager::Impl {
   std::string name, error, resolution = "custom";
   std::string format = "rgba8";
   bool native_i420 = false;
+  bool directdraw_hd = false;
   int matrix = -1;
   VideoColorConversion conversion = VideoColorConversion::unknown;
   bool preserve_aspect = true, probing = false;
@@ -106,7 +108,7 @@ struct VideoManager::Impl {
     publish(time); ++captured;
     if (!first_capture) first_capture = seconds();
     source_width = w; source_height = h; position = time; source_rate = fps;
-    native_i420 = image.native_i420; matrix = image.color_matrix; conversion = image.color_conversion;
+    native_i420 = image.native_i420; directdraw_hd = image.directdraw_hd; matrix = image.color_matrix; conversion = image.color_conversion;
     last_capture = seconds(); valid = true; error.clear(); return true;
   }
 };
@@ -137,16 +139,17 @@ Json VideoManager::capabilities() const {
     {"formats", s.backend->supports_i420() ? Json::array({"rgba8", "i420"}) : Json::array({"rgba8"})},
     {"error", available ? Json(nullptr) : Json("VIDEO_HOST_UNSUPPORTED")}};
 }
-Json VideoManager::source_info() {
+Json VideoManager::source_info(bool native_display) {
   auto& s = *impl_;
   int width = 0, height = 0;
   bool native_i420 = false;
+  bool directdraw_hd = false;
   int matrix = -1;
   auto conversion = VideoColorConversion::unknown;
   std::string error;
   if (s.handle) {
     tick();
-    if (s.valid) { width = s.source_width; height = s.source_height; native_i420 = s.native_i420; matrix = s.matrix; conversion = s.conversion; }
+    if (s.valid) { width = s.source_width; height = s.source_height; native_i420 = s.native_i420; directdraw_hd = s.directdraw_hd; matrix = s.matrix; conversion = s.conversion; }
     else error = s.error.empty() ? "VIDEO_FRAME_PENDING" : s.error;
   } else if (s.stopped || !s.backend->supported()) error = "VIDEO_HOST_UNSUPPORTED";
   else {
@@ -154,7 +157,7 @@ Json VideoManager::source_info() {
       const auto result = s.backend->read(true, [&](const VideoImage& image) {
         if (image.pixels && image.width > 0 && image.height > 0 && image.stride >= int64_t(image.width) * 4) {
           width = image.width; height = image.height;
-          native_i420 = image.native_i420; matrix = image.color_matrix; conversion = image.color_conversion;
+          native_i420 = image.native_i420; directdraw_hd = image.directdraw_hd; matrix = image.color_matrix; conversion = image.color_conversion;
         }
       });
       if (!width) error = result == VideoRead::rendering ? "VIDEO_RENDER_BUSY" :
@@ -170,6 +173,10 @@ Json VideoManager::source_info() {
       s.probing = false; s.backend->stop();
     }
   }
+  if (native_display && directdraw_hd && !(width & 15) && !(height & 1)) {
+    matrix = 1;
+    conversion = VideoColorConversion::reaper_directdraw;
+  }
   const bool supported = width > 0 && width <= 8192 && height <= 8192 && uint64_t(width) * height * 4 <= video_max_frame_bytes;
   return {{"available", width > 0}, {"width", width}, {"height", height}, {"originalSupported", supported},
     {"nativeFormat", native_i420 ? Json("i420") : Json()}, {"colorMatrix", native_i420 ? color_matrix(matrix) : Json()},
@@ -177,7 +184,7 @@ Json VideoManager::source_info() {
     {"colorConversion", native_i420 ? color_conversion(conversion) : Json()},
     {"error", error.empty() ? Json(nullptr) : Json(error)}};
 }
-std::string VideoManager::open(const Json& options, int window, bool* created) {
+std::string VideoManager::open(const Json& options, int window, bool* created, bool native_display) {
   if (created) *created = false;
   auto& s = *impl_;
   if (!options.is_object() || window <= 0) throw Error("INVALID_ARGUMENT", "Expected video stream options and an App window");
@@ -186,7 +193,7 @@ std::string VideoManager::open(const Json& options, int window, bool* created) {
   if (options.value("source", Json("project")) != "project") throw Error("INVALID_ARGUMENT", "Only the current project video source is supported");
   int w = option(options, "width", 1280, 8192), h = option(options, "height", 720, 8192);
   const auto mode = options.value("resolution", Json("custom"));
-  const auto format = options.value("format", Json("rgba8"));
+  auto format = options.value("format", Json("rgba8"));
   if (format != "rgba8" && format != "i420") throw Error("INVALID_ARGUMENT", "Unknown video pixel format");
   if (format == "i420" && mode != "source") throw Error("INVALID_ARGUMENT", "I420 requires source resolution");
   if (mode != "custom" && mode != "fit" && mode != "source") throw Error("INVALID_ARGUMENT", "Unknown video resolution mode");
@@ -211,15 +218,19 @@ std::string VideoManager::open(const Json& options, int window, bool* created) {
   int matrix = -1;
   auto conversion = VideoColorConversion::unknown;
   if (mode != "custom") {
-    const auto source = source_info();
+    const auto source = source_info(native_display && mode == "source" && (!options.contains("format") || format == "i420"));
     if (!source["available"].get<bool>()) throw Error(source["error"].get<std::string>(), "A valid final video frame is required to resolve output dimensions");
     source_w = source["width"]; source_h = source["height"];
+    const bool directdraw = source["colorConversion"] == "reaper-directdraw" && native_display &&
+      mode == "source" && (!options.contains("format") || format == "i420");
+    if (directdraw) format = "i420";
     if (format == "i420") {
       if (source["nativeFormat"] != "i420" || source["colorMatrix"] != "bt709" || source["colorRange"] != "limited" ||
-          (source["colorConversion"] != "reaper-neon" && source["colorConversion"] != "reaper-sse") ||
+          (!directdraw && source["colorConversion"] != "reaper-neon" && source["colorConversion"] != "reaper-sse") ||
           (source_w & 15) || (source_h & 1)) throw Error("VIDEO_FORMAT_UNSUPPORTED", "The final video frame has no verified native I420 conversion");
       matrix = 1;
-      conversion = source["colorConversion"] == "reaper-neon" ? VideoColorConversion::reaper_neon : VideoColorConversion::reaper_sse;
+      conversion = directdraw ? VideoColorConversion::reaper_directdraw :
+        source["colorConversion"] == "reaper-neon" ? VideoColorConversion::reaper_neon : VideoColorConversion::reaper_sse;
     }
     if (mode == "source") { w = source_w; h = source_h; }
     else if (aspect.get<bool>()) {
@@ -230,7 +241,7 @@ std::string VideoManager::open(const Json& options, int window, bool* created) {
   if (w > 8192 || h > 8192 || uint64_t(w) * h * 4 > video_max_frame_bytes)
     throw Error("VIDEO_RESOLUTION_LIMIT", "Video output exceeds the frame pixel budget", {{"width", w}, {"height", h}, {"maxFrameBytes", video_max_frame_bytes}});
   if (s.handle) {
-    if (format != s.format || mode != s.resolution || aspect != s.preserve_aspect || w != s.width || h != s.height || rate != s.rate) throw Error("VIDEO_PROFILE_CONFLICT", "Active project video consumers share one format, resolution and update rate", {{"format", s.format}, {"width", s.width}, {"height", s.height}, {"updateRate", s.requested_rate()}});
+    if (format != s.format || (format == "i420" && conversion != s.conversion) || mode != s.resolution || aspect != s.preserve_aspect || w != s.width || h != s.height || rate != s.rate) throw Error("VIDEO_PROFILE_CONFLICT", "Active project video consumers share one format, resolution and update rate", {{"format", s.format}, {"width", s.width}, {"height", s.height}, {"updateRate", s.requested_rate()}});
     s.idle_at = seconds(); return s.name;
   }
   s.probing = false;
@@ -311,7 +322,9 @@ void VideoManager::tick() {
       }
       if (std::isfinite(position)) copied = s.capture(image, position, source_rate);
     };
-    const auto result = s.format == "i420" ? s.backend->read_i420(s.discontinuity, capture) : s.backend->read(s.discontinuity, capture);
+    const auto result = s.conversion == VideoColorConversion::reaper_directdraw
+      ? s.backend->read_display_i420(s.discontinuity, capture)
+      : s.format == "i420" ? s.backend->read_i420(s.discontinuity, capture) : s.backend->read(s.discontinuity, capture);
     if (format_changed || result == VideoRead::format_unsupported) { s.error = "VIDEO_FORMAT_CHANGED"; s.close(); return; }
     if (resized) { s.error = "VIDEO_RESOLUTION_CHANGED"; s.close(); return; }
     s.discontinuity = false;
