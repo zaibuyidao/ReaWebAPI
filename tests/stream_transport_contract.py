@@ -27,12 +27,28 @@ def connect(info, origin='http://127.0.0.1:9000'):
     return sock
 
 
-def exact(sock, length):
-    output = bytearray()
-    while len(output) < length:
-        chunk = sock.recv(length-len(output))
-        assert chunk, 'premature disconnect'
-        output.extend(chunk)
+def exact(sock, length, timeout=None):
+    output = bytearray(length)
+    view = memoryview(output)
+    received = 0
+    if timeout is not None:
+        previous_timeout = sock.gettimeout()
+        deadline = time.monotonic() + timeout
+    try:
+        while received < length:
+            if timeout is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError
+                sock.settimeout(remaining)
+            count = sock.recv_into(view[received:])
+            assert count, f'Premature disconnect after {received}/{length} bytes'
+            received += count
+    except TimeoutError as error:
+        raise TimeoutError(f'Read timed out after {received}/{length} bytes') from error
+    finally:
+        if timeout is not None:
+            sock.settimeout(previous_timeout)
     return output
 
 
@@ -43,16 +59,20 @@ def receive(sock):
         length = struct.unpack('!H', exact(sock, 2))[0]
     elif length == 127:
         length = struct.unpack('!Q', exact(sock, 8))[0]
-    data = exact(sock, length)
     if header[0] & 15 == 8:
+        assert length <= 125
+        data = exact(sock, length)
         assert data[2:] == b'STREAM_CLOSED'
         return None
+    shared = first.get('sharedVideo') and sock is a
+    header_size = 80 if stream_version == 2 else 40
+    assert length == header_size + (4 if shared else first['maxBytes'])
+    # Allow a bounded transfer window for large video frames on slower runners.
+    timeout = 15 if video and length > 16 * 1024 * 1024 else None
+    data = exact(sock, length, timeout)
     assert data[:4] == b'RWS'+bytes([stream_version])
     sequence = struct.unpack_from('<Q', data, 8)[0]
-    shared = first.get('sharedVideo') and sock is a
     assert data[5] == int(video and sequence % 3 == 1) | (2 if shared else 0), 'Video discontinuity flag leaked or was lost'
-    header = 80 if stream_version == 2 else 40
-    assert len(data) == header + (4 if shared else first['maxBytes'])
     if shared:
         assert struct.unpack_from('<Q', data, 32)[0] == first['maxBytes']
         slot = struct.unpack_from('<I', data, 40)[0]
@@ -61,7 +81,7 @@ def receive(sock):
         return sequence
     if stream_version == 2:
         assert struct.unpack_from('<QQQdBB',data,40) == (99,9007199254740992+sequence,17,0.5,1,1)
-    assert data[header:] == bytes([sequence & 255]) * first['maxBytes']
+    assert data.count(sequence & 255, header_size) == first['maxBytes'], f'Corrupt payload for frame {sequence}'
     return sequence
 
 
