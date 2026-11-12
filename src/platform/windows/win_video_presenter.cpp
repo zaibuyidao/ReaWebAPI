@@ -183,11 +183,21 @@ struct Worker {
     }
   }
   ComPtr<ID3DBlob> compile(const char* entry, const char* profile) {
+    static std::mutex cache_mutex;
+    static std::map<std::string, ComPtr<ID3DBlob>> cache;
+    const std::string key = std::string(entry) + ":" + profile;
+    {
+      std::lock_guard<std::mutex> guard(cache_mutex);
+      const auto found = cache.find(key);
+      if (found != cache.end()) return found->second;
+    }
     ComPtr<ID3DBlob> code, error;
     const HRESULT result = D3DCompile(shaders, std::strlen(shaders), nullptr, nullptr, nullptr, entry, profile,
       D3DCOMPILE_ENABLE_STRICTNESS, 0, &code, &error);
     if (FAILED(result)) throw Error("VIDEO_RENDERER_UNAVAILABLE", error ?
       std::string(static_cast<const char*>(error->GetBufferPointer()), error->GetBufferSize()) : "Cannot compile video shader");
+    std::lock_guard<std::mutex> guard(cache_mutex);
+    cache[key] = code;
     return code;
   }
   void initialize() {

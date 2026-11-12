@@ -306,7 +306,7 @@ void VideoManager::tick() {
   const double play_rate = rate ? rate(project) : 1;
   const int changes = s.host.change_count ? s.host.change_count(project) : 0;
   if (s.position_clock.update(position, now, playing, play_rate, changes)) {
-    s.discontinuity = true; s.clear(position, "VIDEO_FRAME_PENDING");
+    s.discontinuity = true; s.next_capture = now;
   }
   const double source_rate = s.project_frame_rate();
   const double target_rate = s.resolve_rate(source_rate);
@@ -314,7 +314,7 @@ void VideoManager::tick() {
   // Auto follows distinct host frames instead of a second, unsynchronised clock.
   const bool follow_frames = !s.rate && (playing & 1) && source_rate > 0 && source_rate <= 75 &&
     std::isfinite(play_rate) && play_rate > 0 && play_rate <= 1;
-  if (!follow_frames && now + 0.5 / s.target_rate < s.next_capture) return;
+  if (!follow_frames && !s.discontinuity && now + 0.5 / s.target_rate < s.next_capture) return;
   bool copied = false, resized = false, format_changed = false;
   try {
     const auto capture = [&](const VideoImage& image) {
@@ -332,15 +332,14 @@ void VideoManager::tick() {
       : s.format == "i420" ? s.backend->read_i420(s.discontinuity, capture) : s.backend->read(s.discontinuity, capture);
     if (format_changed || result == VideoRead::format_unsupported) { s.error = "VIDEO_FORMAT_CHANGED"; s.close(); return; }
     if (resized) { s.error = "VIDEO_RESOLUTION_CHANGED"; s.close(); return; }
-    s.discontinuity = false;
-    if (result != VideoRead::pending) s.pending_since = 0;
+    if (result != VideoRead::pending) { s.discontinuity = false; s.pending_since = 0; }
     if (result == VideoRead::unsupported) { s.error = "VIDEO_HOST_UNSUPPORTED"; s.close(); return; }
     if (result == VideoRead::unchanged || result == VideoRead::pending) {
       if (result == VideoRead::unchanged && !(playing & 1)) s.next_capture = now + 1.0 / s.target_rate;
       if (result == VideoRead::pending) {
         if (!s.pending_since) s.pending_since = now;
-        if (!s.valid || now - s.pending_since > 0.1) {
-          s.clear(position, "VIDEO_FRAME_PENDING"); s.discontinuity = true;
+        if (!s.valid || s.discontinuity || now - s.pending_since > ((playing & 1) ? 0.5 : 0.1)) {
+          s.clear(position, "VIDEO_FRAME_PENDING"); if (!(playing & 1)) s.discontinuity = true;
         }
       }
       return;

@@ -187,28 +187,52 @@ public:
     auto base = read_at<IVideoFrame*>(module.base, build->frame);
     FrameRef cached{nullptr};
     if (sources.used) {
+      int64_t matched_index = index;
       cached.frame = internal<IVideoFrame*(*)(uint64_t, int64_t, bool, int64_t*, void*)>(build->cached)
-        (source_key, index, false, nullptr, project);
-      if (cached.frame != base && base && index > 0 && !discontinuity && query_state == 0 && play && (play() & 1)) {
-        Sources previous_sources, previous_monitor;
-        Cleanup previous_cleanup{previous_sources, previous_monitor, destroy};
-        // Asynchronous decoding can display the preceding frame, whose source hash differs.
-        internal<void(*)(void*, void*, int64_t, void*, double, void*, int, void*)>(build->sources_at)
-          (project, nullptr, index - 1, &previous_sources, fps, &previous_monitor, 3, nullptr);
-        if (previous_sources.used > 0 && previous_monitor.used >= 0) {
+        (source_key, index, true, &matched_index, project);
+      if (cached.frame && matched_index != index &&
+          (query_state == 0 && fps > 5.0 && std::abs(double(matched_index - index)) > 3.0 * fps)) {
+        cached.frame->Release(); cached.frame = nullptr;
+      }
+      if (cached.frame == base && base) {
+        index = matched_index;
+      } else if (cached.frame != base && base && index >= 0) {
+        const auto match_candidate = [&](int64_t candidate_index, bool require_same_source) -> bool {
+          if (candidate_index < 0 || (!discontinuity && candidate_index >= index)) return false;
+          Sources previous_sources, previous_monitor;
+          Cleanup previous_cleanup{previous_sources, previous_monitor, destroy};
+          internal<void(*)(void*, void*, int64_t, void*, double, void*, int, void*)>(build->sources_at)
+            (project, nullptr, candidate_index, &previous_sources, fps, &previous_monitor, 3, nullptr);
+          if (previous_sources.used <= 0 || previous_monitor.used < 0) return false;
           const auto previous_key = hash(&previous_sources, project);
+          if (require_same_source && previous_key != source_key) return false;
           const auto previous_monitor_key = previous_monitor.used ? hash(&previous_monitor, project) : 0;
+          int64_t previous_matched = candidate_index;
           FrameRef previous{internal<IVideoFrame*(*)(uint64_t, int64_t, bool, int64_t*, void*)>(build->cached)
-            (previous_key, index - 1, false, nullptr, project)};
+            (previous_key, candidate_index, true, &previous_matched, project)};
+          if (previous.frame && previous_matched != candidate_index &&
+              (query_state == 0 && fps > 5.0 && std::abs(double(previous_matched - candidate_index)) > 3.0 * fps)) {
+            previous.frame->Release(); previous.frame = nullptr;
+          }
           const auto processed = read_at<IVideoFrame*>(module.base, build->processed);
           const bool monitor_matches = previous_monitor.used
             ? processed && previous_monitor_key == read_at<uint64_t>(module.base, build->monitor_hash)
             : !monitor.used && (!processed || processed == base);
-          if (previous.frame == base && monitor_matches) {
+          if (previous.frame == base && monitor_matches &&
+              (!has_frame || discontinuity || previous_matched > last_index || (previous_matched == last_index && previous_key == source_key))) {
             if (cached.frame) cached.frame->Release();
             cached.frame = previous.frame; previous.frame = nullptr;
-            --index; source_key = previous_key; monitor_key = previous_monitor_key;
+            index = previous_matched; source_key = previous_key; monitor_key = previous_monitor_key;
             has_monitor = previous_monitor.used != 0;
+            return true;
+          }
+          return false;
+        };
+        const auto displayed_index = read_at<int64_t>(module.base, build->frame_index);
+        const bool is_playing = play && (play() & 1);
+        if (!match_candidate(displayed_index, !is_playing || discontinuity) && is_playing && query_state == 0) {
+          for (int64_t lag = 1; lag <= 8 && index >= lag; ++lag) {
+            if (index - lag != displayed_index && match_candidate(index - lag, false)) break;
           }
         }
       }

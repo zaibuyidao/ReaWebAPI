@@ -334,7 +334,11 @@ translate();
       const current = stream, native = current.readablePixels === false;
       const data = await reaper.video.getDiagnostics();
       const surface = native ? await current.getDiagnostics() : null;
-      if (stream !== current || current.closed) return;
+      if (stream !== current || current.closed || data.status === 'closed' || surface?.closed) {
+        if (stream === current) await detach();
+        if (!stream && wanted && !closing && !document.hidden) await reconcile();
+        return;
+      }
       source = { width: data.sourceWidth, height: data.sourceHeight };
       if (data.status !== 'ready' || (surface && !surface.hasFrame))
         clear(!!retainedFrame && (!data.error || data.error === 'VIDEO_FRAME_PENDING'));
