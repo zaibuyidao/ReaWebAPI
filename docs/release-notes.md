@@ -1,4 +1,6 @@
 # ReaWebAPI
 
-- Match REAPER's OpenGL sampling and DirectDraw HD color matrix in Windows I420 video previews.
-- Keep the video area in place when opening technical details and simplify empty-video status.
+- Use area-weighted downscaling in Windows D3D11 and WebGL2 video presentation to reduce aliasing when fitting high-resolution sources into smaller viewports.
+- Optimize Windows RGBA8 video scaling with SSE2 bilinear filtering and direct I420 row conversion.
+- Report 1-second sliding-window capture and presentation FPS in the video preview demo.
+

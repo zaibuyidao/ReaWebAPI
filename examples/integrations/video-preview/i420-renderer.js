@@ -44,22 +44,44 @@ vec2 uvAt(ivec2 at){
   at=clamp(at,ivec2(0),size/2-1);
   return vec2(chromaAt(at.x,at.y),chromaAt(at.x,at.y+size.y/2));
 }
-vec3 displayRGB(vec2 pixel){
-  ivec2 p=ivec2(floor(pixel));vec2 f=fract(pixel);
-  float y=mix(mix(yAt(p),yAt(p+ivec2(1,0)),f.x),mix(yAt(p+ivec2(0,1)),yAt(p+ivec2(1,1)),f.x),f.y);
-  vec2 chroma=(pixel-.5)*.5;
-  p=ivec2(floor(chroma));f=fract(chroma);
-  vec2 uv=mix(mix(uvAt(p),uvAt(p+ivec2(1,0)),f.x),mix(uvAt(p+ivec2(0,1)),uvAt(p+ivec2(1,1)),f.x),f.y)/224.;
+vec3 displayRGB(vec2 center,vec2 scale){
+  vec2 ry=max(vec2(1.),min(scale,vec2(16.)));
+  vec2 loy=center-ry*.5,hiy=center+ry*.5;
+  ivec2 y0=ivec2(floor(loy)),y1=ivec2(ceil(hiy))-1;
+  float y=0.;
+  for(int j=y0.y;j<=y1.y;++j){
+    float wy=min(float(j+1),hiy.y)-max(float(j),loy.y);
+    for(int i=y0.x;i<=y1.x;++i){
+      float wx=min(float(i+1),hiy.x)-max(float(i),loy.x);
+      y+=wx*wy*yAt(ivec2(i,j));
+    }
+  }
+  y/=ry.x*ry.y;
+  vec2 ccenter=center*.5,cscale=scale*.5;
+  vec2 ruv=max(vec2(1.),min(cscale,vec2(16.)));
+  vec2 louv=ccenter-ruv*.5,hiuv=ccenter+ruv*.5;
+  ivec2 u0=ivec2(floor(louv)),u1=ivec2(ceil(hiuv))-1;
+  vec2 uv=vec2(0.);
+  for(int j=u0.y;j<=u1.y;++j){
+    float wy=min(float(j+1),hiuv.y)-max(float(j),louv.y);
+    for(int i=u0.x;i<=u1.x;++i){
+      float wx=min(float(i+1),hiuv.x)-max(float(i),louv.x);
+      uv+=wx*wy*uvAt(ivec2(i,j));
+    }
+  }
+  uv/=ruv.x*ruv.y*224.;
   return clamp((y-16.)/219.+uv.x*vec3(0.,-.187324273,1.8556)+uv.y*vec3(1.5748,-.468124273,0.),0.,1.);
 }
 #endif
 void main(){
   vec2 at=gl_FragCoord.xy-imageRect.xy;
   if(any(lessThan(at,vec2(0)))||any(greaterThanEqual(at,imageRect.zw))){color=vec4(0,0,0,1);return;}
-  vec2 pixel=vec2(at.x,imageRect.w-at.y)*vec2(size)/imageRect.zw-.5;
+  vec2 scale=vec2(size)/imageRect.zw;
+  vec2 center=vec2(at.x,imageRect.w-at.y)*scale;
 #ifdef WINDOWS_PREVIEW
-  color=vec4(displayRGB(pixel),1.);
+  color=vec4(displayRGB(center,scale),1.);
 #else
+  vec2 pixel=center-.5;
   ivec2 p=ivec2(floor(pixel));vec2 f=fract(pixel);
   if(all(equal(f,vec2(0)))){color=vec4(vec3(rgbAt(p))/255.,1.);return;}
   vec3 top=mix(vec3(rgbAt(p)),vec3(rgbAt(p+ivec2(1,0))),f.x);

@@ -87,6 +87,7 @@ struct VideoManager::Impl {
     project = nullptr; valid = false; source_width = source_height = 0; last_capture = pending_since = 0;
   }
   bool capture(const VideoImage& image, double time, double fps) {
+    const double capture_started = seconds();
     const int w = image.width, h = image.height;
     if (!image.pixels || w <= 0 || h <= 0 || w > 16384 || h > 16384) return false;
     if (format == "i420") {
@@ -102,14 +103,17 @@ struct VideoManager::Impl {
         }
       }
     } else {
-      if (image.format != VideoPixelFormat::bgra8 || image.stride < int64_t(w) * 4) return false;
+      if (image.format == VideoPixelFormat::i420) {
+        if (image.color_matrix != 1 || image.color_conversion == VideoColorConversion::unknown ||
+            (w & 15) || (h & 1) || (image.stride & 1) || image.stride < w || image.stride > 262144) return false;
+      } else if (image.format != VideoPixelFormat::bgra8 || image.stride < int64_t(w) * 4) return false;
       copy_video_pixels(image, width, height, pixels, resolution == "custom" && preserve_aspect);
     }
     publish(time); ++captured;
     if (!first_capture) first_capture = seconds();
     source_width = w; source_height = h; position = time; source_rate = fps;
     native_i420 = image.native_i420; directdraw_hd = image.directdraw_hd; matrix = image.color_matrix; conversion = image.color_conversion;
-    last_capture = seconds(); valid = true; error.clear(); return true;
+    last_capture = seconds(); capture_ms = (last_capture - capture_started) * 1000; valid = true; error.clear(); return true;
   }
 };
 VideoManager::VideoManager(const Host& h, StreamHub& s, std::unique_ptr<VideoBackend> backend,
@@ -155,7 +159,8 @@ Json VideoManager::source_info(bool native_display) {
   else {
     try {
       const auto result = s.backend->read(true, [&](const VideoImage& image) {
-        if (image.pixels && image.width > 0 && image.height > 0 && image.stride >= int64_t(image.width) * 4) {
+        if (image.pixels && image.width > 0 && image.height > 0 &&
+            image.stride >= (image.format == VideoPixelFormat::i420 ? int64_t(image.width) : int64_t(image.width) * 4)) {
           width = image.width; height = image.height;
           native_i420 = image.native_i420; directdraw_hd = image.directdraw_hd; matrix = image.color_matrix; conversion = image.color_conversion;
         }
@@ -348,7 +353,6 @@ void VideoManager::tick() {
         result == VideoRead::empty || result == VideoRead::ready ? "VIDEO_SOURCE_UNAVAILABLE" : "VIDEO_FRAME_PENDING");
     }
   } catch (...) { ++s.failed; s.backend->stop(); s.clear(position, "VIDEO_SOURCE_UNAVAILABLE"); s.discontinuity = true; }
-  if (copied) s.capture_ms = (seconds() - now) * 1000;
 }
 void VideoManager::close_window(int window) { impl_->streams.detach_stream_window(impl_->handle, window); }
 Json VideoManager::state() const {

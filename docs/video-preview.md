@@ -88,7 +88,7 @@ A new stream first publishes an opaque black clear packet at the configured dime
 
 An I420 packet contains full-size Y, then quarter-size U and V planes, packed without row padding. `info.stride === info.width` and `info.maxBytes === width * height * 3 / 2`. The descriptor carries `colorMatrix: 'bt709'`, `colorRange: 'limited'` and `colorConversion: 'reaper-sse' | 'reaper-neon'`. Use the indicated converter's integer rounding to reproduce CPU RGBA readback. The existing pixel budget applies to the equivalent RGBA dimensions. Format joins the first-consumer profile. Changes to native format, color matrix, converter or dimensions close an I420 stream with `VIDEO_FORMAT_CHANGED` in video state. Reopen or fall back to RGBA.
 
-The demo's web renderer keeps source-resolution I420 textures and draws into a surface sized in physical display pixels. Windows D3D11 and the demo's Windows WebGL fallback use REAPER's OpenGL BT.709 display matrix, sampling the YUV planes at the display size before RGB conversion and quantization. Original-pixel mode keeps 1:1 drawing. Display resizing does not change stream dimensions. Unsupported sources and WebViews retain RGBA rendering.
+The demo's web renderer keeps source-resolution I420 textures and draws into a surface sized in physical display pixels. Windows D3D11 and the demo's Windows WebGL fallback use REAPER's OpenGL BT.709 display matrix, sampling the YUV planes at the display size with area-weighted filtering when downscaling before RGB conversion and quantization. Original-pixel mode keeps 1:1 drawing. Display resizing does not change stream dimensions. Unsupported sources and WebViews retain RGBA rendering.
 
 ## Native presentation on Windows and macOS
 

@@ -44,14 +44,22 @@ for (const value of ['en', 'cn']) $(value).onclick = () => { language = value; t
 try { $('theme').value = localStorage.getItem('video-preview-theme') === 'light' ? 'light' : 'dark'; } catch {}
 document.documentElement.dataset.theme = $('theme').value;
 $('theme').onchange = () => { document.documentElement.dataset.theme = $('theme').value; try { localStorage.setItem('video-preview-theme', $('theme').value); } catch {} };
+try {
+  const savedResolution = localStorage.getItem('video-preview-resolution');
+  if (['source', 'fit', 'custom'].includes(savedResolution)) $('resolution').value = savedResolution;
+  const savedWidth = Number(localStorage.getItem('video-preview-width')), savedHeight = Number(localStorage.getItem('video-preview-height'));
+  if (Number.isInteger(savedWidth) && savedWidth >= 1 && savedWidth <= 8192) $('width').value = String(savedWidth);
+  if (Number.isInteger(savedHeight) && savedHeight >= 1 && savedHeight <= 8192) $('height').value = String(savedHeight);
+} catch {}
+$('custom').hidden = $('resolution').value !== 'custom';
 
 let canvas = document.querySelector('canvas');
 const stage = $('stage');
 let retainedFrame;
 let renderer, rendererFormat = 'rgba8', i420Unavailable = false, outputWidth = canvas.width, outputHeight = canvas.height;
-let nativeUnavailable = false, nativeLayout, nativeMetrics = null, previousPresented = 0;
+let nativeUnavailable = false, nativeLayout, nativeMetrics = null, previousPresented = 0, previousCaptured = 0;
 const preferNative = () => capabilities?.nativePresentation?.available && !nativeUnavailable && typeof reaper.video.openSurface === 'function';
-let stream, wanted = false, busy = false, dirty = false, closing = false, poll, resizeTimer, capabilities, profileKey = '', previousMode = 'fit', savedWindow;
+let stream, wanted = false, busy = false, dirty = false, closing = false, poll, resizeTimer, capabilities, profileKey = '', previousMode = 'source', savedWindow;
 let sequenceGaps = 0, lastSequence, received = 0, painted = 0, sampledAt = performance.now(), source = { width: 0, height: 0 }, drawRate = 0, receiveRate = 0;
 function report(error) {
   statusError = error;
@@ -218,7 +226,7 @@ async function reconcile() {
       previousPresented = 0;
     }
     outputWidth = next.info.width; outputHeight = next.info.height; layout();
-    sequenceGaps = 0; lastSequence = undefined; received = painted = 0; sampledAt = performance.now();
+    sequenceGaps = 0; lastSequence = undefined; received = painted = previousCaptured = 0; sampledAt = performance.now();
     if (!native) next.on('data', frame => {
       if (stream !== next) return;
       if (frame.discontinuity) {
@@ -260,8 +268,8 @@ $('exit-fullscreen').onclick = toggleFullscreen;
 stage.ondblclick = event => { if (event.target.closest('button')) return; toggleFullscreen(); };
 document.addEventListener('fullscreenchange', () => { $('fullscreen').checked = !!document.fullscreenElement; layout(); schedule(); });
 $('aspect').onchange = () => { layout(); schedule(); };
-$('resolution').onchange = () => { layout(); schedule(); };
-$('apply').onclick = schedule;
+$('resolution').onchange = () => { try { localStorage.setItem('video-preview-resolution', $('resolution').value); } catch {} layout(); schedule(); };
+$('apply').onclick = () => { try { localStorage.setItem('video-preview-width', $('width').value); localStorage.setItem('video-preview-height', $('height').value); } catch {} schedule(); };
 $('original').onchange = async () => {
   $('original').disabled = true;
   try {
@@ -332,6 +340,9 @@ translate();
         clear(!!retainedFrame && (!data.error || data.error === 'VIDEO_FRAME_PENDING'));
       else if (native) stage.classList.add('ready');
       const seconds = (performance.now() - sampledAt) / 1000;
+      if (Number.isFinite(data.capturedFrames) && seconds > 0)
+        data.actualFPS = Math.max(0, data.capturedFrames - previousCaptured) / seconds;
+      previousCaptured = data.capturedFrames;
       receiveRate = received / seconds;
       drawRate = native ? nativePresentationRate(surface, previousPresented, seconds) : painted / seconds;
       if (native) { previousPresented = surface.presentedFrames; nativeMetrics = surface; }

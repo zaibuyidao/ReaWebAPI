@@ -257,14 +257,20 @@ public:
     }
 #endif
     // Other widths retain RGBA until the scalar conversion tail is verified.
-    if (planar && (!native_i420 || matrix != 1 || conversion == VideoColorConversion::unknown || frame->get_w() <= 0 || frame->get_h() <= 0 ||
-        (frame->get_w() & 15) || (frame->get_h() & 1) || (frame->get_rowspan() & 1) ||
-        frame->get_w() > 16384 || frame->get_h() > 16384 || frame->get_rowspan() < frame->get_w() ||
-        frame->get_rowspan() > 262144 || !frame->get_bits())) return VideoRead::format_unsupported;
+    const bool verified_i420 = native_i420 && matrix == 1 && conversion != VideoColorConversion::unknown &&
+      frame->get_w() > 0 && frame->get_h() > 0 && !(frame->get_w() & 15) && !(frame->get_h() & 1) &&
+      !(frame->get_rowspan() & 1) && frame->get_w() <= 16384 && frame->get_h() <= 16384 &&
+      frame->get_rowspan() >= frame->get_w() && frame->get_rowspan() <= 262144 && frame->get_bits();
+    if (planar && !verified_i420) return VideoRead::format_unsupported;
+#if defined(_WIN64)
+    const bool use_i420 = planar || (verified_i420 && conversion == VideoColorConversion::reaper_sse);
+#else
+    const bool use_i420 = planar;
+#endif
     const double start = frame->time_start, end = frame->time_end;
     if (play && (play() & 1) && has_frame && index == last_index && source_key == last_source && monitor_key == last_monitor &&
-        start == last_start && end == last_end && (!planar || (matrix == last_matrix && conversion == last_conversion))) return VideoRead::unchanged;
-    if (planar) {
+        start == last_start && end == last_end && (!use_i420 || (matrix == last_matrix && conversion == last_conversion))) return VideoRead::unchanged;
+    if (use_i420) {
       capture({reinterpret_cast<const unsigned char*>(frame->get_bits()), frame->get_w(), frame->get_h(), frame->get_rowspan(),
         VideoPixelFormat::i420, true, matrix, conversion, directdraw_hd});
     } else {

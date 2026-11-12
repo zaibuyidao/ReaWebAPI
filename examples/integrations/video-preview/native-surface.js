@@ -33,8 +33,8 @@ export function createSurfaceLayout(surface, canvas, stage, onError) {
 }
 export function nativePresentationRate(diagnostics, previousFrames, seconds) {
   if (diagnostics.presentationAvailable === false || diagnostics.presentationFPS === null) return null;
-  if (Number.isFinite(diagnostics.presentationFPS)) return diagnostics.presentationFPS;
-  if (!Number.isFinite(diagnostics.presentedFrames) || !Number.isFinite(previousFrames) || !(seconds > 0)) return null;
-  return Math.max(0, diagnostics.presentedFrames - previousFrames) / seconds;
+  if (Number.isFinite(diagnostics.presentedFrames) && Number.isFinite(previousFrames) && seconds > 0)
+    return Math.max(0, diagnostics.presentedFrames - previousFrames) / seconds;
+  return Number.isFinite(diagnostics.presentationFPS) ? diagnostics.presentationFPS : null;
 }
 
