@@ -110,8 +110,8 @@ try:
     a, b = connect(first), connect(second)
     assert a is not None and b is not None
     assert connect(first) is None, 'tickets must be single use'
-    if sys.argv[-1] == 'frame-max':
-        # Finish the ticket checks before queuing 16 MiB frames.
+    if len(sys.argv) > 2 and sys.argv[2] in ('frame-max', 'video-4k'):
+        # Finish the ticket checks before queuing large frames on sockets that are not yet being read.
         process.stdin.write('start\n')
         process.stdin.flush()
     seq_a, seq_b = receive(a), receive(b)
@@ -196,5 +196,5 @@ try:
     print('Binary transport, authentication, independent consumers and producer close passed')
 finally:
     if process.poll() is None:
-        process.terminate()
-        process.wait(timeout=5)
+        process.kill()
+        process.wait()

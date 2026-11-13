@@ -9,13 +9,14 @@ int main(int argc,char** argv) {
   const bool shared_video=argc>1 && (std::string(argv[1])=="video-shared" || std::string(argv[1])=="video-dynamic-shared");
   const bool pressure=argc>1 && std::string(argv[1])=="video-pressure";
   const bool max_frame=argc>1 && std::string(argv[1])=="frame-max";
+  const bool video_4k = argc > 1 && std::string(argv[1]) == "video-4k";
   const bool jitter=argc>2 && std::string(argv[2])=="jitter";
   const bool burst=argc>2 && std::string(argv[2])=="burst";
   const char* name = video ? "reaweb.video.project.test" : "test.frame";
   StreamHub hub; ReaWeb_StreamDesc desc{}; desc.size = sizeof(desc); desc.abi_version = 1;
   desc.format = REAWEB_PIXEL_RGBA8; desc.width = 240; desc.height = 160; desc.stride = 960;
   if(video) { desc.width=1280;desc.height=720;desc.stride=5120; }
-  if(argc>1 && std::string(argv[1])=="video-4k") { desc.width=3840;desc.height=2160;desc.stride=15360; }
+  if (video_4k) { desc.width=3840;desc.height=2160;desc.stride=15360; }
   if(argc>1 && std::string(argv[1])=="video-small") { desc.width=4;desc.height=4;desc.stride=16; }
   if(argc>1 && std::string(argv[1])=="video-medium") { desc.width=64;desc.height=64;desc.stride=256; }
   if(max_frame) { desc.width=2048;desc.height=2048;desc.stride=8192; }
@@ -33,7 +34,7 @@ int main(int argc,char** argv) {
   auto tickets = Json::array({hub.attach(name, 1, 0, "http://127.0.0.1:9000", memory), hub.attach(name, timing_packets?1:2, 0, "http://127.0.0.1:9000")});
   if(pressure) for(int window=3;window<=8;++window) tickets.push_back(hub.attach(name,window,0,"http://127.0.0.1:9000"));
   std::cout << tickets.dump() << std::endl;
-  if (max_frame) {
+  if (max_frame || video_4k) {
     std::string command;
     if (!std::getline(std::cin, command) || command != "start") return 3;
   }
