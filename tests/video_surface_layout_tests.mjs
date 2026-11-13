@@ -104,7 +104,7 @@ test('Demo native initialization failures restore the requested canvas profile a
       createVideoRenderer: async () => renderer, createSurfaceLayout: () => { throw new Error('Failed native surface must not bind a layout'); }
     });
     vm.runInContext(app, context); await new Promise(setImmediate);
-    assert.equal(nativeOptions.length, 1, `${code} ${mode}: native attempt`);
+    assert.equal(nativeOptions.length, code === 'VIDEO_FORMAT_UNSUPPORTED' && mode !== 'custom' ? 2 : 1, `${code} ${mode}: native attempt`);
     for (const [id, callback] of [...timers]) { timers.delete(id); callback(); }
     await new Promise(setImmediate);
     assert.equal(byteOptions.length, 1, `${code} ${mode}: canvas fallback`);
@@ -113,7 +113,7 @@ test('Demo native initialization failures restore the requested canvas profile a
       assert.equal(nativeOptions[0].resolution, 'source'); assert.equal(nativeOptions[0].width, undefined);
       assert.equal(byteOptions[0].format, undefined); assert.deepEqual([byteOptions[0].width, byteOptions[0].height], [1280, 720]);
     } else if (mode === 'custom') assert.deepEqual([byteOptions[0].width, byteOptions[0].height], [1920, 1080]);
-    else assert.equal(byteOptions[0].format, 'i420');
+    else assert.equal(byteOptions[0].format, code === 'VIDEO_FORMAT_UNSUPPORTED' ? undefined : 'i420');
     assert.equal(root.classList.contains('native-video'), false);
     assert.equal(get('resolution').value, mode); assert.equal(get('resolution').disabled, false);
     assert.equal(resizes.length, 1); assert.deepEqual(errorMessages, []);
@@ -219,4 +219,33 @@ test('Canvas fit reconnect keeps the displayed canvas until the replacement draw
   assert.ok(!previous.removed && !oldRenderer.disposed && !ready.has('ready'));
   onDraw();
   assert.ok(previous.removed && oldRenderer.disposed && ready.has('ready'));
+});
+
+
+test('Demo retries unsupported native I420 as native RGBA before considering a web fallback', async () => {
+  const app = await readFile(new URL('../examples/integrations/video-preview/app.js', import.meta.url), 'utf8');
+  const begin = app.indexOf('    const connect = async () => {');
+  const end = app.indexOf('\n    let next;', begin);
+  assert.ok(begin >= 0 && end > begin);
+  const calls = [], surface = { readablePixels: false };
+  const context = vm.createContext({
+    native: true, nextOptions: { resolution: 'source', format: 'i420' }, i420Unavailable: false,
+    performance, closing: false, wanted: true, document: { hidden: false },
+    reaper: { video: { openSurface: async options => {
+      calls.push({ ...options });
+      if (options.format === 'i420') throw Object.assign(new Error('Unverified frame layout'), { code: 'VIDEO_FORMAT_UNSUPPORTED' });
+      return surface;
+    }, openStream: () => { throw new Error('Unexpected web fallback'); } } }
+  });
+  vm.runInContext(app.slice(begin, end) + '\nglobalThis.connect = connect;', context);
+  assert.equal(await context.connect(), surface);
+  assert.deepEqual(calls, [{ resolution: 'source', format: 'i420' }, { resolution: 'source' }]);
+  assert.equal(context.i420Unavailable, true);
+  calls.length = 0;
+  assert.equal(await context.connect(), surface);
+  assert.deepEqual(calls, [{ resolution: 'source' }]);
+  context.reaper.video.openSurface = async () => { throw Object.assign(new Error('Unavailable'), { code: 'VIDEO_RENDERER_UNAVAILABLE' }); };
+  await assert.rejects(context.connect(), { code: 'VIDEO_RENDERER_UNAVAILABLE' });
+  context.reaper.video.openSurface = async () => { throw Object.assign(new Error('Unsupported RGBA'), { code: 'VIDEO_FORMAT_UNSUPPORTED' }); };
+  await assert.rejects(context.connect(), { code: 'VIDEO_FORMAT_UNSUPPORTED' });
 });

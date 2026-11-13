@@ -24,6 +24,7 @@ public:
   virtual bool supports_i420() const { return false; }
   virtual VideoRead read(bool discontinuity, const Capture&) = 0;
   virtual VideoRead read_i420(bool, const Capture&) { return VideoRead::format_unsupported; }
+  virtual VideoRead read_native_i420(bool changed, const Capture& capture) { return read_i420(changed, capture); }
   virtual VideoRead read_display_i420(bool, const Capture&) { return VideoRead::format_unsupported; }
   virtual void stop() = 0;
 };

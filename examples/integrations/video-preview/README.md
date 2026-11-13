@@ -18,6 +18,8 @@ Unmodified Space outside editable fields controls REAPER playback through the ex
 
 The demo opts into `videoHighRefreshRate: true` in `app.json`. On macOS, this disables WebKit's preference for near-60-Hz page updates when the relevant system feature is available. Reopen the window after changing this setting. It does not change the source frame rate or guarantee presentation beyond the display's refresh rate.
 
+Native I420 surfaces accept even frame dimensions, including widths that are not multiples of 16. Source row padding is removed before GPU upload. CPU conversion and pixel-stream restrictions are unchanged.
+
 Native surfaces expose layout and diagnostics through `reaper.video.openSurface()`, without JavaScript-readable pixels. HTML controls remain above the video. Canvas readback and webpage snapshots do not include native video pixels. Custom output still selects fixed capture dimensions. Pixel consumers use each packet's `width`, `height` and `stride`, since `info` retains attachment-time dimensions. Dynamic `info.maxBytes` is a capacity limit, while `frame.bytes.byteLength` is the valid payload length. Shared presentation does not guarantee a particular frame rate or window count.
 
-If native presentation is unavailable or its renderer fails, the demo falls back to web rendering. Windows native display rates use observed DXGI presentation statistics, and show `—` when those statistics are unavailable. Successful GPU submissions are not treated as displayed frames.
+The demo retries native RGBA when the source does not support native I420. If native presentation is unavailable or its renderer fails, the demo falls back to web rendering. Windows native display rates use observed DXGI presentation statistics, and show `—` when those statistics are unavailable. Successful GPU submissions are not treated as displayed frames.

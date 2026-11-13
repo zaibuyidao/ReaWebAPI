@@ -39,7 +39,7 @@ struct VideoManager::Impl {
   uint64_t produced = 0, dropped = 0, failed = 0, captured = 0, cleared = 0;
   std::string name, error, resolution = "custom";
   std::string format = "rgba8";
-  bool native_i420 = false;
+  bool native_i420 = false, gpu_i420 = false;
   bool directdraw_hd = false;
   int matrix = -1;
   VideoColorConversion conversion = VideoColorConversion::unknown;
@@ -188,7 +188,7 @@ Json VideoManager::source_info(bool native_display) {
       s.probing = false; s.backend->stop();
     }
   }
-  if (native_display && directdraw_hd && !(width & 15) && !(height & 1)) {
+  if (native_display && directdraw_hd && !(width & 1) && !(height & 1)) {
     matrix = 1;
     conversion = VideoColorConversion::reaper_directdraw;
   }
@@ -243,7 +243,7 @@ std::string VideoManager::open(const Json& options, int window, bool* created, b
     if (format == "i420") {
       if (source["nativeFormat"] != "i420" || source["colorMatrix"] != "bt709" || source["colorRange"] != "limited" ||
           (!directdraw && source["colorConversion"] != "reaper-neon" && source["colorConversion"] != "reaper-sse") ||
-          (source_w & 15) || (source_h & 1)) throw Error("VIDEO_FORMAT_UNSUPPORTED", "The final video frame has no verified native I420 conversion");
+          (source_w & (native_display ? 1 : 15)) || (source_h & 1)) throw Error("VIDEO_FORMAT_UNSUPPORTED", "The final video frame has no verified native I420 conversion");
       matrix = 1;
       conversion = directdraw ? VideoColorConversion::reaper_directdraw :
         source["colorConversion"] == "reaper-neon" ? VideoColorConversion::reaper_neon : VideoColorConversion::reaper_sse;
@@ -263,6 +263,7 @@ std::string VideoManager::open(const Json& options, int window, bool* created, b
   s.probing = false;
   s.width = w; s.height = h; s.rate = rate; s.resolution = mode.get<std::string>(); s.preserve_aspect = aspect.get<bool>();
   s.format = format.get<std::string>(); s.matrix = matrix; s.conversion = conversion; s.native_i420 = format == "i420";
+  s.gpu_i420 = native_display && format == "i420";
   s.viewport_width = viewport_w; s.viewport_height = viewport_h;
   s.project = s.host.current_project ? s.host.current_project() : nullptr;
   s.generation = s.host.project_generation ? s.host.project_generation() : 0;
@@ -333,7 +334,7 @@ void VideoManager::tick() {
   try {
     const auto capture = [&](const VideoImage& image) {
       if (s.format == "i420" && (image.format != VideoPixelFormat::i420 || image.color_matrix != s.matrix || image.color_conversion != s.conversion ||
-          (image.width & 15) || (image.height & 1))) {
+          (image.width & (s.gpu_i420 ? 1 : 15)) || (image.height & 1))) {
         format_changed = true; return;
       }
       if (s.resolution != "custom" && image.width > 0 && image.height > 0) {
@@ -356,6 +357,7 @@ void VideoManager::tick() {
     };
     const auto result = s.conversion == VideoColorConversion::reaper_directdraw
       ? s.backend->read_display_i420(s.discontinuity, capture)
+      : s.gpu_i420 ? s.backend->read_native_i420(s.discontinuity, capture)
       : s.format == "i420" ? s.backend->read_i420(s.discontinuity, capture) : s.backend->read(s.discontinuity, capture);
     if (format_changed || result == VideoRead::format_unsupported) { s.error = "VIDEO_FORMAT_CHANGED"; s.close(); return; }
     if (resolution_limited) { s.clear(position, "VIDEO_RESOLUTION_LIMIT"); return; }

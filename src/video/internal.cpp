@@ -158,10 +158,13 @@ public:
     if (!supports_i420()) return VideoRead::format_unsupported;
     return read_frame(discontinuity, capture, true);
   }
-  VideoRead read_display_i420(bool discontinuity, const Capture& capture) override {
-    return read_frame(discontinuity, capture, true, true);
+  VideoRead read_native_i420(bool discontinuity, const Capture& capture) override {
+    return read_frame(discontinuity, capture, true, false, true);
   }
-  VideoRead read_frame(bool discontinuity, const Capture& capture, bool planar, bool display = false) {
+  VideoRead read_display_i420(bool discontinuity, const Capture& capture) override {
+    return read_frame(discontinuity, capture, true, true, true);
+  }
+  VideoRead read_frame(bool discontinuity, const Capture& capture, bool planar, bool display = false, bool native_display = false) {
     if (discontinuity) has_frame = false;
     if (!supported()) { stop(); return VideoRead::unsupported; }
     const auto projects = api<void*(*)(int, char*, int)>("EnumProjects");
@@ -280,9 +283,9 @@ public:
       conversion = VideoColorConversion::reaper_directdraw;
     }
 #endif
-    // Other widths retain RGBA until the scalar conversion tail is verified.
+    // CPU conversion keeps its verified vector width. Native GPU planes only require even dimensions.
     const bool verified_i420 = native_i420 && matrix == 1 && conversion != VideoColorConversion::unknown &&
-      frame->get_w() > 0 && frame->get_h() > 0 && !(frame->get_w() & 15) && !(frame->get_h() & 1) &&
+      frame->get_w() > 0 && frame->get_h() > 0 && !(frame->get_w() & (native_display ? 1 : 15)) && !(frame->get_h() & 1) &&
       !(frame->get_rowspan() & 1) && frame->get_w() <= 16384 && frame->get_h() <= 16384 &&
       frame->get_rowspan() >= frame->get_w() && frame->get_rowspan() <= 262144 && frame->get_bits();
     if (planar && !verified_i420) return VideoRead::format_unsupported;

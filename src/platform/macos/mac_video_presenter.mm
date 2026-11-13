@@ -399,7 +399,7 @@ std::shared_ptr<MacVideoPresenter> make_mac_video_presenter(WKWebView* web,const
   const auto format=descriptor.value("format","");const bool i420=format=="i420";
   if((!i420&&format!="rgba8")||width<=0||height<=0||uint64_t(width)*height>10485760||descriptor.value("stride",0)!=width*(i420?1:4))
     throw Error("VIDEO_FORMAT_UNSUPPORTED","Native Metal presentation requires tightly packed project video frames");
-  if(i420&&(descriptor.value("colorMatrix","")!="bt709"||descriptor.value("colorRange","")!="limited"||descriptor.value("colorConversion","")!="reaper-neon"||width%16||height%2))
+  if(i420&&(descriptor.value("colorMatrix","")!="bt709"||descriptor.value("colorRange","")!="limited"||descriptor.value("colorConversion","")!="reaper-neon"||width%2||height%2))
     throw Error("VIDEO_FORMAT_UNSUPPORTED","Native Metal I420 presentation requires the verified REAPER conversion");
   const auto name=descriptor.at("name").get<std::string>();
   if(name.empty())throw Error("INVALID_ARGUMENT","Video source name is required");

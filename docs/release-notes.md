@@ -1,4 +1,4 @@
 # ReaWebAPI
 
-- Support in-stream source/fit video resolution changes across native, shared-memory and socket paths, retaining GPU devices and unchanged viewport presentation resources.
-- Keep the last valid dynamic-preview frame during brief seek/decode waits to avoid clear-frame flashes.
+- Fix video preview falling back to web rendering when native I420 is unsupported. Retry native RGBA to avoid unnecessary transfer and display latency.
+- Support native YUV/GPU presentation for valid even-sized video frames whose widths are not multiples of 16, preserving CPU conversion restrictions.

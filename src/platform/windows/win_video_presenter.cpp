@@ -487,7 +487,7 @@ std::shared_ptr<WinVideoPresenter> make_win_video_presenter(const std::shared_pt
   if((!i420&&descriptor.value("format","")!="rgba8")||width<=0||height<=0||uint64_t(width)*height>10485760||descriptor.value("stride",0)!=width*(i420?1:4))throw Error("VIDEO_FORMAT_UNSUPPORTED","Native D3D presentation requires tightly packed project video frames");
   const auto conversion=descriptor.value("colorConversion","");
   if(i420&&(descriptor.value("colorMatrix","")!="bt709"||descriptor.value("colorRange","")!="limited"||
-      (conversion!="reaper-sse"&&conversion!="reaper-directdraw")||width%16||height%2))throw Error("VIDEO_FORMAT_UNSUPPORTED","Native D3D I420 presentation requires the verified REAPER conversion");
+      (conversion!="reaper-sse"&&conversion!="reaper-directdraw")||width%2||height%2))throw Error("VIDEO_FORMAT_UNSUPPORTED","Native D3D I420 presentation requires the verified REAPER conversion");
   const auto name=descriptor.at("name").get<std::string>();if(name.empty())throw Error("INVALID_ARGUMENT","Video source name is required");
   static std::mutex mutex;static std::map<std::string,std::weak_ptr<Source>> registry;std::shared_ptr<Source> source;
   {std::lock_guard<std::mutex> guard(mutex);for(auto it=registry.begin();it!=registry.end();)if(it->second.expired())it=registry.erase(it);else ++it;

@@ -86,7 +86,7 @@ Demo 的网页绘制路径使用持续的 `requestAnimationFrame` 循环，按�
 
 ## 原生 I420
 
-`format` 默认为 `rgba8`。转换器已验证的 Windows x64、macOS ARM64 和 Linux x86_64 主机可使用 `format: 'i420'` 与 `resolution: 'source'`，直接复制最终原生 Y/U/V 平面，不进行 RGB 转换或新增色度采样。宽度须为 16 的倍数，高度须为偶数，目前已验证的转换为有限范围 BT.709。Windows 对应已验证的 FFmpeg 54、62 SSE 转换，Linux x86_64 对应已验证的 FFmpeg 60 SSE 转换，macOS ARM64 对应原生 NEON 转换，其他转换器配置保留 RGBA。其他原生格式、矩阵和平台返回 `VIDEO_FORMAT_UNSUPPORTED`。`capabilities.formats` 列出可用路径。`sourceInfo.colorMatrix` 也可识别 BT.601/BT.2020，但不代表开放对应 I420 输出。
+`format` 默认为 `rgba8`。转换器已验证的 Windows x64、macOS ARM64 和 Linux x86_64 主机可使用 `format: 'i420'` 与 `resolution: 'source'`，直接复制最终原生 Y/U/V 平面，不进行 RGB 转换或新增色度采样。`openStream()` 保留宽度为 16 的倍数、高度为偶数的限制。原生 `openSurface()` 接受有效偶数宽高，按源行步长复制 Y/U/V 平面后交给 GPU 转换与缩放。CPU 转换的尺寸限制不变。目前已验证的转换为有限范围 BT.709。Windows 对应已验证的 FFmpeg 54、62 SSE 转换，Linux x86_64 对应已验证的 FFmpeg 60 SSE 转换，macOS ARM64 对应原生 NEON 转换，其他转换器配置保留 RGBA。其他原生格式、矩阵和平台返回 `VIDEO_FORMAT_UNSUPPORTED`。`capabilities.formats` 列出可用路径。`sourceInfo.colorMatrix` 也可识别 BT.601/BT.2020，但不代表开放对应 I420 输出。
 
 I420 数据包依次包含完整尺寸 Y 平面及各占四分之一尺寸的 U、V 平面，不含行填充。`frame.stride === frame.width`，`frame.bytes.byteLength === frame.width * frame.height * 3 / 2`。`info.maxBytes` 仍为 40 MiB 容量上限。描述携带 `colorMatrix: 'bt709'`、`colorRange: 'limited'` 和 `colorConversion: 'reaper-sse' | 'reaper-neon'`。复现 CPU RGBA 读回值时，使用对应转换器的整数舍入。像素预算仍按等尺寸 RGBA 计算。格式纳入首个消费者的共享配置。符合约束的尺寸变化保留 I420 流。原生格式、色彩矩阵或转换器不再满足当前配置时关闭流，视频状态报告 `VIDEO_FORMAT_CHANGED`，消费者应重新打开或回退 RGBA。
 
@@ -108,7 +108,7 @@ Windows x64 与 macOS ARM64 分别使用 D3D11 和 Metal，支持 RGBA8 纹理�
 
 Windows 返回 `presentationCounter: 'dxgi-observed'`，仅统计 DXGI 呈现信息中观察到的新源帧，不以 `Present()` 成功次数或提交编号差值推断显示帧数，也不补计未观察到的中间帧，因此计数与 FPS 可能低于屏幕实际呈现值。统计不可用时，`presentationAvailable` 为 `false`，`presentedFrames` 与 `presentationFPS` 为 `null`，`hasFrame` 不依赖这些计数。macOS 统计 Metal 呈现回调。这些指标不能证明每一帧都已在屏幕上可见。
 
-原生呈现不可用或报告 `VIDEO_RENDERER_UNAVAILABLE` 时，Demo 回退网页绘制。Windows 使用现有工作线程路径，macOS 保留网页绘制回退。SDK 不会将 `openSurface()` 结果隐式变成像素流，应用应显式选择回退方式。原生呈现不启用 WebView2 实验纹理流，也不改变普通窗口的绘制设置。
+Demo 在原生 I420 格式不受支持时重试原生 RGBA。原生呈现不可用或报告 `VIDEO_RENDERER_UNAVAILABLE` 时，Demo 回退网页绘制。Windows 使用现有工作线程路径，macOS 保留网页绘制回退。SDK 不会将 `openSurface()` 结果隐式变成像素流，应用应显式选择回退方式。原生呈现不启用 WebView2 实验纹理流，也不改变普通窗口的绘制设置。
 
 Canvas 预览在适配显示区域时如因缩放重新连接，Demo 会保留上一帧，直到新连接绘制首帧。
 

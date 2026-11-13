@@ -196,6 +196,10 @@ async function reconcile() {
           return connection;
         } catch (error) {
           if (connection) await connection.close().catch(() => {});
+          if (native && nextOptions.format === 'i420' && error.code === 'VIDEO_FORMAT_UNSUPPORTED') {
+            delete nextOptions.format; i420Unavailable = true;
+            continue;
+          }
           if (error.code !== 'VIDEO_FRAME_PENDING' || performance.now() >= deadline || closing || !wanted || document.hidden) throw error;
           await new Promise(resolve => setTimeout(resolve, 100));
         }
