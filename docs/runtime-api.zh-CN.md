@@ -16,6 +16,8 @@ JavaScript Runtime 使用下列 17 个命名空间。730 项标准 REAPER 镜像
 
 `transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
 
+`system.getCapabilities()` 与 `debug.getDiagnostics()` 新增 `webRuntime.crossOriginIsolation` 和 `webRuntime.browser`，等待当前文档缓存的能力探针。握手快照仍可能包含未检测的 `null` 字段。详见 [字段、错误与生命周期约定](frontend.zh-CN.md#app-级跨源隔离)。
+
 ## FS
 
 `reaper.fs` 提供 `readText`、`writeText`、`readBinary`、`writeBinary`，以及支持 encoding 重载的 `readFile` / `writeFile`、`stat`、`readDirectory`、`makeDirectory`。文本使用 UTF-8，二进制使用 `Uint8Array`。写入可传 `{overwrite:true}`，默认拒绝覆盖已有文件；继续采用 worker 文件操作和 16 MiB 上限。剪贴板文本使用 `reaper.clipboard.readText()` / `reaper.clipboard.writeText(text)`。可通过 `reaper.system.openExternal(url)` 显式打开外部链接，普通外部导航同样交给系统默认程序。参见[导航行为](frontend.zh-CN.md#导航行为)。

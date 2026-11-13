@@ -31,6 +31,97 @@
       ? message => window.webkit.messageHandlers.reaweb.postMessage(message)
       : null;
   const failure = (code, message, details) => Object.assign(new Error(message), { code, ...(details ? { details } : {}) });
+  const browserBasics = () => {
+    const result = { secureContext: window.isSecureContext === true,
+      crossOriginIsolated: window.crossOriginIsolated === true, sharedArrayBuffer: false, wasmSharedMemory: false };
+    try {
+      const view = new Int32Array(new window.SharedArrayBuffer(4));
+      Atomics.store(view, 0, 7); result.sharedArrayBuffer = Atomics.load(view, 0) === 7;
+    } catch {}
+    try { result.wasmSharedMemory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }).buffer instanceof window.SharedArrayBuffer; } catch {}
+    return result;
+  };
+  const isolationRequired = typeof reawebIsolationRequired !== 'undefined' && reawebIsolationRequired;
+  const initialBrowser = browserBasics();
+  if (isolationRequired && !initialBrowser.crossOriginIsolated) {
+    const code = typeof window.crossOriginIsolated === 'boolean' ? 'CROSS_ORIGIN_ISOLATION_FAILED' : 'CROSS_ORIGIN_ISOLATION_UNSUPPORTED';
+    try { post?.('__reawebBrowser:' + JSON.stringify({ document: documentId, browser: initialBrowser, error: code })); }
+    finally { window.stop(); }
+    return;
+  }
+  let browserProbe;
+  const probeBrowser = () => browserProbe ||= (async () => {
+    const browser = { ...browserBasics(), worker: null, blobWorker: null, webgl2: null, errors: {}, workers: {} };
+    const publish = () => {
+      try { post?.('__reawebBrowser:' + JSON.stringify({ document: documentId, browser })); } catch {}
+      return browser;
+    };
+    // Wait for the document's CSP meta elements before testing Worker creation.
+    if (window.document?.readyState === 'loading') {
+      const loaded = await new Promise(resolve => {
+        const done = () => { clearTimeout(timer); resolve(true); };
+        const timer = setTimeout(() => { window.removeEventListener('DOMContentLoaded', done); resolve(false); }, 3000);
+        window.addEventListener('DOMContentLoaded', done, { once: true });
+      });
+      if (!loaded) {
+        browser.errors.worker = browser.errors.blobWorker = browser.errors.webgl2 = 'DOCUMENT_NOT_READY';
+        return publish();
+      }
+    }
+    try {
+      const canvas = window.document.createElement('canvas'), gl = canvas.getContext('webgl2');
+      browser.webgl2 = !!gl; gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch { browser.errors.webgl2 = 'CONTEXT_FAILED'; browser.webgl2 = false; }
+    const workerProbe = (url, name) => new Promise(resolve => {
+      let worker, timer, memory, done = false;
+      const finish = (ok, error, state) => {
+        if (done) return; done = true;
+        clearTimeout(timer); worker?.terminate();
+        browser[name] = ok;
+        if (error) browser.errors[name] = error;
+        if (state) browser.workers[name] = state;
+        resolve();
+      };
+      try {
+        worker = new window.Worker(url);
+        const token = documentId + ':' + name;
+        worker.onmessage = event => {
+          if (event.data?.token !== token) return;
+          const state = event.data;
+          if (memory && (state.sharedRoundTrip !== true || Atomics.load(new Int32Array(memory.buffer), 0) !== 18))
+            return finish(false, 'SHARED_MEMORY_FAILED');
+          finish(true, null, { crossOriginIsolated: state.crossOriginIsolated === true,
+            sharedArrayBuffer: state.sharedArrayBuffer === true, wasmSharedMemory: state.wasmSharedMemory === true,
+            sharedRoundTrip: memory ? true : null });
+        };
+        worker.onerror = event => { event.preventDefault?.(); finish(false, 'WORKER_LOAD_OR_EXECUTION_FAILED'); };
+        worker.onmessageerror = () => finish(false, 'WORKER_MESSAGE_FAILED');
+        timer = setTimeout(() => finish(null, 'PROBE_TIMEOUT'), 3000);
+        if (browser.wasmSharedMemory) {
+          memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+          Atomics.store(new Int32Array(memory.buffer), 0, 17);
+        }
+        worker.postMessage({ token, memory });
+      } catch { finish(false, 'WORKER_CREATE_OR_SEND_FAILED'); }
+    });
+    if (window.location?.protocol === 'reaweb:' || (typeof reawebLocalResources !== 'undefined' && reawebLocalResources)) {
+      const url = window.location.origin + '/__reaweb_runtime__/probe.js';
+      const blobProbe = async () => {
+        let objectUrl;
+        const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 3000);
+        try {
+          const response = await fetch(url, { signal: controller.signal });
+          if (!response.ok) throw failure('PROBE_RESOURCE_FAILED', 'Worker probe resource unavailable');
+          const source = await response.text();
+          objectUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+          await workerProbe(objectUrl, 'blobWorker');
+        } catch (error) { browser.errors.blobWorker = error.name === 'AbortError' ? 'PROBE_TIMEOUT' : 'PROBE_RESOURCE_FAILED'; }
+        finally { clearTimeout(timeout); if (objectUrl) URL.revokeObjectURL(objectUrl); }
+      };
+      await Promise.all([workerProbe(url, 'worker'), blobProbe()]);
+    } else browser.errors.worker = browser.errors.blobWorker = 'PROBE_RESOURCE_UNAVAILABLE';
+    return publish();
+  })();
   const health = { timeouts: 0, queueRejected: 0, sendFailures: 0, scriptErrors: 0,
     promiseErrors: 0, callbackErrors: 0, streamErrors: 0, streamCloses: 0, streamPackets: 0, scriptLine: 0, scriptColumn: 0 };
   let diagnosticEnabled = false, timeoutMethod = '';
@@ -149,7 +240,8 @@
     if (diagnosticEnabled) { item.method = method; item.at = Date.now(); }
     pending.set(id, item);
     try {
-      const message = JSON.stringify({ id, document: documentId, project: projectEpoch, expiresAt: Date.now() + 25000, method, args }, encodeValue);
+      const message = JSON.stringify({ id, document: documentId, project: projectEpoch, expiresAt: Date.now() + 25000, method, args,
+        ...(method === '__reawebHello' ? { browser: initialBrowser } : {}) }, encodeValue);
       if (new TextEncoder().encode(message).length > 64 * 1024 * 1024) throw failure('MESSAGE_LIMIT', 'Bridge message exceeds 64 MiB');
       post(message);
     } catch (error) {
@@ -168,6 +260,7 @@
   });
   // Loading a page that does not use the API should not create an unhandled rejection.
   ready.catch(() => {});
+  if (isolationRequired) ready.then(probeBrowser).catch(() => {});
   const call = (method, args) => {
     if (closed) return Promise.reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));
     if (waiting >= 256) { if (diagnosticEnabled) ++health.queueRejected; return Promise.reject(failure('QUEUE_LIMIT', 'Too many pending API calls')); }
@@ -1071,7 +1164,7 @@
     getDisplays: host('ReaWeb_GetDisplays'),
     openMIDIInput: async (device = -1) => openStream(await call('ReaWeb_MIDIOpen', [device])),
     schedule: (callback, options = {}) => nativeTask('native-timer', 'ReaWeb_TimerStart', [options], 'ReaWeb_TimerStop', callback, false),
-    getCapabilities: host('ReaWeb_GetCapabilities'), openExternal: host('ReaWeb_OpenExternal'),
+    getCapabilities: async () => { await ready; await probeBrowser(); return call('ReaWeb_GetCapabilities', []); }, openExternal: host('ReaWeb_OpenExternal'),
     getPlatform: host('ReaWeb_GetPlatform'), getArchitecture: host('ReaWeb_GetArchitecture'), revealInFileManager: host('ReaWeb_RevealPath')
   });
   api.transaction = Object.freeze({
@@ -1134,7 +1227,7 @@
     log: (...values) => log('info', values),
     warn: (...values) => log('warn', values), error: (...values) => log('error', values),
     inspect: value => log('debug', [value]), getLogs: () => call('ReaWeb_GetLogs', []),
-    getDiagnostics: host('ReaWeb_GetDiagnostics'), openDevTools: host('ReaWeb_DevTools'),
+    getDiagnostics: async () => { await ready; await probeBrowser(); return call('ReaWeb_GetDiagnostics', []); }, openDevTools: host('ReaWeb_DevTools'),
     setBufferSize: host('ReaWeb_SetBufferSize')
   });
   window.addEventListener('error', event => {

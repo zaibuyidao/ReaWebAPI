@@ -1,0 +1,6 @@
+{
+  "name": "WebAssembly Threads",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "webRuntime": { "crossOriginIsolation": "required" }
+}

@@ -352,9 +352,9 @@ public:
       webkit_web_view_set_background_color(view_, &background_);
     }
     const auto resource_root = request.value("resourceRoot", std::string());
-    if (!resource_root.empty()) {
+    if (!resource_root.empty() && uri_.rfind("reaweb://", 0) == 0) {
       const auto end = uri_.find('/', 9);
-      resources_ = std::make_shared<WebResources>(fs::u8path(resource_root), uri_.substr(9, end - 9));
+      resources_ = std::make_shared<WebResources>(fs::u8path(resource_root), uri_.substr(9, end - 9), request.value("isolationRequired", false));
       g_object_set_data(G_OBJECT(view_), "reaweb-resources", resources_.get());
     }
     if (!prepared) g_object_ref_sink(view_);
@@ -504,7 +504,14 @@ public:
     attributes.bit_gravity = NorthWestGravity;
     XChangeWindowAttributes(gdk_x11_display_get_xdisplay(gtk_widget_get_display(plug_)),
       gdk_x11_window_get_xid(gtk_widget_get_window(plug_)), CWBitGravity, &attributes);
-    webkit_web_view_load_uri(view_, uri_.c_str());
+    const auto authorization = request.value("authorization", std::string());
+    if (authorization.empty()) webkit_web_view_load_uri(view_, uri_.c_str());
+    else {
+      auto native_request = webkit_uri_request_new(uri_.c_str());
+      soup_message_headers_replace(webkit_uri_request_get_http_headers(native_request), "Authorization", authorization.c_str());
+      webkit_web_view_load_request(view_, native_request);
+      g_object_unref(native_request);
+    }
   }
   void resize(int width, int height) {
     if (failed_ || !geometry_initialized_ || !parent_) return;

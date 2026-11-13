@@ -25,6 +25,16 @@ parser.add_argument('--starter', action='store_true', help='Exercise the SDK sta
 parser.add_argument('--dev', action='store_true', help='Exercise Vite modules, Worker, fetch and CSS HMR through OpenDev')
 parser.add_argument('--modern', action='store_true', help='Exercise the built TypeScript template')
 parser.add_argument('--runtime', action='store_true', help='Exercise Web Runtime v1 and per-App browser storage')
+parser.add_argument('--isolation', action='store_true', help='Exercise isolated Worker/WASM Apps in WebView2')
+parser.add_argument('--isolation-emulator', type=Path, help='Test a supplied EmulatorJS distribution in an isolated scratch App, recording its archive hash')
+parser.add_argument('--isolation-emulator-http', action='store_true', help='Compare the same core fixtures on a COOP/COEP HTTP development origin')
+parser.add_argument('--isolation-psp-interpreter', action='store_true', help='Compare PPSSPP with its supported interpreter/slow-memory options')
+parser.add_argument('--isolation-psp-program', type=Path, help='Use another legally supplied PSP test program')
+parser.add_argument('--isolation-psp-model', choices=['psp_1000', 'psp_2000_3000'], help='Select the original PSP core memory model for comparison')
+parser.add_argument('--isolation-psp-scenario', choices=['cube', 'controller', 'audio'], default='cube', help='Expected behavior of the supplied official PSP fixture')
+parser.add_argument('--isolation-core', choices=['ppsspp', 'dosbox_pure', 'fceumm'], help='Limit the opt-in emulator acceptance to one core')
+parser.add_argument('--isolation-soak-seconds', type=int, default=0, help='Run the selected emulator for this duration after behavioral checks')
+parser.add_argument('--isolation-reopen', type=int, default=0, help='Repeat the selected core acceptance after closing all App windows')
 parser.add_argument('--titles', action='store_true', help='Verify HTML and explicit native window titles in WebView2')
 parser.add_argument('--studio', action='store_true', help='Exercise the v0.1.8 Runtime Studio UI')
 parser.add_argument('--resource-root', type=Path, help='Reuse a dedicated test resource directory across host processes')
@@ -494,6 +504,14 @@ try:
         args.webview = False
     if args.webview and args.runtime:
         from web_runtime_browser import run_windows
+        run_windows(globals())
+        args.webview = False
+    if args.webview and args.isolation:
+        from isolation_browser import run_windows
+        run_windows(globals())
+        args.webview = False
+    if args.webview and args.isolation_emulator:
+        from isolation_emulator import run_windows
         run_windows(globals())
         args.webview = False
     if args.webview and args.latency:

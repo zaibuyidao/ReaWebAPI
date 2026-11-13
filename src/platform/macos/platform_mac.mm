@@ -618,7 +618,12 @@ public:
     if (delegate_->options.url.empty()) {
       auto url = [NSURL fileURLWithPath:ns(delegate_->options.entry.u8string())];
       [webview_ loadFileURL:url allowingReadAccessToURL:[url URLByDeletingLastPathComponent]];
-    } else [webview_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:ns(delegate_->options.url)]]];
+    } else {
+      auto request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:ns(delegate_->options.url)]];
+      if (delegate_->options.resources && !delegate_->options.resources->authorization().empty())
+        [request setValue:ns(delegate_->options.resources->authorization()) forHTTPHeaderField:@"Authorization"];
+      [webview_ loadRequest:request];
+    }
   }
   ~MacWindow() override {
     release_video_presenter();
@@ -647,6 +652,8 @@ public:
   std::shared_ptr<VideoMemory> video_memory(const std::string& token, uint32_t bytes) override {
     auto handler = (ReaWebSchemeHandler*)[webview_.configuration urlSchemeHandlerForURLScheme:@"reaweb"];
     if (delegate_->isClosed || !handler || !handler->resources) return {};
+    // HTTP documents retain the existing stream transport instead of scheme-only frame URLs.
+    if (!handler->resources->authorization().empty()) return {};
     auto mapping = std::make_shared<MacVideoMemory>(bytes);
     mapping->resource_url = handler->resources->origin() + "/__reaweb_video__/" + token + "/";
     for (auto it = handler->videoSlots.begin(); it != handler->videoSlots.end();) {

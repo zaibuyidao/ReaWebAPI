@@ -100,6 +100,7 @@ private:
     Json info;
     std::shared_ptr<void> binding;
     std::shared_ptr<WebResources> resources;
+    std::shared_ptr<class LoopbackOrigin> loopback;
     std::shared_ptr<Platform> platform;
   };
   struct JsfxInstance {
@@ -143,6 +144,8 @@ private:
     uint64_t diagnostic_sequence = 0, diagnostic_pending = 0;
     bool diagnostic_unresponsive = false, diagnostic_enabled = false, diagnostic_config_pending = false;
     Json diagnostic_page = Json::object();
+    Json browser_report = Json::object();
+    std::string isolation_error, isolation_failure_stage;
     bool ready = false, capture_keyboard = true;
     bool daw_keyboard = false, space_down = false;
     std::deque<char> space_events;
@@ -297,6 +300,7 @@ private:
   void detach(const Session& session);
   Json window_state(const Session& session) const;
   Json web_runtime(const Session& session) const;
+  void browser_report(Session& session, const Json& report);
   Json host_call(int id, const std::string& method, const Json& args);
   void navigate(Session& session);
   void reply(Session& session, Work work, Json response);

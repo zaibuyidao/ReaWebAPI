@@ -56,9 +56,9 @@ def release_body(repo, version):
             f'[ReaPack]({base}/ReaWebAPI-ReaPack-v{version}.zip) · '
             f'[SHA-256]({base}/SHA256SUMS.txt)\n\n'
             'Platform packages include the extension, SDK and examples. Extract into the REAPER resource directory and restart REAPER. '
-            'On Linux, keep the matching WebKit helper beside the extension with execute permission, and retain the `reawebapi-video-<arch>/` subdirectory.\n\n'
+            'On Linux, keep the matching WebKit helper beside the extension with execute permission, and retain the `reawebapi-video-<arch>/` and bundled `reawebapi-webkit-<arch>/` subdirectories.\n\n'
             '平台安装包包含扩展、SDK 和示例。解压到 REAPER 资源目录后重启。'
-            'Linux 的同架构 WebKit 辅助程序与扩展放在同一目录，并赋予执行权限，保留 `reawebapi-video-<arch>/` 子目录。\n\n'
+            'Linux 的同架构 WebKit 辅助程序与扩展放在同一目录，并赋予执行权限，保留 `reawebapi-video-<arch>/` 与随包提供的 `reawebapi-webkit-<arch>/` 子目录。\n\n'
             'The SDK provides type declarations and templates. The ReaPack package provides binaries, the complete Demo and repository metadata.\n\n'
             'SDK 提供类型声明和开发模板，ReaPack 包提供二进制文件、完整 Demo 和仓库索引元数据。\n\n'
             f'[Documentation / 文档](https://github.com/{repo}#readme)\n')
@@ -76,14 +76,14 @@ def demo_entries(directory):
     return entries
 
 
-def descriptor(version, demo_directory=None):
+def descriptor(version, demo_directory=None, additional_files=()):
     if demo_directory is None:
         demo_directory = Path(__file__).resolve().parents[1] / 'examples/main-demo'
     entries = demo_entries(demo_directory)
     lines = ['@description ReaWebAPI: Web Runtime for REAPER', f'@version {version}', '@author zaibuyidao',
              '@link https://github.com/zaibuyidao/ReaWebAPI', '@provides']
-    for platform, name in native_files():
-        url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/extension/{name}'
+    for platform, name in [*native_files(), *additional_files]:
+        url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/extension/{quote(name, safe="/")}'
         lines.append(f'  [{platform} extension] {name} {url}')
     for path in entries:
         if not path.is_file():
@@ -108,7 +108,8 @@ def add_demo(archive, directory):
 
 def assemble(directory, version, revision):
     assets = []
-    for platform, arch, _, binary in TARGETS:
+    runtime_entries = []
+    for platform, arch, reapack_platform, binary in TARGETS:
         files = [binary] + ([f'reawebapi-webview-{arch}', f'reawebapi-video-{arch}/reawebapi-video-{arch}.so'] if platform == 'linux' else [])
         bundle = directory / f'ReaWebAPI-{platform}-{arch}-v{version}.zip'
         with zipfile.ZipFile(bundle) as archive:
@@ -119,6 +120,14 @@ def assemble(directory, version, revision):
             expected = dict(version=version, platform=platform, architecture=arch, revision=revision, extension=binary)
             if metadata != expected:
                 raise ValueError(f'Build metadata mismatch: {bundle.name}')
+            if platform == 'linux':
+                prefix = f'UserPlugins/reawebapi-webkit-{arch}/'
+                for name in archive.namelist():
+                    if name.startswith(prefix) and not name.endswith('/'):
+                        relative = name.removeprefix('UserPlugins/')
+                        if '..' in Path(relative).parts:
+                            raise ValueError(f'Invalid runtime path: {name}')
+                        runtime_entries.append((reapack_platform, relative, bundle, name))
             for name in files:
                 file = directory / Path(name).name
                 if not file.is_file() or not file.stat().st_size or archive.read(f'UserPlugins/{name}') != file.read_bytes():
@@ -127,7 +136,7 @@ def assemble(directory, version, revision):
         assets.append(bundle)
     reapack = directory / f'ReaWebAPI-ReaPack-v{version}.zip'
     with zipfile.ZipFile(reapack, 'w', zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr('ReaWebAPI.ext', descriptor(version).encode('utf-8'))
+        archive.writestr('ReaWebAPI.ext', descriptor(version, additional_files=[(platform, name) for platform, name, _, _ in runtime_entries]).encode('utf-8'))
         add_demo(archive, Path(__file__).resolve().parents[1] / 'examples/main-demo')
         for _, name in native_files():
             # Preserve executable permission even when Actions normalized downloaded files to 0644.
@@ -136,6 +145,13 @@ def assemble(directory, version, revision):
             info.external_attr = 0o100755 << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, (directory / Path(name).name).read_bytes())
+        for _, name, bundle, source in runtime_entries:
+            with zipfile.ZipFile(bundle) as native:
+                info = zipfile.ZipInfo(f'extension/{name}')
+                info.create_system = 3
+                info.external_attr = native.getinfo(source).external_attr
+                info.compress_type = zipfile.ZIP_DEFLATED
+                archive.writestr(info, native.read(source))
     assets += [reapack, build_sdk(directory, version, revision)]
     checksums = directory / 'SHA256SUMS.txt'
     checksums.write_text(''.join(f'{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.name}\n'

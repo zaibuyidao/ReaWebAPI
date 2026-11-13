@@ -44,3 +44,5 @@ Demo 的 Diagnostics 面板及 `reaper.debug.getDiagnostics()` 继续提供状�
 页面报告包含 `pagePending`、`oldestAgeMs`、`oldestStarted`、最早未完成请求的 `method`、最近超时的 `timeoutMethod`、累计异常计数、`scriptLine`/`scriptColumn`、`activeStreams` 和 `streamPackets`。原生上下文包含 `pendingCalls`、`queuedCalls`、`outputPending`、`hostMessages` 和 `webMessages`。应结合传输状态比较连续的流计数，音频停止或生产者空闲时没有新数据可能是正常情况。已开始的请求可能正在等待原生对话框或异步操作。`api.fail` 包含方法名，服务完成记录包含 `service`/`operation`，不记录参数或流正文。快照中的 `bridgeHealth` 包含 `enabled`、最后一次有效页面报告与当前探测标志，不是即时采样。查询快照不会开启监测。
 
 REAPER UI 线程永久阻塞时无法写入新日志或运行探测。受限流影响的 DEBUG API begin/end 记录可缩小最后一次原生调用的范围，不能替代崩溃堆栈。宿主停顿只能在 UI 恢复后观测。隐藏页面不检测存活状态，脚本坐标不含源 URL。日志不足以定位时仍需进程转储或调试器。
+
+跨源隔离失败在桥接握手前向宿主报告。`webRuntime.isolation.fail` 记录请求策略、文档代次及受限的浏览器结果。能力探针不依赖调试日志开关，结果位于 JS 和原生诊断的 `webRuntime`。详见 [隔离诊断](frontend.zh-CN.md#app-级跨源隔离)。

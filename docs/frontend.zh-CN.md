@@ -82,11 +82,37 @@ render(config, track);
 
 不专门支持 Service Worker、PWA、Push、定位、摄像头、麦克风、WebRTC、支付、Bluetooth、USB。WebView 暴露某些构造器不等于 ReaWebAPI 承诺支持。运行时不包含 Node.js/npm/Electron API。
 
+## App 级跨源隔离
+
+在 App 根目录 `app.json` 中设置 `"webRuntime": { "crossOriginIsolation": "required" }`。默认值为 `"off"`。`webRuntime` 未知字段、未知值或错误类型返回 `APP_MANIFEST_INVALID`。首次打开 App 时读取配置，重载及同 App 后续窗口沿用该配置。修改配置后须关闭该 App 的**全部窗口**再重新打开。
+
+隔离资源返回 `Cross-Origin-Opener-Policy: same-origin`、`Cross-Origin-Embedder-Policy: require-corp` 和 `Permissions-Policy: cross-origin-isolated=(self)`。Windows 保持 `reaweb://<appId>`。macOS/Linux 的 required App 使用经过认证的 `http://127.0.0.1:<port>` 来源，在 `Apps/<appId>/isolation-origin.json` 中按 App ID 持久绑定端口。已保存端口被占用时返回 `APP_ORIGIN_IN_USE`，不临时切换来源。普通 App 保持自定义协议来源。外部脚本、图片、字体和媒体须提供兼容的 CORS/CORP 响应。App 自有 CSP 继续生效。普通和 Blob Worker 可使用 `worker-src 'self' blob:`，支持相应指令的浏览器可使用 `script-src 'self' 'wasm-unsafe-eval'` 编译 WASM。
+
+App ID、私有文件和窗口状态不变。浏览器存储按来源隔离，macOS/Linux 启用 required 后使用独立的 localStorage/IndexedDB，保留旧数据但不自动迁移。如需旧浏览器状态，应在切换前导出。恢复 off 模式即可回到旧来源。请保留 `app.json`，并将来源记录与 App 数据一起备份。Linux 需要支持隔离进程 SharedArrayBuffer 的 WebKitGTK，参见[独立运行库构建](linux-webkit-runtime.md)。required HTTP 页面通过现有流通道接收工程视频，不使用自定义协议帧传输。
+
+文档创建时检查浏览器实际隔离状态。失败后停止加载，并向宿主报告 `CROSS_ORIGIN_ISOLATION_FAILED`。浏览器未提供隔离能力时报告 `CROSS_ORIGIN_ISOLATION_UNSUPPORTED`。宿主关闭失败窗口，错误可从 REAPER Console 和原生 Runtime Diagnostics 获取，不依赖页面完成握手。普通 App 不受影响。
+
+```js
+await reaper.lifecycle.ready;
+const { webRuntime } = await reaper.system.getCapabilities();
+console.log(webRuntime.crossOriginIsolation, webRuntime.browser);
+```
+
+`crossOriginIsolation` 分别报告请求模式 `requested`、后端能力 `supported`、当前文档状态 `active`、原因 `reason`、初始化阶段 `stage`、失败阶段 `failureStage` 和文档代次 `documentGeneration`。`null` 表示未确认，不代表成功。`browser` 报告安全上下文、实际隔离、SAB、共享 WASM 内存、普通 Worker、Blob Worker 和 WebGL2。Worker 探针实际通信并交换共享内存，子线程状态见 `browser.workers`。`browser.errors` 区分创建/发送、加载/执行、消息、共享内存、资源及超时错误。超时或未检测为 `null`，已确认失败为 `false`。
+
+`getCapabilities()` 与 `debug.getDiagnostics()` 等待并复用当前文档的一次探针结果。隔离 App 还会在握手后自动开始检测。文档就绪等待、Worker 和资源请求各有三秒超时，结束时释放 Worker 和 Blob URL。探针完成前，原生诊断可以返回 `null`。HTTP 开发页面报告实际文档隔离状态，但不能使用本地保留的 Worker 探针资源。WebGL2 独立于通用 WASM 线程能力，PSP 等应用另有要求。
+
+直接使用浏览器标准 `Worker`、`SharedArrayBuffer`、`Atomics` 和 `WebAssembly.Memory`，不新增线程命名空间或 Worker 桥接。App 负责终止闲置 Worker，浏览器在文档关闭或重载时释放 Dedicated Worker。不要在页面主线程执行阻塞的 `Atomics.wait()`。
+
+[线程 WASM 示例](../examples/runtime-features/isolation/README.zh-CN.md) 覆盖普通与 Blob 各四个 Worker、WASM 原子计算、等待/唤醒、异常和存储。已测环境与剩余限制见 [Windows](windows-isolation-validation.zh-CN.md) 与 [WebKit 验收记录](webkit-isolation-validation.md)。设置响应头不等于引擎已支持。
+
+模拟器行为、PSP 核心修复与稳定性范围见 [Windows 验收记录](windows-isolation-validation.zh-CN.md)。
+
 ## 资源来源与存储
 
 浏览器 File/Blob 播放、原生文件选择及可选下载导出模块见[浏览器媒体接入](browser-media.md)。
 
-`reaper.window.open(path)` 接受本地 HTML 路径，其规范化父目录是 **App Root**。生产页面使用 `reaweb://<appId>/<entry>`，不创建 TCP listener。Windows、macOS、Linux 分别通过 WebView2 Custom Scheme、WKURLSchemeHandler、WebKitGTK URI handler 提供只读资源。支持相对 URL、ES modules、本地 fetch、Unicode/空格/#/% 文件名、MIME、HEAD 和单字节范围请求。URL 中的 `#` 和 `%` 必须编码，例如 `file%23%25.js`。拒绝目录列表、写入、目录遍历及指向根目录外的 symlink/junction。
+`reaper.window.open(path)` 接受本地 HTML 路径，其规范化父目录是 **App Root**。生产页面通常使用 `reaweb://<appId>/<entry>`，macOS/Linux 的 required App 使用上述持久绑定回环来源。两种路径提供相同的只读资源。支持相对 URL、ES modules、本地 fetch、Unicode/空格/#/% 文件名、MIME、HEAD 和单字节范围请求。URL 中的 `#` 和 `%` 必须编码，例如 `file%23%25.js`。拒绝目录列表、写入、目录遍历及指向根目录外的 symlink/junction。
 
 在根目录 `app.json` 中定义稳定且全局唯一的 `id`：
 
@@ -108,7 +134,7 @@ Lua source 与 `instanceKey` 保留路径解析和窗口复用职责，不再生
 
 继续兼容没有 `entry` 的旧 Schema 2 记录。旧根目录不存在且未被使用时可自动恢复。旧根目录仍存在时，可通过其 `app.json.entry` 确定原入口。缺少可靠入口元数据时保留 `APP_ID_CONFLICT`，不根据其他 HTML 文件或新请求猜测原入口。成功正常打开后补齐实际入口。恢复绑定保留 App ID、origin、私有数据、窗口状态文件和共享浏览器 profile。
 
-所有 App 继续共享现有浏览器 profile。localStorage 和 IndexedDB 按 `reaweb://<appId>` 隔离，重启后保留。Cookie 由浏览器原生规则决定，自定义协议可能不支持 Cookie。App 持久状态应使用 localStorage 或 IndexedDB。Bridge 文档仍分别持有 handles 和 subscriptions。
+所有 App 继续共享现有浏览器 profile。localStorage 和 IndexedDB 按 App 的实际来源隔离，重启后保留。Cookie 由浏览器原生规则决定，自定义协议可能不支持 Cookie。App 持久状态应使用 localStorage 或 IndexedDB。Bridge 文档仍分别持有 handles 和 subscriptions。
 
 ```text
 <REAPER resource>/ReaWebAPI/
@@ -127,8 +153,8 @@ Windows 共享一个 WebView2 Environment。Linux 共享一个 WebKitGTK context
 资源处理器拒绝其他 App authority 和 origin，不开放宽松 CORS。App Root 限制资源加载，不限制可信原生 API 的文件权限。REAPER 调用仍通过原有主线程 bridge 执行。
 
 能力与诊断提供：
-`{ contract: 1, mode: 'app-virtual' | 'dev-http', appId, origin, storageIsolation: 'origin', localResources }`。
-生产 App 的 `origin` 为 `reaweb://<appId>`，`localResources` 为 true。
+`{ contract: 1, mode: 'app-virtual' | 'app-loopback' | 'dev-http', appId, origin, storageIsolation: 'origin', localResources }`。
+生产 App 报告实际 `origin`，两种本地资源模式的 `localResources` 均为 true。
 
 ## 导航行为
 
@@ -167,7 +193,7 @@ Chromium 开发者工具读取 `/.well-known/appspecific/com.chrome.devtools.jso
 
 WebView2 取决于已安装运行时，WKWebView 跟随系统更新，WebKitGTK 取决于发行版包。Linux 扩展旁必须放同版本 helper。可选能力会随引擎和图形环境变化。HTTPS 交给 WebView 处理；自动网络测试验证 HTTP CORS 与 WebSocket，不代表验证任意外部 TLS 服务。DOM 拖放测试使用合成事件，实体系统文件拖入和真实 REAPER 拖放仍需人工验收。
 
-三平台生产来源统一为 `reaweb://<appId>`。macOS 开发 HTTP URL 建议使用 `localhost`，以遵循 ATS 的本地网络规则。见 [Apple 本地网络规则](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking)。
+普通生产来源为 `reaweb://<appId>`。macOS/Linux 的 required App 使用上述持久绑定回环来源。macOS 开发 HTTP URL 建议使用 `localhost`，参见 [Apple 本地网络规则](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking)。
 
 本次 WSLg 环境的 WebKitGTK DMA-BUF 渲染路径会使可见页面的动画帧停住；以 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 运行 helper 后，包括原生 requestAnimationFrame 与 WebGL 的完整浏览器检查通过。这是环境开关，扩展不会默认强制设置，也不替换 JS 实现。目标 Linux 桌面应验证默认渲染器；遇到同类问题时，在启动 REAPER 前设置该变量。GTK 视口尺寸已按外部 X11 父窗口的客户区同步分配。
 

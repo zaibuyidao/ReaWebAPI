@@ -142,6 +142,8 @@ Subscriptions deliver an initial snapshot and coalesced changes. Project changes
 
 Docking preserves page state. Apps share one browser profile. localStorage and IndexedDB are isolated by origin, while cookies follow native domain and path rules. Use the [Web Runtime contract](frontend.md) for origin persistence and storage rules. Persist GUIDs or tool settings rather than object handles, and resolve persisted references against the appropriate project on the next run. Browser storage and network behavior follow the platform WebView. ReaWebAPI does not add Node.js filesystem or shell APIs.
 
+For standard WASM threads, opt into [App cross-origin isolation](frontend.md#app-level-cross-origin-isolation) and inspect `webRuntime.browser` before choosing a threaded build. The [example](../examples/runtime-features/isolation/README.md) includes a restrictive App CSP and actual four-Worker atomic computation.
+
 ## Errors and debugging
 
 Bridge failures reject with `Error` plus `code` and optional `details`. Native API return values such as `false`, `0` or `null` retain the meaning documented by REAPER and do not automatically become exceptions.

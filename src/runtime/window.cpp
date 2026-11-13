@@ -1,5 +1,6 @@
 #include "runtime/runtime.hpp"
 #include "bridge_script.hpp"
+#include "web/loopback_origin.hpp"
 #include "platform/shared/idle_pool.hpp"
 #include "platform/shared/daw_keyboard.hpp"
 #include <limits>
@@ -109,7 +110,13 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     app->info = std::move(info);
     if (dev_url.empty()) {
       app->binding = std::move(binding.lease);
-      app->resources = std::make_shared<WebResources>(entry.parent_path(), app_id);
+      app->resources = std::make_shared<WebResources>(entry.parent_path(), app_id, app_cross_origin_isolation(entry.parent_path()));
+#ifndef _WIN32
+      if (app->resources->isolation_required()) {
+        app->loopback = std::make_shared<LoopbackOrigin>(profile, app_id, app->resources);
+        app->mode = "app-loopback";
+      }
+#endif
       app->origin = app->resources->origin();
     } else app->origin = dev_url.substr(0, dev_url.find('/', 7));
     app->platform = prepare_platform(app_id);
@@ -151,13 +158,40 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     [this, id](const std::string& method, const Json& args) { return host_call(id, method, args); }
   }, std::to_string(id));
   std::weak_ptr<Session> weak = session;
-  auto window_resources = app->resources ? std::make_shared<WebResources>(app->resources->root(), app_id) : nullptr;
+  auto window_resources = app->resources ? std::make_shared<WebResources>(app->resources->root(), app_id, app->resources->isolation_required()) : nullptr;
+#ifndef _WIN32
+  if (app->loopback) app->loopback->attach(window_resources);
+#endif
   trace(*session, "webview.create.begin");
-  session->window = app->platform->open(WindowOptions{entry, std::string(bridge_script) +
+  session->window = app->platform->open(WindowOptions{entry,
+    std::string("(() => { const reawebLocalResources = ") + (window_resources ? "true;" : "false;") + "const reawebIsolationRequired = " + (window_resources && window_resources->isolation_required() ? "true;" : "false;") + bridge_script + "})();" +
     (dock_.daw_shortcut && !session->jsfx ? std::string(shortcut_keyboard_script) : "") +
     (dock_.daw_space ? std::string(daw_keyboard_script) : ""), session->title,
     [this, weak](std::string message) {
       if (auto s = weak.lock(); s && !s->closing) {
+        if (message.rfind("__reawebBrowser:", 0) == 0) {
+          if (message.size() <= 8192) try {
+            const auto value = Json::parse(message.substr(16));
+            if (s->ready && value.at("document") != s->document) return;
+            if (!s->ready && !value.contains("error")) return;
+            browser_report(*s, value.at("browser"));
+            const auto code = value.value("error", std::string());
+            if (s->app->resources && s->app->resources->isolation_required() &&
+                (code == "CROSS_ORIGIN_ISOLATION_FAILED" || code == "CROSS_ORIGIN_ISOLATION_UNSUPPORTED")) {
+              s->isolation_error = code;
+              s->isolation_failure_stage = "document-policy";
+              const auto web = web_runtime(*s);
+              trace(*s, "webRuntime.isolation.fail", Diagnostics::Level::Error, code.c_str(), Diagnostics::Scope::Runtime,
+                {{"isolation", web.at("crossOriginIsolation")}, {"browser", web.at("browser")}});
+              fail(*s, code + ": required document could not establish cross-origin isolation", code.c_str());
+            } else {
+              const auto web = web_runtime(*s);
+              trace(*s, "webRuntime.browser.probe", Diagnostics::Level::Info, "complete", Diagnostics::Scope::Runtime,
+                {{"isolation", web.at("crossOriginIsolation")}, {"browser", web.at("browser")}});
+            }
+          } catch (const Json::exception&) {}
+          return;
+        }
         if (message.rfind("__reawebDiagnostic:", 0) == 0) { diagnostic_receive(*s, message); return; }
         if (message.rfind("__reawebShortcut:", 0) == 0) {
           if (s->ready && s->shortcut_routing && message.size() <= 512) try {
@@ -246,7 +280,11 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
         const bool process_failed = error.rfind("WEBVIEW_PROCESS_FAILED:", 0) == 0;
         trace(*s, process_failed ? "webview.process.fail" : "webview.load.fail", Diagnostics::Level::Error,
           process_failed ? "WEBVIEW_PROCESS_FAILED" : "WEBVIEW_ERROR");
-        fail(*s, error);
+        if (!s->ready && s->app->resources && s->app->resources->isolation_required()) {
+          s->isolation_error = "CROSS_ORIGIN_ISOLATION_FAILED";
+          s->isolation_failure_stage = "navigation";
+          fail(*s, s->isolation_error + ": " + error, s->isolation_error.c_str());
+        } else fail(*s, error);
       }
     }, session->jsfx ? session->jsfx->editor.host->parent() : dock_.parent, [this, weak] { if (auto s = weak.lock()) navigate(*s); }, app->resources ? app->resources->entry_url(entry) : dev_url,
     [this, id] { close(id); }, [this, id] { return defer_reload(id); },

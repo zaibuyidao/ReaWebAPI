@@ -1,5 +1,6 @@
 #include <httplib.h>
 #include "web/web_resources.hpp"
+#include "web/browser_probe.hpp"
 #include "core/worker.hpp"
 #include "core/file_time.hpp"
 #include "runtime/external_settings.hpp"
@@ -357,8 +358,8 @@ std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& pr
   return std::make_shared<IdentityLock>(active, false);
 }
 
-WebResources::WebResources(const fs::path& root, const std::string& app_id)
-  : root_(fs::canonical(root)), origin_("reaweb://" + app_id) {
+WebResources::WebResources(const fs::path& root, const std::string& app_id, bool isolation_required)
+  : root_(fs::canonical(root)), origin_("reaweb://" + app_id), isolation_required_(isolation_required) {
   if (!valid_id(app_id)) throw Error("APP_MANIFEST_INVALID", "Invalid App ID");
 }
 WebResources::~WebResources() { clear_media(); }
@@ -507,12 +508,23 @@ std::string WebResources::entry_url(const fs::path& entry) const {
   if (!contained(root_, resolved)) throw Error("INVALID_PATH", "The entry must be inside the App directory");
   return origin_ + "/" + encode_path(resolved.lexically_relative(root_).generic_u8string());
 }
+void WebResources::configure_loopback(const std::string& origin, const std::string& authorization) {
+  if (!isolation_required_ || origin.rfind("http://127.0.0.1:", 0) != 0 || authorization.empty())
+    throw Error("APP_ORIGIN_INVALID", "Invalid isolated App origin");
+  origin_ = origin;
+  authorization_ = authorization;
+}
 ResourceResponse WebResources::request(const std::string& uri, const std::string& method,
     const std::map<std::string, std::string>& request_headers) const {
   ResourceResponse response;
   response.headers = {{"Cache-Control", "no-cache"}, {"X-Content-Type-Options", "nosniff"},
     {"Cross-Origin-Resource-Policy", "same-origin"}, {"Content-Security-Policy", "frame-ancestors 'none'"},
     {"X-Frame-Options", "DENY"}};
+  if (isolation_required_) {
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin";
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp";
+    response.headers["Permissions-Policy"] = "cross-origin-isolated=(self)";
+  }
   auto fail = [&](int status) {
     response.status = status; response.headers["Content-Length"] = "0";
     response.headers["Content-Type"] = "text/plain; charset=utf-8";
@@ -532,6 +544,12 @@ ResourceResponse WebResources::request(const std::string& uri, const std::string
   try {
     const auto end = uri.find_first_of("?#", origin_.size());
     auto path = decode_path(uri.substr(origin_.size(), end == std::string::npos ? end : end - origin_.size()));
+    if (path == "/__reaweb_runtime__/probe.js") {
+      response.headers["Content-Type"] = "text/javascript; charset=utf-8";
+      response.headers["Content-Length"] = std::to_string(sizeof(browser_probe_script) - 1);
+      if (method == "GET") { response.data = browser_probe_script; response.size = sizeof(browser_probe_script) - 1; }
+      return response;
+    }
     const std::string media_prefix = "/__reaweb_media__/";
     if (path.compare(0, media_prefix.size(), media_prefix) == 0)
       return media_request(path.substr(media_prefix.size()), method, request_headers);

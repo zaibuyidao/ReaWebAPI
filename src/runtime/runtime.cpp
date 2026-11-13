@@ -85,8 +85,48 @@ void Runtime::check_thread() const {
     throw Error("WRONG_THREAD", "ReaWebAPI must be called from REAPER's main thread");
 }
 Json Runtime::web_runtime(const Session& session) const {
+  Json browser = {{"secureContext", nullptr}, {"crossOriginIsolated", nullptr}, {"sharedArrayBuffer", nullptr},
+    {"wasmSharedMemory", nullptr}, {"worker", nullptr}, {"blobWorker", nullptr}, {"webgl2", nullptr}};
+  browser.update(session.browser_report);
+  const bool required = session.app->resources && session.app->resources->isolation_required();
+  const auto active = browser.at("crossOriginIsolated");
+  Json supported = active == true ? Json(true) : Json();
+#ifdef _WIN32
+  supported = true;
+#endif
+  if (session.isolation_error == "CROSS_ORIGIN_ISOLATION_UNSUPPORTED") supported = false;
   return {{"contract", 1}, {"mode", session.app->mode}, {"appId", session.app->id},
-    {"origin", session.app->origin}, {"storageIsolation", "origin"}, {"localResources", session.app->mode == "app-virtual"}};
+    {"origin", session.app->origin}, {"storageIsolation", "origin"}, {"localResources", bool(session.app->resources)},
+    {"crossOriginIsolation", {{"requested", required ? "required" : "off"}, {"supported", supported}, {"active", active},
+      {"reason", session.isolation_error.empty() ? (active.is_null() ? Json("NOT_TESTED") : Json()) : Json(session.isolation_error)},
+      {"stage", !session.isolation_error.empty() ? "failed" : active.is_null() ? "pending" : "document"},
+      {"failureStage", session.isolation_failure_stage.empty() ? Json() : Json(session.isolation_failure_stage)},
+      {"documentGeneration", session.generation}}}, {"browser", browser}};
+}
+void Runtime::browser_report(Session& session, const Json& report) {
+  if (!report.is_object()) return;
+  for (const auto* key : {"secureContext", "crossOriginIsolated", "sharedArrayBuffer", "wasmSharedMemory", "worker", "blobWorker", "webgl2"}) {
+    if (report.contains(key) && (report[key].is_boolean() || report[key].is_null())) session.browser_report[key] = report[key];
+  }
+  if (report.contains("errors") && report["errors"].is_object()) {
+    Json errors = Json::object();
+    const std::set<std::string> codes{"DOCUMENT_NOT_READY", "CONTEXT_FAILED", "SHARED_MEMORY_FAILED", "WORKER_LOAD_OR_EXECUTION_FAILED",
+      "WORKER_MESSAGE_FAILED", "WORKER_CREATE_OR_SEND_FAILED", "PROBE_TIMEOUT", "PROBE_RESOURCE_FAILED", "PROBE_RESOURCE_UNAVAILABLE"};
+    for (const auto* key : {"worker", "blobWorker", "webgl2"})
+      if (report["errors"].contains(key) && report["errors"][key].is_string() && codes.count(report["errors"][key].get<std::string>()))
+        errors[key] = report["errors"][key];
+    session.browser_report["errors"] = std::move(errors);
+  }
+  if (report.contains("workers") && report["workers"].is_object()) {
+    Json workers = Json::object();
+    for (const auto* kind : {"worker", "blobWorker"}) if (report["workers"].contains(kind) && report["workers"][kind].is_object()) {
+      for (const auto* key : {"crossOriginIsolated", "sharedArrayBuffer", "wasmSharedMemory", "sharedRoundTrip"}) {
+        const auto value = report["workers"][kind].value(key, Json());
+        if (value.is_boolean() || value.is_null()) workers[kind][key] = value;
+      }
+    }
+    session.browser_report["workers"] = std::move(workers);
+  }
 }
 Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   auto& s = *sessions_.at(id);
@@ -719,7 +759,11 @@ void Runtime::tick() {
       }
       if (!s.ready && Clock::now() - s.started > std::chrono::seconds(30)) {
         trace(s, "webview.load.fail", Diagnostics::Level::Error, "BRIDGE_TIMEOUT");
-        fail(s, "WebView bridge did not become ready within 30 seconds");
+        if (s.app->resources && s.app->resources->isolation_required()) {
+          s.isolation_error = "CROSS_ORIGIN_ISOLATION_FAILED";
+          s.isolation_failure_stage = "handshake";
+          fail(s, s.isolation_error + ": document initialization timed out", s.isolation_error.c_str());
+        } else fail(s, "WebView bridge did not become ready within 30 seconds");
       }
       auto state = window_state(s);
       if (state != s.last_state) { s.last_state = state; emit(s, "windowstatechange", std::move(state)); }
@@ -793,6 +837,13 @@ void Runtime::dispatch_requests(Clock::time_point deadline) {
       if (method == "__reawebHello") {
         if (data["args"] != Json::array({1})) throw Error("PROTOCOL_MISMATCH", "Unsupported bridge protocol");
         if (s->ready && s->document != document) throw Error("DOCUMENT_STALE", "Reload the page to start a new document");
+        if (data.contains("browser")) browser_report(*s, data.at("browser"));
+        if (s->app->resources && s->app->resources->isolation_required() && s->browser_report.value("crossOriginIsolated", Json()) != true) {
+          s->isolation_error = "CROSS_ORIGIN_ISOLATION_FAILED";
+          s->isolation_failure_stage = "handshake";
+          fail(*s, s->isolation_error + ": required document did not establish cross-origin isolation", s->isolation_error.c_str());
+          throw Error(s->isolation_error, s->last_error);
+        }
         if (!s->ready) {
           s->daw_keyboard = daw_keyboard_default(*s);
           if (dock_.daw_space)

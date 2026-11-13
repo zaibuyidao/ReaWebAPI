@@ -7,6 +7,10 @@
 #include <fstream>
 #include <unistd.h>
 
+@interface WKWebView (IsolationTestProcess)
+- (pid_t)_webProcessIdentifier;
+@end
+
 namespace {
 using namespace reaweb;
 reaper_plugin_info_t* host;
@@ -103,6 +107,7 @@ void tick() {
       reply(api<bool(*)(int,bool)>("ReaWeb_SetDocked")(window_id, input.at("value").get<bool>()));
     } else if (op == "state") {
       reply({{"shortcuts", shortcuts}, {"command", last_command}, {"keyWindow", bool(view.window.keyWindow)},
+        {"webProcessPid", [view respondsToSelector:@selector(_webProcessIdentifier)] ? [view _webProcessIdentifier] : 0},
         {"responder", view.window.firstResponder ? view.window.firstResponder.className.UTF8String : "none"}});
     } else if (op == "quit") {
       if (window_id) api<bool(*)(int)>("ReaWeb_Close")(window_id);

@@ -2,6 +2,8 @@
 
 [English](development.md) | **简体中文** · [文档入口](README.zh-CN.md)
 
+浏览器标准 WASM 线程须显式开启 [App 跨源隔离](frontend.zh-CN.md#app-级跨源隔离)，并在选择线程构建前检查 `webRuntime.browser`。[示例](../examples/runtime-features/isolation/README.zh-CN.md) 包含 App CSP 和四 Worker 原子计算。
+
 ## 开始一个工具
 
 安装与 REAPER 架构对应的扩展，将整个 SDK 复制到可写的开发目录。在 Action List 加载并运行其中的 `starter/reawebapi-starter.lua`，它会打开同目录的 `index.html`。模板展示当前选中轨道，在页面右键菜单中切换 **Dock <App> in Docker** 的勾选状态以停靠或取消停靠。

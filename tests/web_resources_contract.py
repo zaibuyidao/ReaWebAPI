@@ -59,6 +59,24 @@ class ResourceTests(unittest.TestCase):
         response = json.loads(self.process.stdout.readline())
         return response['status'], response['headers'], base64.b64decode(response['body']['__reawebBytes'])
 
+    def test_isolation_policy_and_probe_resource(self):
+        self.assertNotIn('Cross-Origin-Opener-Policy', self.request('/index.html')[1])
+        self.stop()
+        (self.root / 'app.json').write_text(json.dumps({'id': 'timefold', 'webRuntime': {'crossOriginIsolation': 'required'}}))
+        self.start()
+        for path in ('/index.html', '/app.js', '/module.wasm', '/missing', '/__reaweb_runtime__/probe.js'):
+            status, headers, body = self.request(path)
+            self.assertEqual(status, 404 if path == '/missing' else 200)
+            self.assertEqual(headers['Cross-Origin-Opener-Policy'], 'same-origin')
+            self.assertEqual(headers['Cross-Origin-Embedder-Policy'], 'require-corp')
+            self.assertEqual(headers['Permissions-Policy'], 'cross-origin-isolated=(self)')
+            self.assertNotIn('Access-Control-Allow-Origin', headers)
+        status, headers, body = self.request('/__reaweb_runtime__/probe.js', 'HEAD')
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b'')
+        self.assertIn('javascript', headers['Content-Type'])
+        self.assertEqual(self.request('/__reaweb_runtime__/probe.js', headers={'Origin': 'reaweb://foreign'})[0], 403)
+
     def test_mime_unicode_query_range_and_head(self):
         for path, mime in [('app.js', 'text/javascript'), ('data.json', 'application/json'),
                            ('style.css', 'text/css'), ('module.wasm', 'application/wasm'),

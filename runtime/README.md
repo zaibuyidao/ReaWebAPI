@@ -23,7 +23,7 @@ Copy the SDK to your workspace and run `starter/reawebapi-starter.lua` from REAP
 
 Customize the starter's native window name in `starter/index.html` using `<title>`. Dynamic titles and explicit overrides are described under [window titles](../docs/runtime-api.md#window-titles).
 
-The extension injects the browser runtime. Lua opens the page with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. Ordinary Apps without `app.json.id` persist a random ID in `.reawebapi/identity.json` under the App root. Moving the marker preserves identity, and copies split into separate identities when the original binding remains valid. Launcher filenames do not define App IDs, and old launcher-derived storage is not automatically migrated. Production pages use `reaweb://<appId>/...`. Explicit IDs remain globally unique. JavaScript uses the Mirror and Runtime APIs after `reaper.lifecycle.ready` resolves.
+The extension injects the browser runtime. Lua opens the page with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. Ordinary Apps without `app.json.id` persist a random ID in `.reawebapi/identity.json` under the App root. Moving the marker preserves identity, and copies split into separate identities when the original binding remains valid. Launcher filenames do not define App IDs, and old launcher-derived storage is not automatically migrated. Production pages normally use `reaweb://<appId>/...`. Required macOS/Linux Apps use a persistent authenticated loopback origin, as described in the frontend guide. Explicit IDs remain globally unique. JavaScript uses the Mirror and Runtime APIs after `reaper.lifecycle.ready` resolves.
 
 `reaper.transaction.batch(b => { ... })` collects reviewed Mirror calls with automatic result references and tuple destructuring. Return a reference, object or array to select typed results. The callback is synchronous. The [batch contract](../docs/host-api.md#batches-and-continuous-controls) also documents the existing call-array form.
 
@@ -44,6 +44,8 @@ EEL2 backends use the same message bridge. The SDK includes a [minimal example](
 The JSFX helper shares its initialization path across Windows, macOS and Linux. After the capability handshake, it registers subscriptions concurrently, then reads initial size and parameters concurrently. Initial `STALE_SESSION` errors trigger a capability refresh and at most two snapshot retries. Writes are not retried. Distribute the updated `jsfx-webui.mjs` with your UI. See [connection semantics](../docs/jsfx-webui.md#parameter-service) and [startup timing](../docs/devtools.md#startup-timing).
 
 The [SVG overlay example](../examples/windows/overlay/README.md) is a bilingual, single-file HTML demo of native layers, SVG parameter controls, mouse routing and REAPER Main shortcuts. Window mode supports background dragging and edge resizing.
+
+The manifest accepts `webRuntime.crossOriginIsolation: "off" | "required"`. See [isolation and browser capabilities](../docs/frontend.md#app-level-cross-origin-isolation) for activation, errors and platform status.
 
 ## Project video
 

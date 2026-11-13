@@ -72,6 +72,8 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/SDK/runtime-demo/{name}'] = root / 'examples/runtime-features/runtime-demo' / name
     for name in ('reawebapi-hidden-start.lua', 'index.html', 'app.json', 'README.md'):
         paths[f'ReaWebAPI/SDK/hidden-start/{name}'] = root / 'examples/runtime-features/hidden-start' / name
+    for name in ('reawebapi-isolation.lua', 'index.html', 'app.json', 'app.js', 'worker.js', 'dependency.js', 'atomic.wasm', 'atomic.wat', 'README.md', 'README.zh-CN.md'):
+        paths[f'ReaWebAPI/SDK/isolation/{name}'] = root / 'examples/runtime-features/isolation' / name
     for name in ('reawebapi-frameless-resizable.lua', 'reawebapi-frameless-fixed.lua', 'launch.lua', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md'):
         paths[f'ReaWebAPI/SDK/frameless/{name}'] = root / 'examples/windows/frameless' / name
     for name in ('reawebapi-overlay.lua', 'restore-interaction.lua', 'close-overlay.lua', 'index.html', 'app.json', 'README.md', 'README.zh-CN.md'):
@@ -87,9 +89,9 @@ def payload(root, version, revision):
                  'package.json', 'package-lock.json', 'tsconfig.json', 'build.mjs',
                  'src/main.ts', 'src/worker.ts', 'src/style.css', 'public/data.json', 'public/app.json'):
         paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'examples/templates/modern' / name
-    for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md', 'eel-backend-compatibility.md', 'eel-backend-compatibility.zh-CN.md', 'release-notes.zh-CN.md',
+    for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md', 'linux-webkit-runtime.md', 'webkit-isolation-validation.md', 'eel-backend-compatibility.md', 'eel-backend-compatibility.zh-CN.md', 'release-notes.zh-CN.md',
                  'devtools.md', 'devtools.zh-CN.md', 'diagnostics.md', 'diagnostics.zh-CN.md', 'SMOKE_TEST.md',
-                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
+                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'windows-isolation-validation.md', 'windows-isolation-validation.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reaper_api.json', 'bindings.json'):
         paths[f'ReaWebAPI/SDK/api/{name}'] = root / 'api' / name

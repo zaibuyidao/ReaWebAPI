@@ -23,7 +23,7 @@
 
 修改 `starter/index.html` 的 `<title>` 即可自定义模板的原生窗口名称。动态标题和显式覆盖见[窗口标题](../docs/runtime-api.zh-CN.md#窗口标题)。
 
-扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开页面。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。普通 App 未定义 `app.json.id` 时，在根目录的 `.reawebapi/identity.json` 持久化随机 ID。移动时保留标记即可保留身份，复制后若原绑定仍有效，副本自动获得独立身份。启动脚本文件名不再决定 App ID，旧 launcher 身份的存储不自动迁移。生产页面地址为 `reaweb://<appId>/...`。显式 ID 仍须全局唯一。JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Mirror 和 Runtime API。
+扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开页面。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。普通 App 未定义 `app.json.id` 时，在根目录的 `.reawebapi/identity.json` 持久化随机 ID。移动时保留标记即可保留身份，复制后若原绑定仍有效，副本自动获得独立身份。启动脚本文件名不再决定 App ID，旧 launcher 身份的存储不自动迁移。生产页面通常使用 `reaweb://<appId>/...`。macOS/Linux 的 required App 使用经过认证、持久绑定的回环来源，详见前端指南。显式 ID 仍须全局唯一。JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Mirror 和 Runtime API。
 
 `reaper.transaction.batch(b => { ... })` 在同步回调内收集已审核的 Mirror 调用，自动处理结果引用和多返回值解构。返回引用、对象或数组可选择结果并推导类型。[批处理契约](../docs/host-api.zh-CN.md#批处理与连续参数) 同时说明原有调用数组形式。
 
@@ -44,6 +44,8 @@ EEL2 后端使用同一消息桥。SDK 提供[最简示例](../examples/backends
 JSFX helper 在 Windows、macOS 和 Linux 共用初始化路径。能力握手后并发注册订阅，再并发读取初始尺寸与参数。初始读取遇到 `STALE_SESSION` 时刷新能力并最多重试两次快照，不重试写入。请随 UI 分发更新后的 `jsfx-webui.mjs`。参见[连接语义](../docs/jsfx-webui.zh-CN.md#参数服务)与[启动计时](../docs/devtools.zh-CN.md#启动计时)。
 
 [SVG 覆盖层示例](../examples/windows/overlay/README.zh-CN.md) 为中英文单文件 HTML，演示原生层级、SVG 参数控件、鼠标路由和 REAPER Main 快捷键。窗口交互模式支持背景拖动与边缘缩放。
+
+Manifest 支持 `webRuntime.crossOriginIsolation: "off" | "required"`。生效时机、错误及平台状态见 [隔离与浏览器能力](../docs/frontend.zh-CN.md#app-级跨源隔离)。
 
 ## 工程视频
 

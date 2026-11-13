@@ -17,7 +17,7 @@ def validate(path):
             value[key] = child
         return value
     manifest = json.loads(path.read_text(encoding='utf-8-sig'), object_pairs_hook=object_pairs)
-    if not isinstance(manifest, dict) or set(manifest) - {'schemaVersion', 'id', 'name', 'version', 'author', 'entry', 'dawKeyboard', 'videoHighRefreshRate'}:
+    if not isinstance(manifest, dict) or set(manifest) - {'schemaVersion', 'id', 'name', 'version', 'author', 'entry', 'dawKeyboard', 'videoHighRefreshRate', 'webRuntime'}:
         raise ValueError('Invalid manifest fields; permissions are not implemented')
     for key in ('name', 'version', 'entry'):
         if not isinstance(manifest.get(key), str) or not manifest[key].strip() or '\0' in manifest[key]:
@@ -36,6 +36,12 @@ def validate(path):
         raise ValueError('dawKeyboard must be a boolean')
     if 'videoHighRefreshRate' in manifest and type(manifest['videoHighRefreshRate']) is not bool:
         raise ValueError('videoHighRefreshRate must be a boolean')
+    if 'webRuntime' in manifest:
+        config = manifest['webRuntime']
+        if not isinstance(config, dict) or set(config) - {'crossOriginIsolation'}:
+            raise ValueError('Invalid webRuntime configuration')
+        if config.get('crossOriginIsolation', 'off') not in ('off', 'required'):
+            raise ValueError('webRuntime.crossOriginIsolation must be off or required')
     entry = manifest['entry']
     relative = PurePosixPath(entry)
     if '\\' in entry or ':' in entry or relative.is_absolute() or PureWindowsPath(entry).drive or '..' in relative.parts:

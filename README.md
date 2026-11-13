@@ -18,7 +18,7 @@ Space routing starts from ordinary Apps’ `app.json.dawKeyboard` (default `fals
 - Optional [transparent floating windows](docs/host-api.md#transparent-windows) with desktop Alpha, explicit backend capability reporting and preserved Dock preferences.
 - [Frameless floating windows](docs/host-api.md#frameless-windows) with live title-bar switching, native corners and drag regions on Windows, macOS and Linux X11/XWayland. Native hosts hide before WebView teardown during close.
 - 15 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
-- Stable `reaweb://<appId>` origins with native local resources, modules, Workers and persistent App storage, without per-App TCP listeners.
+- Stable App origins with local resources, modules, Workers and persistent storage. Ordinary Apps use `reaweb://<appId>`, while [required isolation](docs/frontend.md#app-level-cross-origin-isolation) on macOS/Linux uses an authenticated, persistent loopback origin.
 - [Browser files and media](docs/browser-media.md): opt-in Blob exports and document-scoped, read-only media URLs with bounded streaming and seeking.
 - Docked and floating WebViews retain browser content during resizing, with the native background following the page's opaque HTML/body background color. Windows, macOS and Linux [avoid Canvas initialization for common computed sRGB colors](docs/frontend.md#plain-web-apps). Default Windows title bars and borders retain system styling after undocking.
 - New windows prepare their initial rendered page before becoming visible on Windows and macOS. Existing Apps need no startup changes.
@@ -32,6 +32,8 @@ Space routing starts from ordinary Apps’ `app.json.dawKeyboard` (default `fals
 Windows WebViews respect **Hide pointer while typing** and restore the pointer when it moves over REAPER's native windows. See [pointer behavior](docs/frontend.md#mouse-pointer-while-typing).
 
 For JSFX Web UI in Windows FX chains, use v0.3.8.28 or later to avoid REAPER hangs when switching window focus.
+
+App-level cross-origin isolation is opt-in through `app.json.webRuntime.crossOriginIsolation`. Browser capability probes and the threaded WASM example are documented in the [Web Runtime contract](docs/frontend.md#app-level-cross-origin-isolation).
 
 ## Download and install
 
@@ -54,6 +56,8 @@ REAPER 6.68+ is supported. REAPER 7.80+ provides the complete API catalogue.
 Quit REAPER and extract the platform ZIP into its resource directory, available from **Options → Show REAPER resource path in explorer/finder**. Restart REAPER to load the extension.
 
 For manual installation, place the native binary in `UserPlugins/`. On Linux, place the matching `reawebapi-webview-<arch>` helper in the same directory and grant it execute permission. Keep the `reawebapi-video-<arch>/` subdirectory for accelerated project-video transport.
+
+Required cross-origin isolation on Linux needs a compatible engine. When provided, retain `reawebapi-webkit-<arch>/` beside the helper. See the [private runtime build](docs/linux-webkit-runtime.md) and [tested environments](docs/webkit-isolation-validation.md).
 
 Linux reuses unchanged X11 geometry and reads incoming WebKit messages through the host event loop. In WSL without DRI3, the helper uses GTK image backing surfaces to reduce drawing stalls. An explicit `GDK_RENDERING` setting takes precedence.
 

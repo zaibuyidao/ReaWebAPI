@@ -40,6 +40,7 @@
 !/tools/version.py
 !/tools/native_bindings.py
 !/tools/validate_app.py
+!/tools/build_webkit_runtime.py
 !/tools/api_sync/
 /tools/api_sync/*
 !/tools/api_sync/*.py
@@ -84,6 +85,7 @@ Thumbs.db
 !/tests/*.lua
 !/tests/*.eel
 !/tests/eel_mixer_smoke.js
+!/tests/isolation_emulator.js
 !/tests/reapack_check.rb
 !/tests/CMakeLists.txt
 /tests/native_abi_generated.cpp

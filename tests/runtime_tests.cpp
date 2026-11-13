@@ -307,6 +307,48 @@ int main() {
       [&](void* h, const std::string&, const std::string& ident) { CHECK(ident.find("ReaWebAPI:") == 0); docked.insert(h); },
       [&](void* h) { docked.erase(h); }, [&](void* h) { return docked.count(h) ? 3 : -1; }, [](void*) {}};
     {
+      const auto isolated_entry = root / "Scripts" / "Isolation" / "index.html";
+      fs::create_directories(isolated_entry.parent_path()); std::ofstream(isolated_entry) << "<!doctype html>";
+      const auto manifest = isolated_entry.parent_path() / "app.json";
+      const Json required{{"id", "isolation-native"}, {"webRuntime", {{"crossOriginIsolation", "required"}}}};
+      std::ofstream(manifest) << required;
+      Runtime runtime(host, root, [](const std::string&) {});
+      const auto id = runtime.open(isolated_entry.u8string()); auto window = windows.back().lock();
+      CHECK(window->options.resources->isolation_required());
+      CHECK(runtime.diagnostics(id)["webRuntime"]["browser"]["worker"].is_null());
+      window->options.on_message(Json{{"id", ++window->sequence}, {"document", window->document}, {"method", "__reawebHello"},
+        {"args", {1}}, {"browser", {{"crossOriginIsolated", true}, {"secureContext", true}, {"sharedArrayBuffer", true}, {"wasmSharedMemory", true}}}}.dump());
+      CHECK(result(runtime, *window, window->sequence).contains("result"));
+      window->options.on_message("__reawebBrowser:" + Json{{"document", "stale"}, {"browser", {{"worker", true}}}}.dump());
+      CHECK(runtime.diagnostics(id)["webRuntime"]["browser"]["worker"].is_null());
+      window->options.on_message("__reawebBrowser:" + Json{{"document", window->document}, {"browser", {{"worker", false}, {"blobWorker", nullptr}, {"errors", {{"blobWorker", "PROBE_TIMEOUT"}}}}}}.dump());
+      CHECK(runtime.diagnostics(id)["webRuntime"]["browser"]["worker"] == false);
+      std::ofstream(manifest) << Json{{"id", "isolation-native"}, {"webRuntime", {{"crossOriginIsolation", "off"}}}};
+      const auto second_id = runtime.open(isolated_entry.u8string()); auto second = windows.back().lock();
+      CHECK(second->options.resources->isolation_required());
+      window->reload();
+      CHECK(runtime.diagnostics(id)["webRuntime"]["browser"]["worker"].is_null());
+      window->options.on_message("__reawebBrowser:" + Json{{"document", "failed"}, {"error", "CROSS_ORIGIN_ISOLATION_FAILED"},
+        {"browser", {{"crossOriginIsolated", false}}}}.dump());
+      CHECK(!runtime.is_open(id));
+      CHECK(runtime.diagnostics(id)["webRuntime"]["crossOriginIsolation"]["reason"] == "CROSS_ORIGIN_ISOLATION_FAILED");
+      second->send("__reawebHello", {1});
+      runtime.tick();
+      CHECK(!runtime.is_ready(second_id) && !runtime.is_open(second_id));
+      runtime.tick();
+      window.reset(); second.reset();
+      const auto off_id = runtime.open(isolated_entry.u8string()); auto off = windows.back().lock();
+      CHECK(!off->options.resources->isolation_required());
+      CHECK(result(runtime, *off, off->send("__reawebHello", {1})).contains("result"));
+      runtime.close(off_id); runtime.tick(); off.reset();
+      for (const auto& config : Json::array({nullptr, true, Json::array(), {{"crossOriginIsolation", "auto"}}, {{"extra", true}}})) {
+        std::ofstream(manifest) << Json{{"id", "isolation-native"}, {"webRuntime", config}};
+        bool invalid = false;
+        try { runtime.open(isolated_entry.u8string()); } catch (const Error& error) { invalid = error.code == "APP_MANIFEST_INVALID"; }
+        CHECK(invalid);
+      }
+    }
+    {
       auto keyboard_docks = docks;
       std::string keys;
       keyboard_docks.daw_space = [&](bool down, bool repeat) { keys += down ? (repeat ? 'r' : 'd') : 'u'; };

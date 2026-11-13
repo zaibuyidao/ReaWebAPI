@@ -155,6 +155,20 @@ class ReleaseTests(unittest.TestCase):
     def test_missing_helper_blocks_release(self):
         (self.directory / 'reawebapi-webview-aarch64').unlink()
         with self.assertRaises(ValueError): release.assemble(self.directory, self.version, 'test-sha')
+    def test_private_webkit_runtime_survives_reapack_assembly(self):
+        relative = 'reawebapi-webkit-x86_64/libexec/webkit2gtk-4.1/WebKitWebProcess'
+        bundle = self.directory / f'ReaWebAPI-linux-x86_64-v{self.version}.zip'
+        with zipfile.ZipFile(bundle, 'a') as archive:
+            info = zipfile.ZipInfo('UserPlugins/' + relative)
+            info.create_system = 3
+            info.external_attr = 0o100755 << 16
+            archive.writestr(info, b'PRIVATE ENGINE FIXTURE')
+        release.assemble(self.directory, self.version, 'test-sha')
+        with zipfile.ZipFile(self.directory / f'ReaWebAPI-ReaPack-v{self.version}.zip') as archive:
+            self.assertEqual(archive.read('extension/' + relative), b'PRIVATE ENGINE FIXTURE')
+            self.assertEqual(archive.getinfo('extension/' + relative).external_attr >> 16, 0o100755)
+            descriptor = archive.read('ReaWebAPI.ext').decode()
+            self.assertIn('[linux64 extension] ' + relative + ' ', descriptor)
     def test_mismatched_binary_blocks_release(self):
         (self.directory / 'reaper_reawebapi-x64.dll').write_bytes(b'wrong')
         with self.assertRaises(ValueError): release.assemble(self.directory, self.version, 'test-sha')

@@ -1,4 +1,5 @@
 #include "web/web_resources.hpp"
+#include "runtime/services.hpp"
 #include <iostream>
 int main(int argc, char** argv) {
   if (argc < 3 || argc > 5) return 1;
@@ -12,7 +13,7 @@ int main(int argc, char** argv) {
       binding = reaweb::open_app_binding(root, profile, entry);
       id = binding.id;
     } else binding = {id, reaweb::bind_app_identity(root, profile, id, entry)};
-    reaweb::WebResources resources(root, id);
+    reaweb::WebResources resources(root, id, reaweb::app_cross_origin_isolation(root));
     std::cout << resources.origin() << std::endl;
     std::string line;
     while (std::getline(std::cin, line) && !line.empty()) {

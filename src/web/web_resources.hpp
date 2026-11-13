@@ -34,10 +34,13 @@ struct ResourceResponse {
 };
 class WebResources {
 public:
-  WebResources(const fs::path& root, const std::string& app_id);
+  WebResources(const fs::path& root, const std::string& app_id, bool isolation_required = false);
   ~WebResources();
   const fs::path& root() const { return root_; }
   const std::string& origin() const { return origin_; }
+  bool isolation_required() const { return isolation_required_; }
+  const std::string& authorization() const { return authorization_; }
+  void configure_loopback(const std::string& origin, const std::string& authorization);
   std::string entry_url(const fs::path& entry) const;
   ResourceResponse request(const std::string& uri, const std::string& method,
     const std::map<std::string, std::string>& headers = {}) const;
@@ -53,6 +56,8 @@ private:
     const std::map<std::string, std::string>& headers) const;
   fs::path root_;
   std::string origin_;
+  bool isolation_required_ = false;
+  std::string authorization_;
 };
 // Empty when the manifest does not specify an ID.
 std::string app_identity(const fs::path& root);

@@ -62,6 +62,19 @@ public:
     if (!getenv("DISPLAY")) throw std::runtime_error("ReaWebAPI requires an X11 or XWayland display on Linux");
     auto executable = helper_path().string();
     auto profile = data.string();
+    const auto runtime = fs::path(executable).parent_path() / ("reawebapi-webkit-" + fs::path(executable).filename().string().substr(18));
+    const bool bundled = fs::is_directory(runtime);
+    if (bundled && (!fs::is_regular_file(runtime / "lib/libwebkit2gtk-4.1.so.0") ||
+        !fs::is_regular_file(runtime / "lib/libjavascriptcoregtk-4.1.so.0") ||
+        !fs::is_regular_file(runtime / "libexec/webkit2gtk-4.1/WebKitWebProcess") ||
+        !fs::is_regular_file(runtime / "libexec/webkit2gtk-4.1/WebKitNetworkProcess") ||
+        !fs::is_regular_file(runtime / "libexec/webkit2gtk-4.1/WebKitGPUProcess") ||
+        !fs::is_regular_file(runtime / "lib/webkit2gtk-4.1/injected-bundle/libwebkit2gtkinjectedbundle.so")))
+      throw std::runtime_error("Incomplete bundled WebKit runtime: " + runtime.string());
+    if (bundled) for (const auto* name : {"WebKitWebProcess", "WebKitNetworkProcess", "WebKitGPUProcess"}) {
+      const auto child = runtime / "libexec/webkit2gtk-4.1" / name;
+      if (access(child.c_str(), X_OK) != 0) fs::permissions(child, fs::perms::owner_exec, fs::perm_options::add);
+    }
     int sockets[2];
     if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) != 0) throw std::runtime_error("Cannot create WebKit socketpair");
     try { channel_ = std::make_unique<LinuxChannel>(sockets[0]); }
@@ -75,8 +88,19 @@ public:
     posix_spawn_file_actions_adddup2(&actions, source, 3);
     posix_spawn_file_actions_addclose(&actions, source);
     std::vector<std::string> environment;
-    for (char** item = environ; *item; ++item) if (strncmp(*item, "GDK_BACKEND=", 12)) environment.emplace_back(*item);
+    for (char** item = environ; *item; ++item) {
+      if (!strncmp(*item, "GDK_BACKEND=", 12)) continue;
+      if (bundled && (!strncmp(*item, "LD_LIBRARY_PATH=", 16) || !strncmp(*item, "WEBKIT_EXEC_PATH=", 17) ||
+          !strncmp(*item, "WEBKIT_INJECTED_BUNDLE_PATH=", 28))) continue;
+      environment.emplace_back(*item);
+    }
     environment.emplace_back("GDK_BACKEND=x11");
+    if (bundled) {
+      const auto previous = getenv("LD_LIBRARY_PATH");
+      environment.emplace_back("LD_LIBRARY_PATH=" + (runtime / "lib").string() + (previous && *previous ? ":" + std::string(previous) : ""));
+      environment.emplace_back("WEBKIT_EXEC_PATH=" + (runtime / "libexec/webkit2gtk-4.1").string());
+      environment.emplace_back("WEBKIT_INJECTED_BUNDLE_PATH=" + (runtime / "lib/webkit2gtk-4.1/injected-bundle").string());
+    }
     std::vector<char*> env;
     for (auto& item : environment) env.push_back(item.data());
     env.push_back(nullptr);
@@ -307,7 +331,9 @@ public:
       {"script", options.script}, {"lifecycleReload", static_cast<bool>(options.on_reload)}, {"dockEnabled", static_cast<bool>(options.on_dock_toggle)},
       {"appName", options.app_name ? options.app_name() : options.title},
       {"frameless", frameless_}, {"resizable", resizable_}, {"transparent", transparent_}, {"hosted", options.hosted}, {"overlay",options.overlay.layer == "overlay"},
-      {"resourceRoot", options.resources ? options.resources->root().u8string() : ""}});
+      {"resourceRoot", options.resources ? options.resources->root().u8string() : ""},
+      {"authorization", options.resources ? options.resources->authorization() : ""},
+      {"isolationRequired", options.resources && options.resources->isolation_required()}});
     process_->listeners.emplace(id_, std::move(options));
     process_->backgrounds.emplace(id_, 0xffffff);
     // A floating window must mirror the native resize without waiting for the
@@ -663,7 +689,11 @@ public:
       {"fd", memory->fd}, {"bytes", bytes}, {"device", uint64_t(memory->identity.st_dev)}, {"inode", uint64_t(memory->identity.st_ino)}});
     return memory;
   }
-  void media(const std::string& method, const Json& args, Reply reply) override { process_->desktop(method, args, std::move(reply), id_); }
+  void media(const std::string& method, const Json& args, Reply reply) override {
+    const auto& resources = process_->listeners.at(id_).resources;
+    if (resources && !resources->authorization().empty()) Window::media(method, args, std::move(reply));
+    else process_->desktop(method, args, std::move(reply), id_);
+  }
   void clear_media() override {
     Window::clear_media();
     if (!closed()) process_->send({{"id", id_}, {"op", "media-clear"}});

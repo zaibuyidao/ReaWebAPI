@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.9.42 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.9.43 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,7 +32,7 @@ if(UNIX)
   target_link_libraries(reaweb_loudness PRIVATE m)
 endif()
 
-# MIME lookup and mapped local resources. No production App HTTP listener.
+# MIME lookup, mapped resources and isolated App loopback origins.
 FetchContent_Declare(httplib
   GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
   GIT_TAG 278c2979e8c68468960c3073e28e1c51b098d6a4)
@@ -111,6 +111,7 @@ target_include_directories(reaweb_core SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DI
 target_include_directories(reaweb_core SYSTEM PRIVATE "${lunasvg_SOURCE_DIR}/plutovg/source")
 target_compile_definitions(reaweb_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 if(NOT WIN32)
+  target_sources(reaweb_core PRIVATE src/web/loopback_origin.cpp)
   target_compile_definitions(reaweb_core PRIVATE SWELL_PROVIDED_BY_APP)
 endif()
 target_include_directories(reaweb_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -248,6 +249,14 @@ if(REAWEB_BUILD_EXTENSION)
     install(TARGETS reaweb_video_web_extension LIBRARY DESTINATION "UserPlugins/reawebapi-video-${REAWEB_ARCH}")
     target_compile_definitions(reawebapi PRIVATE REAWEB_HELPER_NAME="reawebapi-webview-${REAWEB_ARCH}")
     install(TARGETS reaweb_webkit RUNTIME DESTINATION UserPlugins)
+    set(REAWEB_WEBKIT_RUNTIME "" CACHE PATH "Private WebKitGTK runtime built by tools/build_webkit_runtime.py")
+    if(REAWEB_WEBKIT_RUNTIME)
+      if(NOT EXISTS "${REAWEB_WEBKIT_RUNTIME}/runtime.json")
+        message(FATAL_ERROR "REAWEB_WEBKIT_RUNTIME does not contain runtime.json")
+      endif()
+      install(DIRECTORY "${REAWEB_WEBKIT_RUNTIME}/" DESTINATION "UserPlugins/reawebapi-webkit-${REAWEB_ARCH}"
+        USE_SOURCE_PERMISSIONS)
+    endif()
   endif()
   install(TARGETS reawebapi LIBRARY DESTINATION UserPlugins RUNTIME DESTINATION UserPlugins)
   install(DIRECTORY examples/main-demo/ examples/backends/ examples/integrations/ examples/windows/

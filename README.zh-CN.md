@@ -19,7 +19,7 @@ ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩�
 - [覆盖层与原生鼠标穿透](docs/window-overlay.zh-CN.md)面向浮动 App，提供 JS／Lua 控制和明确的平台要求。
 - [无边框浮动窗口](docs/host-api.zh-CN.md#无边框窗口)支持动态切换标题栏、原生圆角和拖动区，覆盖 Windows、macOS 与 Linux X11/XWayland。关闭时先隐藏原生宿主，再释放 WebView。
 - 15 个 Runtime 命名空间，涵盖窗口、事件、文件、原生对话框、拖放、音频、Undo 和应用服务。
-- 稳定的 `reaweb://<appId>` 来源，原生加载本地资源、模块和 Worker，持久化 App 存储，不创建每 App TCP listener。
+- 稳定的 App 来源，加载本地资源、模块和 Worker，持久化 App 存储。普通 App 使用 `reaweb://<appId>`，macOS/Linux 的[required 隔离模式](docs/frontend.zh-CN.md#app-级跨源隔离)使用经过认证、持久绑定的回环来源。
 - [浏览器文件与媒体](docs/browser-media.md)，支持可选的 Blob 导出，以及绑定文档生命周期的只读媒体 URL、有界流式读取和跳转。
 - 停靠和浮动 WebView 缩放时保留浏览器画面，原生背景跟随页面 HTML/body 的不透明背景色。Windows、macOS 和 Linux 对[常见计算 sRGB 颜色跳过 Canvas 初始化](docs/frontend.zh-CN.md#普通-web-app)。默认 Windows 窗口取消停靠后的标题栏和边框保留系统样式。
 - Windows 和 macOS 在页面首帧准备完成后显示新窗口，现有 App 无需修改启动代码。
@@ -33,6 +33,8 @@ ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩�
 Windows WebView 遵循 **Hide pointer while typing** 设置，输入时隐藏光标，在 REAPER 原生窗口上移动鼠标后恢复。参见[光标行为](docs/frontend.zh-CN.md#文本输入时的鼠标光标)。
 
 Windows FX 链中的 JSFX Web UI 请使用 v0.3.8.28 或更高版本，避免切换窗口焦点时 REAPER 无响应。
+
+App 可通过 `app.json.webRuntime.crossOriginIsolation` 选择跨源隔离。实际能力探针与线程 WASM 示例见 [Web Runtime 契约](docs/frontend.zh-CN.md#app-级跨源隔离)。
 
 ## 下载与安装
 
@@ -55,6 +57,8 @@ Windows FX 链中的 JSFX Web UI 请使用 v0.3.8.28 或更高版本，避免切
 在 REAPER 中通过 **Options → Show REAPER resource path in explorer/finder** 打开资源目录。退出 REAPER，将平台 ZIP 解压到该目录，再启动 REAPER。
 
 手动安装时，将原生扩展放入 `UserPlugins/`。Linux 的同架构 `reawebapi-webview-<arch>` 辅助程序也放在该目录，并赋予执行权限。保留 `reawebapi-video-<arch>/` 子目录，以启用工程视频的本地内存传输。
+
+Linux 的 required 跨源隔离需要兼容引擎。安装包提供 `reawebapi-webkit-<arch>/` 时，应将其保留在辅助程序旁。参见[独立运行库构建](docs/linux-webkit-runtime.md)及[验收环境](docs/webkit-isolation-validation.md)。
 
 Linux 复用未变化的 X11 几何信息，通过宿主事件循环读取 WebKit 入站消息。WSL 未提供 DRI3 时，辅助进程使用 GTK 图像后备缓冲以减少绘制停顿。显式设置的 `GDK_RENDERING` 优先。
 

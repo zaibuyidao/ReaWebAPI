@@ -1,4 +1,14 @@
 /// <reference path="../runtime/reaper.d.ts" />
+async function browserIsolation() {
+  const config: ReaWebManifestRuntime = {crossOriginIsolation: 'required'};
+  const web = (await reaper.system.getCapabilities()).webRuntime;
+  const support: boolean | null = web.crossOriginIsolation.supported;
+  const worker: boolean | null = web.browser.worker;
+  const reason: string | null = web.crossOriginIsolation.reason;
+  void config; void support; void worker; void reason;
+  // @ts-expect-error Only explicit off/required modes are supported.
+  const invalid: ReaWebManifestRuntime = {crossOriginIsolation: 'auto'};
+}
 async function projectVideo() {
   const caps: ReaWebVideoCapabilities = await reaper.video.getCapabilities();
   await reaper.video.openStream({updateRate: 30000 / 1001});

@@ -39,6 +39,8 @@ void Runtime::navigate(Session& session) {
   session.diagnostic_enabled = session.diagnostic_config_pending = false;
   session.diagnostic_page = Json::object(); session.diagnostic_next = {};
   session.document.clear();
+  session.browser_report = Json::object(); session.isolation_error.clear();
+  session.isolation_failure_stage.clear();
   session.queue.clear();
   clear_messages(session);
   session.events.clear();

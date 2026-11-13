@@ -14,6 +14,8 @@ All seventeen namespaces provide implemented members: 91 methods and one Promise
 
 `transaction.batch` accepts call arrays or synchronous Mirror Builder callbacks, with automatic references, tuple destructuring and typed result selection. Both forms use the existing native batch implementation. `transaction` also provides Undo groups, without atomic rollback or isolation: completed writes remain applied and other edits may interleave. See the [batch contract](host-api.md#batches-and-continuous-controls).
 
+`system.getCapabilities()` and `debug.getDiagnostics()` include `webRuntime.crossOriginIsolation` and `webRuntime.browser`. They await a cached per-document browser probe. The handshake snapshot may still contain untested `null` fields. See [field semantics, errors and lifecycle](frontend.md#app-level-cross-origin-isolation).
+
 ## Files and clipboard
 
 `reaper.fs` provides `readText`, `writeText`, `readBinary` and `writeBinary` with explicit encoding, plus overloaded `readFile` / `writeFile`, `stat`, `readDirectory`, `makeDirectory`. Text is UTF-8 and binary data is `Uint8Array`. Writes accept `{overwrite:true}` to replace an existing file; the default refuses overwrite. The same 16 MiB limits and worker-based file operations apply. Clipboard text is read/written with `reaper.clipboard.readText()` / `reaper.clipboard.writeText(text)`. Use `reaper.system.openExternal(url)` to open external URLs explicitly. Ordinary external navigation also uses the system handler. See [navigation](frontend.md#navigation).

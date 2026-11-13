@@ -16,6 +16,18 @@ Json app_manifest(const fs::path& root) {
   return manifest;
 }
 }
+bool app_cross_origin_isolation(const fs::path& root) {
+  const auto manifest = app_manifest(root);
+  if (!manifest.contains("webRuntime")) return false;
+  const auto& config = manifest.at("webRuntime");
+  if (!config.is_object()) throw Error("APP_MANIFEST_INVALID", "webRuntime must be an object");
+  for (const auto& field : config.items())
+    if (field.key() != "crossOriginIsolation") throw Error("APP_MANIFEST_INVALID", "Unknown webRuntime field: " + field.key());
+  const auto mode = config.value("crossOriginIsolation", Json("off"));
+  if (!mode.is_string() || (mode != "off" && mode != "required"))
+    throw Error("APP_MANIFEST_INVALID", "webRuntime.crossOriginIsolation must be off or required");
+  return mode == "required";
+}
 bool app_daw_keyboard(const fs::path& root) {
   const auto value = app_manifest(root).value("dawKeyboard", Json(false));
   if (!value.is_boolean()) throw Error("APP_MANIFEST_INVALID", "dawKeyboard must be a boolean");

@@ -27,12 +27,39 @@ interface ReaWebError extends Error {
 }
 interface ReaWebRuntimeInfo {
   contract: 1;
-  mode: 'app-virtual' | 'dev-http';
+  mode: 'app-virtual' | 'app-loopback' | 'dev-http';
   appId: string;
   origin: string;
   storageIsolation: 'origin';
   localResources: boolean;
+  crossOriginIsolation: {
+    requested: 'off' | 'required';
+    /** null means the backend has not been verified. */
+    supported: boolean | null;
+    /** null until the current document reports its state. */
+    active: boolean | null;
+    reason: 'NOT_TESTED' | 'CROSS_ORIGIN_ISOLATION_UNSUPPORTED' | 'CROSS_ORIGIN_ISOLATION_FAILED' | null;
+    stage: 'pending' | 'document' | 'failed';
+    failureStage: 'document-policy' | 'handshake' | 'navigation' | null;
+    documentGeneration: number;
+  };
+  browser: ReaWebBrowserCapabilities;
 }
+interface ReaWebBrowserCapabilities {
+  secureContext: boolean | null;
+  crossOriginIsolated: boolean | null;
+  sharedArrayBuffer: boolean | null;
+  wasmSharedMemory: boolean | null;
+  worker: boolean | null;
+  blobWorker: boolean | null;
+  webgl2: boolean | null;
+  errors?: Partial<Record<'worker' | 'blobWorker' | 'webgl2', string>>;
+  workers?: Partial<Record<'worker' | 'blobWorker', {
+    crossOriginIsolated: boolean; sharedArrayBuffer: boolean; wasmSharedMemory: boolean;
+    sharedRoundTrip: boolean | null;
+  }>>;
+}
+interface ReaWebManifestRuntime { crossOriginIsolation?: 'off' | 'required'; }
 interface ReaWebCapabilities {
   webRuntime: ReaWebRuntimeInfo;
   version: string;

@@ -70,6 +70,16 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(self.path)
 
+    def test_cross_origin_isolation(self):
+        for config in ({}, {'crossOriginIsolation': 'off'}, {'crossOriginIsolation': 'required'}):
+            self.write(webRuntime=config)
+            self.assertEqual(validate(self.path)[0]['webRuntime'], config)
+        for config in (None, True, [], 'required', {'unknown': 'required'},
+                       *({'crossOriginIsolation': value} for value in (None, False, 1, [], {}, 'auto', 'Required'))):
+            self.write(webRuntime=config)
+            with self.assertRaises(ValueError):
+                validate(self.path)
+
     def test_app_identity(self):
         self.write(id='timefold')
         self.assertEqual(validate(self.path)[0]['id'], 'timefold')

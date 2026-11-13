@@ -82,11 +82,37 @@ The v1 support contract is the required column below, on supported and maintaine
 
 No special support is added for Service Worker, PWA, push, geolocation, camera, microphone, WebRTC, payment, Bluetooth or USB. An engine may expose some constructors; that is not a ReaWebAPI support promise. Node.js/npm/Electron APIs are not part of the runtime.
 
+## App-level cross-origin isolation
+
+Set `"webRuntime": { "crossOriginIsolation": "required" }` in the App root's `app.json`. The default is `"off"`. Unknown `webRuntime` fields, values and invalid types fail with `APP_MANIFEST_INVALID`. The policy is read when the first App window opens and retained through reloads and additional windows. Close **all** App windows before applying a configuration change.
+
+Required resources receive `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp` and `Permissions-Policy: cross-origin-isolated=(self)`. Windows retains `reaweb://<appId>`. On macOS/Linux, required Apps use an authenticated `http://127.0.0.1:<port>` origin, persistently bound to the App ID in `Apps/<appId>/isolation-origin.json`. A saved port conflict fails with `APP_ORIGIN_IN_USE`, without changing origin. Ordinary Apps retain their custom-scheme origins. External scripts, images, fonts and media need compatible CORS/CORP responses. App CSP remains authoritative. Use `worker-src 'self' blob:` for URL/Blob Workers and `script-src 'self' 'wasm-unsafe-eval'` for WASM where supported.
+
+App IDs, private files and window state remain unchanged. Browser storage is origin-specific. Enabling required mode on macOS/Linux starts separate localStorage/IndexedDB storage and retains the old data without automatic migration. Export existing browser state before switching modes if it is needed. Returning to off mode restores the previous origin. Keep `app.json` and the persistent origin record with the App's data. Linux requires a WebKitGTK engine with isolated-process SharedArrayBuffer support. See [the private runtime build](linux-webkit-runtime.md). Required HTTP documents use the existing stream transport for project video instead of custom-scheme frame delivery.
+
+The document-start guard checks the browser's actual isolation state. Failure stops loading and reports `CROSS_ORIGIN_ISOLATION_FAILED`, or `CROSS_ORIGIN_ISOLATION_UNSUPPORTED` when the browser does not expose isolation. The host closes the failed window and records the error in REAPER Console and native Runtime Diagnostics, including failures before the API handshake. Ordinary Apps are unaffected.
+
+```js
+await reaper.lifecycle.ready;
+const { webRuntime } = await reaper.system.getCapabilities();
+console.log(webRuntime.crossOriginIsolation, webRuntime.browser);
+```
+
+`crossOriginIsolation` separates `requested`, backend `supported`, document `active`, `reason`, initialization `stage`, `failureStage` and `documentGeneration`. A `null` support/state value means unverified, not success. `browser` reports actual secure-context, isolation, SAB, shared WASM memory, URL Worker, Blob Worker and WebGL2 results. Worker probes exchange messages and shared memory. `browser.workers` contains their isolation/memory results. `browser.errors` distinguishes creation/send, loading/execution, message, shared-memory, resource and timeout failures. A timed-out or unavailable probe is `null`, a verified failure is `false`.
+
+`getCapabilities()` and `debug.getDiagnostics()` await and reuse one browser probe per document. Required Apps also start this probe after the handshake. Document readiness, Worker and resource probes have three-second timeouts and release Workers and Blob URLs. Native diagnostics can show `null` while probes are pending. Development HTTP pages report their actual document isolation but cannot use the reserved local Worker probe resource. WebGL2 is independent of WASM threads and is required by some applications, including the PSP core.
+
+Use standard `Worker`, `SharedArrayBuffer`, `Atomics` and `WebAssembly.Memory`. No threading namespace or Worker bridge is added. Apps terminate unused Workers. The browser releases dedicated Workers when their document closes or reloads. Do not use blocking `Atomics.wait()` on the page thread.
+
+The [threaded WASM example](../examples/runtime-features/isolation/README.md) covers four URL Workers, four Blob Workers, atomic WASM execution, wait/notify, errors and persistence. See the [Windows](windows-isolation-validation.md) and [WebKit acceptance records](webkit-isolation-validation.md) for tested environments and remaining limits. Headers alone are not proof of engine support.
+
+See the [Windows acceptance record](windows-isolation-validation.md) for emulator behavior, the PSP core correction and stability coverage.
+
 ## Resource origin and storage
 
 For browser File/Blob playback, native file selection and opt-in download exports, see [browser files and media](browser-media.md).
 
-`reaper.window.open(path)` accepts a local HTML path. Its canonical parent directory is the **App root**. Production pages use `reaweb://<appId>/<entry>` without a TCP listener. WebView2 custom schemes, WKURLSchemeHandler and WebKitGTK URI handlers serve read-only resources. Relative URLs, ES modules, local fetch, Unicode/space/#/% names, MIME, HEAD and single byte ranges are supported. Encode `#` and `%` in resource URLs, for example `file%23%25.js`. Directory listing, writes, traversal and symlinks/junctions outside the root are rejected.
+`reaper.window.open(path)` accepts a local HTML path. Its canonical parent directory is the **App root**. Production pages normally use `reaweb://<appId>/<entry>`. Required macOS/Linux Apps use the persistent loopback origin described above. Both paths serve the same read-only resources. Relative URLs, ES modules, local fetch, Unicode/space/#/% names, MIME, HEAD and single byte ranges are supported. Encode `#` and `%` in resource URLs, for example `file%23%25.js`. Directory listing, writes, traversal and symlinks/junctions outside the root are rejected.
 
 Define a stable, globally unique `id` in the root's `app.json`:
 
@@ -108,7 +134,7 @@ Two valid installations cannot bind the same ID, even after closing their window
 
 Legacy schema 2 records without `entry` remain supported. A missing old root can be recovered when unused. If the old root still exists, its `app.json.entry` can identify the original entry. Without reliable entry metadata, the runtime retains `APP_ID_CONFLICT` rather than inferring the original entry from other HTML files or the new request. Successful normal opens backfill the actual entry. Recovery preserves App ID, origin, private data, window-state files and the shared browser profile.
 
-All Apps share the existing browser profile. localStorage and IndexedDB are isolated by `reaweb://<appId>` and persist across restarts. Cookie behavior remains native to each engine. Custom schemes may not support cookies, so use localStorage or IndexedDB for persistent App state. Each bridge document retains its own handles and subscriptions.
+All Apps share the existing browser profile. localStorage and IndexedDB are isolated by the App's actual origin and persist across restarts. Cookie behavior remains native to each engine. Custom schemes may not support cookies, so use localStorage or IndexedDB for persistent App state. Each bridge document retains its own handles and subscriptions.
 
 ```text
 <REAPER resource>/ReaWebAPI/
@@ -127,8 +153,8 @@ Back up the shared profile and relevant `Apps/<appId>/` directories together. No
 Resource handlers reject foreign App authorities and origins without permissive CORS. The App root limits resource loading, not the trusted native API's filesystem privileges. REAPER calls continue through the existing main-thread bridge.
 
 Capabilities and diagnostics expose:
-`{ contract: 1, mode: 'app-virtual' | 'dev-http', appId, origin, storageIsolation: 'origin', localResources }`.
-For production Apps, `origin` is `reaweb://<appId>` and `localResources` is true.
+`{ contract: 1, mode: 'app-virtual' | 'app-loopback' | 'dev-http', appId, origin, storageIsolation: 'origin', localResources }`.
+Production Apps report their actual origin and `localResources: true` in both local-resource modes.
 
 ## Navigation
 
@@ -167,7 +193,7 @@ Chromium DevTools also uses `connect-src 'self'` to read `/.well-known/appspecif
 
 WebView2 follows the installed runtime; WKWebView follows macOS updates; WebKitGTK follows distribution packages. Linux needs its matching helper beside the extension. Optional capability behavior can differ with engine versions and graphics environments. HTTPS transport is delegated to the WebView; the automated network fixture verifies HTTP CORS and WebSocket, not arbitrary external TLS endpoints. DOM drop checks use synthetic events; physical OS file drops and real REAPER drag gestures remain manual acceptance cases.
 
-Production origins use `reaweb://<appId>` on all platforms. Prefer `localhost` for macOS HTTP development URLs because ATS restricts IP-literal HTTP. See [Apple's local networking rules](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking).
+Ordinary production origins use `reaweb://<appId>`. Required macOS/Linux Apps use the persistent loopback origin described above. Prefer `localhost` for macOS HTTP development URLs. See [Apple's local networking rules](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking).
 
 In the tested WSLg environment, WebKitGTK's DMA-BUF renderer stalled animation frames despite a visible document. Running the helper with `WEBKIT_DISABLE_DMABUF_RENDERER=1` passed the full browser suite, including native requestAnimationFrame and WebGL. This is an environment setting, not a default forced by the extension or a JS polyfill. Validate the default renderer on your target Linux desktop; when affected, set the variable before launching REAPER. Native GTK viewport allocation is synchronized with the foreign X11 parent's client size.
 
