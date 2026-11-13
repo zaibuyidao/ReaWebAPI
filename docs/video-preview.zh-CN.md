@@ -90,7 +90,7 @@ Demo 的网页绘制路径使用持续的 `requestAnimationFrame` 循环，按�
 
 I420 数据包依次包含完整尺寸 Y 平面及各占四分之一尺寸的 U、V 平面，不含行填充。`frame.stride === frame.width`，`frame.bytes.byteLength === frame.width * frame.height * 3 / 2`。`info.maxBytes` 仍为 40 MiB 容量上限。描述携带 `colorMatrix: 'bt709'`、`colorRange: 'limited'` 和 `colorConversion: 'reaper-sse' | 'reaper-neon'`。复现 CPU RGBA 读回值时，使用对应转换器的整数舍入。像素预算仍按等尺寸 RGBA 计算。格式纳入首个消费者的共享配置。符合约束的尺寸变化保留 I420 流。原生格式、色彩矩阵或转换器不再满足当前配置时关闭流，视频状态报告 `VIDEO_FORMAT_CHANGED`，消费者应重新打开或回退 RGBA。
 
-Demo 的网页绘制路径保留原始分辨率 I420 纹理，并按实际显示像素绘制。Windows D3D11 和 Demo 的 Windows WebGL 回退路径使用 REAPER OpenGL 的 BT.709 显示矩阵，按显示尺寸采样 YUV 平面并在缩小时使用面积加权滤波，再转换并量化 RGB。原始像素模式保持 1:1 绘制，显示尺寸变化不改变视频流尺寸。未支持的源与 WebView 保留 RGBA 绘制。
+Demo 的网页绘制路径保留原始分辨率 I420 纹理，并按实际显示像素绘制。Windows D3D11 在线性采样 YUV 后应用 BT.709 显示矩阵并量化 RGB，与 REAPER 的 OpenGL 视频窗口对齐。Demo 的 Windows WebGL 回退路径保留面积加权缩小。macOS Metal 与 macOS/Linux WebGL 路径在宿主对应的整数 YUV 转换后对 RGB 做双线性缩放。原始像素模式保持 1:1 绘制，显示尺寸变化不改变视频流尺寸。未支持的源与 WebView 保留 RGBA 绘制。
 
 ## Windows 与 macOS 原生呈现
 

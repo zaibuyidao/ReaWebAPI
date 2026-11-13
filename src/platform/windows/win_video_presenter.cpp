@@ -28,33 +28,16 @@ Texture2D<float> luma : register(t0);
 Texture2D<float> chromaU : register(t1);
 Texture2D<float> chromaV : register(t2);
 SamplerState linearClamp : register(s0);
-float samplePlane(Texture2D<float> plane,uint w,uint h,float2 center,float2 scale) {
- float2 r=max(float2(1,1),min(scale,float2(16,16)));
- float2 lo=center-r*0.5,hi=center+r*0.5;
- int2 i0=int2(floor(lo)),i1=int2(ceil(hi))-1,limit=int2(w,h)-1;
- int ny=min(i1.y-i0.y+1,17),nx=min(i1.x-i0.x+1,17);
- float sum=0;
- [loop] for(int dy=0;dy<ny;++dy){
-  int y=i0.y+dy;
-  float wy=min(float(y+1),hi.y)-max(float(y),lo.y);
-  int cy=clamp(y,0,limit.y);
-  [loop] for(int dx=0;dx<nx;++dx){
-   int x=i0.x+dx;
-   float wx=min(float(x+1),hi.x)-max(float(x),lo.x);
-   sum+=wx*wy*plane.Load(int3(clamp(x,0,limit.x),cy,0));
-  }
- }
- return sum/(r.x*r.y);
-}
 float4 presentI420(float4 at:SV_Position):SV_Target {
  uint w,h;luma.GetDimensions(w,h);
  float2 scale=sourceRect.zw/outputSize.xy;
  float2 pointInSource=sourceRect.xy+at.xy*scale;
  if(any(pointInSource<0)||any(pointInSource>=float2(w,h)))return float4(0,0,0,1);
- // Match REAPER's OpenGL viewport by filtering YUV before the matrix and RGB quantization.
- float y=(samplePlane(luma,w,h,pointInSource,scale)*255.0-16.0)/219.0;
- float u=(samplePlane(chromaU,w/2,h/2,pointInSource*0.5,scale*0.5)*255.0-128.0)/224.0;
- float v=(samplePlane(chromaV,w/2,h/2,pointInSource*0.5,scale*0.5)*255.0-128.0)/224.0;
+ // Match REAPER's OpenGL viewport: linear YUV sampling before RGB conversion.
+ float2 uv=pointInSource/float2(w,h);
+ float y=(luma.SampleLevel(linearClamp,uv,0)*255.0-16.0)/219.0;
+ float u=(chromaU.SampleLevel(linearClamp,uv,0)*255.0-128.0)/224.0;
+ float v=(chromaV.SampleLevel(linearClamp,uv,0)*255.0-128.0)/224.0;
  return float4(saturate(y+u*float3(0,-0.187324273,1.8556)+v*float3(1.5748,-0.468124273,0)),1);
 }
 float4 videoVertex(uint index:SV_VertexID):SV_Position {

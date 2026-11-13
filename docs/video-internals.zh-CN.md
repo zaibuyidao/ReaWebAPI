@@ -30,7 +30,7 @@ Demo 的网页绘制路径在持续的浏览器刷新循环中顺序绘制，队
 
 ## Windows 与 macOS 共享原生呈现
 
-`openSurface()` 在 Windows 使用原生 D3D11/DirectComposition 层，在 macOS 使用 Metal 层，HTML 控件与布局位于其上方。相同采集配置只上传和转换一次帧，各窗口共享 RGB 纹理，再按各自显示区域采样。窗口缩放不改变采集尺寸，也不引入中间降分辨率。Demo 的原生适配模式使用源分辨率采集并独立更新布局，自定义模式仍实际改变采集尺寸。
+`openSurface()` 在 Windows 使用原生 D3D11/DirectComposition 层，在 macOS 使用 Metal 层，HTML 控件与布局位于其上方。相同采集配置共享帧上传。Windows I420 各窗口直接线性采样共享的 YUV 平面，再应用 BT.709 显示矩阵。Metal 共享转换后的 RGB 纹理并做双线性缩放。窗口缩放不改变采集尺寸，也不引入中间降分辨率。Demo 的原生适配模式使用源分辨率采集并独立更新布局，自定义模式仍实际改变采集尺寸。
 
 表面不向 JavaScript 提供像素，`readablePixels` 为 `false`，也不提供 `data`、`latest` 或 `read`。Canvas 与网页快照不包含原生层。需要网页像素访问时继续使用 `openStream()`。每个窗口最多一个表面，重复请求返回 `VIDEO_SURFACE_IN_USE`。原生层与像素流复用已有视频配置及生命周期，保留网页像素流与 Linux 绘制路径。共享处理减少重复工作，不保证固定窗口数量下的呈现帧率。
 

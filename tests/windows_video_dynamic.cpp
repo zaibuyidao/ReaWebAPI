@@ -98,55 +98,72 @@ void check_submission(HWND window, bool i420) {
 }
 
 
-void check_i420_pixels(const fs::path& directory) {
+void check_i420_pixels(const fs::path& directory = {}) {
   Worker worker(2, 2, true); worker.initialize();
   size_t files = 0, checked = 0; int maximum_error = 0;
-  for (const auto& entry : fs::directory_iterator(directory)) {
-    if (entry.path().extension() != ".i420") continue;
-    std::ifstream input(entry.path(), std::ios::binary);
-    uint32_t size[2]{}; input.read(reinterpret_cast<char*>(size), sizeof(size));
-    const auto w = size[0], h = size[1]; CHECK(w && h && !(w & 1) && !(h & 1) && w <= 8192 && h <= 8192);
-    auto& slot = worker.slots[0]; slot.width = w; slot.height = h;
-    slot.bytes.resize(size_t(w) * h * 3 / 2); input.read(reinterpret_cast<char*>(slot.bytes.data()), slot.bytes.size()); CHECK(input.good());
-    worker.upload(slot);
-    D3D11_TEXTURE2D_DESC desc{}; desc.Width = w; desc.Height = h; desc.MipLevels = desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM; desc.SampleDesc.Count = 1; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-    ComPtr<ID3D11Texture2D> output, readback; ComPtr<ID3D11RenderTargetView> target;
-    require(worker.device->CreateTexture2D(&desc, nullptr, &output), "Cannot create color test output");
-    require(worker.device->CreateRenderTargetView(output.Get(), nullptr, &target), "Cannot create color test target");
-    D3D11_VIEWPORT viewport{0, 0, float(w), float(h), 0, 1}; auto* context = worker.context.Get();
-    context->RSSetViewports(1, &viewport); context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    context->VSSetShader(worker.vertex.Get(), nullptr, 0); context->PSSetShader(worker.pixel.Get(), nullptr, 0);
-    float values[8]{float(w), float(h), 0, 0, 0, 0, float(w), float(h)};
-    context->UpdateSubresource(worker.constants.Get(), 0, nullptr, values, 0, 0);
-    auto* constants = worker.constants.Get(); context->PSSetConstantBuffers(0, 1, &constants);
-    ID3D11ShaderResourceView* views[]{slot.views[0].Get(), slot.views[1].Get(), slot.views[2].Get()}; context->PSSetShaderResources(0, 3, views);
-    auto* view = target.Get(); context->OMSetRenderTargets(1, &view, nullptr); context->Draw(3, 0);
-    ID3D11ShaderResourceView* empty[3]{}; context->PSSetShaderResources(0, 3, empty); context->OMSetRenderTargets(0, nullptr, nullptr);
-    desc.BindFlags = 0; desc.Usage = D3D11_USAGE_STAGING; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    require(worker.device->CreateTexture2D(&desc, nullptr, &readback), "Cannot create color test readback");
-    context->CopyResource(readback.Get(), output.Get()); D3D11_MAPPED_SUBRESOURCE mapped{};
-    require(context->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped), "Cannot map color test output");
-    const auto chroma = [&](size_t plane, unsigned x, unsigned y) {
-      const double sx = x * .5 - .25, sy = y * .5 - .25;
-      const int x0 = int(std::floor(sx)), y0 = int(std::floor(sy)); const double fx = sx - x0, fy = sy - y0;
-      const auto at = [&](int px, int py) { return slot.bytes[plane + size_t(std::clamp(py, 0, int(h / 2) - 1)) * (w / 2) + std::clamp(px, 0, int(w / 2) - 1)]; };
-      return (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
-             (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
-    };
-    for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) {
-      if (x && y && x + 1 != w && y + 1 != h && (x % 31 || y % 29)) continue;
-      const double yy = (slot.bytes[size_t(y) * w + x] - 16.) / 219.;
-      const double u = (chroma(size_t(w) * h, x, y) - 128) / 224.;
-      const double v = (chroma(size_t(w) * h * 5 / 4, x, y) - 128) / 224.;
-      const double expected[]{yy + u * 1.8556, yy - u * .187324273 - v * .468124273, yy + v * 1.5748};
-      const auto* pixel = static_cast<const unsigned char*>(mapped.pData) + size_t(y) * mapped.RowPitch + x * 4;
-      for (int c = 0; c < 3; ++c) maximum_error = (std::max)(maximum_error, std::abs(int(pixel[c]) - int(std::lround(std::clamp(expected[c], 0., 1.) * 255))));
-      CHECK(pixel[3] == 255); ++checked;
+  std::vector<fs::path> fixtures{fs::path{}};
+  if (!directory.empty()) for (const auto& entry : fs::directory_iterator(directory))
+    if (entry.path().extension() == ".i420") fixtures.push_back(entry.path());
+  for (const auto& fixture : fixtures) {
+    auto& slot = worker.slots[0];
+    if (fixture.empty()) {
+      slot.width = 18; slot.height = 12;
+      slot.bytes.resize(size_t(slot.width) * slot.height * 3 / 2);
+      for (size_t i = 0; i < slot.bytes.size(); ++i) slot.bytes[i] = static_cast<unsigned char>(16 + (i * 73 + i / 7) % 220);
+    } else {
+      std::ifstream input(fixture, std::ios::binary);
+      uint32_t size[2]{}; input.read(reinterpret_cast<char*>(size), sizeof(size));
+      slot.width = size[0]; slot.height = size[1];
+      CHECK(slot.width && slot.height && !(slot.width & 1) && !(slot.height & 1) && slot.width <= 8192 && slot.height <= 8192);
+      slot.bytes.resize(size_t(slot.width) * slot.height * 3 / 2);
+      input.read(reinterpret_cast<char*>(slot.bytes.data()), slot.bytes.size()); CHECK(input.good());
     }
-    context->Unmap(readback.Get(), 0); CHECK(maximum_error <= 1); ++files;
+    const auto w = slot.width, h = slot.height;
+    worker.upload(slot);
+    for (const unsigned divisor : {1u, 3u}) {
+      if (divisor != 1 && !fixture.empty()) continue;
+      const auto ow = w / divisor, oh = h / divisor;
+      D3D11_TEXTURE2D_DESC desc{}; desc.Width = ow; desc.Height = oh; desc.MipLevels = desc.ArraySize = 1;
+      desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM; desc.SampleDesc.Count = 1; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+      ComPtr<ID3D11Texture2D> output, readback; ComPtr<ID3D11RenderTargetView> target;
+      require(worker.device->CreateTexture2D(&desc, nullptr, &output), "Cannot create color test output");
+      require(worker.device->CreateRenderTargetView(output.Get(), nullptr, &target), "Cannot create color test target");
+      D3D11_VIEWPORT viewport{0, 0, float(ow), float(oh), 0, 1}; auto* context = worker.context.Get();
+      context->RSSetViewports(1, &viewport); context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+      context->VSSetShader(worker.vertex.Get(), nullptr, 0); context->PSSetShader(worker.pixel.Get(), nullptr, 0);
+      float values[8]{float(ow), float(oh), 0, 0, 0, 0, float(w), float(h)};
+      context->UpdateSubresource(worker.constants.Get(), 0, nullptr, values, 0, 0);
+      auto* constants = worker.constants.Get(); context->PSSetConstantBuffers(0, 1, &constants);
+      auto* sampler = worker.sampler.Get(); context->PSSetSamplers(0, 1, &sampler);
+      ID3D11ShaderResourceView* views[]{slot.views[0].Get(), slot.views[1].Get(), slot.views[2].Get()}; context->PSSetShaderResources(0, 3, views);
+      auto* view = target.Get(); context->OMSetRenderTargets(1, &view, nullptr); context->Draw(3, 0);
+      ID3D11ShaderResourceView* empty[3]{}; context->PSSetShaderResources(0, 3, empty); context->OMSetRenderTargets(0, nullptr, nullptr);
+      desc.BindFlags = 0; desc.Usage = D3D11_USAGE_STAGING; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+      require(worker.device->CreateTexture2D(&desc, nullptr, &readback), "Cannot create color test readback");
+      context->CopyResource(readback.Get(), output.Get()); D3D11_MAPPED_SUBRESOURCE mapped{};
+      require(context->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped), "Cannot map color test output");
+      const auto sample = [&](size_t plane, unsigned pw, unsigned ph, unsigned x, unsigned y) {
+        const double sx = (x + .5) * pw / ow - .5, sy = (y + .5) * ph / oh - .5;
+        const int x0 = int(std::floor(sx)), y0 = int(std::floor(sy)); const double fx = sx - x0, fy = sy - y0;
+        const auto at = [&](int px, int py) { return slot.bytes[plane + size_t(std::clamp(py, 0, int(ph) - 1)) * pw + std::clamp(px, 0, int(pw) - 1)]; };
+        return (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
+               (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
+      };
+      for (unsigned y = 0; y < oh; ++y) for (unsigned x = 0; x < ow; ++x) {
+        if (!fixture.empty() && x && y && x + 1 != ow && y + 1 != oh && (x % 31 || y % 29)) continue;
+        const double yy = (sample(0, w, h, x, y) - 16.) / 219.;
+        const double u = (sample(size_t(w) * h, w / 2, h / 2, x, y) - 128) / 224.;
+        const double v = (sample(size_t(w) * h * 5 / 4, w / 2, h / 2, x, y) - 128) / 224.;
+        const double expected[]{yy + u * 1.8556, yy - u * .187324273 - v * .468124273, yy + v * 1.5748};
+        const auto* pixel = static_cast<const unsigned char*>(mapped.pData) + size_t(y) * mapped.RowPitch + x * 4;
+        for (int c = 0; c < 3; ++c) maximum_error = (std::max)(maximum_error, std::abs(int(pixel[c]) - int(std::lround(std::clamp(expected[c], 0., 1.) * 255))));
+        CHECK(pixel[3] == 255); ++checked;
+      }
+      context->Unmap(readback.Get(), 0); CHECK(maximum_error <= 1);
+    }
+    ++files;
   }
-  CHECK(files); std::cout << "I420 source files=" << files << " border/interior pixels=" << checked << " max RGB error=" << maximum_error << "\n";
+  CHECK(directory.empty() || files > 1); std::cout << "I420 fixtures=" << files << " border/interior pixels=" << checked << " max RGB error=" << maximum_error << "\n";
 }
 
 int main(int argc, char** argv) {
@@ -156,7 +173,7 @@ int main(int argc, char** argv) {
   try {
     CHECK(window);
     check_format(window, false); check_format(window, true); check_submission(window, false); check_submission(window, true);
-    if (argc == 2) check_i420_pixels(fs::u8path(argv[1]));
+    check_i420_pixels(argc == 2 ? fs::u8path(argv[1]) : fs::path{});
     DestroyWindow(window); CoUninitialize();
     std::cout << "D3D11 dynamic uploads, retained device/swapchain and late consumer sharing passed\n";
     return 0;
