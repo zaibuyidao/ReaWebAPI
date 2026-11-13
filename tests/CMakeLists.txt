@@ -111,7 +111,10 @@ add_test(NAME native_tasks COMMAND native_tasks_tests)
 add_executable(stream_transport_driver stream_transport_driver.cpp)
 target_link_libraries(stream_transport_driver PRIVATE reaweb_runtime)
 add_test(NAME stream_transport COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/stream_transport_contract.py" "$<TARGET_FILE:stream_transport_driver>")
-add_test(NAME stream_transport_max_frame COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/stream_transport_contract.py" "$<TARGET_FILE:stream_transport_driver>" frame-max)
+# Drive maximum-sized frames and closure explicitly: a slow runner may need more
+# than the timed producer's two-second lifetime to receive and validate them.
+# The jitter contract also verifies independent consumers and latest-frame delivery.
+add_test(NAME stream_transport_max_frame COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/stream_transport_contract.py" "$<TARGET_FILE:stream_transport_driver>" frame-max jitter)
 add_test(NAME video_transport COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/stream_transport_contract.py" "$<TARGET_FILE:stream_transport_driver>" video)
 add_test(NAME video_transport_jitter COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/stream_transport_contract.py" "$<TARGET_FILE:stream_transport_driver>" video jitter)
 add_test(NAME video_transport_small COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/stream_transport_contract.py" "$<TARGET_FILE:stream_transport_driver>" video-small jitter)
