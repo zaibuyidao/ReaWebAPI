@@ -11,6 +11,7 @@
 namespace reaweb {
 class JsfxTransfer;
 inline constexpr uint32_t video_max_frame_bytes = 40u * 1024 * 1024;
+struct VideoFrameLayout { uint32_t width = 0, height = 0, stride = 0; };
 class StreamBuffer {
 public:
   struct Timing {
@@ -19,14 +20,20 @@ public:
     unsigned play_state = 0;
     bool discontinuity = false;
   };
-  struct Packet { uint64_t sequence; double timestamp; uint64_t dropped; std::vector<unsigned char> data; std::optional<Timing> timing; bool discontinuity = false; };
-  StreamBuffer(int kind, const ReaWeb_StreamDesc& desc, bool project_video = false);
+  struct Packet { uint64_t sequence; double timestamp; uint64_t dropped; std::vector<unsigned char> data; std::optional<Timing> timing; bool discontinuity = false; VideoFrameLayout layout{}; };
+  StreamBuffer(int kind, const ReaWeb_StreamDesc& desc, bool project_video = false, bool dynamic_video = false);
   int publish(const void* data, uint32_t bytes, uint64_t sequence, double timestamp, const Timing* timing = nullptr, bool discontinuity = false,
-              std::vector<unsigned char>* owned_video = nullptr) noexcept;
+              std::vector<unsigned char>* owned_video = nullptr, const VideoFrameLayout* layout = nullptr) noexcept;
   bool consume(Packet& packet);
   const int kind;
   const ReaWeb_StreamDesc descriptor;
-  const bool project_video;
+  const bool project_video, dynamic_video;
+  uint32_t max_bytes() const { return dynamic_video ? video_max_frame_bytes : descriptor.max_bytes; }
+  VideoFrameLayout video_layout() const {
+    const auto size = dimensions_.load(std::memory_order_acquire);
+    const auto width = uint32_t(size >> 32), height = uint32_t(size);
+    return {width, height, dynamic_video ? width * (descriptor.format == REAWEB_PIXEL_I420 ? 1u : 4u) : descriptor.stride};
+  }
   std::atomic<int> closed{0};
   std::atomic<uint64_t> published{0}, dropped{0};
   std::atomic<double> frame_ack_ms{-1};
@@ -38,9 +45,11 @@ private:
     double timestamp = 0;
     std::optional<Timing> timing;
     bool discontinuity = false;
+    VideoFrameLayout layout{};
     std::unique_ptr<unsigned char[]> data;
     std::vector<unsigned char> video_data;
   };
+  std::atomic<uint64_t> dimensions_;
   std::unique_ptr<Slot[]> slots_;
   std::atomic_flag writing_ = ATOMIC_FLAG_INIT;
   uint64_t order_ = 0, consumed_order_ = 0;
@@ -58,7 +67,7 @@ public:
                   int window, uint64_t generation, const Json& metadata);
   int publish(int kind, uint64_t handle, const void* data, uint32_t bytes, uint64_t sequence, double timestamp,
               const StreamBuffer::Timing* timing = nullptr, bool discontinuity = false,
-              std::vector<unsigned char>* owned_video = nullptr) noexcept;
+              std::vector<unsigned char>* owned_video = nullptr, const VideoFrameLayout* layout = nullptr) noexcept;
   int close(uint64_t handle, int reason = REAWEB_STREAM_CLOSED);
   void close_owner(uint64_t owner);
   Json attach(const std::string& name, int window, uint64_t generation, const std::string& origin, const VideoMemoryFactory& video_memory = {});

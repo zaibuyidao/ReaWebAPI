@@ -132,7 +132,7 @@ test('Native windows share one source profile while aspect and viewport changes 
     const layouts = [];
     const state = { $: name => controls[name], preferNative: () => true, devicePixelRatio: 2,
       stage: { clientWidth: index ? 640 : 1280, clientHeight: index ? 360 : 720 },
-      stream: { closed: false, info: { width: 3840, height: 2160 } }, source: { width: 3840, height: 2160 },
+      stream: { closed: false, info: { width: 3840, height: 2160, dynamicResolution: true } }, source: { width: 3840, height: 2160 },
       profileKey: JSON.stringify(sharedProfile), wanted: true, closing: false, busy: false, dirty: false, document: { hidden: false },
       layout: () => layouts.push(controls.aspect.checked),
       detach: () => { throw new Error('Display-only changes must not reopen the source'); },
@@ -151,6 +151,9 @@ test('Native windows share one source profile while aspect and viewport changes 
     assert.equal(vm.runInContext('options().preserveAspect', window.context), true);
     window.controls.resolution.value = 'source'; await vm.runInContext('reconcile()', window.context);
     assert.equal(window.layouts.length, 3);
+    window.state.source = { width: 1280, height: 720 };
+    await vm.runInContext('reconcile()', window.context);
+    assert.equal(window.layouts.length, 4, 'A source size change keeps the dynamic connection');
   }
 });
 

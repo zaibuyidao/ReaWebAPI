@@ -9,7 +9,7 @@ using namespace reaweb;
 #define CHECK(value) do { if (!(value)) throw std::runtime_error(#value); } while (0)
 
 struct Source final : VideoPresentationSource {
-  struct Frame { uint64_t sequence; double timestamp; bool clear; std::vector<unsigned char> bytes; };
+  struct Frame { uint64_t sequence; double timestamp; bool clear; std::vector<unsigned char> bytes; VideoFrameLayout layout; };
   std::mutex mutex;
   std::condition_variable changed;
   std::vector<Frame> frames;
@@ -18,7 +18,7 @@ struct Source final : VideoPresentationSource {
     if (fail) throw std::runtime_error("GPU allocation failure");
     std::lock_guard<std::mutex> lock(mutex);
     frames.push_back({frame.sequence, frame.timestamp, frame.discontinuity,
-                      {frame.data, frame.data + frame.bytes}});
+                      {frame.data, frame.data + frame.bytes}, {frame.width, frame.height, frame.stride}});
     changed.notify_all();
   }
   void wait(size_t count) {
@@ -133,6 +133,31 @@ int main() {
     CHECK(hub.close(handle) == REAWEB_OK);
     for (const auto& view : views) CHECK(view->closed());
     CHECK(late_view->closed() && hub.consumers(handle) == 0);
+
+    {
+      uint64_t dynamic = 0;
+      CHECK(hub.create(REAWEB_FRAME, "surface.dynamic", &desc, &dynamic, true, {{"dynamicResolution", true}}) == REAWEB_OK);
+      auto input = std::make_shared<Source>(); auto view = std::make_shared<Presenter>(input);
+      const auto ticket = hub.attach_video_presenter("surface.dynamic", 9, 0, "reaweb://test", [&](const Json& info) {
+        CHECK(info["dynamicResolution"] == true && info["layoutVersion"] == 3); return view;
+      });
+      unsigned sequence = 0;
+      for (const auto layout : {VideoFrameLayout{8, 4, 32}, {4, 8, 16}, {2, 2, 8}}) {
+        std::vector<unsigned char> bytes(size_t(layout.stride) * layout.height, 42);
+        CHECK(hub.publish(REAWEB_FRAME, dynamic, bytes.data(), uint32_t(bytes.size()), ++sequence, 0, nullptr, false, nullptr, &layout) == REAWEB_OK);
+        input->wait(sequence); const auto delivered = input->snapshot().back();
+        CHECK(delivered.layout.width == layout.width && delivered.layout.height == layout.height && delivered.layout.stride == layout.stride);
+        CHECK(delivered.bytes == bytes && !view->closed());
+      }
+      auto replay = std::make_shared<Source>(); auto replay_view = std::make_shared<Presenter>(replay);
+      hub.attach_video_presenter("surface.dynamic", 10, 0, "reaweb://test", [&](const Json& info) {
+        CHECK(info["width"] == 2 && info["height"] == 2); return replay_view;
+      });
+      replay->wait(1); const auto retained = replay->snapshot().front();
+      CHECK(retained.sequence == sequence && retained.layout.width == 2 && retained.layout.height == 2 && retained.bytes.size() == 16);
+      CHECK(hub.video_presenter(ticket["token"], 9, 0) == view && hub.consumers(dynamic) == 2);
+      CHECK(hub.close(dynamic) == REAWEB_OK);
+    }
 
     uint64_t ordinary = 0;
     CHECK(hub.create(REAWEB_FRAME, "surface.ordinary", &desc, &ordinary) == REAWEB_OK);

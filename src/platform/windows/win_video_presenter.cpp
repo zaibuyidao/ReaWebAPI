@@ -110,7 +110,8 @@ struct Layout {
   int width = 0, height = 0;
   float x = 0, y = 0;
   std::array<float, 4> uv{0, 0, 1, 1};
-  bool visible = false;
+  double content_width = 0, content_height = 0;
+  bool aspect = true, visible = false;
 };
 struct Surface {
   std::atomic<bool> invalidated{false}, failed{false}, redraw{true};
@@ -141,6 +142,7 @@ struct Slot {
   // 0 free, 1 being copied, 2 queued, 3 retained current, 4 GPU retirement.
   std::atomic<unsigned> status{0};
   std::vector<unsigned char> bytes;
+  uint32_t width = 0, height = 0, texture_width = 0, texture_height = 0;
   uint64_t sequence = 0, epoch = 0;
   bool clear = false;
   bool conversion_counted = false;
@@ -151,7 +153,7 @@ struct Slot {
 struct Worker {
   const int width, height;
   const bool i420;
-  const size_t bytes;
+  std::atomic<uint64_t> dimensions;
   std::array<Slot, 3> slots;
   std::atomic<bool> stopping{false}, failed{false};
   std::atomic<uint64_t> epoch{1}, dropped{0}, uploaded{0}, converted{0};
@@ -168,9 +170,7 @@ struct Worker {
   Slot* current = nullptr;
   uint64_t current_epoch = 1;
   double qpc_frequency = 1;
-  Worker(int w, int h, bool yuv) : width(w), height(h), i420(yuv), bytes(size_t(w)*h*(yuv?3:8)/2) {
-    for (auto& slot : slots) slot.bytes.resize(bytes);
-  }
+  Worker(int w, int h, bool yuv) : width(w), height(h), i420(yuv), dimensions((uint64_t(w) << 32) | uint32_t(h)) {}
   std::vector<std::shared_ptr<Surface>> attached() {
     std::lock_guard<std::mutex> guard(surfaces_mutex);
     return surfaces;
@@ -217,15 +217,6 @@ struct Worker {
     D3D11_BUFFER_DESC cb{}; cb.ByteWidth = 32; cb.Usage = D3D11_USAGE_DEFAULT; cb.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     require(device->CreateBuffer(&cb, nullptr, &constants), "Cannot create video constants");
     for (auto& slot : slots) {
-      for (int plane = 0; plane < (i420 ? 3 : 1); ++plane) {
-        D3D11_TEXTURE2D_DESC tex{};
-        tex.Width = plane ? width / 2 : width; tex.Height = plane ? height / 2 : height;
-        tex.MipLevels = tex.ArraySize = 1; tex.SampleDesc.Count = 1;
-        tex.Format = i420 ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
-        tex.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        require(device->CreateTexture2D(&tex, nullptr, &slot.textures[plane]), "Cannot allocate shared video texture");
-        require(device->CreateShaderResourceView(slot.textures[plane].Get(), nullptr, &slot.views[plane]), "Cannot create shared video view");
-      }
       D3D11_QUERY_DESC query{D3D11_QUERY_EVENT, 0}; require(device->CreateQuery(&query, &slot.completion), "Cannot create video completion query");
     }
     LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency); qpc_frequency = double(frequency.QuadPart);
@@ -300,7 +291,13 @@ struct Worker {
     ComPtr<ID3D11Texture2D> back; require(state.chain->GetBuffer(0, IID_PPV_ARGS(&back)), "Cannot get video viewport buffer");
     ComPtr<ID3D11RenderTargetView> target; require(device->CreateRenderTargetView(back.Get(), nullptr, &target), "Cannot create video viewport target");
     D3D11_VIEWPORT viewport{0, 0, float(layout.width), float(layout.height), 0, 1}; context->RSSetViewports(1, &viewport);
-    float values[8]={float(layout.width),float(layout.height),0,0,layout.uv[0]*width,layout.uv[1]*height,layout.uv[2]*width,layout.uv[3]*height};
+    auto uv = layout.uv;
+    if (layout.aspect && layout.content_width > 0 && layout.content_height > 0) {
+      const double fit = (std::min)(layout.content_width / slot.width, layout.content_height / slot.height);
+      const double fw = fit * slot.width / layout.content_width, fh = fit * slot.height / layout.content_height;
+      uv = {float((uv[0] - (1 - fw) / 2) / fw), float((uv[1] - (1 - fh) / 2) / fh), float(uv[2] / fw), float(uv[3] / fh)};
+    }
+    float values[8]={float(layout.width),float(layout.height),0,0,uv[0]*slot.width,uv[1]*slot.height,uv[2]*slot.width,uv[3]*slot.height};
     context->UpdateSubresource(constants.Get(), 0, nullptr, values, 0, 0); auto* cb=constants.Get(); context->PSSetConstantBuffers(0,1,&cb);
     context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); context->VSSetShader(vertex.Get(),nullptr,0); context->PSSetShader(pixel.Get(),nullptr,0);
     ID3D11ShaderResourceView* views[] = {slot.views[0].Get(), slot.views[1].Get(), slot.views[2].Get()};
@@ -333,14 +330,29 @@ struct Worker {
     return true;
   }
   void upload(Slot& slot) {
+    if (slot.texture_width != slot.width || slot.texture_height != slot.height) {
+      // A queued slot has no outstanding GPU readers after its retirement query.
+      slot.views = {}; slot.textures = {};
+      for (int plane = 0; plane < (i420 ? 3 : 1); ++plane) {
+        D3D11_TEXTURE2D_DESC tex{};
+        tex.Width = plane ? slot.width / 2 : slot.width; tex.Height = plane ? slot.height / 2 : slot.height;
+        tex.MipLevels = tex.ArraySize = 1; tex.SampleDesc.Count = 1;
+        tex.Format = i420 ? DXGI_FORMAT_R8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
+        tex.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        require(device->CreateTexture2D(&tex, nullptr, &slot.textures[plane]), "Cannot allocate shared video texture");
+        require(device->CreateShaderResourceView(slot.textures[plane].Get(), nullptr, &slot.views[plane]), "Cannot create shared video view");
+      }
+      slot.texture_width = slot.width; slot.texture_height = slot.height;
+    }
     if (i420) {
-      const size_t luma_bytes = size_t(width) * height;
+      const size_t luma_bytes = size_t(slot.width) * slot.height;
       const auto* data = slot.bytes.data();
-      context->UpdateSubresource(slot.textures[0].Get(), 0, nullptr, data, width, 0);
-      context->UpdateSubresource(slot.textures[1].Get(), 0, nullptr, data + luma_bytes, width / 2, 0);
-      context->UpdateSubresource(slot.textures[2].Get(), 0, nullptr, data + luma_bytes + luma_bytes / 4, width / 2, 0);
+      context->UpdateSubresource(slot.textures[0].Get(), 0, nullptr, data, slot.width, 0);
+      context->UpdateSubresource(slot.textures[1].Get(), 0, nullptr, data + luma_bytes, slot.width / 2, 0);
+      context->UpdateSubresource(slot.textures[2].Get(), 0, nullptr, data + luma_bytes + luma_bytes / 4, slot.width / 2, 0);
       slot.conversion_counted = false;
-    } else context->UpdateSubresource(slot.textures[0].Get(), 0, nullptr, slot.bytes.data(), width * 4, 0);
+    } else context->UpdateSubresource(slot.textures[0].Get(), 0, nullptr, slot.bytes.data(), slot.width * 4, 0);
+    dimensions.store((uint64_t(slot.width) << 32) | slot.height);
     ++uploaded;
   }
   void draw_surfaces(const std::vector<std::shared_ptr<Surface>>& states, Slot& slot, bool fresh, bool retry_only = false) {
@@ -372,7 +384,8 @@ struct Worker {
         Slot* next=nullptr;for(auto& slot:slots)if(slot.status==2&&(!next||slot.sequence<next->sequence))next=&slot;
         bool fresh=false;
         if(next){if(next->epoch!=epoch)next->status=0;else{
-          if(current)draw_surfaces(states,*current,false,true);
+          // Leave the next viewport permit for the new size instead of retrying the old frame.
+          if(current&&current->width==next->width&&current->height==next->height)draw_surfaces(states,*current,false,true);
           upload(*next);if(current)current->status=4;current=next;current->status=3;fresh=true;
         }}
         if(current)draw_surfaces(states,*current,fresh);
@@ -399,10 +412,19 @@ public:
   void submit(const VideoPresentationFrame& frame) override {
     if(worker->failed||worker->stopping)return;
     if(!frame.data||!frame.bytes){++worker->epoch;worker->wake.notify_one();return;}
-    if(frame.bytes!=worker->bytes){worker->fail("Native video frame length changed");return;}
+    const uint32_t width=frame.width?frame.width:uint32_t(worker->width),height=frame.height?frame.height:uint32_t(worker->height);
+    if(!width||!height||width>8192||height>8192||uint64_t(width)*height>10485760||
+       (worker->i420&&((width&1)||(height&1)))||(frame.stride&&frame.stride!=width*(worker->i420?1:4))||
+       frame.bytes!=size_t(width)*height*(worker->i420?3:8)/2){worker->fail("Invalid native video frame dimensions");return;}
     const uint64_t epoch=frame.discontinuity?++worker->epoch:worker->epoch.load();
     Slot* selected=nullptr;for(auto& slot:worker->slots){unsigned free=0;if(slot.status.compare_exchange_strong(free,1)){selected=&slot;break;}}
     if(!selected){++worker->dropped;return;}
+    try {
+      if(frame.bytes>selected->bytes.capacity())std::vector<unsigned char>(frame.bytes).swap(selected->bytes);
+      else selected->bytes.resize(frame.bytes);
+    }
+    catch(const std::exception& error){selected->status=0;worker->fail(error.what());return;}
+    selected->width=width;selected->height=height;
     std::memcpy(selected->bytes.data(),frame.data,frame.bytes);selected->sequence=frame.sequence;selected->epoch=epoch;selected->clear=frame.discontinuity;selected->status=2;worker->wake.notify_one();
   }
 };
@@ -437,20 +459,21 @@ public:
       const double right=(std::min)({x+w,clip.at("x").get<double>()+clip.at("width").get<double>(),(bounds.right-bounds.left)/scale});
       const double bottom=(std::min)({y+h,clip.at("y").get<double>()+clip.at("height").get<double>(),(bounds.bottom-bounds.top)/scale});
       if(w>0&&h>0&&right>left&&bottom>top){
-        if(layout_.value("preserveAspect",true)){double fit=(std::min)(w/source_->worker->width,h/source_->worker->height);double fw=fit*source_->worker->width,fh=fit*source_->worker->height;x+=(w-fw)/2;y+=(h-fh)/2;w=fw;h=fh;}
+        next.content_width=w;next.content_height=h;next.aspect=layout_.value("preserveAspect",true);
         next.width=int(std::ceil((right-left)*scale));next.height=int(std::ceil((bottom-top)*scale));
         if(next.width>8192||next.height>8192||uint64_t(next.width)*next.height>10485760)throw Error("VIDEO_PIXEL_BUDGET","Native video viewport exceeds the pixel budget");
         next.x=float(bounds.left+left*scale);next.y=float(bounds.top+top*scale);next.uv={float((left-x)/w),float((top-y)/h),float((right-left)/w),float((bottom-top)/h)};next.visible=visible;
       }
     }
-    {std::lock_guard<std::mutex> guard(state_->mutex);const auto& old=state_->layout;if(old.width==next.width&&old.height==next.height&&old.x==next.x&&old.y==next.y&&old.uv==next.uv&&old.visible==next.visible)return;state_->layout=next;state_->redraw=true;}
+    {std::lock_guard<std::mutex> guard(state_->mutex);const auto& old=state_->layout;if(old.width==next.width&&old.height==next.height&&old.x==next.x&&old.y==next.y&&old.uv==next.uv&&old.content_width==next.content_width&&old.content_height==next.content_height&&old.aspect==next.aspect&&old.visible==next.visible)return;state_->layout=next;state_->redraw=true;}
     source_->worker->wake.notify_one();
   }
   Json diagnostics()const override {
     std::lock_guard<std::mutex> guard(state_->mutex);const bool available=state_->statistics_available;
+    const auto dimensions=source_->worker->dimensions.load();
     return {{"renderer","native-d3d11"},{"closed",closed()},{"hasFrame",state_->has_frame},{"submittedFrames",state_->submitted},
       {"presentedFrames",available?Json(state_->presented):Json(nullptr)},{"droppedFrames",state_->dropped+source_->worker->dropped.load()},
-      {"sourceWidth",source_->worker->width},{"sourceHeight",source_->worker->height},{"sequence",state_->sequence},
+      {"sourceWidth",uint32_t(dimensions>>32)},{"sourceHeight",uint32_t(dimensions)},{"sequence",state_->sequence},
       {"sourceUploadedFrames",source_->worker->uploaded.load()},{"sourceConvertedFrames",source_->worker->converted.load()},{"sourceDroppedFrames",source_->worker->dropped.load()},
       {"presentationAvailable",available},{"presentationCounter","dxgi-observed"},
       {"presentationFPS",available?Json(state_->presented>1&&state_->last_presented>state_->first_presented?(state_->presented-1)/(state_->last_presented-state_->first_presented):0):Json(nullptr)},
@@ -468,7 +491,7 @@ std::shared_ptr<WinVideoPresenter> make_win_video_presenter(const std::shared_pt
   const auto name=descriptor.at("name").get<std::string>();if(name.empty())throw Error("INVALID_ARGUMENT","Video source name is required");
   static std::mutex mutex;static std::map<std::string,std::weak_ptr<Source>> registry;std::shared_ptr<Source> source;
   {std::lock_guard<std::mutex> guard(mutex);for(auto it=registry.begin();it!=registry.end();)if(it->second.expired())it=registry.erase(it);else ++it;
-    source=registry[name].lock();if(source&&(source->worker->width!=width||source->worker->height!=height||source->worker->i420!=i420))throw Error("VIDEO_FORMAT_CHANGED","Native video source dimensions changed");
+    source=registry[name].lock();if(source&&source->worker->i420!=i420)throw Error("VIDEO_FORMAT_CHANGED","Native video source format changed");
     if(!source){source=std::make_shared<Source>(width,height,i420);registry[name]=source;}}
   return std::make_shared<Presenter>(std::static_pointer_cast<CompositionHost>(host),std::move(source));
 }

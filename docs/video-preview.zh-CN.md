@@ -6,7 +6,7 @@
 
 ## 主机兼容性
 
-安装同平台、同架构的 v0.3.9.33 或更新版本扩展。视频后端校验规范化模块指纹，不检查 REAPER 版本号。指纹排除指定构建元数据字段，保留代码、数据和布局校验，用于保护固定内部地址的调用。
+安装同平台、同架构的 v0.3.9.40 或更新版本扩展。视频后端校验规范化模块指纹，不检查 REAPER 版本号。指纹排除指定构建元数据字段，保留代码、数据和布局校验，用于保护固定内部地址的调用。
 
 后端支持 Windows x64、macOS arm64 和 Linux x86_64。规范化排除 PE 构建时间戳、校验和与 CodeView 标识，Mach-O UUID 与代码签名载荷，以及 ELF GNU build ID。Linux 按匹配的模块布局选择地址映射，覆盖 REAPER 7.82、7.84 和 7.85。
 
@@ -31,9 +31,13 @@ const stream = await reaper.video.openStream({
 canvas.width = stream.info.width;
 canvas.height = stream.info.height;
 stream.on('data', frame => {
+  if (canvas.width !== frame.width || canvas.height !== frame.height) {
+    canvas.width = frame.width;
+    canvas.height = frame.height;
+  }
   context.putImageData(new ImageData(new Uint8ClampedArray(
     frame.bytes.buffer, frame.bytes.byteOffset, frame.bytes.byteLength
-  ), stream.info.width, stream.info.height), 0, 0);
+  ), frame.width, frame.height), 0, 0);
 });
 const clear = () => context.clearRect(0, 0, canvas.width, canvas.height);
 stream.on('error', error => { clear(); console.error(error.code, error.message); });
@@ -51,7 +55,9 @@ await reaper.lifecycle.on('cleanup', () => stream.close());
 
 `preserveAspect` 默认为 `true`，自定义输出通过不透明黑边保持比例。设为 `false` 时允许拉伸。同尺寸转换保留 RGB 像素值，缩放使用双线性滤波。原始分辨率不代表新增 HDR、高位深或显示色彩管理支持，输出仍为 RGBA8。
 
-`fit`、`source` 必须等到有效解码帧。收到 `VIDEO_FRAME_PENDING` 时应稍后重试，不应代入虚构源尺寸。流描述在存续期间保持不变。最终源尺寸变化时，这两种模式关闭流，`getState().error` 为 `VIDEO_RESOLUTION_CHANGED`，重新打开后解析新尺寸。自定义流保留指定尺寸。共享配置同时比较模式、输出尺寸、宽高比策略及更新率，冲突请求不会替换其他消费者的流。
+`fit`、`source` 必须等到有效解码帧。收到 `VIDEO_FRAME_PENDING` 时应稍后重试，不应代入虚构源尺寸。源尺寸变化时，这两种模式在当前流内更新输出尺寸，无需重新连接。`fit` 按最初请求的视口边界重新适配且不放大，主动修改视口参数或分辨率模式仍需重新打开。自定义流保留指定尺寸。共享配置比较模式、请求的视口或自定义尺寸、宽高比策略及更新率，冲突请求不会替换其他消费者的流。
+
+`fit`、`source` 的描述包含 `dynamicResolution: true` 和 `layoutVersion: 3`。`info.width`、`info.height`、`info.stride` 是连接时的快照，读取每帧时使用 `frame.width`、`frame.height`、`frame.stride`，有效数据长度为 `frame.bytes.byteLength`。`info.maxBytes` 表示 40 MiB 容量上限，不代表当前帧长度。自定义流保留固定尺寸和布局版本 1。
 
 返回对象直接复用 Native Stream，支持 `latest()`、`on('data' | 'error' | 'close')` 和 `close()`。有效视频帧的时间戳是 REAPER 工程时间，单位为秒。WebGL 可将 `frame.bytes` 上传为 RGBA8 纹理。使用 `requestAnimationFrame` 合并绘制更新。
 
@@ -59,18 +65,19 @@ Demo 的网页绘制路径使用持续的 `requestAnimationFrame` 循环，按�
 
 工程视频按顺序保留最多三个已采集帧。原始套接字消费者允许三个帧等待确认，共享内存消费者使用两个。两条路径均允许两个帧等待发送。待发送队列满时丢弃最旧帧，避免慢消费者无限积累延迟或阻塞其他消费者。工程视频交换已有采集缓冲，发送池按实际分配容量限制在 240 MiB 内。套接字在途帧须为当前配置的下一帧发布预留空间，避免慢套接字耗尽原生内存消费者所需的发送存储。切换至更大帧时，可能需要等待旧在途帧释放容量。压力下先回收可替换的待发送快照。仍被消费者引用的缓冲不会被覆写。其他 Native Stream 的缓冲策略保持不变。
 
-支持共享内存的 Windows WebView2 为每个项目视频消费者分配两个只读槽位。macOS 通过窗口独占的本地资源地址传输相同的原始 RGBA 像素，省去一次宿主侧复制。Linux 通过匹配的 WebKit 视频模块映射只读原生槽位，将每帧复制一次到浏览器拥有的内存。安装时须保留 `UserPlugins/reawebapi-video-<arch>/reawebapi-video-<arch>.so`。套接字元数据与 ACK 共同保护两个槽位，SDK 完成像素复制后才确认，保留包不受槽位复用影响。原生槽位总预算另限为 256 MiB，不支持原生路径或预算不足时保留原始二进制套接字传输。其他流的传输方式不变。
+支持共享内存的 Windows WebView2 为每个项目视频消费者分配两个只读槽位。macOS 通过窗口独占的本地资源地址传输相同的原始 RGBA 像素，省去一次宿主侧复制。Linux 通过匹配的 WebKit 视频模块映射只读原生槽位，将每帧复制一次到浏览器拥有的内存。安装时须保留 `UserPlugins/reawebapi-video-<arch>/reawebapi-video-<arch>.so`。套接字元数据与 ACK 共同保护两个槽位，SDK 完成像素复制后才确认，保留包不受槽位复用影响。动态流每个消费者预留两个 40 MiB 原生槽位，地址保持不变，仅复制每帧有效像素。原生槽位总预算另限为 256 MiB，不支持原生路径或预算不足时保留原始二进制套接字传输。其他流的传输方式不变。
 
 `getState()` 返回源尺寸、最新采集帧的工程位置、帧龄、订阅数和可用状态。`getDiagnostics()` 另包含采集与生产帧数、清屏次数 `clearedFrames`、采集失败、丢帧、平均采集 FPS 和最近一次成功采集帧的耗时 `captureMs`，空轮询不覆盖该耗时。`actualFPS` 统计成功采集次数，不代表不同画面或实际显示帧数。静态画面与低帧率素材仍可能产生视觉内容相同的采集帧。清屏不计入 `capturedFrames`，成功发布的清屏计入 `producedFrames`。`transportLatencyMs` 是任一消费者最近一次帧发送至 ACK 返回的耗时，包含页面回调处理，不包含 Canvas 或 GPU 呈现。首个 ACK 到达前为 `null`。其他传输诊断由 `reaper.stream.getDiagnostics()` 提供。
 
 ## 帧失效与状态
 
-新流先发布固定尺寸的不透明黑色清屏。工程编辑、定位或播放状态变化立即使旧帧失效。缺少有效源或 REAPER 渲染占用时也会清屏。短暂等待解码时，从首次读取到等待解码状态起，保留最近有效帧最多 100 ms，持续等待超过此时限才清屏。清屏包用于清除消费者保留的画面，不代表已取得有效视频源。
+新流先按初始输出尺寸发布不透明黑色清屏。动态预览在等待解码期间保留上一有效画面最多 500 ms，快速定位时从最新请求重新计时，新帧到达后直接替换。自定义预览保留工程编辑、定位及播放状态变化时的即时失效行为，普通解码等待在播放时最多保留 500 ms，停止时为 100 ms。缺少有效源或 REAPER 渲染占用时仍会清屏。清屏包用于清除保留画面，不代表已取得有效视频源。
 
 `status === 'ready'` 表示有有效源帧，包括短暂等待解码时保留的帧。清屏后 `sourceWidth` 和 `sourceHeight` 为 `0`，`position` 为 `null`。不要只依据包到达或像素是否为黑色判断有效性。流关闭或发生错误时，页面应主动清空 Canvas。
 
 | 错误码 | 行为 |
 | --- | --- |
+| `VIDEO_RESOLUTION_LIMIT` | 打开时拒绝超限尺寸，动态流运行中清屏并保留连接，尺寸恢复后继续输出 |
 | `VIDEO_FRAME_PENDING` | 等待与当前工程状态一致的帧 |
 | `VIDEO_SOURCE_UNAVAILABLE` | 当前没有可用源帧或帧格式无效 |
 | `VIDEO_RENDER_BUSY` | REAPER 渲染占用，暂停预览取帧并等待恢复 |
@@ -81,7 +88,7 @@ Demo 的网页绘制路径使用持续的 `requestAnimationFrame` 循环，按�
 
 `format` 默认为 `rgba8`。转换器已验证的 Windows x64、macOS ARM64 和 Linux x86_64 主机可使用 `format: 'i420'` 与 `resolution: 'source'`，直接复制最终原生 Y/U/V 平面，不进行 RGB 转换或新增色度采样。宽度须为 16 的倍数，高度须为偶数，目前已验证的转换为有限范围 BT.709。Windows 对应已验证的 FFmpeg 54、62 SSE 转换，Linux x86_64 对应已验证的 FFmpeg 60 SSE 转换，macOS ARM64 对应原生 NEON 转换，其他转换器配置保留 RGBA。其他原生格式、矩阵和平台返回 `VIDEO_FORMAT_UNSUPPORTED`。`capabilities.formats` 列出可用路径。`sourceInfo.colorMatrix` 也可识别 BT.601/BT.2020，但不代表开放对应 I420 输出。
 
-I420 数据包依次包含完整尺寸 Y 平面及各占四分之一尺寸的 U、V 平面，不含行填充。`info.stride === info.width`，`info.maxBytes === width * height * 3 / 2`，描述携带 `colorMatrix: 'bt709'`、`colorRange: 'limited'` 和 `colorConversion: 'reaper-sse' | 'reaper-neon'`。复现 CPU RGBA 读回值时，使用对应转换器的整数舍入。像素预算仍按等尺寸 RGBA 计算。格式纳入首个消费者的共享配置。原生格式、色彩矩阵、转换器或尺寸改变时关闭 I420 流，视频状态报告 `VIDEO_FORMAT_CHANGED`，消费者应重新打开或回退 RGBA。
+I420 数据包依次包含完整尺寸 Y 平面及各占四分之一尺寸的 U、V 平面，不含行填充。`frame.stride === frame.width`，`frame.bytes.byteLength === frame.width * frame.height * 3 / 2`。`info.maxBytes` 仍为 40 MiB 容量上限。描述携带 `colorMatrix: 'bt709'`、`colorRange: 'limited'` 和 `colorConversion: 'reaper-sse' | 'reaper-neon'`。复现 CPU RGBA 读回值时，使用对应转换器的整数舍入。像素预算仍按等尺寸 RGBA 计算。格式纳入首个消费者的共享配置。符合约束的尺寸变化保留 I420 流。原生格式、色彩矩阵或转换器不再满足当前配置时关闭流，视频状态报告 `VIDEO_FORMAT_CHANGED`，消费者应重新打开或回退 RGBA。
 
 Demo 的网页绘制路径保留原始分辨率 I420 纹理，并按实际显示像素绘制。Windows D3D11 和 Demo 的 Windows WebGL 回退路径使用 REAPER OpenGL 的 BT.709 显示矩阵，按显示尺寸采样 YUV 平面并在缩小时使用面积加权滤波，再转换并量化 RGB。原始像素模式保持 1:1 绘制，显示尺寸变化不改变视频流尺寸。未支持的源与 WebView 保留 RGBA 绘制。
 
@@ -91,9 +98,9 @@ Windows x64 与 macOS ARM64 分别使用 D3D11 和 Metal，支持 RGBA8 纹理�
 
 `getCapabilities().nativePresentation` 返回 `{available, backend: 'd3d11' | 'metal' | null}`。可用时，`openSurface(options?)` 在页面 HTML 内容下方打开原生视频层。它接受视频配置参数，相同配置的原生预览共享采集与帧上传。Windows I420 表面按各自显示区域采样共享的 YUV 平面。REAPER 对高清 I420 使用 DirectDraw 输出时，原始分辨率的 D3D11 表面可独立于工程矩阵，选择 BT.709 显示路径（`colorConversion: 'reaper-directdraw'`）。该配置仅用于原生呈现，硬件舍入可能产生 1 级 RGB 差异。Metal 表面共享转换后的 RGB 纹理。视频区域上方的页面背景需透明，覆盖的控件应设置独立背景，可参考 Demo。现有 `openStream()` 像素访问、Windows 工作线程接收及 Linux 网页绘制路径保留。
 
-返回表面提供冻结的 `info`，包含视频描述和 `renderer: 'native-d3d11' | 'native-metal'`，只读的 `closed`、`error` 与 `readablePixels: false`，以及异步 `setLayout({rect, clip, preserveAspect})`、`getDiagnostics()` 和 `close()`。`rect` 与 `clip` 均包含有限数值 `x`、`y`、`width`、`height`，使用 CSS 视口坐标，不乘设备像素比。宽高必须非负，零宽高隐藏画面。`preserveAspect` 默认为 `true`。`on('close' | 'error', callback)` 返回取消订阅函数。不提供像素事件、`latest()` 或 `read()`，`info` 不暴露传输令牌或 URL。原生表面不是 Canvas，Canvas 像素读取及网页快照不包含其原生画面。
+返回表面提供冻结的 `info`，包含连接时的视频描述和 `renderer: 'native-d3d11' | 'native-metal'`，只读的 `closed`、`error` 与 `readablePixels: false`，以及异步 `setLayout({rect, clip, preserveAspect})`、`getDiagnostics()` 和 `close()`。`rect` 与 `clip` 均包含有限数值 `x`、`y`、`width`、`height`，使用 CSS 视口坐标，不乘设备像素比。宽高必须非负，零宽高隐藏画面。`preserveAspect` 默认为 `true`。`on('close' | 'error', callback)` 返回取消订阅函数。不提供像素事件、`latest()` 或 `read()`，`info` 不暴露传输令牌或 URL。原生表面不是 Canvas，Canvas 像素读取及网页快照不包含其原生画面。
 
-不可用的平台返回 `VIDEO_PRESENTATION_UNAVAILABLE`。每个窗口最多拥有一个表面，重复打开返回 `VIDEO_SURFACE_IN_USE`，更换配置前应关闭当前表面。布局变化仅调整显示尺寸与裁剪，不改变采集尺寸。Demo 的原生适配模式请求 `resolution: 'source'` 并适配显示布局，保留完整源纹理，使不同大小的窗口可共享同一配置。自定义模式仍按指定尺寸采集，公开像素流的适配模式保持原有行为。
+不可用的平台返回 `VIDEO_PRESENTATION_UNAVAILABLE`。每个窗口最多拥有一个表面，重复打开返回 `VIDEO_SURFACE_IN_USE`，更换配置前应关闭当前表面。布局变化仅调整显示尺寸与裁剪，不改变采集尺寸。Demo 的原生适配模式请求 `resolution: 'source'` 并适配显示布局，保留完整源纹理，使不同大小的窗口可共享同一配置。自定义模式仍按指定尺寸采集。源尺寸变化保留流和原生设备，按可复用槽位调整纹理。视口不变时保留 Windows 交换链或 Metal layer。当前原生输入尺寸从 `getDiagnostics()` 的 `sourceWidth`、`sourceHeight` 读取。
 
 原生呈现的全屏容器需设置透明的 `::backdrop`，全屏期间隐藏周围页面内容。控件间距应使用不透明背景内部的 padding，避免 margin 暴露底层背景。Demo 仅在原生呈现模式应用这些样式。
 
@@ -118,8 +125,8 @@ Canvas 预览在适配显示区域时如因缩放重新连接，Demo 会保留�
 - `updateRate: 'auto'` 跟随当前工程帧率，保留 23.976、29.97 等小数精度，工程帧率改变时无需重新打开流。目标限制为 1–75 FPS，无法读取有效工程帧率时回退到 30 FPS。数字参数接受固定的 1–75 FPS，支持小数帧率，省略参数与 Demo 均默认使用 `auto`。
 - 状态和诊断中的 `updateRate` 表示请求模式，`targetUpdateRate` 表示当前目标更新率。`stream.info.updateRate` 是创建流时的数值快照。实际输出受源解码、宿主负载和绘制性能影响，显示帧率还受屏幕刷新率限制。自动与固定模式属于不同共享配置，即使当前目标帧率相同也不能混用。
 - 当前工程只保留一个共享配置。首个消费者确定分辨率和更新率。后续请求不一致时返回 `VIDEO_PROFILE_CONFLICT`。旧自定义调用的兼容默认值为 1280×720、自动跟随工程帧率，单边上限 8192，RGBA 单帧预算 40 MiB（10,485,760 像素），帧率上限 75 FPS。
-- 流存续期间输出尺寸固定。最终源尺寸变化时，适配与原始模式关闭流并要求重新打开。自定义模式保持指定尺寸，并按宽高比策略决定黑边或拉伸。独立视频调度器唤醒 REAPER 主线程，不依赖扩展定时器频率。工程帧率不超过 75 FPS，且以正常或更慢速度播放时，auto 直接跟随宿主的新帧。固定更新率、加速播放和更高工程帧率仍按目标速率限流。内部视频调用、像素缩放复制和发布仍在该线程执行。帧传输复用现有有界二进制流。
-- Windows 在工程视频流活动期间使用高精度等待，减少传输线程的轮询与 ACK 延迟，不可用时回退到普通等待。系统定时器分辨率、包头长度与 ACK 协议保持不变。
+- 最终源尺寸变化时，适配与原始模式在流内调整输出尺寸。自定义模式保持指定尺寸，并按宽高比策略决定黑边或拉伸。独立视频调度器唤醒 REAPER 主线程，不依赖扩展定时器频率。工程帧率不超过 75 FPS，且以正常或更慢速度播放时，auto 直接跟随宿主的新帧。固定更新率、加速播放和更高工程帧率仍按目标速率限流。内部视频调用、像素缩放复制和发布仍在该线程执行。帧传输复用现有有界二进制流。
+- Windows 在工程视频流活动期间使用高精度等待，减少传输线程的轮询与 ACK 延迟，不可用时回退到普通等待。系统定时器分辨率与 ACK 协议保持不变。
 - 连续播放时优先读取尚未采集的官方已选帧，最多允许落后当前查询位置一帧，并仍须通过源与缓存校验。播放期间，根据查询帧索引、源与监视处理哈希及帧时间戳识别未变化的选中帧，避免重复转换和复制。帧未变化或尚未就绪时，在下一次调度唤醒时重试，不再额外等待一个目标更新间隔。停止播放时继续刷新预览，失效后强制重新采集。这不保证每个源帧都能送达。
 - REAPER 将原生帧转换为其 RGBA 格式，内存字节顺序为 BGRA。扩展再复制、缩放并转换为网页 RGBA8，保留宿主的 YUV 转换，不独立选择颜色矩阵或重新解码素材。源帧引用仅在采集期间持有，复制完成后释放，流只接收独立的像素数据。
 - 视频处理按需启用，最后一个消费者断开后释放后端调度状态。未连接的流在十秒后过期。关闭、重载和卸载复用现有清理机制。
@@ -134,13 +141,13 @@ Canvas 预览在适配显示区域时如因缩放重新连接，Demo 会保留�
 
 ## Demo 显示与全屏
 
-Demo 打开后自动预览，默认适配视频区域。选项菜单统一提供显示、输出分辨率和外观设置，默认深色，可切换并记住浅色或深色。原生标题栏图标隐藏。视频左右贴合页面边缘，控制区保留独立间距。原生适配预览保留源分辨率纹理，窗口和 DPI 变化只更新显示布局，自定义模式仍按指定尺寸采集。网页适配预览对窗口和 DPI 变化采用延迟合并，仅在实际输出尺寸改变时重新打开流。公开 `openStream({resolution: 'fit'})` 的行为不变。显示设置提供全屏、保持视频宽高比和原始像素大小开关。双击视频切换全屏，Escape 或画面上的退出按钮返回。
+Demo 打开后自动预览，默认适配视频区域。选项菜单统一提供显示、输出分辨率和外观设置，默认深色，可切换并记住浅色或深色。原生标题栏图标隐藏。视频左右贴合页面边缘，控制区保留独立间距。原生适配预览保留源分辨率纹理，窗口和 DPI 变化只更新显示布局，自定义模式仍按指定尺寸采集。网页适配预览对窗口和 DPI 变化采用延迟合并，仅在实际输出尺寸改变时重新打开流。源尺寸变化在当前流内处理，无需重新连接。显示设置提供全屏、保持视频宽高比和原始像素大小开关。双击视频切换全屏，Escape 或画面上的退出按钮返回。
 
 原始像素大小模式选择源分辨率输出，一个视频像素对应一个屏幕物理像素。浮动窗口在当前屏幕工作区内调整尺寸，关闭此模式时恢复原尺寸。Docker 中不调整宿主容器，超出区域的画面允许滚动。
 
 Windows、Linux 使用原生全屏容器，macOS 使用 WebKit 元素全屏。Linux 需要支持全屏的 X11 窗口管理器。无法全屏时显示明确错误，不以最大化代替。页面分别显示源尺寸、流尺寸、Canvas 显示框尺寸，以及目标、采集、接收和绘制帧率。Canvas 提交次数不等于屏幕实际扫描输出次数。
 
-单帧预算覆盖 UHD 与 DCI 4K，但不按分辨率名称分支。生产者缓存仍受共享的 256 MiB 预算限制。传输输出池按实际分配容量限制为 240 MiB，不能回收时丢弃新包，不无限分配。`VIDEO_RESOLUTION_LIMIT` 表示尺寸或像素预算超限，不会静默降为 720p。`VIDEO_PROFILE_CONFLICT` 表示共享配置冲突，不影响其他消费者。
+单帧预算覆盖 UHD 与 DCI 4K，但不按分辨率名称分支。动态流的三个采集槽位分别按 40 MiB 计入共享的 256 MiB 生产者预算。传输输出池按实际分配容量限制为 240 MiB，不能回收时丢弃新包，不无限分配。`VIDEO_RESOLUTION_LIMIT` 表示尺寸或像素预算超限，不会静默降为 720p。`VIDEO_PROFILE_CONFLICT` 表示共享配置冲突，不影响其他消费者。
 
 高分辨率 RGBA 传输增加内存和复制带宽，支持原始 4K 不等于保证 60 FPS。应使用实际素材、输出模式、显示设备和音频设备组合验收。
 

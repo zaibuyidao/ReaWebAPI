@@ -45,7 +45,7 @@ struct VideoManager::Impl {
   VideoColorConversion conversion = VideoColorConversion::unknown;
   bool preserve_aspect = true, probing = false;
   double probe_started = 0;
-  int resolved_source_width = 0, resolved_source_height = 0;
+  int viewport_width = 0, viewport_height = 0;
   int width = 1280, height = 720, source_width = 0, source_height = 0;
   double rate = 0, target_rate = 30;
   std::vector<unsigned char> pixels;
@@ -63,18 +63,27 @@ struct VideoManager::Impl {
   }
   double resolve_rate(double fps) const { return rate ? rate : fps > 0 ? std::clamp(fps, 1.0, 75.0) : 30.0; }
 
+  void size_pixels(int w, int h) {
+    const auto bytes = size_t(w) * h * (format == "i420" ? 3 : 8) / 2;
+    if (bytes > pixels.capacity()) std::vector<unsigned char>(bytes).swap(pixels);
+    else pixels.resize(bytes);
+  }
   void publish(double time, bool reset = false) {
-    if (streams.publish(REAWEB_FRAME, handle, pixels.data(), uint32_t(pixels.size()), ++sequence, time, nullptr, reset, &pixels)) ++dropped;
+    const VideoFrameLayout layout{uint32_t(width), uint32_t(height), uint32_t(width * (format == "i420" ? 1 : 4))};
+    if (streams.publish(REAWEB_FRAME, handle, pixels.data(), uint32_t(pixels.size()), ++sequence, time, nullptr, reset, &pixels, resolution == "custom" ? nullptr : &layout)) ++dropped;
     else ++produced;
   }
   void clear(double time, const char* reason) {
     if (valid || !sequence) {
-      std::fill(pixels.begin(), pixels.end(), 0);
-      if (format == "i420") {
-        std::fill(pixels.begin(), pixels.begin() + size_t(width) * height, 16);
-        std::fill(pixels.begin() + size_t(width) * height, pixels.end(), 128);
-      } else for (size_t i = 3; i < pixels.size(); i += 4) pixels[i] = 255;
-      publish(time, true); ++cleared;
+      try {
+        size_pixels(width, height);
+        std::fill(pixels.begin(), pixels.end(), 0);
+        if (format == "i420") {
+          std::fill(pixels.begin(), pixels.begin() + size_t(width) * height, 16);
+          std::fill(pixels.begin() + size_t(width) * height, pixels.end(), 128);
+        } else for (size_t i = 3; i < pixels.size(); i += 4) pixels[i] = 255;
+        publish(time, true); ++cleared;
+      } catch (const std::bad_alloc&) { ++dropped; }
     }
     valid = false; source_width = source_height = 0; last_capture = pending_since = 0; error = reason;
   }
@@ -90,6 +99,7 @@ struct VideoManager::Impl {
     const double capture_started = seconds();
     const int w = image.width, h = image.height;
     if (!image.pixels || w <= 0 || h <= 0 || w > 16384 || h > 16384) return false;
+    size_pixels(width, height);
     if (format == "i420") {
       if (image.format != VideoPixelFormat::i420 || image.color_matrix != 1 || image.color_conversion != conversion || w != width || h != height ||
           (w & 1) || (h & 1) || (image.stride & 1) || image.stride < w || image.stride > 262144) return false;
@@ -197,6 +207,7 @@ std::string VideoManager::open(const Json& options, int window, bool* created, b
     throw Error("INVALID_ARGUMENT", "Unknown video option: " + item.key());
   if (options.value("source", Json("project")) != "project") throw Error("INVALID_ARGUMENT", "Only the current project video source is supported");
   int w = option(options, "width", 1280, 8192), h = option(options, "height", 720, 8192);
+  const int viewport_w = w, viewport_h = h;
   const auto mode = options.value("resolution", Json("custom"));
   auto format = options.value("format", Json("rgba8"));
   if (format != "rgba8" && format != "i420") throw Error("INVALID_ARGUMENT", "Unknown video pixel format");
@@ -246,13 +257,13 @@ std::string VideoManager::open(const Json& options, int window, bool* created, b
   if (w > 8192 || h > 8192 || uint64_t(w) * h * 4 > video_max_frame_bytes)
     throw Error("VIDEO_RESOLUTION_LIMIT", "Video output exceeds the frame pixel budget", {{"width", w}, {"height", h}, {"maxFrameBytes", video_max_frame_bytes}});
   if (s.handle) {
-    if (format != s.format || (format == "i420" && conversion != s.conversion) || mode != s.resolution || aspect != s.preserve_aspect || w != s.width || h != s.height || rate != s.rate) throw Error("VIDEO_PROFILE_CONFLICT", "Active project video consumers share one format, resolution and update rate", {{"format", s.format}, {"width", s.width}, {"height", s.height}, {"updateRate", s.requested_rate()}});
+    if (format != s.format || (format == "i420" && conversion != s.conversion) || mode != s.resolution || aspect != s.preserve_aspect || w != s.width || h != s.height || (mode == "fit" && (viewport_w != s.viewport_width || viewport_h != s.viewport_height)) || rate != s.rate) throw Error("VIDEO_PROFILE_CONFLICT", "Active project video consumers share one format, resolution and update rate", {{"format", s.format}, {"width", s.width}, {"height", s.height}, {"updateRate", s.requested_rate()}});
     s.idle_at = seconds(); return s.name;
   }
   s.probing = false;
   s.width = w; s.height = h; s.rate = rate; s.resolution = mode.get<std::string>(); s.preserve_aspect = aspect.get<bool>();
   s.format = format.get<std::string>(); s.matrix = matrix; s.conversion = conversion; s.native_i420 = format == "i420";
-  s.resolved_source_width = source_w; s.resolved_source_height = source_h;
+  s.viewport_width = viewport_w; s.viewport_height = viewport_h;
   s.project = s.host.current_project ? s.host.current_project() : nullptr;
   s.generation = s.host.project_generation ? s.host.project_generation() : 0;
   s.target_rate = s.resolve_rate(s.project_frame_rate());
@@ -263,8 +274,10 @@ std::string VideoManager::open(const Json& options, int window, bool* created, b
     desc.size = sizeof(desc); desc.abi_version = REAWEB_STREAM_ABI; desc.format = format == "i420" ? REAWEB_PIXEL_I420 : REAWEB_PIXEL_RGBA8;
     desc.max_bytes = uint32_t(s.pixels.size()); desc.capacity = 3; desc.width = w; desc.height = h; desc.stride = format == "i420" ? w : w * 4;
     desc.update_rate = s.target_rate; desc.source = "project";
+    Json metadata = {{"dynamicResolution", mode != "custom"}};
+    if (format == "i420") metadata.update({{"colorMatrix", "bt709"}, {"colorRange", "limited"}, {"colorConversion", color_conversion(s.conversion)}});
     const int result = s.streams.create(REAWEB_FRAME, s.name.c_str(), &desc, &s.handle, true,
-      format == "i420" ? Json{{"colorMatrix", "bt709"}, {"colorRange", "limited"}, {"colorConversion", color_conversion(s.conversion)}} : Json());
+      metadata);
     if (result) throw Error(StreamHub::code(result), "Cannot create project video stream");
     s.next_capture = s.first_capture = s.last_capture = 0;
     s.position_clock = {};
@@ -307,6 +320,7 @@ void VideoManager::tick() {
   const int changes = s.host.change_count ? s.host.change_count(project) : 0;
   if (s.position_clock.update(position, now, playing, play_rate, changes)) {
     s.discontinuity = true; s.next_capture = now;
+    if (s.resolution != "custom") s.pending_since = 0;
   }
   const double source_rate = s.project_frame_rate();
   const double target_rate = s.resolve_rate(source_rate);
@@ -315,15 +329,28 @@ void VideoManager::tick() {
   const bool follow_frames = !s.rate && (playing & 1) && source_rate > 0 && source_rate <= 75 &&
     std::isfinite(play_rate) && play_rate > 0 && play_rate <= 1;
   if (!follow_frames && !s.discontinuity && now + 0.5 / s.target_rate < s.next_capture) return;
-  bool copied = false, resized = false, format_changed = false;
+  bool copied = false, resolution_limited = false, format_changed = false;
   try {
     const auto capture = [&](const VideoImage& image) {
       if (s.format == "i420" && (image.format != VideoPixelFormat::i420 || image.color_matrix != s.matrix || image.color_conversion != s.conversion ||
-          image.width != s.resolved_source_width || image.height != s.resolved_source_height)) {
+          (image.width & 15) || (image.height & 1))) {
         format_changed = true; return;
       }
-      if (s.resolution != "custom" && (image.width != s.resolved_source_width || image.height != s.resolved_source_height)) {
-        resized = true; return;
+      if (s.resolution != "custom" && image.width > 0 && image.height > 0) {
+        int width = image.width, height = image.height;
+        if (s.resolution == "fit") {
+          if (s.preserve_aspect) {
+            const double scale = std::min({1.0, double(s.viewport_width) / width, double(s.viewport_height) / height});
+            width = std::max(1, int(std::floor(width * scale))); height = std::max(1, int(std::floor(height * scale)));
+          } else { width = std::min(width, s.viewport_width); height = std::min(height, s.viewport_height); }
+        }
+        if (width > 8192 || height > 8192 || uint64_t(width) * height * 4 > video_max_frame_bytes) {
+          resolution_limited = true; return;
+        }
+        if (width != s.width || height != s.height) {
+          s.size_pixels(width, height);
+          s.width = width; s.height = height;
+        }
       }
       if (std::isfinite(position)) copied = s.capture(image, position, source_rate);
     };
@@ -331,14 +358,15 @@ void VideoManager::tick() {
       ? s.backend->read_display_i420(s.discontinuity, capture)
       : s.format == "i420" ? s.backend->read_i420(s.discontinuity, capture) : s.backend->read(s.discontinuity, capture);
     if (format_changed || result == VideoRead::format_unsupported) { s.error = "VIDEO_FORMAT_CHANGED"; s.close(); return; }
-    if (resized) { s.error = "VIDEO_RESOLUTION_CHANGED"; s.close(); return; }
+    if (resolution_limited) { s.clear(position, "VIDEO_RESOLUTION_LIMIT"); return; }
     if (result != VideoRead::pending) { s.discontinuity = false; s.pending_since = 0; }
     if (result == VideoRead::unsupported) { s.error = "VIDEO_HOST_UNSUPPORTED"; s.close(); return; }
     if (result == VideoRead::unchanged || result == VideoRead::pending) {
       if (result == VideoRead::unchanged && !(playing & 1)) s.next_capture = now + 1.0 / s.target_rate;
       if (result == VideoRead::pending) {
         if (!s.pending_since) s.pending_since = now;
-        if (!s.valid || s.discontinuity || now - s.pending_since > ((playing & 1) ? 0.5 : 0.1)) {
+        const bool dynamic = s.resolution != "custom";
+        if (!s.valid || (s.discontinuity && !dynamic) || now - s.pending_since > ((playing & 1) || dynamic ? 0.5 : 0.1)) {
           s.clear(position, "VIDEO_FRAME_PENDING"); if (!(playing & 1)) s.discontinuity = true;
         }
       }

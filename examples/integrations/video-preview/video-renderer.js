@@ -25,10 +25,13 @@ export async function createVideoRenderer(canvas, { platform, format = 'rgba8', 
       if (pending >= 2) { ++dropped; return; }
       const generation = epoch; ++pending;
       try {
-        const pixels = new ImageData(new Uint8ClampedArray(frame.bytes.buffer, frame.bytes.byteOffset, frame.bytes.byteLength), canvas.width, canvas.height);
+        const width = frame.width || canvas.width, height = frame.height || canvas.height;
+        const pixels = new ImageData(new Uint8ClampedArray(frame.bytes.buffer, frame.bytes.byteOffset, frame.bytes.byteLength), width, height);
         const image = await createImageBitmap(pixels, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
         if (generation !== epoch) { image.close(); return; }
         if (lastSequence !== undefined && frame.sequence <= lastSequence) { image.close(); ++dropped; return; }
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
         bitmap.transferFromImageBitmap(image); lastSequence = frame.sequence; onDraw(frame.sequence);
       } catch (error) { if (generation === epoch) onError(error); }
       finally { --pending; }
@@ -102,7 +105,7 @@ export async function createVideoRenderer(canvas, { platform, format = 'rgba8', 
       ++pending;
       // The demo gives ownership to its renderer after reading frame metadata.
       worker.postMessage({ type: 'frame', frame: { bytes: frame.bytes, timestamp: frame.timestamp,
-        sequence: frame.sequence, discontinuity: frame.discontinuity } }, [frame.bytes.buffer]);
+        sequence: frame.sequence, discontinuity: frame.discontinuity, width: frame.width, height: frame.height, stride: frame.stride } }, [frame.bytes.buffer]);
     },
     resize(width, height, info) { worker.postMessage({ type: 'resize', width, height, info }); },
     present: format === 'i420' ? (width, height, preserveAspect) => {

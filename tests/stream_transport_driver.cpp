@@ -5,7 +5,8 @@ using namespace reaweb;
 int main(int argc,char** argv) {
   const bool timing_packets=argc>1 && std::string(argv[1])=="timing";
   const bool video=argc>1 && std::string(argv[1]).rfind("video",0)==0;
-  const bool shared_video=argc>1 && std::string(argv[1])=="video-shared";
+  const bool dynamic_video=argc>1 && std::string(argv[1]).rfind("video-dynamic",0)==0;
+  const bool shared_video=argc>1 && (std::string(argv[1])=="video-shared" || std::string(argv[1])=="video-dynamic-shared");
   const bool pressure=argc>1 && std::string(argv[1])=="video-pressure";
   const bool max_frame=argc>1 && std::string(argv[1])=="frame-max";
   const bool jitter=argc>2 && std::string(argv[2])=="jitter";
@@ -18,10 +19,11 @@ int main(int argc,char** argv) {
   if(argc>1 && std::string(argv[1])=="video-small") { desc.width=4;desc.height=4;desc.stride=16; }
   if(argc>1 && std::string(argv[1])=="video-medium") { desc.width=64;desc.height=64;desc.stride=256; }
   if(max_frame) { desc.width=2048;desc.height=2048;desc.stride=8192; }
+  if(dynamic_video) { desc.width=4;desc.height=4;desc.stride=16; }
   desc.max_bytes = desc.stride * desc.height; desc.capacity = 3; desc.update_rate = 60;
   if(pressure) { desc.width=3840;desc.height=2160;desc.stride=15360;desc.max_bytes=desc.stride*desc.height; }
   uint64_t handle = 0;
-  const auto created=timing_packets?hub.create_jsfx(REAWEB_FRAME,name,&desc,&handle,1,0,{{"sessionId","test"}}):hub.create(REAWEB_FRAME,name,&desc,&handle,video);
+  const auto created=timing_packets?hub.create_jsfx(REAWEB_FRAME,name,&desc,&handle,1,0,{{"sessionId","test"}}):hub.create(REAWEB_FRAME,name,&desc,&handle,video,{{"dynamicResolution",dynamic_video}});
   if(created)return 1;
   struct Memory : VideoMemory {
     std::vector<unsigned char> storage;
@@ -38,9 +40,12 @@ int main(int argc,char** argv) {
   std::vector<unsigned char> pixels(desc.max_bytes);
   auto begin = std::chrono::steady_clock::now();
   auto publish = [&](unsigned sequence) {
+    const VideoFrameLayout layouts[] = {{4,4,16},{16,8,64},{8,16,32},{2,2,8}};
+    const auto layout = layouts[sequence % 4];
+    if(dynamic_video) pixels.resize(size_t(layout.stride)*layout.height);
     std::fill(pixels.begin(), pixels.end(), static_cast<unsigned char>(sequence));
     const StreamBuffer::Timing timing{99,9007199254740992ULL+sequence,17,0.5,1,true};
-    const auto status = hub.publish(REAWEB_FRAME, handle, pixels.data(), static_cast<uint32_t>(pixels.size()), sequence, sequence / 60.0,timing_packets?&timing:nullptr,video && sequence % 3 == 1);
+    const auto status = hub.publish(REAWEB_FRAME, handle, pixels.data(), static_cast<uint32_t>(pixels.size()), sequence, sequence / 60.0,timing_packets?&timing:nullptr,video && sequence % 3 == 1,nullptr,dynamic_video?&layout:nullptr);
     // A descheduled producer can catch up while transport owns a buffer slot.
     if (status != REAWEB_OK && status != REAWEB_BUFFER_FULL) {
       std::cerr << "Frame publication failed: " << status << std::endl;

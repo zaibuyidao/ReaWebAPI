@@ -62,6 +62,13 @@ int main() {
     reused->video.swap(same_size);
     CHECK(same_size.capacity() == 16 && same_size.front() == 42);
     CHECK(profiles.capacity() == 16);
+    VideoMessagePool<Message> alternating(192);
+    auto small = alternating.acquire(64); small->video.resize(64);
+    auto big = alternating.acquire(128); big->video.resize(128);
+    const auto* preserved = big->video.data();
+    small.reset(); big.reset();
+    auto matching = alternating.acquire(128);
+    CHECK(matching->video.data() == preserved && alternating.capacity() == 192);
     std::cout << "Video payload capacity, publication reserve and profile changes passed\n";
     return 0;
   } catch (const std::exception& error) {

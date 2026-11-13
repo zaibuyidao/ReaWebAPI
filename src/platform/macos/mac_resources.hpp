@@ -2,16 +2,19 @@
 #include "web/web_resources.hpp"
 #include "runtime/video_memory.hpp"
 #include <mutex>
+#include <atomic>
 #import <WebKit/WebKit.h>
 
 namespace reaweb {
 struct MacVideoMemory final : VideoMemory {
   mutable std::mutex mutex;
   std::vector<unsigned char> storage;
+  mutable std::atomic<uint32_t> slot_bytes[2]{};
   explicit MacVideoMemory(uint32_t size) : storage(size_t(size) * 2) { data = storage.data(); frame_bytes = size; }
-  void write_slot(unsigned slot, const void* bytes) const override {
+  void write_slot(unsigned slot, const void* bytes, uint32_t count = 0) const override {
     std::lock_guard<std::mutex> lock(mutex);
-    VideoMemory::write_slot(slot, bytes);
+    VideoMemory::write_slot(slot, bytes, count);
+    slot_bytes[slot] = count ? count : frame_bytes;
   }
 };
 }
@@ -64,13 +67,14 @@ struct MacVideoMemory final : VideoMemory {
       [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorResourceUnavailable userInfo:nil]];
       return;
     }
+    const auto count = memory->slot_bytes[key.back() - '0'].load();
     auto fields = @{@"Content-Type": @"application/octet-stream", @"Cache-Control": @"no-store",
-      @"Content-Length": [NSString stringWithFormat:@"%u", memory->frame_bytes]};
+      @"Content-Length": [NSString stringWithFormat:@"%u", count]};
     [task didReceiveResponse:[[NSHTTPURLResponse alloc] initWithURL:task.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:fields]];
     NSData* data;
     {
       std::lock_guard<std::mutex> lock(memory->mutex);
-      data = [[NSData alloc] initWithBytesNoCopy:memory->data + (key.back() - '0') * size_t(memory->frame_bytes) length:memory->frame_bytes
+      data = [[NSData alloc] initWithBytesNoCopy:memory->data + (key.back() - '0') * size_t(memory->frame_bytes) length:count
         deallocator:^(void*, NSUInteger) { (void)memory; }];
     }
     [task didReceiveData:data];

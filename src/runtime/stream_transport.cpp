@@ -40,6 +40,8 @@ struct WireMessage {
   uint64_t video_sequence = 0;
   double video_timestamp = 0;
   bool video_discontinuity = false;
+  VideoFrameLayout video_layout{};
+  size_t video_header = 40;
   size_t size() const { return header.size() + video.size(); }
 };
 using Message = std::shared_ptr<const WireMessage>;
@@ -53,22 +55,29 @@ Message frame(const Bytes& bytes, unsigned opcode = 2) {
   out->insert(out->end(), bytes.begin(), bytes.end()); return message;
 }
 void le64(Bytes& data, size_t at, uint64_t value) { for (unsigned i = 0; i < 8; ++i) data[at + i] = static_cast<unsigned char>(value >> (8 * i)); }
-Message packet_frame(StreamBuffer::Packet& packet, int kind, bool project_video = false, std::shared_ptr<WireMessage> reusable = {}) {
+Message packet_frame(StreamBuffer::Packet& packet, int kind, bool project_video = false, std::shared_ptr<WireMessage> reusable = {}, bool dynamic_video = false) {
   if (project_video && !packet.timing) {
-    const size_t length = 40 + packet.data.size();
+    const size_t header = dynamic_video ? 56 : 40;
+    const size_t length = header + packet.data.size();
     const size_t prefix = length < 126 ? 2 : length <= 65535 ? 4 : 10;
     auto out = reusable ? std::move(reusable) : std::make_shared<WireMessage>();
-    auto& data = out->header; data.assign(prefix + 40, 0); data[0] = 0x82;
+    auto& data = out->header; data.assign(prefix + header, 0); data[0] = 0x82;
     if (prefix == 2) data[1] = static_cast<unsigned char>(length);
     else {
       data[1] = prefix == 4 ? 126 : 127;
       for (size_t i = 2; i < prefix; ++i) data[i] = static_cast<unsigned char>(uint64_t(length) >> (8 * (prefix - 1 - i)));
     }
-    data[prefix] = 'R'; data[prefix + 1] = 'W'; data[prefix + 2] = 'S'; data[prefix + 3] = 1; data[prefix + 4] = static_cast<unsigned char>(kind);
+    data[prefix] = 'R'; data[prefix + 1] = 'W'; data[prefix + 2] = 'S'; data[prefix + 3] = dynamic_video ? 3 : 1; data[prefix + 4] = static_cast<unsigned char>(kind);
     data[prefix + 5] = packet.discontinuity ? 1 : 0;
     uint64_t timestamp; std::memcpy(&timestamp, &packet.timestamp, 8);
     le64(data, prefix + 8, packet.sequence); le64(data, prefix + 16, timestamp);
     le64(data, prefix + 24, packet.dropped); le64(data, prefix + 32, packet.data.size());
+    if (dynamic_video) {
+      const uint32_t fields[] = {packet.layout.width, packet.layout.height, packet.layout.stride};
+      for (unsigned field = 0; field < 3; ++field)
+        for (unsigned byte = 0; byte < 4; ++byte) data[prefix + 40 + field * 4 + byte] = static_cast<unsigned char>(fields[field] >> (byte * 8));
+    }
+    out->video_layout = packet.layout; out->video_header = header;
     out->video.swap(packet.data);
     out->video_sequence = packet.sequence;
     out->video_timestamp = packet.timestamp;
@@ -173,7 +182,7 @@ struct StreamTransport::Impl {
       client.video_memory = ticket->second.video_memory;
     }
     if (client.stream && client.stream->kind == REAWEB_FRAME) {
-      const int bytes = std::min<int>(8 * 1024 * 1024, int(client.stream->descriptor.max_bytes) + 50);
+      const int bytes = std::min<int>(8 * 1024 * 1024, int(client.stream->max_bytes()) + 66);
       setsockopt(client.socket, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&bytes), sizeof(bytes));
     }
     const auto key = headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -268,11 +277,12 @@ struct StreamTransport::Impl {
         if(!client.reliable){client.queued_bytes -= client.output->size();++client.inflight;if(client.stream->kind==REAWEB_FRAME)client.frame_started.push_back(Time::now());}
         if (client.video_memory && !client.output->video.empty()) {
           const auto& memory = *client.video_memory;
-          if (client.output->video.size() != memory.frame_bytes) { client.failed = true; return; }
-          memory.write_slot(client.video_slot, client.output->video.data());
-          Bytes metadata(44);
-          std::copy(client.output->header.end() - 40, client.output->header.end(), metadata.begin());
-          metadata[5] |= 2; metadata[40] = static_cast<unsigned char>(client.video_slot);
+          if (client.output->video.size() > memory.frame_bytes) { client.failed = true; return; }
+          memory.write_slot(client.video_slot, client.output->video.data(), uint32_t(client.output->video.size()));
+          const auto header = client.output->video_header;
+          Bytes metadata(header + 4);
+          std::copy(client.output->header.end() - header, client.output->header.end(), metadata.begin());
+          metadata[5] |= 2; metadata[header] = static_cast<unsigned char>(client.video_slot);
           client.video_slot ^= 1;
           client.output = frame(metadata);
         }
@@ -412,7 +422,7 @@ struct StreamTransport::Impl {
               if (!buffer->closed && cached != latest.end() && !cached->second->video.empty()) {
                 const auto& frame = *cached->second;
                 present(group, {frame.video.data(), frame.video.size(), frame.video_sequence,
-                                frame.video_timestamp, frame.video_discontinuity});
+                                frame.video_timestamp, frame.video_discontinuity, frame.video_layout.width, frame.video_layout.height, frame.video_layout.stride});
               }
             }
           }
@@ -428,7 +438,7 @@ struct StreamTransport::Impl {
           for (int i = 0; i < 64 && buffer->consume(packet); ++i) {
             const size_t packet_bytes = packet.data.size();
             if (!buffer->closed && native != native_groups.end()) for (auto& entry : native->second)
-              present(entry.second, {packet.data.data(), packet_bytes, packet.sequence, packet.timestamp, packet.discontinuity});
+              present(entry.second, {packet.data.data(), packet_bytes, packet.sequence, packet.timestamp, packet.discontinuity, packet.layout.width, packet.layout.height, packet.layout.stride});
             Message message;
             if (buffer->kind != REAWEB_AUDIO && buffer->kind != REAWEB_MIDI) {
               std::shared_ptr<WireMessage> reusable;
@@ -445,7 +455,7 @@ struct StreamTransport::Impl {
                 }
               }
               if (buffer->project_video && !reusable) continue;
-              message = packet_frame(packet, buffer->kind, buffer->project_video, std::move(reusable)); latest[buffer] = message;
+              message = packet_frame(packet, buffer->kind, buffer->project_video, std::move(reusable), buffer->dynamic_video); latest[buffer] = message;
             }
             for (auto& client : clients) if (client.upgraded && client.stream == buffer && !client.failed) {
               if (buffer->project_video) {
@@ -457,8 +467,8 @@ struct StreamTransport::Impl {
                   client.queued_bytes -= client.waiting.front()->size(); client.waiting.pop_front();
                 }
               } else if (buffer->kind != REAWEB_AUDIO && buffer->kind != REAWEB_MIDI) { client.waiting.clear(); client.queued_bytes = 0; }
-              const auto queued_cost = packet_bytes + (buffer->project_video ? 50 : 0);
-              if (client.waiting.size() >= 8 || client.queued_bytes + queued_cost > (buffer->project_video ? 2ull * (buffer->descriptor.max_bytes + 50) : 16ull * 1024 * 1024)) continue;
+              const auto queued_cost = packet_bytes + (buffer->project_video ? 66 : 0);
+              if (client.waiting.size() >= 8 || client.queued_bytes + queued_cost > (buffer->project_video ? 2ull * (buffer->max_bytes() + 66) : 16ull * 1024 * 1024)) continue;
               if (!message) message = packet_frame(packet, buffer->kind);
               client.waiting.push_back(message); client.queued_bytes += message->size();
             }

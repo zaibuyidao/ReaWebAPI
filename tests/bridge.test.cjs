@@ -961,7 +961,63 @@ test('Shared video ACKs immutable snapshots and releases mappings on invalid slo
   }
 });
 
-async function workerVideo(shared = true, format = 'rgba8') {
+function dynamicVideoPacket(sequence, width, height, planar, shared, slot = 0) {
+  const size = width * height * (planar ? 1.5 : 4), buffer = new ArrayBuffer(shared ? 60 : 56 + size), view = new DataView(buffer);
+  view.setUint32(0, 0x03535752, true); view.setUint8(4, 1); view.setUint8(5, shared ? 2 : 0);
+  view.setBigUint64(8, BigInt(sequence), true); view.setFloat64(16, sequence / 60, true); view.setBigUint64(32, BigInt(size), true);
+  view.setUint32(40, width, true); view.setUint32(44, height, true); view.setUint32(48, width * (planar ? 1 : 4), true);
+  if (shared) view.setUint32(56, slot, true); else new Uint8Array(buffer, 56).fill(sequence);
+  return { data: buffer };
+}
+test('Dynamic video carries immutable per-frame dimensions through socket, shared memory, resources and native copies', async () => {
+  for (const mode of ['raw', 'shared', 'resource', 'native']) for (const format of ['rgba8', 'i420']) {
+    const t = await connected(mode === 'shared' ? 'windows-shared' : 'webkit'), sockets = streamSockets(t);
+    const maxBytes = 64, mapping = new ArrayBuffer(maxBytes * 2), slots = new Uint8Array(mapping), frames = [];
+    const planar = format === 'i420'; let currentSize = 0;
+    t.context.ArrayBuffer = ArrayBuffer; t.context.AbortController = AbortController;
+    t.context.fetch = async url => ({ ok: true, arrayBuffer: async () => slots.slice(Number(url.at(-1)) * maxBytes, Number(url.at(-1)) * maxBytes + currentSize).buffer });
+    t.window.__reawebVideoCopy = (token, slot, size) => {
+      if (slot === -1) return maxBytes;
+      if (slot === -2) return null;
+      assert.equal(size, currentSize);
+      return slots.slice(slot * maxBytes, slot * maxBytes + size).buffer;
+    };
+    const opening = t.window.reaper.stream.open('reaweb.video.project.test'); await flush();
+    if (mode === 'shared') t.nativeListeners.sharedbufferreceived({ additionalData: { reawebVideo: 'ticket' }, getBuffer: () => mapping });
+    t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), format, stride: planar ? 2 : 8, maxBytes,
+      dynamicResolution: true, layoutVersion: 3, sharedVideo: mode !== 'raw',
+      ...(mode === 'resource' ? { videoResource: 'reaweb://test/video/' } : {}),
+      ...(mode === 'native' ? { videoNativeCopy: true } : {}) } });
+    await flush(); sockets[0].onopen(); const stream = await opening;
+    stream.on('data', frame => frames.push(frame));
+    for (const [index, [width, height]] of [[2, 2], [4, 2], [2, 4], [2, 2]].entries()) {
+      currentSize = width * height * (planar ? 1.5 : 4);
+      slots.fill(index + 1, (index % 2) * maxBytes, (index % 2) * maxBytes + currentSize);
+      sockets[0].onmessage(dynamicVideoPacket(index + 1, width, height, planar, mode !== 'raw', index % 2));
+      await flush(); await flush();
+      const frame = frames.at(-1);
+      assert.deepEqual([frame.width, frame.height, frame.stride, frame.bytes.length], [width, height, width * (planar ? 1 : 4), currentSize]);
+      assert.equal(sockets[0].sent.length, index + 1);
+    }
+    frames.forEach((frame, index) => assert.ok(frame.bytes.every(value => value === index + 1)));
+    assert.equal(sockets.length, 1); assert.equal(stream.closed, false); assert.equal(stream.info.width, 2);
+    const invalid = dynamicVideoPacket(5, 2, 2, planar, mode !== 'raw'); new DataView(invalid.data).setUint32(48, 1, true);
+    sockets[0].onmessage(invalid); await flush();
+    assert.equal(stream.error.code, 'UNSUPPORTED_FORMAT'); assert.equal(sockets[0].sent.length, 4);
+  }
+});
+
+test('Dynamic I420 rejects dimensions exceeding the RGBA-equivalent pixel budget', async () => {
+  const t = await connected('webkit'), sockets = streamSockets(t);
+  const opening = t.window.reaper.stream.open('reaweb.video.project.test'); await flush();
+  t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), format: 'i420', stride: 2,
+    maxBytes: 40 * 1024 * 1024, dynamicResolution: true, layoutVersion: 3 } });
+  await flush(); sockets[0].onopen(); const stream = await opening;
+  sockets[0].onmessage(dynamicVideoPacket(1, 4096, 3072, true, false));
+  assert.equal(stream.error.code, 'UNSUPPORTED_FORMAT'); assert.equal(sockets[0].sent.length, 0);
+});
+
+async function workerVideo(shared = true, format = 'rgba8', dynamic = false) {
   const t = await connected('windows-shared');
   class Port {
     postMessage(data, transfer = []) {
@@ -989,12 +1045,13 @@ async function workerVideo(shared = true, format = 'rgba8') {
       this.port.postMessage({ type: 'ready' });
     }
   };
-  const worker = new t.context.Worker(), buffer = new ArrayBuffer(format === 'i420' ? 12 : 32);
+  const worker = new t.context.Worker(), buffer = new ArrayBuffer(dynamic ? 128 : format === 'i420' ? 12 : 32);
   const pending = t.window.reaper.video.openWorkerStream(worker, { resolution: 'source', format }); await flush();
   assert.equal(t.messages.at(-1).method, 'ReaWeb_VideoOpen');
   t.reply(t.messages.length - 1, { result: 'reaweb.video.project.test' }); await flush();
   if (shared) t.nativeListeners.sharedbufferreceived({ additionalData: { reawebVideo: 'ticket' }, getBuffer: () => buffer });
-  t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), sharedVideo: shared, ...(format === 'i420' ? { format, stride: 2, maxBytes: 6, colorMatrix: 'bt709', colorRange: 'limited', colorConversion: 'reaper-sse' } : {}) } });
+  t.reply(t.messages.length - 1, { result: { ...streamDescriptor(), sharedVideo: shared, ...(format === 'i420' ? { format, stride: 2, maxBytes: 6, colorMatrix: 'bt709', colorRange: 'limited', colorConversion: 'reaper-sse' } : {}),
+    ...(dynamic ? { dynamicResolution: true, layoutVersion: 3, maxBytes: 64 } : {}) } });
   const stream = await pending;
   return { t, worker, buffer, stream };
 }
@@ -1025,6 +1082,17 @@ test('I420 worker connections preserve conversion metadata and planar memory own
     t.reply(t.messages.length - 1, { result: true }); await closing;
     assert.equal(t.releasedBuffers[0]?.byteLength || 0, shared ? 12 : 0);
   }
+});
+test('Worker video forwards changing frame dimensions and rejects malformed metadata', async () => {
+  const { t, worker, stream } = await workerVideo(true, 'rgba8', true), frames = [];
+  stream.on('data', frame => frames.push(frame));
+  for (const [index, [width, height]] of [[2, 2], [4, 2], [2, 4]].entries()) {
+    worker.port.postMessage({ type: 'frame', frame: { sequence: BigInt(index), timestamp: index / 60, producerDropped: 0n, width, height, stride: width * 4 } });
+    await flush(); assert.deepEqual([frames.at(-1).width, frames.at(-1).height], [width, height]);
+  }
+  worker.port.postMessage({ type: 'frame', frame: { sequence: 4n, timestamp: 1, producerDropped: 0n, width: 4, height: 4, stride: 8 } });
+  await flush(); assert.equal(stream.error.code, 'UNSUPPORTED_FORMAT'); assert.equal(frames.length, 3);
+  t.reply(t.messages.length - 1, { result: true }); await stream.close();
 });
 
 test('Worker failures and unresponsive closure release native consumers without releasing detached buffers', async () => {

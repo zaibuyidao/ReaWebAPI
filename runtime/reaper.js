@@ -633,35 +633,51 @@
           if (!active) return;
           try {
             const buffer = event.data, view = new DataView(buffer);
-            const version = descriptor.layoutVersion === 2 ? 2 : 1, header = version === 2 ? 80 : 40;
+            const version = descriptor.layoutVersion === 3 ? 3 : descriptor.layoutVersion === 2 ? 2 : 1;
+            const header = version === 3 ? 56 : version === 2 ? 80 : 40;
             const shared = !!descriptor.sharedVideo;
+            const size = buffer.byteLength >= header ? Number(view.getBigUint64(32, true)) : 0;
             if (buffer.byteLength < header || view.getUint32(0, true) !== (version << 24 | 0x535752) ||
                 view.getUint8(4) !== ['', 'frame', 'audio', 'spectrum', 'meter', 'waveform', 'binary', 'midi'].indexOf(descriptor.kind) ||
-                Number(view.getBigUint64(32, true)) !== (shared ? descriptor.maxBytes : buffer.byteLength - header) ||
-                (shared ? buffer.byteLength !== 44 || !(view.getUint8(5) & 2) || view.getUint32(40, true) > 1 : buffer.byteLength - header > descriptor.maxBytes))
+                !Number.isSafeInteger(size) || size < 0 || size > descriptor.maxBytes ||
+                (shared ? buffer.byteLength !== header + 4 || !(view.getUint8(5) & 2) || view.getUint32(header, true) > 1 ||
+                  (version !== 3 && size !== descriptor.maxBytes) : size !== buffer.byteLength - header))
               throw failure('UNSUPPORTED_FORMAT', 'Invalid stream packet');
+            const width = version === 3 ? view.getUint32(40, true) : descriptor.width;
+            const height = version === 3 ? view.getUint32(44, true) : descriptor.height;
+            const stride = version === 3 ? view.getUint32(48, true) : descriptor.stride;
+            const planar = descriptor.format === 'i420';
+            if (version === 3 && (!descriptor.dynamicResolution || descriptor.kind !== 'frame' ||
+                !!(view.getUint8(5) & 2) !== shared ||
+                !['rgba8', 'i420'].includes(descriptor.format) || width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
+                width * height * 4 > 40 * 1024 * 1024 ||
+                stride !== width * (planar ? 1 : 4) || (planar && (width % 2 || height % 2)) ||
+                size !== stride * height * (planar ? 1.5 : 1) || size > 40 * 1024 * 1024))
+              throw failure('UNSUPPORTED_FORMAT', 'Invalid video dimensions');
             const sequence = view.getBigUint64(8, true), timestamp = view.getFloat64(16, true), dropped = view.getBigUint64(24, true);
             // Copy before ACK so retained packets stay immutable when the host reuses a slot.
             let bytes;
             if (descriptor.videoResource && !resourceBytes) {
-              return fetch(descriptor.videoResource + view.getUint32(40, true), { cache: 'no-store', signal: videoRequest.signal })
+              return fetch(descriptor.videoResource + view.getUint32(header, true), { cache: 'no-store', signal: videoRequest.signal })
                 .then(response => { if (!response.ok) throw failure('TRANSPORT_ERROR', 'Video resource unavailable'); return response.arrayBuffer(); })
                 .then(buffer => receive(event, new Uint8Array(buffer))).catch(packetError);
             }
             if (descriptor.videoNativeCopy) {
-              const copy = nativeVideoCopy(descriptor.token, view.getUint32(40, true));
-              if (!(copy instanceof ArrayBuffer) || copy.byteLength !== descriptor.maxBytes) throw failure('UNSUPPORTED_FORMAT', 'Invalid native video frame');
+              const slot = view.getUint32(header, true);
+              const copy = version === 3 ? nativeVideoCopy(descriptor.token, slot, size) : nativeVideoCopy(descriptor.token, slot);
+              if (!(copy instanceof ArrayBuffer) || copy.byteLength !== size) throw failure('UNSUPPORTED_FORMAT', 'Invalid native video frame');
               bytes = new Uint8Array(copy);
             } else if (descriptor.videoResource) {
               bytes = resourceBytes;
-              if (bytes.byteLength !== descriptor.maxBytes) throw failure('UNSUPPORTED_FORMAT', 'Invalid video resource size');
-            } else bytes = shared ? new Uint8Array(videoBuffer, view.getUint32(40, true) * descriptor.maxBytes, descriptor.maxBytes).slice() : new Uint8Array(buffer, header);
+              if (bytes.byteLength !== size) throw failure('UNSUPPORTED_FORMAT', 'Invalid video resource size');
+            } else bytes = shared ? new Uint8Array(videoBuffer, view.getUint32(header, true) * descriptor.maxBytes, size).slice() : new Uint8Array(buffer, header);
             const data = descriptor.format === 'float32' ? new Float32Array(buffer, header) : bytes;
             const timing = version === 2 ? Object.freeze({ clockEpoch: view.getBigUint64(40, true),
               firstSample: view.getBigUint64(48, true), sourceDropped: view.getBigUint64(56, true),
               position: view.getFloat64(64, true), playState: view.getUint8(72), discontinuity: !!view.getUint8(73) }) : undefined;
             const packet = Object.freeze({ sequence, frameId: sequence, timestamp, producerDropped: dropped, data, bytes,
               ...(timing ? { timing } : {}),
+              ...(descriptor.kind === 'frame' ? { width, height, stride } : {}),
               ...(descriptor.kind === 'frame' && (view.getUint8(5) & 1) ? { discontinuity: true } : {}) });
             last = packet;
             if (diagnosticEnabled) ++health.streamPackets;
@@ -835,8 +851,17 @@
           const frame = data.frame;
           if (typeof frame?.sequence !== 'bigint' || frame.sequence < 0n || typeof frame.producerDropped !== 'bigint' || frame.producerDropped < 0n ||
               !Number.isFinite(frame.timestamp)) { void stop('UNSUPPORTED_FORMAT', 'Invalid video frame metadata'); return; }
+          if (descriptor.dynamicResolution && (!Number.isInteger(frame.width) || !Number.isInteger(frame.height) ||
+              frame.width <= 0 || frame.height <= 0 || frame.width > 8192 || frame.height > 8192 ||
+              frame.width * frame.height * 4 > 40 * 1024 * 1024 ||
+              frame.stride !== frame.width * (descriptor.format === 'i420' ? 1 : 4) ||
+              (descriptor.format === 'i420' && (frame.width % 2 || frame.height % 2)) ||
+              frame.stride * frame.height * (descriptor.format === 'i420' ? 1.5 : 1) > descriptor.maxBytes)) {
+            void stop('UNSUPPORTED_FORMAT', 'Invalid video frame dimensions'); return;
+          }
           announce('data', Object.freeze({ sequence: frame.sequence, frameId: frame.sequence, timestamp: frame.timestamp,
-            producerDropped: frame.producerDropped, discontinuity: !!frame.discontinuity }));
+            producerDropped: frame.producerDropped, discontinuity: !!frame.discontinuity,
+            width: frame.width ?? descriptor.width, height: frame.height ?? descriptor.height, stride: frame.stride ?? descriptor.stride }));
         }
       };
       port.onmessageerror = () => { void stop('TRANSPORT_ERROR', 'Video worker message could not be read'); };

@@ -12,8 +12,8 @@ struct VideoMemory {
   uint32_t frame_bytes = 0;
   std::string resource_url;
   bool script_copy = false;
-  virtual void write_slot(unsigned slot, const void* bytes) const {
-    std::memcpy(data + size_t(slot) * frame_bytes, bytes, frame_bytes);
+  virtual void write_slot(unsigned slot, const void* bytes, uint32_t count = 0) const {
+    std::memcpy(data + size_t(slot) * frame_bytes, bytes, count ? count : frame_bytes);
   }
   virtual ~VideoMemory() = default;
 };

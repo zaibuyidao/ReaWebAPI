@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <cstring>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <string>
@@ -19,7 +20,7 @@ struct Document {
 };
 struct Page { std::shared_ptr<Document> document; };
 
-JSCValue* copy(const char* token, int slot, gpointer data) {
+JSCValue* copy(const char* token, int slot, double requested, gpointer data) {
   const auto document = *static_cast<std::shared_ptr<Document>*>(data);
   auto context = jsc_context_get_current();
   const auto found = document->slots.find(token ? token : "");
@@ -28,11 +29,13 @@ JSCValue* copy(const char* token, int slot, gpointer data) {
   if (slot == -1) return jsc_value_new_number(context, found->second->bytes);
   if (slot != 0 && slot != 1) return jsc_value_new_null(context);
   const auto& mapping = *found->second;
-  auto array = jsc_value_new_typed_array(context, JSC_TYPED_ARRAY_UINT8, mapping.bytes);
+  if (std::isfinite(requested) && (requested < 0 || requested > mapping.bytes || std::floor(requested) != requested)) return jsc_value_new_null(context);
+  const size_t count = std::isfinite(requested) && requested > 0 ? size_t(requested) : mapping.bytes;
+  auto array = jsc_value_new_typed_array(context, JSC_TYPED_ARRAY_UINT8, count);
   gsize length = 0;
   auto bytes = jsc_value_typed_array_get_data(array, &length);
-  if (!bytes || length != mapping.bytes) { g_object_unref(array); jsc_context_throw(context, "Unable to allocate video frame"); return jsc_value_new_null(context); }
-  std::memcpy(bytes, static_cast<unsigned char*>(mapping.data) + slot * mapping.bytes, mapping.bytes);
+  if (!bytes || length != count) { g_object_unref(array); jsc_context_throw(context, "Unable to allocate video frame"); return jsc_value_new_null(context); }
+  std::memcpy(bytes, static_cast<unsigned char*>(mapping.data) + slot * mapping.bytes, count);
   auto buffer = jsc_value_typed_array_get_buffer(array); g_object_unref(array); return buffer;
 }
 
@@ -77,7 +80,7 @@ extern "C" G_MODULE_EXPORT void webkit_web_extension_initialize(WebKitWebExtensi
     state->document = std::make_shared<Document>();
     auto context = webkit_frame_get_js_context(frame);
     auto function = jsc_value_new_function(context, "__reawebVideoCopy", G_CALLBACK(copy),
-      new std::shared_ptr<Document>(state->document), +[](gpointer p) { delete static_cast<std::shared_ptr<Document>*>(p); }, JSC_TYPE_VALUE, 2, G_TYPE_STRING, G_TYPE_INT);
+      new std::shared_ptr<Document>(state->document), +[](gpointer p) { delete static_cast<std::shared_ptr<Document>*>(p); }, JSC_TYPE_VALUE, 3, G_TYPE_STRING, G_TYPE_INT, G_TYPE_DOUBLE);
     auto global = jsc_context_get_global_object(context);
     jsc_value_object_define_property_data(global, "__reawebVideoCopy", JSCValuePropertyFlags(0), function);
     g_object_unref(global); g_object_unref(function);

@@ -42,15 +42,20 @@ interface ReaWebStreamInfo {
   format: 'rgba8' | 'bgra8' | 'float32' | 'bytes' | 'i420'; capacity: number; maxBytes: number;
   colorMatrix?: 'bt709'; colorRange?: 'limited';
   colorConversion?: 'reaper-neon' | 'reaper-sse';
+  /** Initial dimensions. Dynamic video packets carry the dimensions of their own pixels. */
   width: number; height: number; stride: number; channels: number; sampleRate: number;
   blockFrames: number; fftSize: number; binHz: number; updateRate: number; source: string;
   policy: 'latest' | 'drop-new';
-  layoutVersion?: 2;
+  layoutVersion?: 2 | 3;
+  /** Source/fit video can change dimensions within this connection. maxBytes is the frame capacity. */
+  dynamicResolution?: boolean;
   jsfx?: Readonly<{ sessionId: string; id: string; source: string; [key: string]: unknown }>;
 }
 interface ReaWebStreamPacket {
   sequence: bigint; frameId: bigint; timestamp: number; producerDropped: bigint;
   data: Uint8Array | Float32Array; bytes: Uint8Array;
+  /** Frame dimensions and row stride, supplied for video packets. */
+  width?: number; height?: number; stride?: number;
   /** Project video invalidation clears frames queued before this packet. */
   discontinuity?: boolean;
   timing?: Readonly<{ clockEpoch: bigint; firstSample: bigint; sourceDropped: bigint;

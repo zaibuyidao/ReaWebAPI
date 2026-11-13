@@ -151,7 +151,7 @@ void main(){
     draw(frame) {
       if (restoreError) throw restoreError;
       if (lost) return false;
-      const w = sourceWidth, h = sourceHeight;
+      const w = frame.width || sourceWidth, h = frame.height || sourceHeight;
       if (w <= 0 || h <= 0 || w % 2 || h % 2 || w > maximum || h * 3 / 2 > maximum || frame.bytes.byteLength !== w * h * 3 / 2)
         throw Object.assign(new Error('Unsupported I420 frame dimensions'), { code: 'VIDEO_RENDER_LIMIT' });
       if (width !== w || height !== h) {
@@ -162,6 +162,7 @@ void main(){
         gl.uniform1i(conversionUniform, sse ? 1 : 0);
       }
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h * 3 / 2, gl.RED_INTEGER, gl.UNSIGNED_BYTE, frame.bytes);
+      sourceWidth = w; sourceHeight = h;
       hasTexture = true; return paint();
     },
     clear() { hasTexture = false; if (!lost) gl.clear(gl.COLOR_BUFFER_BIT); },

@@ -47,6 +47,63 @@ for (const bad of ['slot', 'reuse', 'header', 'timestamp']) {
   assert.equal(messages.at(-1).code, 'UNSUPPORTED_FORMAT'); assert.equal(socket.sent.length, 0);
 }
 console.log('Video worker shared/raw transport, slot leases, malformed packets and return ownership passed');
+for (const shared of [false, true]) for (const format of ['rgba8', 'i420']) {
+  const planar = format === 'i420', maxBytes = 64, frames = [], messages = [], resizes = [];
+  const buffer = shared ? new ArrayBuffer(maxBytes * 2) : null;
+  const info = { ...descriptor, format, stride: planar ? 2 : 8, maxBytes, sharedVideo: shared,
+    dynamicResolution: true, layoutVersion: 3, colorMatrix: 'bt709', colorRange: 'limited', colorConversion: 'reaper-sse' };
+  const close = connectVideoStream({ descriptor: info, buffer, port: { postMessage: value => messages.push(value), close() {} } }, {
+    resize: (w, h) => resizes.push([w, h]), push: frame => frames.push(frame), clear() {}
+  });
+  socket.onopen();
+  for (const [index, [width, height]] of [[2, 2], [4, 2], [2, 4], [2, 2]].entries()) {
+    const size = width * height * (planar ? 1.5 : 4), slot = index % 2;
+    const data = new ArrayBuffer(shared ? 60 : 56 + size), view = new DataView(data);
+    view.setUint32(0, 0x03535752, true); view.setUint8(4, 1); view.setUint8(5, shared ? 2 : 0);
+    view.setBigUint64(8, BigInt(index), true); view.setFloat64(16, index / 60, true); view.setBigUint64(32, BigInt(size), true);
+    view.setUint32(40, width, true); view.setUint32(44, height, true); view.setUint32(48, width * (planar ? 1 : 4), true);
+    if (shared) { view.setUint32(56, slot, true); new Uint8Array(buffer, slot * maxBytes, size).fill(index); }
+    else new Uint8Array(data, 56).fill(index);
+    socket.onmessage({ data });
+    const frame = frames.at(-1);
+    assert.deepEqual([frame.width, frame.height, frame.bytes.byteLength], [width, height, size]);
+    assert.ok(frame.bytes.every(value => value === index));
+    assert.equal(socket.sent.length, index, 'The current frame keeps its slot until upload');
+    frame.release();
+  }
+  assert.deepEqual(resizes, [[2, 2]], 'Incoming sizes must not clear queued frames or the visible surface');
+  assert.equal(messages.filter(value => value.type === 'frame').length, 4);
+  assert.equal(socket.sent.length, 4); close();
+}
+for (const invalid of ['width', 'stride', 'size', 'odd-i420', 'budget']) {
+  const messages = [];
+  const planar = invalid === 'odd-i420';
+  connectVideoStream({ descriptor: { ...descriptor, format: planar ? 'i420' : 'rgba8', stride: planar ? 2 : 8,
+    dynamicResolution: true, layoutVersion: 3, maxBytes: 64, sharedVideo: true,
+    colorMatrix: 'bt709', colorRange: 'limited', colorConversion: 'reaper-sse' }, buffer: new ArrayBuffer(128),
+    port: { postMessage: value => messages.push(value), close() {} } }, { resize() {}, push() {}, clear() {} });
+  const data = new ArrayBuffer(60), view = new DataView(data);
+  view.setUint32(0, 0x03535752, true); view.setUint8(4, 1); view.setUint8(5, 2);
+  view.setBigUint64(32, invalid === 'size' ? 15n : invalid === 'budget' ? 256n : planar ? 6n : 16n, true);
+  view.setUint32(40, invalid === 'width' ? 0 : planar ? 1 : invalid === 'budget' ? 8 : 2, true);
+  view.setUint32(44, invalid === 'budget' ? 8 : 2, true);
+  view.setUint32(48, invalid === 'stride' ? 7 : planar ? 1 : invalid === 'budget' ? 32 : 8, true);
+  socket.onmessage({ data });
+  assert.equal(messages.at(-1).code, 'UNSUPPORTED_FORMAT'); assert.equal(socket.sent.length, 0);
+}
+console.log('Dynamic RGBA/I420 shared and raw frames preserve sizes, slot leases and limits');
+{
+  const messages = [], width = 4096, height = 3072, size = width * height * 1.5;
+  connectVideoStream({ descriptor: { ...descriptor, format: 'i420', stride: 2, maxBytes: 40 * 1024 * 1024,
+    dynamicResolution: true, layoutVersion: 3, colorMatrix: 'bt709', colorRange: 'limited', colorConversion: 'reaper-sse' },
+    port: { postMessage: value => messages.push(value), close() {} } }, { resize() {}, push() {}, clear() {} });
+  const data = new ArrayBuffer(56 + size), view = new DataView(data);
+  view.setUint32(0, 0x03535752, true); view.setUint8(4, 1); view.setBigUint64(32, BigInt(size), true);
+  view.setUint32(40, width, true); view.setUint32(44, height, true); view.setUint32(48, width, true);
+  socket.onmessage({ data });
+  assert.equal(messages.at(-1).code, 'UNSUPPORTED_FORMAT', 'I420 obeys the RGBA-equivalent pixel budget even when its payload fits');
+  assert.equal(socket.sent.length, 0);
+}
 for (const conversion of ['reaper-neon', 'reaper-sse', 'unknown']) {
   const messages = [], frames = [], port = { postMessage: data => messages.push(data), close() {} };
   const info = { ...descriptor, format: 'i420', stride: 2, maxBytes: 6, sharedVideo: true,

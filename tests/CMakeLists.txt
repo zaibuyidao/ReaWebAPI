@@ -538,3 +538,14 @@ add_test(NAME web_resources COMMAND "${Python3_EXECUTABLE}" -X utf8
   "${CMAKE_CURRENT_SOURCE_DIR}/web_resources_contract.py" "$<TARGET_FILE:web_resources_driver>")
 add_test(NAME auto_app_identity COMMAND "${Python3_EXECUTABLE}" -X utf8
   "${CMAKE_CURRENT_SOURCE_DIR}/auto_app_identity_contract.py" "$<TARGET_FILE:web_resources_driver>")
+
+if(WIN32)
+  add_executable(windows_video_dynamic windows_video_dynamic.cpp)
+  target_include_directories(windows_video_dynamic PRIVATE "${PROJECT_SOURCE_DIR}/src")
+  target_link_libraries(windows_video_dynamic PRIVATE reaweb_core d3d11 dxgi dcomp d3dcompiler ole32 user32)
+  target_compile_definitions(windows_video_dynamic PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  add_test(NAME windows_video_dynamic COMMAND windows_video_dynamic)
+endif()
+
+add_test(NAME video_transport_dynamic COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/stream_transport_contract.py" "$<TARGET_FILE:stream_transport_driver>" video-dynamic jitter)
+add_test(NAME video_transport_dynamic_shared COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/stream_transport_contract.py" "$<TARGET_FILE:stream_transport_driver>" video-dynamic-shared jitter)

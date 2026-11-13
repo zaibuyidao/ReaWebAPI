@@ -21,6 +21,8 @@ public:
   std::shared_ptr<Message> acquire(size_t incoming) {
     reserve_ = incoming;
     if (incoming > budget_) return {};
+    for (const auto& message : messages_)
+      if (message.use_count() == 1 && message->video.capacity() == incoming) return message;
     for (const auto& message : messages_) if (message.use_count() == 1) {
       // Do not return a previous profile's larger allocation to the producer ring.
       if (message->video.capacity() != incoming) decltype(message->video)().swap(message->video);

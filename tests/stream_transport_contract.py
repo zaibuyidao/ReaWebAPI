@@ -65,23 +65,31 @@ def receive(sock):
         assert data[2:] == b'STREAM_CLOSED'
         return None
     shared = first.get('sharedVideo') and sock is a
-    header_size = 80 if stream_version == 2 else 40
-    assert length == header_size + (4 if shared else first['maxBytes'])
+    header_size = 80 if stream_version == 2 else 56 if stream_version == 3 else 40
+    if stream_version != 3:
+        assert length == header_size + (4 if shared else first['maxBytes'])
     # Allow a bounded transfer window for large video frames on slower runners.
     timeout = 15 if video and length > 16 * 1024 * 1024 else None
     data = exact(sock, length, timeout)
     assert data[:4] == b'RWS'+bytes([stream_version])
     sequence = struct.unpack_from('<Q', data, 8)[0]
     assert data[5] == int(video and sequence % 3 == 1) | (2 if shared else 0), 'Video discontinuity flag leaked or was lost'
+    payload_bytes = first['maxBytes']
+    if stream_version == 3:
+        width, height = ((4, 4), (16, 8), (8, 16), (2, 2))[sequence % 4]
+        assert struct.unpack_from('<III', data, 40) == (width, height, width * 4)
+        payload_bytes = width * height * 4
+        assert length == header_size + (4 if shared else payload_bytes)
+        assert struct.unpack_from('<Q', data, 32)[0] == payload_bytes
     if shared:
-        assert struct.unpack_from('<Q', data, 32)[0] == first['maxBytes']
-        slot = struct.unpack_from('<I', data, 40)[0]
+        assert struct.unpack_from('<Q', data, 32)[0] == payload_bytes
+        slot = struct.unpack_from('<I', data, header_size)[0]
         assert slot == shared_slots[0], 'Shared video reused an unacknowledged slot'
         shared_slots[0] ^= 1
         return sequence
     if stream_version == 2:
         assert struct.unpack_from('<QQQdBB',data,40) == (99,9007199254740992+sequence,17,0.5,1,1)
-    assert data.count(sequence & 255, header_size) == first['maxBytes'], f'Corrupt payload for frame {sequence}'
+    assert data.count(sequence & 255, header_size) == payload_bytes, f'Corrupt payload for frame {sequence}'
     return sequence
 
 
@@ -97,7 +105,7 @@ shared_slots = [0]
 try:
     first, second = json.loads(process.stdout.readline())
     stream_version = first.get('layoutVersion', 1)
-    assert stream_version == (2 if sys.argv[-1]=='timing' else 1)
+    assert stream_version == (2 if sys.argv[-1]=='timing' else 3 if len(sys.argv) > 2 and 'dynamic' in sys.argv[2] else 1)
     assert connect(first, 'http://wrong.invalid') is None
     a, b = connect(first), connect(second)
     assert a is not None and b is not None

@@ -8,18 +8,25 @@
 #include <regex>
 
 namespace reaweb {
-StreamBuffer::StreamBuffer(int type, const ReaWeb_StreamDesc& desc, bool video) : kind(type), descriptor(desc), project_video(video), slots_(new Slot[desc.capacity]) {
+StreamBuffer::StreamBuffer(int type, const ReaWeb_StreamDesc& desc, bool video, bool dynamic) : kind(type), descriptor(desc), project_video(video), dynamic_video(video && dynamic), dimensions_((uint64_t(desc.width) << 32) | desc.height), slots_(new Slot[desc.capacity]) {
   for (unsigned i = 0; i < desc.capacity; ++i) {
     if (project_video) slots_[i].video_data.resize(desc.max_bytes);
     else slots_[i].data.reset(new unsigned char[desc.max_bytes]);
   }
 }
 int StreamBuffer::publish(const void* data, uint32_t bytes, uint64_t sequence, double timestamp, const Timing* timing, bool discontinuity,
-                          std::vector<unsigned char>* owned_video) noexcept {
+                          std::vector<unsigned char>* owned_video, const VideoFrameLayout* layout) noexcept {
   if (closed.load(std::memory_order_acquire)) return REAWEB_STREAM_CLOSED;
-  if (!data || !bytes || bytes > descriptor.max_bytes || !std::isfinite(timestamp)) return REAWEB_INVALID_ARGUMENT;
-  if (owned_video && (!project_video || owned_video->data() != data || owned_video->size() != descriptor.max_bytes)) return REAWEB_INVALID_ARGUMENT;
-  if (kind == REAWEB_FRAME && bytes != (descriptor.format == REAWEB_PIXEL_I420 ? descriptor.max_bytes : descriptor.stride * descriptor.height)) return REAWEB_INVALID_ARGUMENT;
+  if (!data || !bytes || bytes > max_bytes() || !std::isfinite(timestamp)) return REAWEB_INVALID_ARGUMENT;
+  if (owned_video && (!project_video || owned_video->data() != data || owned_video->size() != bytes)) return REAWEB_INVALID_ARGUMENT;
+  const auto frame = layout ? *layout : video_layout();
+  if (layout && !dynamic_video) return REAWEB_INVALID_ARGUMENT;
+  if (dynamic_video && (!frame.width || !frame.height || frame.width > 8192 || frame.height > 8192 ||
+      uint64_t(frame.width) * frame.height * 4 > video_max_frame_bytes ||
+      frame.stride != frame.width * (descriptor.format == REAWEB_PIXEL_I420 ? 1u : 4u) ||
+      (descriptor.format == REAWEB_PIXEL_I420 && ((frame.width & 1) || (frame.height & 1))) ||
+      bytes != uint64_t(frame.stride) * frame.height * (descriptor.format == REAWEB_PIXEL_I420 ? 3 : 2) / 2)) return REAWEB_INVALID_ARGUMENT;
+  if (kind == REAWEB_FRAME && !dynamic_video && bytes != (descriptor.format == REAWEB_PIXEL_I420 ? descriptor.max_bytes : descriptor.stride * descriptor.height)) return REAWEB_INVALID_ARGUMENT;
   if (descriptor.format == REAWEB_FLOAT32 && bytes % (sizeof(float) *
       ((kind == REAWEB_AUDIO || kind == REAWEB_SPECTRUM || kind == REAWEB_WAVEFORM) ? std::max(1u, descriptor.channels) : 1u))) return REAWEB_INVALID_ARGUMENT;
   if (writing_.test_and_set(std::memory_order_acquire)) return REAWEB_PRODUCER_BUSY;
@@ -43,8 +50,18 @@ int StreamBuffer::publish(const void* data, uint32_t bytes, uint64_t sequence, d
     }
     dropped.fetch_add(1, std::memory_order_relaxed);
   }
-  if (owned_video) slot.video_data.swap(*owned_video);
-  else std::memcpy(project_video ? slot.video_data.data() : slot.data.get(), data, bytes);
+  try {
+    if (owned_video) slot.video_data.swap(*owned_video);
+    else {
+      if (dynamic_video) {
+        if (bytes > slot.video_data.capacity()) std::vector<unsigned char>(bytes).swap(slot.video_data);
+        else slot.video_data.resize(bytes);
+      }
+      std::memcpy(project_video ? slot.video_data.data() : slot.data.get(), data, bytes);
+    }
+  } catch (...) { slot.state.store(0, std::memory_order_release); return REAWEB_BUFFER_FULL; }
+  slot.layout = frame;
+  if (dynamic_video) dimensions_.store((uint64_t(frame.width) << 32) | frame.height, std::memory_order_release);
   slot.bytes = bytes; slot.sequence = sequence; slot.timestamp = timestamp; slot.order = ++order_;
   slot.timing = timing ? std::optional<Timing>(*timing) : std::nullopt;
   slot.discontinuity = project_video && discontinuity;
@@ -55,7 +72,7 @@ int StreamBuffer::publish(const void* data, uint32_t bytes, uint64_t sequence, d
 }
 bool StreamBuffer::consume(Packet& packet) {
   if (project_video) {
-    if (packet.data.size() != descriptor.max_bytes) {
+    if (!dynamic_video && packet.data.size() != descriptor.max_bytes) {
       bool ready = false;
       for (unsigned i = 0; i < descriptor.capacity; ++i) ready |= slots_[i].state.load(std::memory_order_acquire) == 2;
       if (!ready) return false;
@@ -77,6 +94,7 @@ bool StreamBuffer::consume(Packet& packet) {
     }
     if (!oldest) return false;
     packet.sequence = oldest->sequence; packet.timestamp = oldest->timestamp; packet.dropped = dropped.load(); packet.timing = oldest->timing; packet.discontinuity = oldest->discontinuity;
+    packet.layout = oldest->layout;
     packet.data.swap(oldest->video_data);
     packet.data.resize(oldest->bytes);
     consumed_order_ = oldest->order;
@@ -169,7 +187,8 @@ int StreamHub::create(int kind, const char* name, const ReaWeb_StreamDesc* input
     if (kind == REAWEB_AUDIO && (!desc.block_frames || uint64_t(desc.block_frames) * desc.channels * 4 != desc.max_bytes)) return REAWEB_INVALID_ARGUMENT;
     if (kind == REAWEB_SPECTRUM && (desc.fft_size < 32 || desc.fft_size > 32768 || (desc.fft_size & (desc.fft_size - 1)))) return REAWEB_INVALID_ARGUMENT;
   }
-  const auto allocation = size_t(desc.capacity) * desc.max_bytes;
+  const bool dynamic_video = project_video && kind == REAWEB_FRAME && video_metadata.is_object() && video_metadata.value("dynamicResolution", false);
+  const auto allocation = size_t(desc.capacity) * (dynamic_video ? video_max_frame_bytes : desc.max_bytes);
   std::lock_guard<std::mutex> lock(mutex_);
   reap();
   if (allocation > 256 * 1024 * 1024 - allocated_) return REAWEB_QUEUE_LIMIT;
@@ -181,7 +200,7 @@ int StreamHub::create(int kind, const char* name, const ReaWeb_StreamDesc* input
   }
   if (!free) return REAWEB_QUEUE_LIMIT;
   free->source = desc.source ? desc.source : ""; desc.source = nullptr;
-  free->owned = std::make_shared<StreamBuffer>(kind, desc, kind == REAWEB_FRAME && project_video);
+  free->owned = std::make_shared<StreamBuffer>(kind, desc, kind == REAWEB_FRAME && project_video, dynamic_video);
   free->name = name; free->owner = desc.owner; free->allocation = allocation; allocated_ += allocation;
   free->protected_window = 0; free->protected_generation = 0; free->metadata = project_video ? video_metadata : Json();
   *handle = (++serial_ << 8) | index;
@@ -200,14 +219,14 @@ int StreamHub::create_jsfx(int kind, const char* name, const ReaWeb_StreamDesc* 
   return REAWEB_OK;
 }
 int StreamHub::publish(int kind, uint64_t handle, const void* data, uint32_t bytes, uint64_t sequence, double timestamp,
-                       const StreamBuffer::Timing* timing, bool discontinuity, std::vector<unsigned char>* owned_video) noexcept {
+                       const StreamBuffer::Timing* timing, bool discontinuity, std::vector<unsigned char>* owned_video, const VideoFrameLayout* layout) noexcept {
   const unsigned index = handle & 255;
   if (!handle || index >= slots_.size()) return REAWEB_STREAM_NOT_FOUND;
   auto& slot = slots_[index]; slot.readers.fetch_add(1, std::memory_order_seq_cst);
   auto* buffer = slot.buffer.load(std::memory_order_seq_cst);
   int status = REAWEB_STREAM_CLOSED;
   if (buffer && slot.handle.load(std::memory_order_acquire) == handle)
-    status = buffer->kind == kind ? buffer->publish(data, bytes, sequence, timestamp, timing, discontinuity, owned_video) : REAWEB_UNSUPPORTED_FORMAT;
+    status = buffer->kind == kind ? buffer->publish(data, bytes, sequence, timestamp, timing, discontinuity, owned_video, layout) : REAWEB_UNSUPPORTED_FORMAT;
   slot.readers.fetch_sub(1, std::memory_order_release);
   return status;
 }
@@ -324,7 +343,11 @@ Json StreamHub::attach_consumer(const std::string& name, int window, uint64_t ge
     for (int i = 0; i < 8; ++i) { char text[9]; std::snprintf(text, sizeof(text), "%08x", random()); token += text; }
     auto inserted = tickets_.emplace(token, Ticket{window, generation, origin, slot.owned});
     inserted.first->second.external = external;
-    const auto& d = slot.owned->descriptor;
+    auto d = slot.owned->descriptor;
+    if (slot.owned->dynamic_video) {
+      const auto layout = slot.owned->video_layout();
+      d.width = layout.width; d.height = layout.height; d.stride = layout.stride; d.max_bytes = slot.owned->max_bytes();
+    }
     static const char* kinds[] = {"", "frame", "audio", "spectrum", "meter", "waveform", "binary", "midi"};
     static const char* formats[] = {"", "rgba8", "bgra8", "float32", "bytes", "i420"};
     Json result{{"token", token}, {"url", transport_->url() + "/" + token}, {"name", name}, {"kind", kinds[slot.owned->kind]},
@@ -332,6 +355,7 @@ Json StreamHub::attach_consumer(const std::string& name, int window, uint64_t ge
       {"stride", d.stride}, {"channels", d.channels}, {"sampleRate", d.sample_rate}, {"blockFrames", d.block_frames},
       {"fftSize", d.fft_size}, {"binHz", d.fft_size ? double(d.sample_rate) / d.fft_size : 0}, {"updateRate", d.update_rate}, {"source", slot.source},
       {"policy", slot.owned->kind == REAWEB_AUDIO || slot.owned->kind == REAWEB_MIDI ? "drop-new" : "latest"}};
+    if (slot.owned->dynamic_video) { result["layoutVersion"] = 3; result["dynamicResolution"] = true; }
     if (slot.protected_window) { result["layoutVersion"] = 2; result["jsfx"] = slot.metadata; }
     if (slot.owned->project_video && d.format == REAWEB_PIXEL_I420) {
       result["colorMatrix"] = slot.metadata["colorMatrix"];

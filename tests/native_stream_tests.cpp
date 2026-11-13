@@ -58,6 +58,44 @@ int main() {
       CHECK(owned.consume(packet) && packet.sequence == 2);
       CHECK(std::all_of(packet.data.begin(), packet.data.end(), [](auto byte) { return byte == 42; }));
     }
+    {
+      StreamBuffer dynamic(REAWEB_FRAME, desc, true, true);
+      const VideoFrameLayout layouts[] = {{4, 4, 16}, {8, 4, 32}, {4, 8, 16}, {2, 2, 8}};
+      std::vector<unsigned char> frame;
+      StreamBuffer::Packet received;
+      for (uint64_t sequence = 1; sequence <= 64; ++sequence) {
+        const auto layout = layouts[sequence % 4];
+        frame.assign(size_t(layout.stride) * layout.height, static_cast<unsigned char>(sequence));
+        CHECK(dynamic.publish(frame.data(), uint32_t(frame.size()), sequence, 0, nullptr, false, &frame, &layout) == REAWEB_OK);
+        CHECK(dynamic.consume(received) && received.sequence == sequence);
+        CHECK(received.layout.width == layout.width && received.layout.height == layout.height && received.layout.stride == layout.stride);
+        CHECK(received.data.size() == size_t(layout.stride) * layout.height && !received.discontinuity);
+        CHECK(std::all_of(received.data.begin(), received.data.end(), [sequence](auto byte) { return byte == sequence; }));
+      }
+      std::atomic<bool> finished{false};
+      std::thread writer([&] {
+        std::vector<unsigned char> owned;
+        for (uint64_t sequence = 65; sequence <= 50000; ++sequence) {
+          const auto layout = layouts[sequence % 4];
+          owned.assign(size_t(layout.stride) * layout.height, static_cast<unsigned char>(sequence));
+          dynamic.publish(owned.data(), uint32_t(owned.size()), sequence, 0, nullptr, false, &owned, &layout);
+        }
+        finished = true;
+      });
+      bool consistent = true; uint64_t previous = 64;
+      for (;;) {
+        if (!dynamic.consume(received)) { if (finished) break; continue; }
+        const auto layout = layouts[received.sequence % 4];
+        consistent &= received.sequence > previous && received.layout.width == layout.width && received.layout.height == layout.height;
+        consistent &= received.data.size() == size_t(layout.stride) * layout.height;
+        consistent &= std::all_of(received.data.begin(), received.data.end(), [&](auto byte) { return byte == (received.sequence & 255); });
+        previous = received.sequence;
+      }
+      writer.join(); CHECK(consistent && previous > 64);
+      VideoFrameLayout invalid{8192, 8192, 32768};
+      CHECK(dynamic.publish(pixels, sizeof(pixels), 65, 0, nullptr, false, nullptr, &invalid) == REAWEB_INVALID_ARGUMENT);
+      CHECK(latest.publish(pixels, sizeof(pixels), 65, 0, nullptr, false, nullptr, &layouts[0]) == REAWEB_INVALID_ARGUMENT);
+    }
     CHECK(latest.publish(pixels, 63, 1, 0) == REAWEB_INVALID_ARGUMENT);
     std::atomic<bool> done{false}; std::thread producer([&] {
       for (unsigned i = 1; i <= 100000; ++i) { std::memset(pixels, i & 255, sizeof(pixels)); latest.publish(pixels, sizeof(pixels), i, 0); }

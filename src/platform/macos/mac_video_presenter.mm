@@ -65,6 +65,8 @@ struct SurfaceState {
   std::atomic<uint64_t> submitted{0}, presented{0}, dropped{0}, sequence{0};
   std::mutex mutex;
   std::array<float,4> uv{0,0,1,1};
+  double content_width=0,content_height=0;
+  bool aspect=true;
   std::string error;
   double first_presented=0,last_presented=0,max_acquire_ms=0;
 };
@@ -92,7 +94,8 @@ struct PresentationLease {
 class MetalSource final : public VideoPresentationSource, public std::enable_shared_from_this<MetalSource> {
   struct Slot {
     std::vector<unsigned char> bytes;
-    id<MTLTexture> input,rgb;
+    uint32_t width=0,height=0;
+    id<MTLTexture> input=nil,rgb=nil;
     std::atomic<unsigned> leases{0};
     uint64_t sequence=0,generation=0;
     bool clear=false;
@@ -109,7 +112,7 @@ class MetalSource final : public VideoPresentationSource, public std::enable_sha
   std::mutex surfaces_mutex_;
   std::vector<std::weak_ptr<SurfaceState>> surfaces_;
   int width_,height_;
-  size_t bytes_;
+  std::atomic<uint64_t> dimensions_;
   bool i420_;
 
   std::vector<std::shared_ptr<SurfaceState>> surfaces() {
@@ -147,21 +150,34 @@ class MetalSource final : public VideoPresentationSource, public std::enable_sha
   }
   void encode(Slot* slot,bool upload) {
     if(slot->generation!=generation_) {--slot->leases;return;}
+    const auto width=slot->width,height=slot->height;
+    if(upload&&(slot->rgb.width!=width||slot->rgb.height!=height)) {
+      // Zero leases before submission guarantees that old textures are no longer in use.
+      slot->input=nil;slot->rgb=nil;
+      if(i420_) {
+        MTLTextureDescriptor* input=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Uint width:width height:height*3/2 mipmapped:NO];
+        input.storageMode=MTLStorageModeShared;input.usage=MTLTextureUsageShaderRead;slot->input=[device_ newTextureWithDescriptor:input];
+      }
+      MTLTextureDescriptor* rgb=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:width height:height mipmapped:NO];
+      rgb.storageMode=i420_?MTLStorageModePrivate:MTLStorageModeShared;rgb.usage=MTLTextureUsageShaderRead|(i420_?MTLTextureUsageShaderWrite:MTLTextureUsageUnknown);slot->rgb=[device_ newTextureWithDescriptor:rgb];
+      if((i420_&&!slot->input)||!slot->rgb){--slot->leases;fail("Metal video texture allocation failed");return;}
+    }
     id<MTLCommandBuffer> command=[queue_ commandBuffer];
     if(!command){--slot->leases;fail("Metal command buffer allocation failed");return;}
     if(upload) {
       if(i420_) {
-      [slot->input replaceRegion:MTLRegionMake2D(0,0,width_,height_*3/2) mipmapLevel:0 withBytes:slot->bytes.data() bytesPerRow:width_];
+      [slot->input replaceRegion:MTLRegionMake2D(0,0,width,height*3/2) mipmapLevel:0 withBytes:slot->bytes.data() bytesPerRow:width];
       id<MTLComputeCommandEncoder> compute=[command computeCommandEncoder];
       if(!compute){--slot->leases;fail("Metal video conversion encoder allocation failed");return;}
       [compute setComputePipelineState:convert_];[compute setTexture:slot->input atIndex:0];[compute setTexture:slot->rgb atIndex:1];
-      const uint32_t size[2]={uint32_t(width_),uint32_t(height_)};
+      const uint32_t size[2]={uint32_t(width),uint32_t(height)};
       [compute setBytes:size length:sizeof(size) atIndex:0];
-      [compute dispatchThreads:MTLSizeMake(width_,height_,1) threadsPerThreadgroup:MTLSizeMake(16,16,1)];[compute endEncoding];
+      [compute dispatchThreads:MTLSizeMake(width,height,1) threadsPerThreadgroup:MTLSizeMake(16,16,1)];[compute endEncoding];
       ++converted_;
       } else {
-        [slot->rgb replaceRegion:MTLRegionMake2D(0,0,width_,height_) mipmapLevel:0 withBytes:slot->bytes.data() bytesPerRow:width_*4];
+        [slot->rgb replaceRegion:MTLRegionMake2D(0,0,width,height) mipmapLevel:0 withBytes:slot->bytes.data() bytesPerRow:width*4];
       }
+      dimensions_.store((uint64_t(width)<<32)|height);
       ++uploaded_;
     }
     std::vector<std::shared_ptr<PresentationLease>> acquired;
@@ -179,7 +195,15 @@ class MetalSource final : public VideoPresentationSource, public std::enable_sha
       auto lease=std::make_shared<PresentationLease>(state,layer_revision);
       const double started=CACurrentMediaTime();id<CAMetalDrawable> drawable=[layer nextDrawable];
       std::array<float,4> uv;bool obsolete;
-      {std::lock_guard<std::mutex> guard(state->mutex);state->max_acquire_ms=std::max(state->max_acquire_ms,(CACurrentMediaTime()-started)*1000);uv=state->uv;obsolete=state->invalidated||state->failed||slot->generation!=generation_||state->generation!=slot->generation||state->layer_revision!=layer_revision;}
+      {std::lock_guard<std::mutex> guard(state->mutex);
+        state->max_acquire_ms=std::max(state->max_acquire_ms,(CACurrentMediaTime()-started)*1000);uv=state->uv;
+        if(state->aspect&&state->content_width>0&&state->content_height>0) {
+          const double fit=std::min(state->content_width/width,state->content_height/height);
+          const double fw=fit*width/state->content_width,fh=fit*height/state->content_height;
+          uv={float((uv[0]-(1-fw)/2)/fw),float((uv[1]-(1-fh)/2)/fh),float(uv[2]/fw),float(uv[3]/fh)};
+        }
+        obsolete=state->invalidated||state->failed||slot->generation!=generation_||state->generation!=slot->generation||state->layer_revision!=layer_revision;
+      }
       if(obsolete){lease->release();continue;}
       if(!drawable){lease->release();if(upload)++state->dropped;state->redraw=true;continue;}
       MTLRenderPassDescriptor* pass=[MTLRenderPassDescriptor renderPassDescriptor];
@@ -188,7 +212,7 @@ class MetalSource final : public VideoPresentationSource, public std::enable_sha
       id<MTLRenderCommandEncoder> render=[command renderCommandEncoderWithDescriptor:pass];
       if(!render){lease->release();for(const auto& previous:acquired)previous->release();--slot->leases;fail("Metal video render encoder allocation failed");return;}
       [render setRenderPipelineState:present_];[render setFragmentTexture:slot->rgb atIndex:0];
-      const float output[6]={float(drawable.texture.width),float(drawable.texture.height),uv[0]*width_,uv[1]*height_,uv[2]*width_,uv[3]*height_};
+      const float output[6]={float(drawable.texture.width),float(drawable.texture.height),uv[0]*width,uv[1]*height,uv[2]*width,uv[3]*height};
       [render setFragmentBytes:output length:sizeof(output) atIndex:0];
       [render drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];[render endEncoding];
       const uint64_t sequence=slot->sequence,generation=slot->generation;const bool clear=slot->clear;
@@ -222,7 +246,7 @@ class MetalSource final : public VideoPresentationSource, public std::enable_sha
     [command commit];
   }
 public:
-  MetalSource(int width,int height,bool i420=true):width_(width),height_(height),bytes_(size_t(width)*height*(i420?3:8)/2),i420_(i420) {
+  MetalSource(int width,int height,bool i420=true):width_(width),height_(height),dimensions_((uint64_t(width)<<32)|uint32_t(height)),i420_(i420) {
     device_=MTLCreateSystemDefaultDevice();
     if(!device_)throw Error("VIDEO_RENDERER_UNAVAILABLE","Metal is unavailable");
     queue_=[device_ newCommandQueue];
@@ -235,20 +259,9 @@ public:
     pipeline.colorAttachments[0].pixelFormat=MTLPixelFormatBGRA8Unorm;
     present_=[device_ newRenderPipelineStateWithDescriptor:pipeline error:&error];
     if(!queue_||!convert_||!present_)throw Error("VIDEO_RENDERER_UNAVAILABLE",error.localizedDescription.UTF8String?:"Metal pipeline allocation failed");
-    for(auto& slot:slots_) {
-      slot.bytes.resize(bytes_);
-      if(i420_) {
-      MTLTextureDescriptor* input=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Uint width:width height:height*3/2 mipmapped:NO];
-      input.storageMode=MTLStorageModeShared;input.usage=MTLTextureUsageShaderRead;slot.input=[device_ newTextureWithDescriptor:input];
-      }
-      MTLTextureDescriptor* rgb=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:width height:height mipmapped:NO];
-      rgb.storageMode=i420_?MTLStorageModePrivate:MTLStorageModeShared;rgb.usage=MTLTextureUsageShaderRead|(i420_?MTLTextureUsageShaderWrite:MTLTextureUsageUnknown);slot.rgb=[device_ newTextureWithDescriptor:rgb];
-      if((i420_&&!slot.input)||!slot.rgb)throw Error("VIDEO_RENDERER_UNAVAILABLE","Metal video texture allocation failed");
-    }
   }
   bool i420()const{return i420_;}
-  int width() const{return width_;}
-  int height() const{return height_;}
+  uint64_t dimensions()const{return dimensions_.load();}
   uint64_t dropped() const{return dropped_;}
   uint64_t uploaded()const{return uploaded_;}
   uint64_t converted()const{return converted_;}
@@ -273,13 +286,22 @@ public:
       dispatch_async(work_,^{if(self->current_){--self->current_->leases;self->current_=nullptr;}});
       return;
     }
-    if(frame.bytes!=bytes_){fail("Native video frame length changed");return;}
+    const uint32_t width=frame.width?frame.width:uint32_t(width_),height=frame.height?frame.height:uint32_t(height_);
+    if(!width||!height||width>8192||height>8192||uint64_t(width)*height>10485760||
+       (i420_&&((width&1)||(height&1)))||(frame.stride&&frame.stride!=width*(i420_?1:4))||
+       frame.bytes!=size_t(width)*height*(i420_?3:8)/2){fail("Invalid native video frame dimensions");return;}
     const auto generation=frame.discontinuity?++generation_:generation_.load();
     if(frame.discontinuity)clear_surfaces(generation);
     Slot* slot=nullptr;
     for(auto& candidate:slots_){unsigned expected=0;if(candidate.leases.compare_exchange_strong(expected,1)){slot=&candidate;break;}}
     if(!slot){++dropped_;return;}
-    std::memcpy(slot->bytes.data(),frame.data,bytes_);slot->sequence=frame.sequence;slot->generation=generation;slot->clear=frame.discontinuity;
+    try {
+      if(frame.bytes>slot->bytes.capacity())std::vector<unsigned char>(frame.bytes).swap(slot->bytes);
+      else slot->bytes.resize(frame.bytes);
+    }
+    catch(const std::exception& error){--slot->leases;fail(error.what());return;}
+    slot->width=width;slot->height=height;
+    std::memcpy(slot->bytes.data(),frame.data,frame.bytes);slot->sequence=frame.sequence;slot->generation=generation;slot->clear=frame.discontinuity;
     const auto self=shared_from_this();
     dispatch_async(work_,^{@autoreleasepool{self->encode(slot,true);}});
   }
@@ -333,12 +355,10 @@ public:
     const bool valid=has_layout_&&visible.size.width>0&&visible.size.height>0;
     if(valid) {
       NSRect content=rect_;
-      if(aspect_) {
-        const double scale=std::min(rect_.size.width/source_->width(),rect_.size.height/source_->height());
-        content.size=NSMakeSize(source_->width()*scale,source_->height()*scale);
-        content.origin.x+=(rect_.size.width-content.size.width)/2;content.origin.y+=(rect_.size.height-content.size.height)/2;
+      {std::lock_guard<std::mutex> guard(state_->mutex);
+        state_->content_width=content.size.width;state_->content_height=content.size.height;state_->aspect=aspect_;
+        state_->uv={float((visible.origin.x-content.origin.x)/content.size.width),float((visible.origin.y-content.origin.y)/content.size.height),float(visible.size.width/content.size.width),float(visible.size.height/content.size.height)};
       }
-      {std::lock_guard<std::mutex> guard(state_->mutex);state_->uv={float((visible.origin.x-content.origin.x)/content.size.width),float((visible.origin.y-content.origin.y)/content.size.height),float(visible.size.width/content.size.width),float(visible.size.height/content.size.height)};}
       NSRect target=visible;if(!web.isFlipped)target.origin.y=web.bounds.size.height-NSMaxY(target);
       target=[web convertRect:target toView:web.superview];
       const double scale=web.window.backingScaleFactor?:1;
@@ -355,10 +375,10 @@ public:
   }
   Json diagnostics()const override {
     std::lock_guard<std::mutex> guard(state_->mutex);
-    const auto presented=state_->presented.load();
+    const auto presented=state_->presented.load(),dimensions=source_->dimensions();
     return {{"renderer","native-metal"},{"closed",closed()},{"hasFrame",state_->has_frame.load()},
       {"submittedFrames",state_->submitted.load()},{"presentedFrames",presented},{"droppedFrames",state_->dropped.load()+source_->dropped()},
-      {"sourceWidth",source_->width()},{"sourceHeight",source_->height()},{"sequence",state_->sequence.load()},
+      {"sourceWidth",uint32_t(dimensions>>32)},{"sourceHeight",uint32_t(dimensions)},{"sequence",state_->sequence.load()},
       {"sourceUploadedFrames",source_->uploaded()},{"sourceConvertedFrames",source_->converted()},{"sourceDroppedFrames",source_->dropped()},
       {"presentationFPS",presented>1&&state_->last_presented>state_->first_presented?(presented-1)/(state_->last_presented-state_->first_presented):0},
       {"maxDrawableAcquireMs",state_->max_acquire_ms},{"error",state_->error}};
@@ -389,7 +409,7 @@ std::shared_ptr<MacVideoPresenter> make_mac_video_presenter(WKWebView* web,const
   {std::lock_guard<std::mutex> guard(registry_mutex);
     for(auto it=registry.begin();it!=registry.end();)if(it->second.expired())it=registry.erase(it);else ++it;
     source=registry[name].lock();
-    if(source&&(source->width()!=width||source->height()!=height||source->i420()!=i420))throw Error("VIDEO_FORMAT_CHANGED","Native video source dimensions changed");
+    if(source&&source->i420()!=i420)throw Error("VIDEO_FORMAT_CHANGED","Native video source format changed");
     if(!source){source=std::make_shared<MetalSource>(width,height,i420);registry[name]=source;}
   }
   return std::make_shared<Presenter>(web,std::move(source));

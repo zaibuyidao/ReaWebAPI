@@ -14,6 +14,7 @@ struct VideoPresentationFrame {
   uint64_t sequence = 0;
   double timestamp = 0;
   bool discontinuity = false;
+  uint32_t width = 0, height = 0, stride = 0;
 };
 
 class VideoPresentationSource {

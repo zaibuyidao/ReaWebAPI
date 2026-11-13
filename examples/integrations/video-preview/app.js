@@ -13,7 +13,7 @@ const messages = {
     originalStatus: 'Original pixels · scroll when the image exceeds the viewport', source: 'SOURCE', stream: 'STREAM', canvas: 'CANVAS BOX',
     fps: 'FPS · TARGET / CAPTURE / RECEIVE / DRAW', nativeFps: 'FPS · TARGET / CAPTURE / PRESENT', nativeObservedFps: 'FPS · TARGET / CAPTURE / OBSERVED PRESENT', nativeObservedHint: 'DXGI observations are a lower bound and may omit frames that were displayed.', nativeBox: 'DISPLAY AREA', pending: 'Waiting', stage: 'Video preview. Double-click to toggle fullscreen.',
     fullscreenUnavailable: 'Fullscreen is unavailable in this WebView. Use a floating preview window or a supported host.',
-    originalUnavailable: 'Original size requires a valid frame within the output pixel budget.', install: 'Install a compatible ReaWebAPI v0.3.9.33 video backend.'
+    originalUnavailable: 'Original size requires a valid frame within the output pixel budget.', install: 'Install a compatible ReaWebAPI v0.3.9.40 video backend.'
   },
   cn: {
     projectMonitor: '工程视频', title: '视频预览', options: '选项', display: '显示', theme: '外观', dark: '深色', light: '浅色',
@@ -26,7 +26,7 @@ const messages = {
     originalStatus: '原始像素显示，画面超出显示区域时可滚动查看', source: '源画面', stream: '视频流', canvas: '画布区域',
     fps: '帧率 · 目标 / 捕获 / 接收 / 绘制', nativeFps: '帧率 · 目标 / 捕获 / 呈现', nativeObservedFps: '帧率 · 目标 / 捕获 / 观察呈现', nativeObservedHint: 'DXGI 观察计数为下限，可能漏计已显示的帧。', nativeBox: '显示区域', pending: '等待画面', stage: '视频预览，双击切换全屏。',
     fullscreenUnavailable: '当前 WebView 无法全屏，请使用浮动预览窗口或支持全屏的宿主。',
-    originalUnavailable: '原始大小需要有效的视频画面，且尺寸不能超出输出像素预算。', install: '请安装兼容的 ReaWebAPI v0.3.9.33 视频后端。'
+    originalUnavailable: '原始大小需要有效的视频画面，且尺寸不能超出输出像素预算。', install: '请安装兼容的 ReaWebAPI v0.3.9.40 视频后端。'
   }
 };
 let language = 'en', statusKey = 'connecting', statusError;
@@ -114,6 +114,8 @@ function sameOutput(next) {
   if (!stream || stream.closed) return false;
   const current = JSON.parse(profileKey);
   if (current.resolution !== next.resolution || current.preserveAspect !== next.preserveAspect) return false;
+  if (stream.info.dynamicResolution)
+    return next.resolution === 'source' || current.width === next.width && current.height === next.height;
   if (next.resolution === 'source') return stream.info.width === source.width && stream.info.height === source.height;
   let w = next.width, h = next.height;
   if (next.resolution === 'fit' && source.width && source.height) {
@@ -190,7 +192,7 @@ async function reconcile() {
         let connection;
         try {
           connection = await (native ? reaper.video.openSurface(nextOptions) : renderer.openStream ? renderer.openStream(nextOptions) : reaper.video.openStream(nextOptions));
-          if (!native) renderer.resize(connection.info.width, connection.info.height, connection.info);
+          if (!native && !renderer.openStream) renderer.resize(connection.info.width, connection.info.height, connection.info);
           return connection;
         } catch (error) {
           if (connection) await connection.close().catch(() => {});
@@ -229,6 +231,11 @@ async function reconcile() {
     sequenceGaps = 0; lastSequence = undefined; received = painted = previousCaptured = 0; sampledAt = performance.now();
     if (!native) next.on('data', frame => {
       if (stream !== next) return;
+      if (frame.width && frame.height && (outputWidth !== frame.width || outputHeight !== frame.height)) {
+        outputWidth = frame.width; outputHeight = frame.height;
+        if (nextOptions.resolution === 'source') source = { width: frame.width, height: frame.height };
+        layout();
+      }
       if (frame.discontinuity) {
         clear(!!retainedFrame);
         if (retainedFrame) return;
@@ -340,6 +347,9 @@ translate();
         return;
       }
       source = { width: data.sourceWidth, height: data.sourceHeight };
+      if (native && (outputWidth !== data.width || outputHeight !== data.height)) {
+        outputWidth = data.width; outputHeight = data.height; layout();
+      }
       if (data.status !== 'ready' || (surface && !surface.hasFrame))
         clear(!!retainedFrame && (!data.error || data.error === 'VIDEO_FRAME_PENDING'));
       else if (native) stage.classList.add('ready');

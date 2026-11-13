@@ -37,7 +37,13 @@ const frame=n=>({sequence:BigInt(n),timestamp:n/60,bytes:new Uint8Array(16).fill
  assert.deepEqual(drawn,[2n]);assert.equal(closed,1);assert.equal(r.dropped,1);
  r.push(frame(3));wake();r.clear();requests[2].resolve({id:3,close(){closed++}});await flush();
  assert.equal(closed,2);assert.equal(shown.at(-1),null);assert.deepEqual(drawn,[2n]);
- r.resize(3840,2160);assert.equal(canvas.width,3840);assert.equal(canvas.height,2160);r.dispose();assert.equal(callbacks.size,0);
+ r.resize(3840,2160);assert.equal(canvas.width,3840);assert.equal(canvas.height,2160);
+ r.push({...frame(4),width:4,height:2,bytes:new Uint8Array(32)});
+ r.push({...frame(5),width:2,height:4,bytes:new Uint8Array(32)});wake();wake();
+ assert.deepEqual(requests.slice(-2).map(r=>[r.pixels.width,r.pixels.height]),[[4,2],[2,4]],'Bitmap work retains its own geometry');
+ requests[4].resolve({id:5,close(){closed++}});await flush();requests[3].resolve({id:4,close(){closed++}});await flush();
+ assert.deepEqual([canvas.width,canvas.height],[2,4],'An older completion cannot restore stale dimensions');
+ assert.equal(shown.at(-1).id,5);r.dispose();assert.equal(callbacks.size,0);
 }
 console.log('Video worker ownership, backpressure, stale completion and bitmap ordering passed');
 {
@@ -72,6 +78,14 @@ console.log('Video worker ownership, backpressure, stale completion and bitmap o
  events.webglcontextrestored(); r.resize(6, 2, info); r.push({ sequence: 3n, timestamp: 0.2, bytes: new Uint8Array(18) }); wake(); assert.deepEqual(drawn, [1n, 3n]);
  assert.throws(() => r.resize(64, 48, info), { code: 'VIDEO_RENDER_LIMIT' });
  r.resize(6, 2, info); r.push({ sequence: 4n, timestamp: 0.3, bytes: new Uint8Array(17) }); wake(); assert.deepEqual(errors, ['VIDEO_RENDER_LIMIT']);
+ const allocation = calls.filter(c => c[0] === 'texImage2D').length;
+ r.push({ sequence: 5n, timestamp: 0.32, width: 4, height: 4, bytes: new Uint8Array(24) });
+ r.push({ sequence: 6n, timestamp: 0.34, width: 8, height: 2, bytes: new Uint8Array(24) });
+ wake(); wake();
+ assert.deepEqual(calls.filter(c => c[0] === 'texImage2D').slice(allocation).map(c => c.slice(4, 6)), [[4, 6], [8, 3]],
+   'Queued I420 frames retain their dimensions even when byte counts match');
+ assert.deepEqual(drawn.slice(-2), [5n, 6n]);
+ assert.deepEqual([canvas.width, canvas.height], [6, 2], 'Source resizing preserves the display surface');
  r.dispose(); assert.equal(Object.keys(events).length, 0);
 }
 console.log('I420 single-upload layout, color validation, context recovery and texture limits passed');

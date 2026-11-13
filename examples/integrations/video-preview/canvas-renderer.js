@@ -6,6 +6,8 @@ export function createCanvasRenderer(canvas) {
     return {
       kind: 'canvas2d',
       draw(frame) {
+        if (frame.width && canvas.width !== frame.width) canvas.width = frame.width;
+        if (frame.height && canvas.height !== frame.height) canvas.height = frame.height;
         context.putImageData(new ImageData(new Uint8ClampedArray(frame.bytes.buffer,
           frame.bytes.byteOffset, frame.bytes.byteLength), canvas.width, canvas.height), 0, 0);
         return true;
@@ -54,6 +56,8 @@ export function createCanvasRenderer(canvas) {
     draw(frame) {
       if (restoreError) throw restoreError;
       if (lost) return false;
+      if (frame.width && canvas.width !== frame.width) canvas.width = frame.width;
+      if (frame.height && canvas.height !== frame.height) canvas.height = frame.height;
       if (canvas.width > maximum || canvas.height > maximum) throw Object.assign(
         new Error('Video dimensions exceed the GPU texture limit'), { code: 'VIDEO_RENDER_LIMIT' });
       gl.viewport(0, 0, canvas.width, canvas.height);
