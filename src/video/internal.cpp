@@ -67,6 +67,7 @@ class InternalVideo final : public VideoBackend {
   bool verified = false, leased = false;
   bool has_frame = false;
   int64_t last_index = 0;
+  uintptr_t last_frame = 0;
   uint64_t last_source = 0, last_monitor = 0;
   double last_start = 0, last_end = 0;
   int last_matrix = -1;
@@ -266,7 +267,10 @@ public:
     const bool use_i420 = planar;
 #endif
     const double start = frame->time_start, end = frame->time_end;
-    if (play && (play() & 1) && has_frame && index == last_index && source_key == last_source && monitor_key == last_monitor &&
+    // The query index can advance while REAPER still returns the same cached frame.
+    // Its unchanged identity and timestamps must not trigger another capture.
+    if (play && (play() & 1) && has_frame && (index == last_index || reinterpret_cast<uintptr_t>(frame) == last_frame) &&
+        source_key == last_source && monitor_key == last_monitor &&
         start == last_start && end == last_end && (!use_i420 || (matrix == last_matrix && conversion == last_conversion))) return VideoRead::unchanged;
     if (use_i420) {
       capture({reinterpret_cast<const unsigned char*>(frame->get_bits()), frame->get_w(), frame->get_h(), frame->get_rowspan(),
@@ -284,6 +288,7 @@ public:
     capture({reinterpret_cast<const unsigned char*>(frame->get_bits()), w, h, stride, VideoPixelFormat::bgra8, native_i420, matrix, conversion, directdraw_hd});
     }
     has_frame = true; last_index = index; last_source = source_key; last_monitor = monitor_key;
+    last_frame = reinterpret_cast<uintptr_t>(processed ? processed : base);
     last_start = start; last_end = end; last_matrix = matrix; last_conversion = conversion;
     return VideoRead::ready;
     };
