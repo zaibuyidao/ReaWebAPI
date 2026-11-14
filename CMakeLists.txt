@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.9.43 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.9.44 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,6 +102,7 @@ add_library(reaweb_core STATIC
   src/runtime/drag_drop.cpp
   src/runtime/icon.cpp
   src/runtime/fs.cpp
+  src/runtime/file_writer.cpp
   src/runtime/system.cpp
   src/runtime/theme.cpp
   src/web/web_resources.cpp

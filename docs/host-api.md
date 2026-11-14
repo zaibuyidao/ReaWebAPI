@@ -145,12 +145,13 @@ Files run on the worker thread; REAPER APIs remain on the main thread. These API
 | `reaper.fs.stat(path)` | `{ path, exists, type, size }`; size is bytes for files, otherwise null |
 | `reaper.fs.readDirectory(path)` | Sorted stat entries with `name`; maximum 4096 entries |
 | `reaper.fs.makeDirectory(path, { recursive?: boolean })` | Whether a directory was created |
+| `reaper.fs.openWrite(path, options?)` | Sequential writer, see [file export](file-export.md) |
 | `reaper.fs.moveFile(source, destination, { overwrite?: boolean })` | `{source,path,bytes}`, worker-thread move, no overwrite by default, cross-volume supported |
 | `reaper.clipboard.readText()` | UTF-8 text, empty string if no text |
 | `reaper.clipboard.writeText(text)` | Boolean |
 | `reaper.system.openExternal(url)` | Boolean; sends http/https/mailto to the OS default handler |
 
-File values and clipboard text are limited to 16 MiB. Clipboard writes reject NUL. Writes stage in the destination directory and commit by rename/link; parent directories must exist. `overwrite: true` explicitly replaces a file. Started I/O may finish after page closure; a lost reply does not imply the write failed. No delete, recursive removal or automatic retry is provided. Errors include `FILE_IO`, `FILE_NOT_FOUND`, `FILE_NOT_DIRECTORY`, `FILE_EXISTS`, `FILE_ENCODING`, `DIRECTORY_LIMIT`, `CLIPBOARD_BUSY`, `CLIPBOARD_ERROR`, `EXTERNAL_OPEN_FAILED`, `HOST_UNAVAILABLE`, `HOST_TIMEOUT` and `INVALID_URL`. External-open success means the OS accepted the request, not that a browser loaded the page.
+Whole-value file calls and clipboard text are limited to 16 MiB. Clipboard writes reject NUL. Writes stage in the destination directory and commit by rename/link; parent directories must exist. `overwrite: true` explicitly replaces a file. Started I/O may finish after page closure; a lost reply does not imply the write failed. No delete, recursive removal or automatic retry is provided. Errors include `FILE_IO`, `FILE_NOT_FOUND`, `FILE_NOT_DIRECTORY`, `FILE_EXISTS`, `FILE_ENCODING`, `DIRECTORY_LIMIT`, `CLIPBOARD_BUSY`, `CLIPBOARD_ERROR`, `EXTERNAL_OPEN_FAILED`, `HOST_UNAVAILABLE`, `HOST_TIMEOUT` and `INVALID_URL`. External-open success means the OS accepted the request, not that a browser loaded the page.
 
 ## Errors and limits
 

@@ -1150,6 +1150,33 @@
     readFile: host('ReaWeb_ReadFile'), writeFile: host('ReaWeb_WriteFile'),
     readText: path => call('ReaWeb_ReadFile', [path, { encoding: 'utf8' }]),
     writeText: (path, text, options = {}) => call('ReaWeb_WriteFile', [path, text, { ...options, encoding: 'utf8' }]),
+    openWrite: async (path, options = {}) => {
+      const descriptor = await call('ReaWeb_OpenWrite', [path, options]);
+      let offset = 0, busy = false;
+      const exclusive = async operation => {
+        if (busy) throw failure('WRITE_BUSY', 'Await the previous writer operation');
+        busy = true;
+        try { return await operation(); } finally { busy = false; }
+      };
+      return Object.freeze({
+        maxChunkBytes: descriptor.maxChunkBytes,
+        write: (chunk, options = {}) => exclusive(async () => {
+          if (!(chunk instanceof Uint8Array)) throw failure('INVALID_ARGUMENT', 'Expected a Uint8Array');
+          if (!chunk.byteLength || chunk.byteLength > descriptor.maxChunkBytes)
+            throw failure('BUFFER_LIMIT', 'Chunk must contain 1 byte to ' + descriptor.maxChunkBytes + ' bytes');
+          if (!options || typeof options !== 'object' || Object.keys(options).some(key => key !== 'offset'))
+            throw failure('INVALID_ARGUMENT', 'Expected an optional offset');
+          const result = await call('ReaWeb_WriteChunk', [descriptor.id, new Uint8Array(chunk), options.offset ?? offset]);
+          offset = result.totalBytes; return result;
+        }),
+        commit: () => exclusive(async () => {
+          const result = await call('ReaWeb_CommitWrite', [descriptor.id]);
+          return Object.freeze({ path: result.path, bytes: result.bytes });
+        }),
+        abort: () => call('ReaWeb_AbortWrite', [descriptor.id]),
+        status: () => call('ReaWeb_WriteStatus', [descriptor.id]),
+      });
+    },
     readBinary: path => call('ReaWeb_ReadFile', [path, { encoding: 'binary' }]),
     writeBinary: (path, bytes, options = {}) => call('ReaWeb_WriteFile', [path, bytes, { ...options, encoding: 'binary' }]),
     stat: host('ReaWeb_Stat'), readDirectory: host('ReaWeb_ReadDirectory'), makeDirectory: host('ReaWeb_MakeDirectory'),

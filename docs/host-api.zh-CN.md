@@ -145,12 +145,13 @@ const results = await reaper.transaction.batch([
 | `reaper.fs.stat(path)` | `{ path, exists, type, size }`；文件大小为字节，其他为 null |
 | `reaper.fs.readDirectory(path)` | 排序后的属性数组，额外包含 `name`，最多 4096 项 |
 | `reaper.fs.makeDirectory(path, { recursive?: boolean })` | 布尔值，表示是否创建目录 |
+| `reaper.fs.openWrite(path, options?)` | 顺序分块写入器，参见[文件导出](file-export.zh-CN.md) |
 | `reaper.fs.moveFile(source, destination, { overwrite?: boolean })` | `{source,path,bytes}`，在工作线程移动文件，默认不覆盖，支持跨卷 |
 | `reaper.clipboard.readText()` | UTF-8 文本，无文本时为空字符串 |
 | `reaper.clipboard.writeText(text)` | 布尔值 |
 | `reaper.system.openExternal(url)` | 布尔值，将 http/https/mailto 交给系统默认程序 |
 
-文件内容和剪贴板文本限制为 16 MiB，剪贴板写入拒绝 NUL。文件先写到同目录临时文件，再通过重命名/链接提交；父目录必须存在。`overwrite: true` 明确允许覆盖。已经开始的 I/O 可能在页面关闭后完成，未收到回复不代表写入失败，不提供删除、递归清理或自动重试。错误包括 `FILE_IO`、`FILE_NOT_FOUND`、`FILE_NOT_DIRECTORY`、`FILE_EXISTS`、`FILE_ENCODING`、`DIRECTORY_LIMIT`、`CLIPBOARD_BUSY`, `CLIPBOARD_ERROR`, `EXTERNAL_OPEN_FAILED`、`HOST_UNAVAILABLE`、`HOST_TIMEOUT`、`INVALID_URL`。外链成功仅表示操作系统接受请求。
+整值文件调用和剪贴板文本限制为 16 MiB，剪贴板写入拒绝 NUL。文件先写到同目录临时文件，再通过重命名/链接提交；父目录必须存在。`overwrite: true` 明确允许覆盖。已经开始的 I/O 可能在页面关闭后完成，未收到回复不代表写入失败，不提供删除、递归清理或自动重试。错误包括 `FILE_IO`、`FILE_NOT_FOUND`、`FILE_NOT_DIRECTORY`、`FILE_EXISTS`、`FILE_ENCODING`、`DIRECTORY_LIMIT`、`CLIPBOARD_BUSY`, `CLIPBOARD_ERROR`, `EXTERNAL_OPEN_FAILED`、`HOST_UNAVAILABLE`、`HOST_TIMEOUT`、`INVALID_URL`。外链成功仅表示操作系统接受请求。
 
 ## 错误与限制
 

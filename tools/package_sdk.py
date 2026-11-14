@@ -46,6 +46,8 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/SDK/jsfx/examples/{demo}/reaweb_jsfx.inc'] = root / 'runtime/jsfx/reaweb_jsfx.inc'
     paths['ReaWebAPI/SDK/tools/validate_app.py'] = root / 'tools/validate_app.py'
     paths['ReaWebAPI/docs/browser-media.md'] = root / 'docs/browser-media.md'
+    for name in ('file-export.md', 'file-export.zh-CN.md'):
+        paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     paths['ReaWebAPI/SDK/native/reaweb_service.h'] = root / 'src/public/reaweb_service.h'
     for name in ('reaweb_stream.h', 'reaweb_tasks.h'):
         paths[f'ReaWebAPI/SDK/native/{name}'] = root / 'src/public' / name

@@ -1,3 +1,6 @@
+add_executable(file_writer_tests file_writer_tests.cpp)
+target_link_libraries(file_writer_tests PRIVATE reaweb_core)
+add_test(NAME file_writer COMMAND file_writer_tests)
 add_executable(diagnostics_tests diagnostics_tests.cpp)
 target_link_libraries(diagnostics_tests PRIVATE reaweb_core)
 add_test(NAME diagnostics COMMAND diagnostics_tests)

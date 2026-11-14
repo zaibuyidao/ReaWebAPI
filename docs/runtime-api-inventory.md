@@ -116,6 +116,7 @@ REAPER 工程、对象、播放及窗口状态通知。Host state notifications;
 | `reaper.fs.readText(path)` | `Promise<string>` | 读取 UTF-8 文本 |
 | `reaper.fs.writeText(path, text, options?)` | `Promise<{ path, bytes }>` | 写入 UTF-8 文本 |
 | `reaper.fs.readBinary(path)` | `Promise<Uint8Array>` | 读取二进制字节 |
+| `reaper.fs.openWrite(path, options?)` | `Promise<ReaWebFileWriter>` | Sequential chunked export with commit, abort and status |
 | `reaper.fs.writeBinary(path, bytes, options?)` | `Promise<{ path, bytes }>` | 写入二进制字节 |
 | `reaper.fs.readFile(path, options?)` | `Promise<string or Uint8Array>` | 按 encoding 读取；默认 utf8 |
 | `reaper.fs.writeFile(path, data, options?)` | `Promise<{ path, bytes }>` | 按 encoding 写入；Uint8Array 必须指定 binary |

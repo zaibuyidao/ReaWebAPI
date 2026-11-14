@@ -13,7 +13,7 @@ const dispose = installDownloadHandler({ onError: error => console.error(error) 
 addEventListener('pagehide', dispose, { once: true });
 ```
 
-The handler intercepts connected `data:` and `blob:` download links. Ordinary navigation, remote downloads, detached anchors and `window.open()` are unchanged. Only one export is processed at a time. A native save dialog selects the destination, then `reaper.fs.writeBinary` writes it with overwrite enabled. Native errors propagate from `saveBlob`, or reach `onError` for intercepted links. Exports above 16 MiB reject with `BUFFER_LIMIT`. The streaming URL reader enforces this bound before accumulating a larger payload. Disposing removes the listener and aborts pending URL reads. It cannot dismiss an already open native save dialog.
+The handler intercepts connected `data:` and `blob:` download links. Ordinary navigation, remote downloads, detached anchors and `window.open()` are unchanged. Blob exports use sequential native writes when supported, with bounded 256 KiB helper chunks and a 64 GiB file limit. `data:` URLs and older hosts retain the 16 MiB fallback. Only one helper export per host is active. Concurrent attempts return `WRITE_BUSY`. Native errors propagate from `saveBlob`, or reach `onError` for intercepted links. Disposing cancels unfinished exports and removes the listener, but cannot dismiss an already open native save dialog. See [file export](file-export.md) for progress, cancellation and publication semantics.
 
 ## Browser-selected files
 

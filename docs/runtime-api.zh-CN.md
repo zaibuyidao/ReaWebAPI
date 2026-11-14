@@ -295,3 +295,7 @@ const enabled = (await reaper.window.getState()).dawKeyboard;
 ## 工程视频
 
 `reaper.video` 通过 Native Streams 提供共享工程视频帧。仅支持已验证的 REAPER 构建。安装、API、绘制和平台限制见[视频预览](video-preview.zh-CN.md)。
+
+## 分块文件导出
+
+`fs.openWrite(path, options?)` 提供顺序写入、提交、取消和状态查询，每块最多 1 MiB，每文件最多 64 GiB。现有整值文件接口仍为 16 MiB。参见[文件导出契约](file-export.zh-CN.md)。

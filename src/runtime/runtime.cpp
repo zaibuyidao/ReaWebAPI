@@ -66,6 +66,7 @@ Runtime::~Runtime() {
     streams_.detach_window(item.first);
     producers_.close_window(item.first);
     tasks_.cancel_window(item.first);
+    file_writers_.cancel_window(item.first);
     services_.cancel_window(item.first);
     trace(*item.second, "webview.release.begin");
     try { persist(*item.second, true); detach(*item.second); } catch (...) {}
@@ -355,7 +356,7 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
   if (method == "ReaWeb_OpenEx") return open_impl(args[0].get<std::string>(), s.entry.parent_path(), "", s.app->launcher_source,
     args[1].value("hidden", false), args[1].value("frameless", false), args[1].value("resizable", true), args[1].value("transparent", false), {}, OverlayOptions::parse(args[1]));
   if (method == "ReaWeb_BeginUndo" || method == "ReaWeb_EndUndo") return transaction_call(id, method, args);
-  if (is_file_method(method) || method == "ReaWeb_SetIcon" || method == "ReaWeb_ClipboardReadText" ||
+  if (is_file_method(method) || FileWriters::handles(method) || method == "ReaWeb_SetIcon" || method == "ReaWeb_ClipboardReadText" ||
       method == "ReaWeb_ClipboardWriteText" || method == "ReaWeb_OpenExternal")
     throw Error("INVALID_REQUEST", "This host operation requires asynchronous dispatch");
   if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected an event name");
@@ -446,6 +447,11 @@ bool Runtime::start_async(Session& session, const Work& request) {
     size_t pending = 0; for (const auto& item : sessions_) pending += item.second->audio.size();
     if (pending >= 8) throw Error("QUEUE_LIMIT", "At most eight audio jobs may be pending");
     session.audio.push_back({request, std::make_unique<AudioJob>(host_, session.entry.parent_path(), args, method == "ReaWeb_AudioWaveform")});
+    return true;
+  }
+  if (FileWriters::handles(method)) {
+    Work file = request; file.path = session.entry.parent_path(); file.counted_output = true;
+    file_writers_.submit(std::move(file)); ++session.output_pending;
     return true;
   }
   if (is_file_method(method)) {
@@ -635,7 +641,7 @@ void Runtime::tick() {
   // neither sampling nor a busy preceding stage can starve communication.
   const auto worker_deadline = Clock::now() + std::chrono::microseconds(500);
   Work work;
-  for (int n = 0; n < 128 && Clock::now() < worker_deadline && worker_.take(work); ++n) {
+  for (int n = 0; n < 128 && Clock::now() < worker_deadline && (file_writers_.take(work) || worker_.take(work)); ++n) {
     auto it = sessions_.find(work.session);
     if (it == sessions_.end()) { if (work.kind == Work::Fault) log_(work.text); continue; }
     auto& s = *it->second;
@@ -733,6 +739,7 @@ void Runtime::tick() {
         producers_.close_window(s.id);
         realtime_.close_window(s.id);
         tasks_.cancel_window(s.id);
+        file_writers_.cancel_window(s.id);
         services_.cancel_window(s.id);
         s.service_subscriptions.clear(); s.subscriptions.clear();
         clear_messages(s);

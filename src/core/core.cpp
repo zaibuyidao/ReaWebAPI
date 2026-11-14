@@ -1,6 +1,7 @@
 #include "core/core.hpp"
 #include "core/native.hpp"
 #include "runtime/services.hpp"
+#include "runtime/file_writer.hpp"
 #include "core/batch.hpp"
 #include <regex>
 #include "api_schema.hpp"
@@ -115,7 +116,7 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
         {"host", {{"maxMessageBytes", host_message_limit}, {"maxPendingMessages", host_queue_limit}, {"maxQueuedBytes", host_queue_bytes},
           {"serviceABI", 1}, {"serviceTimeoutMs", 30000}, {"builtinServices", {"runtime"}}}},
         {"window", {{"hiddenStart", true}}},
-        {"fs", {{"mediaURLs", true}, {"maxOpenMedia", 32}, {"maxMediaBytes", 64ull * 1024 * 1024 * 1024}}},
+        {"fs", {{"streamingWrite", {{"maxChunkBytes", FileWriters::chunk_limit}, {"maxFileBytes", FileWriters::file_limit}, {"maxWriters", 4}, {"maxWritersPerDocument", 1}, {"idleTimeoutMs", 300000}}}, {"mediaURLs", true}, {"maxOpenMedia", 32}, {"maxMediaBytes", 64ull * 1024 * 1024 * 1024}}},
         {"reservedNamespaces", Json::array()},
         {"stream", {{"abi", 1}, {"transport", "websocket-binary"}, {"maxStreams", 128}, {"maxConsumers", 64}, {"maxBytes", 16 * 1024 * 1024},
           {"kinds", {"frame", "audio", "spectrum", "meter", "waveform", "binary", "midi"}}}},
@@ -168,6 +169,10 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
   for (const auto& name : {"ReaWeb_ReadFile", "ReaWeb_ReadDirectory", "ReaWeb_Stat", "ReaWeb_MakeDirectory"})
     add(name, 1, 2, [this, name](const Json& a) { return controls_.host_call(name, a); });
   add("ReaWeb_WriteFile", 2, 3, [this](const Json& a) { return controls_.host_call("ReaWeb_WriteFile", a); });
+  add("ReaWeb_OpenWrite", 1, 2, [this](const Json& a) { return controls_.host_call("ReaWeb_OpenWrite", a); });
+  add("ReaWeb_WriteChunk", 3, 3, [this](const Json& a) { return controls_.host_call("ReaWeb_WriteChunk", a); });
+  for (const auto* name : {"ReaWeb_CommitWrite", "ReaWeb_AbortWrite", "ReaWeb_WriteStatus"})
+    add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
   add("ReaWeb_MoveFile", 2, 3, [this](const Json& a) { return controls_.host_call("ReaWeb_MoveFile", a); });
   for (const auto* name : {"ReaWeb_OpenMedia", "ReaWeb_CloseMedia"})
     add(name, 1, 1, [](const Json&) -> Json { throw Error("HOST_UNAVAILABLE", "Media URLs require a local App document"); });

@@ -133,6 +133,7 @@ test('The public SDK has exactly 730 unchanged Mirror methods and seventeen froz
   ],
   "fs": [
     "openMedia",
+    "openWrite",
     "watch",
     "readText",
     "writeText",
@@ -1497,4 +1498,18 @@ test('Surface failures retain profile conflicts and page unload clears ownership
   const surface = await openSurfaceFixture(t), count = t.messages.length;
   t.listeners.pagehide(); await flush();
   assert.equal(surface.closed, true); assert.equal(t.messages.length, count);
+});
+
+test('file writers snapshot chunks, advance acknowledged offsets and reject concurrent writes', async () => {
+  const t=await connected(), io=t.window.reaper.fs;
+  const writer=await answer(t,'ReaWeb_OpenWrite',['large.bin',{}],{id:'writer',maxChunkBytes:1048576},io.openWrite('large.bin'));
+  assert.ok(Object.isFrozen(writer));
+  const bytes=new Uint8Array([1,2,3]), pending=writer.write(bytes);bytes.fill(9);
+  await assert.rejects(writer.write(new Uint8Array([4])),{code:'WRITE_BUSY'});
+  await answer(t,'ReaWeb_WriteChunk',['writer',{__reawebBytes:'AQID'},0],{bytes:3,totalBytes:3},pending);
+  await answer(t,'ReaWeb_WriteChunk',['writer',{__reawebBytes:'BA=='},3],{bytes:1,totalBytes:4},writer.write(new Uint8Array([4])));
+  await assert.rejects(writer.write(new Uint8Array(1048577)),{code:'BUFFER_LIMIT'});
+  const result=await answer(t,'ReaWeb_CommitWrite',['writer'],{state:'committed',path:'large.bin',bytes:4},writer.commit());
+  assert.deepEqual({...result},{path:'large.bin',bytes:4});
+  await answer(t,'ReaWeb_WriteStatus',['writer'],{state:'committed',path:'large.bin',bytes:4,cleanupPending:false},writer.status());
 });

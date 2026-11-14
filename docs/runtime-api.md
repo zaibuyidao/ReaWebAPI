@@ -203,6 +203,10 @@ Native Streams and platform additions: [English](native-streams.md) · [中文](
 
 `window.open(path, {transparent:true})` requests creation-only desktop Alpha. Window state includes `transparent` and `transparentActive`. Inspect `capabilities.runtime.window.transparency` before creating a window. See [transparent windows](host-api.md#transparent-windows) for native requirements, failures and Dock persistence.
 
+## Chunked file export
+
+`fs.openWrite(path, options?)` provides sequential writes, commit, abort and status, with up to 1 MiB per chunk and 64 GiB per file. Existing whole-value file APIs remain limited to 16 MiB. See the [file export contract](file-export.md).
+
 ## File moves
 
 Since v0.3.9.2, `fs.moveFile(source, destination, {overwrite?:boolean})` runs on the file worker and resolves to `{source, path, bytes}`. Both paths independently accept entry-directory-relative or absolute local filenames. The destination parent must exist. Directories, URLs, NUL and final-entry symbolic links are rejected. An existing destination requires `overwrite:true`. Moving a file onto itself is a no-op.

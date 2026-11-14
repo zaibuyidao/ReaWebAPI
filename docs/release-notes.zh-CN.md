@@ -1,6 +1,4 @@
 # ReaWebAPI
 
-- 新增 App 可选跨源隔离配置 `webRuntime.crossOriginIsolation`，Windows 保留原来源，macOS/Linux 使用持久绑定且需认证的回环来源。
-- 新增 Linux 独立 WebKitGTK 运行库构建，支持隔离进程共享内存与可重定位的子进程。
-- 新增文档、Worker、共享内存与 WebGL2 实际能力报告，提供缓存探针及原生初始化失败诊断。
-- 新增普通/Blob Worker 与原子 WebAssembly 示例、回归测试及独立英文和简体中文隔离文档。
+- 新增文档绑定的顺序分块文件写入，支持提交、取消、状态查询及导航和关闭时清理。
+- 升级显式启用的 Blob 导出，支持分块写入、进度和取消，兼容现有 saveBlob 调用并保留旧宿主回退。

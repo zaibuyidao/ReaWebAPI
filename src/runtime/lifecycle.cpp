@@ -25,6 +25,7 @@ void Runtime::navigate(Session& session) {
   realtime_.close_window(session.id);
   producers_.close_window(session.id);
   tasks_.cancel_window(session.id);
+  file_writers_.cancel_window(session.id);
   services_.cancel_window(session.id);
   session.service_subscriptions.clear();
   if (session.window) session.window->set_drop_enabled(false);

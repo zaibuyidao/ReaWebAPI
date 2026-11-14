@@ -1,6 +1,7 @@
 #pragma once
 #include "platform/platform.hpp"
 #include "core/worker.hpp"
+#include "runtime/file_writer.hpp"
 #include "web/web_resources.hpp"
 #include "runtime/services.hpp"
 #include "runtime/host_service.hpp"
@@ -222,6 +223,7 @@ private:
   int cursor_ = 0;
   int message_cursor_ = 0;
   Worker worker_;
+  FileWriters file_writers_;
   int undo_owner_ = 0;
   int drag_owner_ = 0;
   uint64_t undo_sequence_ = 0;

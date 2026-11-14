@@ -203,7 +203,9 @@ interface ReaWebRuntimeCapabilities {
   contract: 2; namespaces: ReaWebRuntimeNamespace[]; cleanupTimeoutMs: number;
   /** JSFX-specific service protocol, when the optional module is registered. */
   jsfx?: { protocolVersion: 1 };
-  fs?: { mediaURLs: boolean; maxOpenMedia: number; maxMediaBytes: number };
+  fs?: { mediaURLs: boolean; maxOpenMedia: number; maxMediaBytes: number;
+    streamingWrite?: { maxChunkBytes: number; maxFileBytes: number; maxWriters: number;
+      maxWritersPerDocument: number; idleTimeoutMs: number } };
   window?: { hiddenStart: boolean; frameless: boolean; resizable: boolean; dragRegions?: boolean; windowSystem?: 'win32' | 'appkit' | 'x11';
     overlay: ReaWebOverlayCapabilities;
     shortcutRouting?: { supported: boolean; section: 'main'; editable: 'page' };
@@ -219,6 +221,17 @@ interface ReaWebRuntimeCapabilities {
   dragDrop: { maxFiles: number; maxTextBytes: number; effect: 'copy' };
   audio: { maxChannels: number; maxWaveformPoints: number; maxPendingJobs: number };
   stream: { abi: 1; transport: 'websocket-binary'; maxStreams: number; maxConsumers: number; maxBytes: number; kinds: ReaWebStreamInfo['kind'][] };
+}
+interface ReaWebFileWriteStatus {
+  state: 'open' | 'committed' | 'aborted' | 'failed'; path: string; bytes: number; cleanupPending: boolean;
+}
+interface ReaWebFileWriter {
+  readonly maxChunkBytes: number;
+  /** Sequential writes only. Await each write before submitting another. */
+  write(bytes: Uint8Array, options?: { offset?: number }): Promise<{ bytes: number; totalBytes: number }>;
+  commit(): Promise<{ path: string; bytes: number }>;
+  abort(): Promise<ReaWebFileWriteStatus>;
+  status(): Promise<ReaWebFileWriteStatus>;
 }
 interface ReaWebCapabilities { runtime: ReaWebRuntimeCapabilities; }
 type ReaWebWindowLayer = 'normal' | 'overlay';
@@ -328,6 +341,8 @@ interface ReaWebAPI {
     send(message: ReaWebHostMessage): Promise<boolean>;
   };
   readonly fs: {
+    /** Document-bound transactional writer. Parent must exist. Overwrite defaults to false. */
+    openWrite(path: string, options?: { overwrite?: boolean; expectedBytes?: number }): Promise<ReaWebFileWriter>;
     /** Document-scoped read-only media URL. Release when unused. Reload/close revokes it. */
     openMedia(path: string): Promise<Readonly<{ url: string; size: number; type: string; close(): Promise<boolean> }>>;
     /** Resolves after the native baseline scan. Changes are coalesced at 250 ms. */
