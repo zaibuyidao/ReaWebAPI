@@ -179,7 +179,7 @@ void pixel_conversion() {
   copy_video_pixels(image, 4, 2, actual);
   CHECK(actual == std::vector<unsigned char>({0, 0, 0, 255, 3, 2, 1, 255, 6, 5, 4, 255, 0, 0, 0, 255,
                                              0, 0, 0, 255, 9, 8, 7, 255, 12, 11, 10, 255, 0, 0, 0, 255}));
-  // Compare fractional scales against a floating-point bilinear reference.
+  // Compare fractional scales against independent area and bilinear references.
   for (int w : {1, 2, 3, 7, 13}) for (int h : {1, 2, 5, 11}) {
     const int stride = w * 4 + 8;
     std::vector<unsigned char> source(size_t(stride) * h);
@@ -210,11 +210,52 @@ void pixel_conversion() {
             const auto value = [&](int px, int py) { return source[py * stride + px * 4 + 2 - c]; };
             const double upper = value(x0, y0) * (1 - sx + x0) + value(x1, y0) * (sx - x0);
             const double lower = value(x0, y1) * (1 - sx + x0) + value(x1, y1) * (sx - x0);
-            CHECK(std::abs(actual[offset + c] - (upper * (1 - sy + y0) + lower * (sy - y0))) <= 1.5);
+            double expected = upper * (1 - sy + y0) + lower * (sy - y0);
+            if (dw < w || dh < h) {
+              const double lo_x = double(x - left) * w / dw, hi_x = double(x - left + 1) * w / dw;
+              const double lo_y = double(y - top) * h / dh, hi_y = double(y - top + 1) * h / dh;
+              expected = 0;
+              for (int py = 0; py < h; ++py) for (int px = 0; px < w; ++px) {
+                const double wx = std::max(0.0, std::min(hi_x, double(px + 1)) - std::max(lo_x, double(px)));
+                const double wy = std::max(0.0, std::min(hi_y, double(py + 1)) - std::max(lo_y, double(py)));
+                expected += value(px, py) * wx * wy / ((hi_x - lo_x) * (hi_y - lo_y));
+              }
+            }
+            CHECK(std::abs(actual[offset + c] - expected) <= 1.5);
           }
         }
       }
     }
+  }
+}
+void downscale_filter() {
+  // A 3:1 reduction must integrate thin stripes instead of choosing their centers.
+  std::vector<unsigned char> source(12 * 12 * 4), actual(4 * 4 * 4);
+  for (int y = 0; y < 12; ++y) for (int x = 0; x < 12; ++x) {
+    auto* p = source.data() + (y * 12 + x) * 4;
+    p[0] = p[1] = p[2] = ((x + y) & 1) ? 255 : 0; p[3] = 0;
+  }
+  copy_video_pixels({source.data(), 12, 12, 48}, 4, 4, actual);
+  for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x) {
+    const int expected = ((x + y) & 1) ? 142 : 113;
+    for (int c = 0; c < 3; ++c) CHECK(actual[(y * 4 + x) * 4 + c] == expected);
+    CHECK(actual[(y * 4 + x) * 4 + 3] == 255);
+  }
+  // Mixed-axis scaling keeps linear enlargement while averaging the reduced axis.
+  const unsigned char stripes[] = {0,0,0,0, 255,255,255,0, 0,0,0,0, 255,255,255,0};
+  actual.resize(2 * 3 * 4);
+  copy_video_pixels({stripes, 4, 1, 16}, 2, 3, actual, false);
+  for (size_t i = 0; i < actual.size(); ++i) CHECK(actual[i] == (i % 4 == 3 ? 255 : 128));
+  // Native YUV rounding occurs before filtering, identically to a converted source.
+  for (auto conversion : {VideoColorConversion::reaper_sse, VideoColorConversion::reaper_neon}) {
+    std::vector<unsigned char> planes(16 * 8 * 3 / 2), bgra(16 * 8 * 4), expected(5 * 3 * 4);
+    for (size_t i = 0; i < planes.size(); ++i) planes[i] = static_cast<unsigned char>(i * 37);
+    const VideoImage image{planes.data(), 16, 8, 16, VideoPixelFormat::i420, true, 1, conversion};
+    for (int y = 0; y < 8; ++y) detail::i420_row_to_bgra(image, y, bgra.data() + y * 16 * 4);
+    actual.resize(expected.size());
+    copy_video_pixels(image, 5, 3, actual, false);
+    copy_video_pixels({bgra.data(), 16, 8, 64}, 5, 3, expected, false);
+    CHECK(actual == expected);
   }
 }
 void resolution_profiles() {
@@ -672,7 +713,7 @@ int main() {
     CHECK(!clock.update(11, 2, 2, 1, 0));
     CHECK(clock.update(11.01, 2.01, 2, 1, 0));
     CHECK(clock.update(11.01, 2.02, 2, 1, 1));
-    pixel_conversion(); native_i420_profiles(); nonaligned_native_i420();
+    pixel_conversion(); downscale_filter(); native_i420_profiles(); nonaligned_native_i420();
     resolution_profiles(); dynamic_resolution(); dynamic_pending_seek(); scheduler_lifetime(); missing_native_prerequisites(); unused_and_rejection(); sharing_and_lifetime(); clocks_and_invalidations(); source_and_host_changes(); automatic_rate(); fixed_fractional_rates(); automatic_frame_clock();
     std::cout << "Video host rejection, consumer ownership, invalidation, clocks and cleanup passed\n";
   } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

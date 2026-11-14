@@ -21,13 +21,13 @@ self.onmessage = ({ data }) => {
       self.postMessage({ type: 'ready', kind: painter.kind });
     } else if (data.type === 'reaweb-video') {
       connectVideoStream(data, {
-        resize(width, height, info) { renderer.clear(); painter.configure?.(info); canvas.width = width; canvas.height = height; },
+        resize(width, height, info) { renderer.clear(); painter.configure?.({ ...info, width, height }); canvas.width = width; canvas.height = height; },
         push: frame => renderer.push(frame),
         clear: () => renderer.clear()
       });
     } else if (data.type === 'resize') {
       renderer.clear();
-      painter.configure?.(data.info);
+      painter.configure?.({ ...data.info, width: data.width, height: data.height });
       canvas.width = data.width; canvas.height = data.height;
     } else if (data.type === 'present') {
       painter.present?.(data.width, data.height, data.preserveAspect);

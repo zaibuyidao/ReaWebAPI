@@ -1,6 +1,6 @@
 # Project video preview
 
-Requires ReaWebAPI v0.3.9.40 or newer. Run `reawebapi-video-preview.lua` in REAPER. No capture FX or companion plugin is installed.
+Requires ReaWebAPI v0.3.9.45 or newer. Run `reawebapi-video-preview.lua` in REAPER. No capture FX or companion plugin is installed.
 
 The preview starts automatically. A single Options menu contains display, output and light/dark appearance settings. Dark is the default, and the native title-bar icon is hidden.
 
@@ -18,7 +18,7 @@ Unmodified Space outside editable fields controls REAPER playback through the ex
 
 The demo opts into `videoHighRefreshRate: true` in `app.json`. On macOS, this disables WebKit's preference for near-60-Hz page updates when the relevant system feature is available. Reopen the window after changing this setting. It does not change the source frame rate or guarantee presentation beyond the display's refresh rate.
 
-Native I420 surfaces accept even frame dimensions, including widths that are not multiples of 16. Source row padding is removed before GPU upload. CPU conversion and pixel-stream restrictions are unchanged. Windows native I420 uses linear YUV sampling before RGB conversion, matching REAPER's OpenGL video window when downscaling.
+Native I420 surfaces accept even frame dimensions, including widths that are not multiples of 16. Source row padding is removed before GPU upload. CPU conversion and pixel-stream restrictions are unchanged. Windows native I420 presentation prefers D3D11 video-processor scaling with source-resolution NV12 textures and retains the shader fallback for unsupported devices or dimensions. Windows shader fallbacks use area-weighted downscaling bounded to 16 source pixels per axis and bilinear enlargement. Metal and macOS/Linux I420 WebGL retain bilinear scaling. The system video processor does not use this application-level filter limit. CPU RGBA fit/custom output integrates the full source footprint when shrinking. REAPER's selected native renderer and driver can still produce different display pixels.
 
 Native surfaces expose layout and diagnostics through `reaper.video.openSurface()`, without JavaScript-readable pixels. HTML controls remain above the video. Canvas readback and webpage snapshots do not include native video pixels. Custom output still selects fixed capture dimensions. Pixel consumers use each packet's `width`, `height` and `stride`, since `info` retains attachment-time dimensions. Dynamic `info.maxBytes` is a capacity limit, while `frame.bytes.byteLength` is the valid payload length. Shared presentation does not guarantee a particular frame rate or window count.
 

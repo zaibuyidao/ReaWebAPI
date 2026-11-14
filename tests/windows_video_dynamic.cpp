@@ -18,6 +18,7 @@ void wait_gpu(Worker& worker, Slot& slot) {
 }
 
 void verify_upload(Worker& worker, Slot& slot, unsigned char value) {
+  if (!slot.shader_uploaded) worker.upload_shader(slot);
   for (int plane = 0; plane < (worker.i420 ? 3 : 1); ++plane) {
     D3D11_TEXTURE2D_DESC desc{};
     slot.textures[plane]->GetDesc(&desc);
@@ -82,10 +83,20 @@ void check_submission(HWND window, bool i420) {
   uint64_t sequence=0;
   for(const auto size:{std::pair{1576u,1272u},{808u,1272u},{744u,1288u},{3840u,2160u},{480u,640u},{1920u,1080u}}) {
     std::vector<unsigned char> pixels(size_t(size.first)*size.second*(i420?3:8)/2,51);
+    const auto available = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::none_of(source->worker->slots.begin(), source->worker->slots.end(), [](const Slot& slot) { return slot.status == 0; })) {
+      CHECK(std::chrono::steady_clock::now() < available); Sleep(1);
+    }
     source->submit({pixels.data(),pixels.size(),++sequence,0,false,size.first,size.second,size.first*(i420?1u:4u)});
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
     while(source->worker->uploaded<sequence&&!source->worker->failed) {
-      CHECK(std::chrono::steady_clock::now()<deadline);Sleep(1);
+      if (std::chrono::steady_clock::now() >= deadline) {
+        std::cerr << "Submission timeout i420=" << i420 << " sequence=" << sequence << " uploaded=" << source->worker->uploaded << " slots=";
+        for (const auto& slot : source->worker->slots) std::cerr << slot.status << ',';
+        std::cerr << '\n';
+        CHECK(false);
+      }
+      Sleep(1);
     }
     CHECK(!presenter->closed());
     const auto diagnostics=presenter->diagnostics();
@@ -119,10 +130,10 @@ void check_i420_pixels(const fs::path& directory = {}) {
       input.read(reinterpret_cast<char*>(slot.bytes.data()), slot.bytes.size()); CHECK(input.good());
     }
     const auto w = slot.width, h = slot.height;
-    worker.upload(slot);
-    for (const unsigned divisor : {1u, 3u}) {
+    worker.upload(slot); worker.upload_shader(slot);
+    for (const double divisor : {0.5, 1., 1.5, 3., 4.7}) {
       if (divisor != 1 && !fixture.empty()) continue;
-      const auto ow = w / divisor, oh = h / divisor;
+      const auto ow = (std::max)(1u, unsigned(w / divisor)), oh = (std::max)(1u, unsigned(h / divisor));
       D3D11_TEXTURE2D_DESC desc{}; desc.Width = ow; desc.Height = oh; desc.MipLevels = desc.ArraySize = 1;
       desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM; desc.SampleDesc.Count = 1; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
       ComPtr<ID3D11Texture2D> output, readback; ComPtr<ID3D11RenderTargetView> target;
@@ -143,6 +154,19 @@ void check_i420_pixels(const fs::path& directory = {}) {
       context->CopyResource(readback.Get(), output.Get()); D3D11_MAPPED_SUBRESOURCE mapped{};
       require(context->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped), "Cannot map color test output");
       const auto sample = [&](size_t plane, unsigned pw, unsigned ph, unsigned x, unsigned y) {
+        const double rx = (std::max)(1., double(pw) / ow), ry = (std::max)(1., double(ph) / oh);
+        if (rx > 1 || ry > 1) {
+          const double cx = (x + .5) * pw / ow, cy = (y + .5) * ph / oh;
+          const double left = cx - rx / 2, right = cx + rx / 2, top = cy - ry / 2, bottom = cy + ry / 2;
+          double sum = 0;
+          for (int py = int(std::floor(top)); py < int(std::ceil(bottom)); ++py)
+            for (int px = int(std::floor(left)); px < int(std::ceil(right)); ++px) {
+              const double weight = ((std::min)(right, px + 1.) - (std::max)(left, double(px))) *
+                                    ((std::min)(bottom, py + 1.) - (std::max)(top, double(py)));
+              sum += weight * slot.bytes[plane + size_t(std::clamp(py, 0, int(ph) - 1)) * pw + std::clamp(px, 0, int(pw) - 1)];
+            }
+          return sum / (rx * ry);
+        }
         const double sx = (x + .5) * pw / ow - .5, sy = (y + .5) * ph / oh - .5;
         const int x0 = int(std::floor(sx)), y0 = int(std::floor(sy)); const double fx = sx - x0, fy = sy - y0;
         const auto at = [&](int px, int py) { return slot.bytes[plane + size_t(std::clamp(py, 0, int(ph) - 1)) * pw + std::clamp(px, 0, int(pw) - 1)]; };
@@ -166,6 +190,67 @@ void check_i420_pixels(const fs::path& directory = {}) {
   CHECK(directory.empty() || files > 1); std::cout << "I420 fixtures=" << files << " border/interior pixels=" << checked << " max RGB error=" << maximum_error << "\n";
 }
 
+void check_video_processor() {
+  Worker worker(3840, 2160, true); worker.initialize();
+  Surface surface; auto& slot = worker.slots[0]; slot.width = 3840; slot.height = 2160;
+  const size_t count = size_t(slot.width) * slot.height;
+  slot.bytes.assign(count * 3 / 2, 128);
+  for (size_t y = 0; y < slot.height; ++y) for (size_t x = 0; x < slot.width; ++x)
+    slot.bytes[y * slot.width + x] = ((x + y) & 1) ? 235 : 16;
+  worker.upload(slot);
+  unsigned tested = 0;
+  for (const auto size : {std::pair{624, 351}, {1001, 563}, {2560, 1440}, {127, 71}, {17, 11}}) {
+    surface.width = size.first; surface.height = size.second;
+    D3D11_TEXTURE2D_DESC desc{}; desc.Width = size.first; desc.Height = size.second;
+    desc.MipLevels = desc.ArraySize = 1; desc.SampleDesc.Count = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    ComPtr<ID3D11Texture2D> output, readback;
+    require(worker.device->CreateTexture2D(&desc, nullptr, &output), "Cannot create video processor test output");
+    if (!worker.draw_video(surface, slot, output.Get(), {0, 0, 1, 1})) {
+      std::cout << "Video processor unsupported for " << size.first << "x" << size.second << ", shader fallback retained\n";
+      continue;
+    }
+    CHECK(slot.video_uploaded && !slot.shader_uploaded);
+    desc.BindFlags = 0; desc.Usage = D3D11_USAGE_STAGING; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    require(worker.device->CreateTexture2D(&desc, nullptr, &readback), "Cannot create video processor readback");
+    worker.context->CopyResource(readback.Get(), output.Get()); D3D11_MAPPED_SUBRESOURCE mapped{};
+    require(worker.context->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped), "Cannot map video processor output");
+    double error = 0; size_t pixels = 0;
+    for (int y = 2; y < size.second - 2; ++y) for (int x = 2; x < size.first - 2; ++x) {
+      const auto* pixel = static_cast<const unsigned char*>(mapped.pData) + y * mapped.RowPitch + x * 4;
+      for (int c = 0; c < 3; ++c) error += std::abs(pixel[c] - 127.5);
+      CHECK(pixel[3] == 255); ++pixels;
+    }
+    worker.context->Unmap(readback.Get(), 0);
+    CHECK(error / (pixels * 3) < 3); ++tested;
+  }
+  std::cout << "System video processor scaling cases=" << tested << "\n";
+  if (tested) {
+    std::fill(slot.bytes.begin(), slot.bytes.begin() + count, 100);
+    std::fill(slot.bytes.begin() + count, slot.bytes.begin() + count * 5 / 4, 90);
+    std::fill(slot.bytes.begin() + count * 5 / 4, slot.bytes.end(), 180);
+    worker.upload(slot); surface.width = 640; surface.height = 480;
+    D3D11_TEXTURE2D_DESC desc{}; desc.Width = 640; desc.Height = 480;
+    desc.MipLevels = desc.ArraySize = 1; desc.SampleDesc.Count = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    ComPtr<ID3D11Texture2D> output, readback;
+    require(worker.device->CreateTexture2D(&desc, nullptr, &output), "Cannot create video letterbox test");
+    if (worker.draw_video(surface, slot, output.Get(), {0, -1.f/6, 1, 4.f/3})) {
+      desc.BindFlags = 0; desc.Usage = D3D11_USAGE_STAGING; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+      require(worker.device->CreateTexture2D(&desc, nullptr, &readback), "Cannot create letterbox readback");
+      worker.context->CopyResource(readback.Get(), output.Get()); D3D11_MAPPED_SUBRESOURCE mapped{};
+      require(worker.context->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped), "Cannot map letterbox output");
+      const auto* black = static_cast<const unsigned char*>(mapped.pData) + mapped.RowPitch;
+      CHECK(black[0] == 0 && black[1] == 0 && black[2] == 0 && black[3] == 255);
+      const auto* color = static_cast<const unsigned char*>(mapped.pData) + 240 * mapped.RowPitch + 320 * 4;
+      const double y = 84. / 219, u = -38. / 224, v = 52. / 224;
+      const double expected[]{y + u * 1.8556, y - u * .187324273 - v * .468124273, y + v * 1.5748};
+      for (int c = 0; c < 3; ++c) CHECK(std::abs(int(color[c]) - int(std::lround(expected[c] * 255))) <= 2);
+      CHECK(color[3] == 255); worker.context->Unmap(readback.Get(), 0);
+    }
+  }
+}
+
 int main(int argc, char** argv) {
   CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   const auto window = CreateWindowExW(0, L"STATIC", L"Dynamic video test", WS_OVERLAPPEDWINDOW,
@@ -174,6 +259,7 @@ int main(int argc, char** argv) {
     CHECK(window);
     check_format(window, false); check_format(window, true); check_submission(window, false); check_submission(window, true);
     check_i420_pixels(argc == 2 ? fs::u8path(argv[1]) : fs::path{});
+    check_video_processor();
     DestroyWindow(window); CoUninitialize();
     std::cout << "D3D11 dynamic uploads, retained device/swapchain and late consumer sharing passed\n";
     return 0;

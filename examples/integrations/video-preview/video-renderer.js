@@ -68,7 +68,7 @@ export async function createVideoRenderer(canvas, { platform, format = 'rgba8', 
       kind: painter.kind,
       get dropped() { return renderer.dropped; },
       push: frame => renderer.push(frame),
-      resize(width, height, info) { renderer.clear(); painter.configure?.(info); canvas.width = width; canvas.height = height; },
+      resize(width, height, info) { renderer.clear(); painter.configure?.({ ...info, width, height }); canvas.width = width; canvas.height = height; },
       present: painter.present ? (width, height, preserveAspect) => painter.present(width, height, preserveAspect) : undefined,
       clear() { renderer.clear(); painter.clear(); },
       dispose() { renderer.clear(); painter.dispose(); }
@@ -108,9 +108,9 @@ export async function createVideoRenderer(canvas, { platform, format = 'rgba8', 
         sequence: frame.sequence, discontinuity: frame.discontinuity, width: frame.width, height: frame.height, stride: frame.stride } }, [frame.bytes.buffer]);
     },
     resize(width, height, info) { worker.postMessage({ type: 'resize', width, height, info }); },
-    present: format === 'i420' ? (width, height, preserveAspect) => {
+    present: (width, height, preserveAspect) => {
       if (!disposed) worker.postMessage({ type: 'present', width, height, preserveAspect });
-    } : undefined,
+    },
     clear() {
       if (disposed) return;
       ++generation; pending = dropped = workerDropped = 0;

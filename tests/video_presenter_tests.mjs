@@ -22,6 +22,7 @@ const frame=n=>({sequence:BigInt(n),timestamp:n/60,bytes:new Uint8Array(16).fill
  const a=frame(1),b=frame(2),c=frame(3);r.push(a);r.push(b);for(let i=3;i<=6;i++)r.push(frame(i));r.push(c);
  assert.equal(a.bytes.byteLength,0);assert.equal(b.bytes.byteLength,0);assert.equal(c.bytes.byteLength,16);assert.equal(r.dropped,1);
  assert.deepEqual([...instance.sent.find(x=>x.type==='frame').frame.bytes],Array(16).fill(1));
+ r.present(997,563,true);assert.deepEqual(instance.sent.at(-1),{type:'present',width:997,height:563,preserveAspect:true},'RGBA worker receives physical display sizing');
  r.clear();instance.onmessage({data:{type:'draw',generation:0,sequence:1n,dropped:0}});assert.equal(drawn.length,0);
  instance.onmessage({data:{type:'draw',generation:1,sequence:3n,dropped:0}});assert.deepEqual(drawn,[3n]);
  r.resize(3840,2160);assert.deepEqual(instance.sent.at(-1),{type:'resize',width:3840,height:2160,info:undefined});
@@ -89,3 +90,45 @@ console.log('Video worker ownership, backpressure, stale completion and bitmap o
  r.dispose(); assert.equal(Object.keys(events).length, 0);
 }
 console.log('I420 single-upload layout, color validation, context recovery and texture limits passed');
+
+{
+ const {createCanvasRenderer} = await import(moduleURL(await readFile(new URL('canvas-renderer.js', root), 'utf8')));
+ const calls = [], events = {};
+ const gl = new Proxy({getParameter: () => 64, getShaderParameter: () => true, getProgramParameter: () => true,
+   getError: () => 0, NO_ERROR: 0, getAttribLocation: () => 0, getUniformLocation: (_, name) => name,
+ }, {get(target, key){return target[key] ?? (String(key).startsWith('create') ? () => ({}) : (...args) => calls.push([key, ...args]));}});
+ const canvas = {width: 8, height: 4, getContext: name => name === 'webgl' ? gl : null,
+   addEventListener: (name, fn) => events[name] = fn, removeEventListener: name => delete events[name]};
+ const painter = createCanvasRenderer(canvas);
+ painter.configure({width: 8, height: 4}); painter.present(3, 6, true);
+ painter.draw({width: 8, height: 4, bytes: new Uint8Array(128)});
+ assert.deepEqual([canvas.width, canvas.height], [3, 6]);
+ assert.deepEqual(calls.filter(c => c[0] === 'texImage2D').at(-1).slice(4, 6), [8, 4]);
+ assert.deepEqual(calls.filter(c => c[0] === 'uniform4f').at(-1).slice(2), [0, 2.25, 3, 1.5]);
+ const uploads = calls.filter(c => c[0] === 'texSubImage2D').length;
+ painter.present(7, 5, false);
+ assert.deepEqual(calls.filter(c => c[0] === 'uniform4f').at(-1).slice(2), [0, 0, 7, 5]);
+ assert.equal(calls.filter(c => c[0] === 'texSubImage2D').length, uploads, 'Resize reuses the uploaded source texture');
+ painter.draw({width: 4, height: 8, bytes: new Uint8Array(128)});
+ assert.deepEqual([canvas.width, canvas.height], [7, 5], 'Source changes do not reset physical display dimensions');
+ assert.deepEqual(calls.filter(c => c[0] === 'texImage2D').at(-1).slice(4, 6), [4, 8]);
+ painter.clear(); const draws = calls.filter(c => c[0] === 'drawArrays').length;
+ painter.present(4, 8, true); assert.equal(calls.filter(c => c[0] === 'drawArrays').length, draws);
+ assert.throws(() => painter.present(65, 2), {code: 'VIDEO_RENDER_LIMIT'});
+ painter.dispose();
+ const inputCalls = [], outputCalls = [];
+ const input = {putImageData: (...args) => inputCalls.push(args)};
+ const output = {fillRect(){}, clearRect(){}, drawImage: (...args) => outputCalls.push(args)};
+ const offscreen = {width: 1, height: 1, getContext: () => input};
+ const fallback = {width: 8, height: 4, getContext: name => name === '2d' ? output : null,
+   ownerDocument: {createElement: () => offscreen}};
+ const software = createCanvasRenderer(fallback);
+ software.present(3, 6, true); software.draw({width: 8, height: 4, bytes: new Uint8Array(128)});
+ assert.deepEqual([offscreen.width, offscreen.height], [8, 4]);
+ assert.deepEqual(outputCalls.at(-1).slice(1), [0, 2.25, 3, 1.5]);
+ assert.equal(output.imageSmoothingQuality, 'high'); assert.equal(output.imageSmoothingEnabled, true);
+ software.present(7, 5, false); assert.equal(inputCalls.length, 1, 'Canvas2D resizes retain the original pixels');
+ software.clear(); const count = outputCalls.length; software.present(8, 4, true); assert.equal(outputCalls.length, count);
+ software.dispose();
+}
+console.log('RGBA display sizing and retained source redraw passed');

@@ -209,6 +209,101 @@ inline void copy_video_pixels(const VideoImage& image, int width, int height, st
       if (right > 0) detail::fill_opaque_black(row_out + size_t(left + dw) * 4, size_t(right));
     }
   }
+  if (dw < w || dh < h) {
+    // Integrate the complete source footprint when shrinking. Row caches avoid
+    // an intermediate RGB frame and retain the host's I420 conversion rounding.
+    struct Tap { int pixel, weight; };
+    struct Axis {
+      int divisor;
+      std::vector<size_t> offsets;
+      std::vector<Tap> taps;
+    };
+    const auto axis = [](int input, int output) {
+      Axis result{input > output ? input : 256, {}, {}};
+      result.offsets.reserve(size_t(output) + 1);
+      result.taps.reserve(size_t(input) + output * 2);
+      for (int at = 0; at < output; ++at) {
+        result.offsets.push_back(result.taps.size());
+        if (input > output) {
+          const int lo = at * input, hi = (at + 1) * input;
+          for (int pixel = lo / output; pixel < (hi + output - 1) / output; ++pixel)
+            result.taps.push_back({pixel, std::min(hi, (pixel + 1) * output) - std::max(lo, pixel * output)});
+        } else {
+          const double position = std::clamp((at + 0.5) * input / output - 0.5, 0.0, double(input - 1));
+          const int first = int(position), weight = int((position - first) * 256 + 0.5);
+          result.taps.push_back({first, 256 - weight});
+          if (weight) result.taps.push_back({std::min(first + 1, input - 1), weight});
+        }
+      }
+      result.offsets.push_back(result.taps.size());
+      return result;
+    };
+    const auto columns = axis(w, dw), rows = axis(h, dh);
+    const float normalization = 1.0f / (float(columns.divisor) * rows.divisor);
+    int cached_y[2] = {-1, -1}, next_slot = 0;
+    std::vector<uint32_t> h_rows[2] = {std::vector<uint32_t>(size_t(dw) * 4), std::vector<uint32_t>(size_t(dw) * 4)};
+    std::vector<float> sum(size_t(dw) * 4);
+    std::vector<unsigned char> scratch(i420 ? size_t(w) * 4 : 0);
+    const auto horizontal = [&](int sy) -> const uint32_t* {
+      if (cached_y[0] == sy) return h_rows[0].data();
+      if (cached_y[1] == sy) return h_rows[1].data();
+      const int slot = next_slot; next_slot ^= 1; cached_y[slot] = sy;
+      auto* output = h_rows[slot].data();
+      const unsigned char* input;
+      if (i420) { detail::i420_row_to_bgra(image, sy, scratch.data()); input = scratch.data(); }
+      else input = image.pixels + size_t(sy) * image.stride;
+      for (int x = 0; x < dw; ++x) {
+#if defined(__SSE2__) || defined(_M_X64)
+        const auto zero = _mm_setzero_si128();
+        auto total = zero;
+        for (size_t i = columns.offsets[x]; i < columns.offsets[x + 1]; ++i) {
+          const auto tap = columns.taps[i]; int32_t pixel;
+          std::memcpy(&pixel, input + tap.pixel * 4, 4);
+          const auto channels = _mm_unpacklo_epi16(_mm_unpacklo_epi8(_mm_cvtsi32_si128(pixel), zero), zero);
+          total = _mm_add_epi32(total, _mm_madd_epi16(channels, _mm_set1_epi32(tap.weight)));
+        }
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(output + x * 4), _mm_shuffle_epi32(total, _MM_SHUFFLE(3, 0, 1, 2)));
+#else
+        uint32_t r = 0, g = 0, b = 0;
+        for (size_t i = columns.offsets[x]; i < columns.offsets[x + 1]; ++i) {
+          const auto tap = columns.taps[i]; const auto* pixel = input + tap.pixel * 4;
+          r += pixel[2] * tap.weight; g += pixel[1] * tap.weight; b += pixel[0] * tap.weight;
+        }
+        output[x * 4] = r; output[x * 4 + 1] = g; output[x * 4 + 2] = b;
+#endif
+      }
+      return output;
+    };
+    for (int y = 0; y < dh; ++y) {
+      std::fill(sum.begin(), sum.end(), 0.0f);
+      for (size_t i = rows.offsets[y]; i < rows.offsets[y + 1]; ++i) {
+        const auto tap = rows.taps[i]; const auto* row = horizontal(tap.pixel);
+        const float weight = tap.weight * normalization;
+#if defined(__SSE2__) || defined(_M_X64)
+        const auto factor = _mm_set1_ps(weight);
+        for (size_t c = 0; c < sum.size(); c += 4) {
+          const auto values = _mm_cvtepi32_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(row + c)));
+          _mm_storeu_ps(sum.data() + c, _mm_add_ps(_mm_loadu_ps(sum.data() + c), _mm_mul_ps(values, factor)));
+        }
+#else
+        for (size_t c = 0; c < sum.size(); ++c) sum[c] += row[c] * weight;
+#endif
+      }
+      auto* output = pixels.data() + (size_t(y + top) * width + left) * 4;
+      for (int x = 0; x < dw; ++x) {
+#if defined(__SSE2__) || defined(_M_X64)
+        const auto value = _mm_cvttps_epi32(_mm_add_ps(_mm_loadu_ps(sum.data() + x * 4), _mm_set1_ps(0.5f)));
+        const auto words = _mm_packs_epi32(value, value);
+        const int32_t rgba = _mm_cvtsi128_si32(_mm_packus_epi16(words, words)) | int32_t(0xff000000u);
+        std::memcpy(output + x * 4, &rgba, 4);
+#else
+        for (int c = 0; c < 3; ++c) output[x * 4 + c] = static_cast<unsigned char>(std::min(255, int(sum[x * 4 + c] + 0.5f)));
+        output[x * 4 + 3] = 255;
+#endif
+      }
+    }
+    return;
+  }
   struct Sample { int first, second, weight; };
   const auto sample = [](int at, int input, int output) {
     const double position = std::clamp((at + 0.5) * input / output - 0.5, 0.0, double(input - 1));

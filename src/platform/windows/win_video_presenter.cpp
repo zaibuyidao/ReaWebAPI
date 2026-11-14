@@ -10,6 +10,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <cmath>
+#include <emmintrin.h>
 #include <deque>
 #include <map>
 #include <mutex>
@@ -28,16 +30,31 @@ Texture2D<float> luma : register(t0);
 Texture2D<float> chromaU : register(t1);
 Texture2D<float> chromaV : register(t2);
 SamplerState linearClamp : register(s0);
+float areaSample(Texture2D<float> plane,float2 center,float2 footprint) {
+ uint w,h;plane.GetDimensions(w,h);
+ float2 r=max(float2(1,1),min(footprint,float2(16,16)));
+ if(all(r<=1))return plane.SampleLevel(linearClamp,center/float2(w,h),0);
+ float2 lo=center-r*0.5,hi=center+r*0.5;
+ int2 first=int2(floor(lo)),last=int2(ceil(hi))-1,limit=int2(w,h)-1;
+ float sum=0;
+ [loop] for(int y=first.y;y<=last.y;++y){
+  float wy=min(float(y+1),hi.y)-max(float(y),lo.y);
+  [loop] for(int x=first.x;x<=last.x;++x){
+   float wx=min(float(x+1),hi.x)-max(float(x),lo.x);
+   sum+=wx*wy*plane.Load(int3(clamp(int2(x,y),int2(0,0),limit),0));
+  }
+ }
+ return sum/(r.x*r.y);
+}
 float4 presentI420(float4 at:SV_Position):SV_Target {
  uint w,h;luma.GetDimensions(w,h);
  float2 scale=sourceRect.zw/outputSize.xy;
  float2 pointInSource=sourceRect.xy+at.xy*scale;
  if(any(pointInSource<0)||any(pointInSource>=float2(w,h)))return float4(0,0,0,1);
- // Match REAPER's OpenGL viewport: linear YUV sampling before RGB conversion.
- float2 uv=pointInSource/float2(w,h);
- float y=(luma.SampleLevel(linearClamp,uv,0)*255.0-16.0)/219.0;
- float u=(chromaU.SampleLevel(linearClamp,uv,0)*255.0-128.0)/224.0;
- float v=(chromaV.SampleLevel(linearClamp,uv,0)*255.0-128.0)/224.0;
+ // Integrate the pixel footprint before converting YUV, retaining the display matrix.
+ float y=(areaSample(luma,pointInSource,scale)*255.0-16.0)/219.0;
+ float u=(areaSample(chromaU,pointInSource*0.5,scale*0.5)*255.0-128.0)/224.0;
+ float v=(areaSample(chromaV,pointInSource*0.5,scale*0.5)*255.0-128.0)/224.0;
  return float4(saturate(y+u*float3(0,-0.187324273,1.8556)+v*float3(1.5748,-0.468124273,0)),1);
 }
 float4 videoVertex(uint index:SV_VertexID):SV_Position {
@@ -120,6 +137,11 @@ struct Surface {
   uint64_t retry_sequence = 0, retry_epoch = 0;
   struct Pending { UINT id; uint64_t sequence, epoch; bool clear; };
   std::deque<Pending> pending;
+  ComPtr<ID3D11VideoProcessorEnumerator> video_enumerator;
+  ComPtr<ID3D11VideoProcessor> video_processor;
+  uint32_t video_width = 0, video_height = 0;
+  int video_output_width = 0, video_output_height = 0;
+  bool video_unavailable = false;
 };
 struct Slot {
   // 0 free, 1 being copied, 2 queued, 3 retained current, 4 GPU retirement.
@@ -132,6 +154,9 @@ struct Slot {
   std::array<ComPtr<ID3D11Texture2D>, 3> textures;
   std::array<ComPtr<ID3D11ShaderResourceView>, 3> views;
   ComPtr<ID3D11Query> completion;
+  ComPtr<ID3D11Texture2D> video_texture;
+  uint32_t video_width = 0, video_height = 0;
+  bool video_uploaded = false, shader_uploaded = false;
 };
 struct Worker {
   const int width, height;
@@ -145,11 +170,14 @@ struct Worker {
   std::vector<std::shared_ptr<Surface>> surfaces;
   ComPtr<ID3D11Device> device;
   ComPtr<ID3D11DeviceContext> context;
+  ComPtr<ID3D11VideoDevice> video_device;
+  ComPtr<ID3D11VideoContext> video_context;
   ComPtr<IDXGIFactory2> factory;
   ComPtr<ID3D11SamplerState> sampler;
   ComPtr<ID3D11VertexShader> vertex;
   ComPtr<ID3D11PixelShader> pixel;
   ComPtr<ID3D11Buffer> constants;
+  std::vector<unsigned char> video_bytes;
   Slot* current = nullptr;
   uint64_t current_epoch = 1;
   double qpc_frequency = 1;
@@ -186,6 +214,7 @@ struct Worker {
   void initialize() {
     require(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
       nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, &context), "Cannot create video D3D device");
+    if (i420 && SUCCEEDED(device.As(&video_device))) context.As(&video_context);
     ComPtr<IDXGIDevice> dxgi; require(device.As(&dxgi), "Cannot query video DXGI device");
     ComPtr<IDXGIAdapter> adapter; require(dxgi->GetAdapter(&adapter), "Cannot query video adapter");
     require(adapter->GetParent(IID_PPV_ARGS(&factory)), "Cannot query video factory");
@@ -230,6 +259,91 @@ struct Worker {
     state.frame_permitted = false;
     state.pending.clear(); state.media.Reset(); state.chain.Reset();
   }
+  void upload_video(Slot& slot) {
+    if (!slot.video_texture || slot.video_width != slot.width || slot.video_height != slot.height) {
+      slot.video_texture.Reset();
+      D3D11_TEXTURE2D_DESC desc{}; desc.Width = slot.width; desc.Height = slot.height;
+      desc.MipLevels = desc.ArraySize = 1; desc.SampleDesc.Count = 1;
+      desc.Format = DXGI_FORMAT_NV12; desc.BindFlags = D3D11_BIND_DECODER;
+      require(device->CreateTexture2D(&desc, nullptr, &slot.video_texture), "Cannot allocate video processor input");
+      slot.video_width = slot.width; slot.video_height = slot.height;
+    }
+    if (!slot.video_uploaded) {
+      const size_t y_size = size_t(slot.width) * slot.height, c_size = y_size / 4;
+      video_bytes.resize(y_size + c_size * 2);
+      std::memcpy(video_bytes.data(), slot.bytes.data(), y_size);
+      const auto* u = slot.bytes.data() + y_size; const auto* v = u + c_size;
+      auto* chroma = video_bytes.data() + y_size; size_t i = 0;
+      for (; i + 16 <= c_size; i += 16) {
+        const auto a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(u + i));
+        const auto b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(v + i));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(chroma + i * 2), _mm_unpacklo_epi8(a, b));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(chroma + i * 2 + 16), _mm_unpackhi_epi8(a, b));
+      }
+      for (; i < c_size; ++i) { chroma[i * 2] = u[i]; chroma[i * 2 + 1] = v[i]; }
+      context->UpdateSubresource(slot.video_texture.Get(), 0, nullptr, video_bytes.data(), slot.width, 0);
+      slot.video_uploaded = true;
+    }
+  }
+  bool draw_video(Surface& state, Slot& slot, ID3D11Texture2D* back, const std::array<float, 4>& uv) {
+    if (!video_device || !video_context || !slot.video_uploaded) return false;
+    const bool changed = state.video_width != slot.width || state.video_height != slot.height ||
+      state.video_output_width != state.width || state.video_output_height != state.height;
+    if (changed) {
+      state.video_processor.Reset(); state.video_enumerator.Reset(); state.video_unavailable = false;
+      state.video_width = slot.width; state.video_height = slot.height;
+      state.video_output_width = state.width; state.video_output_height = state.height;
+    }
+    if (state.video_unavailable) return false;
+    try {
+      if (!state.video_processor) {
+        D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc{};
+        desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
+        desc.InputWidth = slot.width; desc.InputHeight = slot.height;
+        desc.OutputWidth = state.width; desc.OutputHeight = state.height;
+        desc.InputFrameRate = desc.OutputFrameRate = {60, 1}; desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
+        require(video_device->CreateVideoProcessorEnumerator(&desc, &state.video_enumerator), "Cannot enumerate video scaling");
+        UINT input = 0, output = 0;
+        require(state.video_enumerator->CheckVideoProcessorFormat(DXGI_FORMAT_NV12, &input), "Cannot query video input");
+        require(state.video_enumerator->CheckVideoProcessorFormat(DXGI_FORMAT_B8G8R8A8_UNORM, &output), "Cannot query video output");
+        if (!(input & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_INPUT) || !(output & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT)) {
+          state.video_unavailable = true; return false;
+        }
+        require(video_device->CreateVideoProcessor(state.video_enumerator.Get(), 0, &state.video_processor), "Cannot create video scaler");
+        auto* processor = state.video_processor.Get();
+        video_context->VideoProcessorSetStreamFrameFormat(processor, 0, D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
+        video_context->VideoProcessorSetStreamAutoProcessingMode(processor, 0, FALSE);
+        D3D11_VIDEO_PROCESSOR_COLOR_SPACE color{}; color.YCbCr_Matrix = 1;
+        color.Nominal_Range = D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_16_235;
+        video_context->VideoProcessorSetStreamColorSpace(processor, 0, &color);
+        color.Nominal_Range = D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_0_255;
+        video_context->VideoProcessorSetOutputColorSpace(processor, &color);
+        D3D11_VIDEO_COLOR black{}; black.RGBA.A = 1;
+        video_context->VideoProcessorSetOutputBackgroundColor(processor, FALSE, &black);
+      }
+      D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC in_desc{}; in_desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+      ComPtr<ID3D11VideoProcessorInputView> input;
+      require(video_device->CreateVideoProcessorInputView(slot.video_texture.Get(), state.video_enumerator.Get(), &in_desc, &input), "Cannot create video processor input");
+      D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC out_desc{}; out_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+      ComPtr<ID3D11VideoProcessorOutputView> output;
+      require(video_device->CreateVideoProcessorOutputView(back, state.video_enumerator.Get(), &out_desc, &output), "Cannot create video processor output");
+      const auto round = [](double value) { return LONG(std::lround(value)); };
+      RECT source{round((std::max)(0.f, uv[0]) * slot.width), round((std::max)(0.f, uv[1]) * slot.height),
+        round((std::min)(1.f, uv[0] + uv[2]) * slot.width), round((std::min)(1.f, uv[1] + uv[3]) * slot.height)};
+      RECT destination{round((std::max)(0.f, -uv[0] / uv[2]) * state.width), round((std::max)(0.f, -uv[1] / uv[3]) * state.height),
+        round((std::min)(1.f, (1 - uv[0]) / uv[2]) * state.width), round((std::min)(1.f, (1 - uv[1]) / uv[3]) * state.height)};
+      if (source.left >= source.right || source.top >= source.bottom || destination.left >= destination.right || destination.top >= destination.bottom) return false;
+      RECT target{0, 0, state.width, state.height}; auto* processor = state.video_processor.Get();
+      video_context->VideoProcessorSetStreamSourceRect(processor, 0, TRUE, &source);
+      video_context->VideoProcessorSetStreamDestRect(processor, 0, TRUE, &destination);
+      video_context->VideoProcessorSetOutputTargetRect(processor, TRUE, &target);
+      D3D11_VIDEO_PROCESSOR_STREAM stream{}; stream.Enable = TRUE; stream.pInputSurface = input.Get();
+      require(video_context->VideoProcessorBlt(processor, output.Get(), 0, 1, &stream), "Cannot scale video frame");
+      return true;
+    } catch (const Error&) {
+      state.video_unavailable = true; return false;
+    }
+  }
   bool draw(Surface& state, Slot& slot, bool fresh) {
     if (state.invalidated || state.failed || slot.epoch != epoch) return false;
     Layout layout; bool redraw;
@@ -272,25 +386,28 @@ struct Worker {
       state.frame_permitted = true;
     }
     ComPtr<ID3D11Texture2D> back; require(state.chain->GetBuffer(0, IID_PPV_ARGS(&back)), "Cannot get video viewport buffer");
-    ComPtr<ID3D11RenderTargetView> target; require(device->CreateRenderTargetView(back.Get(), nullptr, &target), "Cannot create video viewport target");
-    D3D11_VIEWPORT viewport{0, 0, float(layout.width), float(layout.height), 0, 1}; context->RSSetViewports(1, &viewport);
     auto uv = layout.uv;
     if (layout.aspect && layout.content_width > 0 && layout.content_height > 0) {
       const double fit = (std::min)(layout.content_width / slot.width, layout.content_height / slot.height);
       const double fw = fit * slot.width / layout.content_width, fh = fit * slot.height / layout.content_height;
       uv = {float((uv[0] - (1 - fw) / 2) / fw), float((uv[1] - (1 - fh) / 2) / fh), float(uv[2] / fw), float(uv[3] / fh)};
     }
-    float values[8]={float(layout.width),float(layout.height),0,0,uv[0]*slot.width,uv[1]*slot.height,uv[2]*slot.width,uv[3]*slot.height};
-    context->UpdateSubresource(constants.Get(), 0, nullptr, values, 0, 0); auto* cb=constants.Get(); context->PSSetConstantBuffers(0,1,&cb);
-    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); context->VSSetShader(vertex.Get(),nullptr,0); context->PSSetShader(pixel.Get(),nullptr,0);
-    ID3D11ShaderResourceView* views[] = {slot.views[0].Get(), slot.views[1].Get(), slot.views[2].Get()};
-    const UINT plane_count = i420 ? 3 : 1;
-    context->PSSetShaderResources(0, plane_count, views);
-    auto* filter = sampler.Get(); context->PSSetSamplers(0, 1, &filter);
-    auto* render_target = target.Get(); context->OMSetRenderTargets(1, &render_target, nullptr);
-    context->Draw(3, 0);
-    ID3D11ShaderResourceView* empty[3]{};
-    context->PSSetShaderResources(0, plane_count, empty); context->OMSetRenderTargets(0, nullptr, nullptr);
+    if (!draw_video(state, slot, back.Get(), uv)) {
+      ComPtr<ID3D11RenderTargetView> target; require(device->CreateRenderTargetView(back.Get(), nullptr, &target), "Cannot create video viewport target");
+      D3D11_VIEWPORT viewport{0, 0, float(layout.width), float(layout.height), 0, 1}; context->RSSetViewports(1, &viewport);
+      if (!slot.shader_uploaded) upload_shader(slot);
+      float values[8]={float(layout.width),float(layout.height),0,0,uv[0]*slot.width,uv[1]*slot.height,uv[2]*slot.width,uv[3]*slot.height};
+      context->UpdateSubresource(constants.Get(), 0, nullptr, values, 0, 0); auto* cb=constants.Get(); context->PSSetConstantBuffers(0,1,&cb);
+      context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); context->VSSetShader(vertex.Get(),nullptr,0); context->PSSetShader(pixel.Get(),nullptr,0);
+      ID3D11ShaderResourceView* views[] = {slot.views[0].Get(), slot.views[1].Get(), slot.views[2].Get()};
+      const UINT plane_count = i420 ? 3 : 1;
+      context->PSSetShaderResources(0, plane_count, views);
+      auto* filter = sampler.Get(); context->PSSetSamplers(0, 1, &filter);
+      auto* render_target = target.Get(); context->OMSetRenderTargets(1, &render_target, nullptr);
+      context->Draw(3, 0);
+      ID3D11ShaderResourceView* empty[3]{};
+      context->PSSetShaderResources(0, plane_count, empty); context->OMSetRenderTargets(0, nullptr, nullptr);
+    }
     if (i420 && !slot.conversion_counted) { slot.conversion_counted = true; ++converted; }
     if (state.invalidated || slot.epoch != epoch) return true;
     const auto started=std::chrono::steady_clock::now();
@@ -312,7 +429,7 @@ struct Worker {
     }
     return true;
   }
-  void upload(Slot& slot) {
+  void upload_shader(Slot& slot) {
     if (slot.texture_width != slot.width || slot.texture_height != slot.height) {
       // A queued slot has no outstanding GPU readers after its retirement query.
       slot.views = {}; slot.textures = {};
@@ -333,8 +450,15 @@ struct Worker {
       context->UpdateSubresource(slot.textures[0].Get(), 0, nullptr, data, slot.width, 0);
       context->UpdateSubresource(slot.textures[1].Get(), 0, nullptr, data + luma_bytes, slot.width / 2, 0);
       context->UpdateSubresource(slot.textures[2].Get(), 0, nullptr, data + luma_bytes + luma_bytes / 4, slot.width / 2, 0);
-      slot.conversion_counted = false;
     } else context->UpdateSubresource(slot.textures[0].Get(), 0, nullptr, slot.bytes.data(), slot.width * 4, 0);
+    slot.shader_uploaded = true;
+  }
+  void upload(Slot& slot) {
+    slot.video_uploaded = slot.shader_uploaded = slot.conversion_counted = false;
+    if (video_device && video_context) {
+      try { upload_video(slot); } catch (const Error&) { slot.video_uploaded = false; }
+    }
+    if (!slot.video_uploaded) upload_shader(slot);
     dimensions.store((uint64_t(slot.width) << 32) | slot.height);
     ++uploaded;
   }
@@ -380,8 +504,8 @@ struct Worker {
     }catch(const std::exception& error){fail(error.what());}
     for(auto& state:attached())release_surface(*state);
     if(context){context->ClearState();context->Flush();}
-    for (auto& slot : slots) { slot.views = {}; slot.textures = {}; slot.completion.Reset(); }
-    constants.Reset();sampler.Reset();vertex.Reset();pixel.Reset();factory.Reset();context.Reset();device.Reset();
+    for (auto& slot : slots) { slot.views = {}; slot.textures = {}; slot.video_texture.Reset(); slot.completion.Reset(); }
+    constants.Reset();sampler.Reset();vertex.Reset();pixel.Reset();factory.Reset();video_context.Reset();video_device.Reset();context.Reset();device.Reset();
     CoUninitialize();
   }
 };
