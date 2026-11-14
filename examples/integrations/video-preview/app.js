@@ -13,7 +13,7 @@ const messages = {
     originalStatus: 'Original pixels · scroll when the image exceeds the viewport', source: 'SOURCE', stream: 'STREAM', canvas: 'CANVAS BOX',
     fps: 'FPS · TARGET / CAPTURE / RECEIVE / DRAW', nativeFps: 'FPS · TARGET / CAPTURE / PRESENT', nativeObservedFps: 'FPS · TARGET / CAPTURE / OBSERVED PRESENT', nativeObservedHint: 'DXGI observations are a lower bound and may omit frames that were displayed.', nativeBox: 'DISPLAY AREA', pending: 'Waiting', stage: 'Video preview. Double-click to toggle fullscreen.',
     fullscreenUnavailable: 'Fullscreen is unavailable in this WebView. Use a floating preview window or a supported host.',
-    originalUnavailable: 'Original size requires a valid frame within the output pixel budget.', install: 'Install a compatible ReaWebAPI v0.3.9.40 video backend.'
+    originalUnavailable: 'Original size requires a valid frame within the output pixel budget.', install: 'The video backend is unavailable for this REAPER installation. Use a ReaWebAPI build compatible with its video module and architecture.'
   },
   cn: {
     projectMonitor: '工程视频', title: '视频预览', options: '选项', display: '显示', theme: '外观', dark: '深色', light: '浅色',
@@ -26,7 +26,7 @@ const messages = {
     originalStatus: '原始像素显示，画面超出显示区域时可滚动查看', source: '源画面', stream: '视频流', canvas: '画布区域',
     fps: '帧率 · 目标 / 捕获 / 接收 / 绘制', nativeFps: '帧率 · 目标 / 捕获 / 呈现', nativeObservedFps: '帧率 · 目标 / 捕获 / 观察呈现', nativeObservedHint: 'DXGI 观察计数为下限，可能漏计已显示的帧。', nativeBox: '显示区域', pending: '等待画面', stage: '视频预览，双击切换全屏。',
     fullscreenUnavailable: '当前 WebView 无法全屏，请使用浮动预览窗口或支持全屏的宿主。',
-    originalUnavailable: '原始大小需要有效的视频画面，且尺寸不能超出输出像素预算。', install: '请安装兼容的 ReaWebAPI v0.3.9.40 视频后端。'
+    originalUnavailable: '原始大小需要有效的视频画面，且尺寸不能超出输出像素预算。', install: '当前 REAPER 安装无法启用视频后端。请使用与其视频模块和架构兼容的 ReaWebAPI 版本。'
   }
 };
 let language = 'en', statusKey = 'connecting', statusError;

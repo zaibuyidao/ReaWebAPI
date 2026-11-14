@@ -1,5 +1,5 @@
 # ReaWebAPI
 
-- Use system video-processor scaling for supported Windows native I420 previews, retaining shader fallback.
-- Reduce video-preview aliasing when downscaling in Windows native shader fallback, RGBA WebGL rendering and RGBA fit/custom output.
-- Redraw RGBA web previews at physical display dimensions during resizing, including high-quality Canvas 2D fallback.
+- Support REAPER 7.86 video modules on Windows x64, macOS ARM64 and Linux x86_64, retaining 7.84 and 7.85 compatibility.
+- Share verified video mappings between the backend and cadence probe, and add a module compatibility check for maintenance.
+- Clarify the video demo's unavailable-backend message.

@@ -1,6 +1,6 @@
 # Project video preview
 
-Requires ReaWebAPI v0.3.9.45 or newer. Run `reawebapi-video-preview.lua` in REAPER. No capture FX or companion plugin is installed.
+Requires ReaWebAPI v0.3.9.46 or newer for REAPER 7.86. Run `reawebapi-video-preview.lua` in REAPER. No capture FX or companion plugin is installed.
 
 The preview starts automatically. A single Options menu contains display, output and light/dark appearance settings. Dark is the default, and the native title-bar icon is hidden.
 
