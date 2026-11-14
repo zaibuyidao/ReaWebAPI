@@ -64,13 +64,15 @@ class SdkTests(unittest.TestCase):
         read_bytes = Path.read_bytes
 
         def read_without_validation(path):
-            if path == ROOT / 'docs/VALIDATION.md':
+            if path.parent == ROOT / 'docs' and (path.name.startswith(('VALIDATION', 'SMOKE_TEST')) or '-isolation-validation' in path.name):
                 raise FileNotFoundError(path)
             return read_bytes(path)
 
         with patch.object(Path, 'read_bytes', read_without_validation):
             files = payload(ROOT, '0.1.8.3', 'test-sdk')
-        self.assertNotIn('ReaWebAPI/docs/VALIDATION.md', files.keys())
+        self.assertFalse(any(name.startswith('ReaWebAPI/docs/') and
+                             ('-isolation-validation' in name or Path(name).name.startswith(('VALIDATION', 'SMOKE_TEST')))
+                             for name in files))
         check_links(files)
 
     def test_standalone_sdk_content_links_and_checksums(self):
@@ -79,7 +81,9 @@ class SdkTests(unittest.TestCase):
             self.assertEqual(archive.name, 'ReaWebAPI-SDK-v0.1.8.3.zip')
             with zipfile.ZipFile(archive) as z:
                 files = {name: z.read(name) for name in z.namelist()}
-                self.assertNotIn('ReaWebAPI/docs/VALIDATION.md', files.keys())
+                self.assertFalse(any(name.startswith('ReaWebAPI/docs/') and
+                             ('-isolation-validation' in name or Path(name).name.startswith(('VALIDATION', 'SMOKE_TEST')))
+                             for name in files))
                 self.assertFalse(any(name.startswith('UserPlugins/') or name.endswith(('.dll', '.so', '.dylib')) for name in files))
                 metadata = json.loads(files['ReaWebAPI/SDK/BUILD.json'])
                 self.assertEqual(metadata['version'], '0.1.8.3')

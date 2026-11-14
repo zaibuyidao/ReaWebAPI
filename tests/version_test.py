@@ -59,7 +59,11 @@ class VersionTests(unittest.TestCase):
             shutil.copytree(ROOT / 'examples/main-demo', stage / 'Scripts/ReaWebAPI/Example')
             stage_sdk(stage, version)
             # Reusing an old staging directory must not publish local validation notes.
-            (stage / 'ReaWebAPI/docs/VALIDATION.md').write_text('LOCAL VALIDATION NOTES', encoding='utf-8')
+            local_docs = ('VALIDATION.md', 'SMOKE_TEST.md', 'windows-isolation-validation.md',
+                          'windows-isolation-validation.zh-CN.md', 'webkit-isolation-validation.md',
+                          'webkit-isolation-validation.zh-CN.md')
+            for name in local_docs:
+                (stage / 'ReaWebAPI/docs' / name).write_text('LOCAL VALIDATION NOTES', encoding='utf-8')
             result = subprocess.run([
                 sys.executable, str(ROOT / 'tools/package.py'), '--stage', str(stage),
                 '--platform', 'windows', '--arch', 'x64', '--revision', 'test-version',
@@ -69,8 +73,9 @@ class VersionTests(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in output.glob('*.zip')),
                              [f'ReaWebAPI-windows-x64-v{version}.zip'])
             with zipfile.ZipFile(output / f'ReaWebAPI-windows-x64-v{version}.zip') as archive:
-                self.assertNotIn('ReaWebAPI/docs/VALIDATION.md', archive.namelist())
-                self.assertNotIn(b'VALIDATION.md', archive.read('SHA256SUMS.txt'))
+                for name in local_docs:
+                    self.assertNotIn('ReaWebAPI/docs/' + name, archive.namelist())
+                    self.assertNotIn(name.encode(), archive.read('SHA256SUMS.txt'))
                 for name in ('ReaWebAPI/BUILD.json', 'ReaWebAPI/SDK/BUILD.json'):
                     metadata = json.loads(archive.read(name))
                     self.assertEqual(metadata['version'], version)

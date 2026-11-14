@@ -44,7 +44,7 @@ WebView2 没有公开的嵌入式检查器控制器。ReaWebAPI 通过 [`OpenDev
 
 `ReaWebAPI/Apps/<appId>/WindowState/*.json` 按页面及窗口槽位保存 `devtools.mode`（`embedded` / `floating`）和 `devtools.widthRatio`。重新打开工具或重启 REAPER 后恢复偏好。DevTools 初始关闭，不持久化调试会话。各平台恢复已保存模式。Windows/macOS 托管降级不会覆盖已保存偏好。
 
-`(await reaper.debug.getDiagnostics()).devtools` 返回实际模式、宽度比例、嵌入支持情况及后端状态。macOS 的 `visible` 反映本地 WebKit 检查器状态，Windows 的可见状态仅反映 ReaWebAPI 已识别的原生窗口。验证步骤见[手动检查清单](SMOKE_TEST.md#devtools-acceptance)。
+`(await reaper.debug.getDiagnostics()).devtools` 返回实际模式、宽度比例、嵌入支持情况及后端状态。macOS 的 `visible` 反映本地 WebKit 检查器状态，Windows 的可见状态仅反映 ReaWebAPI 已识别的原生窗口。
 
 生产资源在 Console、Sources 和 Network 中使用 `reaweb://<appId>/...` URL。原生 Inspector 会话、快捷键及 Embedded/Floating 控制保持原有行为。
 

@@ -14,7 +14,9 @@
 !/docs/
 /docs/*
 !/docs/*.md
-/docs/VALIDATION.md
+/docs/VALIDATION*.md
+/docs/SMOKE_TEST*.md
+/docs/*-isolation-validation*.md
 !/examples/
 !/api/
 /api/*

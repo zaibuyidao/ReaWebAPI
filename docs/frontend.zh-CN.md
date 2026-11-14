@@ -88,7 +88,7 @@ render(config, track);
 
 隔离资源返回 `Cross-Origin-Opener-Policy: same-origin`、`Cross-Origin-Embedder-Policy: require-corp` 和 `Permissions-Policy: cross-origin-isolated=(self)`。Windows 保持 `reaweb://<appId>`。macOS/Linux 的 required App 使用经过认证的 `http://127.0.0.1:<port>` 来源，在 `Apps/<appId>/isolation-origin.json` 中按 App ID 持久绑定端口。已保存端口被占用时返回 `APP_ORIGIN_IN_USE`，不临时切换来源。普通 App 保持自定义协议来源。外部脚本、图片、字体和媒体须提供兼容的 CORS/CORP 响应。App 自有 CSP 继续生效。普通和 Blob Worker 可使用 `worker-src 'self' blob:`，支持相应指令的浏览器可使用 `script-src 'self' 'wasm-unsafe-eval'` 编译 WASM。
 
-App ID、私有文件和窗口状态不变。浏览器存储按来源隔离，macOS/Linux 启用 required 后使用独立的 localStorage/IndexedDB，保留旧数据但不自动迁移。如需旧浏览器状态，应在切换前导出。恢复 off 模式即可回到旧来源。请保留 `app.json`，并将来源记录与 App 数据一起备份。Linux 需要支持隔离进程 SharedArrayBuffer 的 WebKitGTK，参见[独立运行库构建](linux-webkit-runtime.md)。required HTTP 页面通过现有流通道接收工程视频，不使用自定义协议帧传输。
+App ID、私有文件和窗口状态不变。浏览器存储按来源隔离，macOS/Linux 启用 required 后使用独立的 localStorage/IndexedDB，保留旧数据但不自动迁移。如需旧浏览器状态，应在切换前导出。恢复 off 模式即可回到旧来源。请保留 `app.json`，并将来源记录与 App 数据一起备份。Linux 需要支持隔离进程 SharedArrayBuffer 的 WebKitGTK，参见[独立运行库构建](linux-webkit-runtime.zh-CN.md)。required HTTP 页面通过现有流通道接收工程视频，不使用自定义协议帧传输。
 
 文档创建时检查浏览器实际隔离状态。失败后停止加载，并向宿主报告 `CROSS_ORIGIN_ISOLATION_FAILED`。浏览器未提供隔离能力时报告 `CROSS_ORIGIN_ISOLATION_UNSUPPORTED`。宿主关闭失败窗口，错误可从 REAPER Console 和原生 Runtime Diagnostics 获取，不依赖页面完成握手。普通 App 不受影响。
 
@@ -104,9 +104,7 @@ console.log(webRuntime.crossOriginIsolation, webRuntime.browser);
 
 直接使用浏览器标准 `Worker`、`SharedArrayBuffer`、`Atomics` 和 `WebAssembly.Memory`，不新增线程命名空间或 Worker 桥接。App 负责终止闲置 Worker，浏览器在文档关闭或重载时释放 Dedicated Worker。不要在页面主线程执行阻塞的 `Atomics.wait()`。
 
-[线程 WASM 示例](../examples/runtime-features/isolation/README.zh-CN.md) 覆盖普通与 Blob 各四个 Worker、WASM 原子计算、等待/唤醒、异常和存储。已测环境与剩余限制见 [Windows](windows-isolation-validation.zh-CN.md) 与 [WebKit 验收记录](webkit-isolation-validation.md)。设置响应头不等于引擎已支持。
-
-模拟器行为、PSP 核心修复与稳定性范围见 [Windows 验收记录](windows-isolation-validation.zh-CN.md)。
+[线程 WASM 示例](../examples/runtime-features/isolation/README.zh-CN.md) 覆盖普通与 Blob 各四个 Worker、WASM 原子计算、等待/唤醒、异常和存储。设置响应头不等于引擎已支持。
 
 ## 资源来源与存储
 

@@ -104,9 +104,7 @@ console.log(webRuntime.crossOriginIsolation, webRuntime.browser);
 
 Use standard `Worker`, `SharedArrayBuffer`, `Atomics` and `WebAssembly.Memory`. No threading namespace or Worker bridge is added. Apps terminate unused Workers. The browser releases dedicated Workers when their document closes or reloads. Do not use blocking `Atomics.wait()` on the page thread.
 
-The [threaded WASM example](../examples/runtime-features/isolation/README.md) covers four URL Workers, four Blob Workers, atomic WASM execution, wait/notify, errors and persistence. See the [Windows](windows-isolation-validation.md) and [WebKit acceptance records](webkit-isolation-validation.md) for tested environments and remaining limits. Headers alone are not proof of engine support.
-
-See the [Windows acceptance record](windows-isolation-validation.md) for emulator behavior, the PSP core correction and stability coverage.
+The [threaded WASM example](../examples/runtime-features/isolation/README.md) covers four URL Workers, four Blob Workers, atomic WASM execution, wait/notify, errors and persistence. Headers alone are not proof of engine support.
 
 ## Resource origin and storage
 

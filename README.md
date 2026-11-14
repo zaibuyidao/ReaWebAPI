@@ -57,7 +57,7 @@ Quit REAPER and extract the platform ZIP into its resource directory, available 
 
 For manual installation, place the native binary in `UserPlugins/`. On Linux, place the matching `reawebapi-webview-<arch>` helper in the same directory and grant it execute permission. Keep the `reawebapi-video-<arch>/` subdirectory for accelerated project-video transport.
 
-Required cross-origin isolation on Linux needs a compatible engine. When provided, retain `reawebapi-webkit-<arch>/` beside the helper. See the [private runtime build](docs/linux-webkit-runtime.md) and [tested environments](docs/webkit-isolation-validation.md).
+Required cross-origin isolation on Linux needs a compatible engine. When provided, retain `reawebapi-webkit-<arch>/` beside the helper. See the [private runtime build](docs/linux-webkit-runtime.md).
 
 Linux reuses unchanged X11 geometry and reads incoming WebKit messages through the host event loop. In WSL without DRI3, the helper uses GTK image backing surfaces to reduce drawing stalls. An explicit `GDK_RENDERING` setting takes precedence.
 

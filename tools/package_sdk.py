@@ -89,9 +89,9 @@ def payload(root, version, revision):
                  'package.json', 'package-lock.json', 'tsconfig.json', 'build.mjs',
                  'src/main.ts', 'src/worker.ts', 'src/style.css', 'public/data.json', 'public/app.json'):
         paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'examples/templates/modern' / name
-    for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md', 'linux-webkit-runtime.md', 'webkit-isolation-validation.md', 'eel-backend-compatibility.md', 'eel-backend-compatibility.zh-CN.md', 'release-notes.zh-CN.md',
-                 'devtools.md', 'devtools.zh-CN.md', 'diagnostics.md', 'diagnostics.zh-CN.md', 'SMOKE_TEST.md',
-                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'windows-isolation-validation.md', 'windows-isolation-validation.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
+    for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md', 'linux-webkit-runtime.md', 'linux-webkit-runtime.zh-CN.md', 'eel-backend-compatibility.md', 'eel-backend-compatibility.zh-CN.md', 'release-notes.zh-CN.md',
+                 'devtools.md', 'devtools.zh-CN.md', 'diagnostics.md', 'diagnostics.zh-CN.md',
+                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
     for name in ('reaper_api.json', 'bindings.json'):
         paths[f'ReaWebAPI/SDK/api/{name}'] = root / 'api' / name
@@ -136,7 +136,9 @@ def payload(root, version, revision):
 def stage_sdk(stage, version, revision='local', root=ROOT):
     files = payload(root, version, revision)
     # Remove the old packaged copy when an install prefix is reused. Source notes stay local.
-    (stage / 'ReaWebAPI/docs/VALIDATION.md').unlink(missing_ok=True)
+    for pattern in ('VALIDATION*.md', 'SMOKE_TEST*.md', '*-isolation-validation*.md'):
+        for path in (stage / 'ReaWebAPI/docs').glob(pattern):
+            path.unlink()
     for directory in ('ReaWebAPI/SDK/video-preview', 'Scripts/ReaWebAPI/Example/video-preview'):
         (stage / directory / 'ReaWebAPI_VideoPreview.lua').unlink(missing_ok=True)
     for name, content in files.items():
