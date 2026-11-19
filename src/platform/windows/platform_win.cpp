@@ -189,8 +189,10 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
         }
         return DefSubclassProc(host, message, wp, lp);
       }, 1, reinterpret_cast<DWORD_PTR>(this));
+      icon_.suspend_caption(true);
       SetWindowLongPtrW(hwnd_, GWL_STYLE, (fullscreen_style_ & ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME)) | WS_CHILD);
       SetParent(hwnd_, fullscreen_host_);
+      icon_.refresh(hwnd_);
       SetWindowPos(hwnd_, HWND_TOP, 0, 0, bounds.right - bounds.left, bounds.bottom - bounds.top, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
       ShowWindow(fullscreen_host_, SW_SHOW); SetForegroundWindow(fullscreen_host_);
     } else {
@@ -205,6 +207,8 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
       SetWindowPos(hwnd_, nullptr, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
         SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE);
       DestroyWindow(host);
+      icon_.suspend_caption(false);
+      if (!closed_ && !options_.hosted) icon_.refresh(hwnd_, icon_host(), !frameless_active());
     }
     layout();
     if (!closed_ && controller_) controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);

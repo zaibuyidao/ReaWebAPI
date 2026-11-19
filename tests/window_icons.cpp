@@ -116,6 +116,17 @@ int main() {
       native.set_visible(initial, true);
       CHECK(SendMessageW(initial, WM_GETICON, ICON_SMALL, 0) == reinterpret_cast<LRESULT>(LoadIconW(nullptr, MAKEINTRESOURCEW(32512))));
       CHECK(GetWindowLongPtrW(initial, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME);
+      native.suspend_caption(true);
+      native.refresh(initial);
+      CHECK(!SendMessageW(initial, WM_GETICON, ICON_SMALL, 0) && !SendMessageW(initial, WM_GETICON, ICON_BIG, 0));
+      CHECK(GetWindowLongPtrW(initial, GWL_EXSTYLE) & WS_EX_DLGMODALFRAME);
+      native.suspend_caption(false);
+      const auto cached = icon_updates;
+      native.refresh(initial, nullptr, true);
+      CHECK(icon_updates == cached + 2);
+      CHECK(SendMessageW(initial, WM_GETICON, ICON_SMALL, 0) == reinterpret_cast<LRESULT>(LoadIconW(nullptr, MAKEINTRESOURCEW(32512))));
+      native.refresh(initial);
+      CHECK(icon_updates == cached + 2);
       DestroyWindow(initial);
     }
     UnregisterClassW(cls.lpszClassName, cls.hInstance);

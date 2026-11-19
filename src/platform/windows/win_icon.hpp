@@ -6,6 +6,7 @@ namespace reaweb {
 class WinIcon {
   HICON small_ = nullptr, large_ = nullptr;
   bool visible_ = true;
+  bool caption_suspended_ = false;
   HWND dock_ = nullptr;
   HICON dock_small_ = nullptr, dock_large_ = nullptr;
   LONG_PTR dock_frame_ = 0;
@@ -36,13 +37,15 @@ class WinIcon {
     if (!result) throw Error("ICON_APPLY_FAILED", "Cannot create the native window icon");
     return result;
   }
-  static void apply(HWND window, HICON small_icon, HICON large_icon, LONG_PTR frame, LONG_PTR mask) {
+  static void apply(HWND window, HICON small_icon, HICON large_icon, LONG_PTR frame, LONG_PTR mask, bool caption_restored = false) {
     const auto extended = GetWindowLongPtrW(window, GWL_EXSTYLE);
     const auto next = (extended & ~mask) | frame;
     if (next != extended) SetWindowLongPtrW(window, GWL_EXSTYLE, next);
-    if (reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_SMALL, 0)) != small_icon)
+    // Rebuild the caption cache after the fullscreen child returns to a top-level window.
+    if (caption_restored) SendMessageW(window, WM_THEMECHANGED, 0, 0);
+    if (caption_restored || reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_SMALL, 0)) != small_icon)
       SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
-    if (reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_BIG, 0)) != large_icon)
+    if (caption_restored || reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_BIG, 0)) != large_icon)
       SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
     if (next != extended) {
       // Refresh the cached tool-window caption so the Docker actually draws its icon.
@@ -59,7 +62,8 @@ class WinIcon {
   }
 public:
   ~WinIcon() { release_dock(); if (small_) DestroyIcon(small_); if (large_) DestroyIcon(large_); }
-  void refresh(HWND window, HWND dock = nullptr) {
+  void suspend_caption(bool suspended) { caption_suspended_ = suspended; }
+  void refresh(HWND window, HWND dock = nullptr, bool caption_restored = false) {
     if (!small_ && !large_ && visible_) dock = nullptr;
     if (dock_ != dock || (dock_ && GetPropW(dock_, dock_owner) != this)) release_dock();
     if (dock && !dock_) {
@@ -71,13 +75,16 @@ public:
       if (SetPropW(dock, dock_owner, this)) dock_ = dock;
     }
     const auto small_icon = visible_ ? small_ : nullptr, large_icon = visible_ ? large_ : nullptr;
-    if (window) {
+    if (window && caption_suspended_) {
+      // The fullscreen child has no caption. Keep the original extended frame style.
+      apply(window, nullptr, nullptr, 0, 0);
+    } else if (window) {
       const auto style = GetWindowLongPtrW(window, GWL_STYLE);
       const bool caption = !(style & WS_CHILD) && (style & WS_CAPTION);
       // Keep the frame used at creation. Windows otherwise caches a fallback icon slot on first show.
       const auto fallback = visible_ && caption && !small_ && !large_ ? LoadIconW(nullptr, MAKEINTRESOURCEW(32512)) : nullptr;
       apply(window, small_icon ? small_icon : fallback, large_icon ? large_icon : fallback,
-        caption ? WS_EX_DLGMODALFRAME : 0, WS_EX_DLGMODALFRAME);
+        caption ? WS_EX_DLGMODALFRAME : 0, WS_EX_DLGMODALFRAME, caption_restored && caption);
     }
     if (dock_) apply(dock_, small_icon, large_icon,
       visible_ ? 0 : (dock_frame_ | WS_EX_DLGMODALFRAME), dock_frame_mask);
