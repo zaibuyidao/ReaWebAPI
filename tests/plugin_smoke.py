@@ -533,9 +533,9 @@ try:
         expected_name = json.dumps('Guitar 吉他 "A"')
         (folder / 'app.js').write_text('''(async () => {
   const capabilities = await reaper.lifecycle.ready;
-  const namespaces = ["window","theme","dialog","events","lifecycle","debug","fs","audio","clipboard","dragDrop","app","system","transaction","host","stream"];
-  if (Object.keys(reaper).length !== 744 || Object.keys(reaper).some(name => name.startsWith('ReaWeb')) || 'ready' in reaper)
-    throw new Error('Runtime root exposes a flat API or has an incomplete Mirror');
+  const namespaces = ["window","theme","dialog","events","lifecycle","debug","fs","audio","clipboard","dragDrop","app","system","transaction","host","stream","realtime","video"];
+  if (Object.keys(reaper).length !== namespaces.length || Object.keys(reaper).some(name => name.startsWith('ReaWeb')) || 'ready' in reaper)
+    throw new Error('Runtime root exposes a flat API or has missing namespaces');
   if (JSON.stringify(capabilities.runtime.namespaces) !== JSON.stringify(namespaces) || namespaces.some(name => !Object.isFrozen(reaper[name])))
     throw new Error('Incomplete Runtime namespaces');
   if (JSON.stringify(capabilities.runtime.reservedNamespaces) !== JSON.stringify([]))
@@ -561,7 +561,7 @@ try:
   });
   if (!sessionStorage.getItem('reloaded')) {
     location.hash = 'fragment';
-    if (await reaper.CountTracks(0) !== 1) throw new Error('Fragment navigation broke bridge');
+    if ((await reaper.host.service('runtime').invoke('getProjectSummary')).trackCount !== 1) throw new Error('Fragment navigation broke bridge');
     sessionStorage.setItem('reloaded', 'yes');
     location.reload(); return;
   }
@@ -580,39 +580,18 @@ try:
   if (info.stage !== 'ready' || info.backend !== 'WebView2' || info.documentGeneration < 2) throw new Error('Bad diagnostics');
   if (!(await reaper.window.getState()).keyboardCapture) throw new Error('Keyboard policy missing');
   const off = await reaper.events.on('windowstatechange', state => window.dockState = state.docked);
-  const track = await reaper.GetSelectedTrack(0, 0);
+  const track = await reaper.audio.getSelectedTrackRef();
   const meter = await reaper.audio.getTrackMeter(track);
   if (meter.channels !== 2 || meter.peak[0] !== 0.5 || meter.peakDb[1] !== null) throw new Error('Track meter');
-  const [okName, name] = await reaper.GetTrackName(track);
-  if (name !== EXPECTED || await reaper.CountTracks(0) !== 1) throw new Error('Wrong host data');
-  if (await reaper.GetSelectedTrack(0, 99) !== null) throw new Error('Expected null track');
-  if ((await reaper.system.getCapabilities()).api.implemented !== 730) throw new Error('Generated schema not connected');
-  if (await reaper.GetProjectName(0) !== 'API 工程.rpp') throw new Error('Project string ABI');
-  if (JSON.stringify(await reaper.CountProjectMarkers(0)) !== '[2,1,1]') throw new Error('Count outputs ABI');
-  const marker = await reaper.EnumProjectMarkers3(0, 1);
-  if (marker.length !== 7 || marker[1] !== true || marker[4] !== '段落 A' || marker[5] !== 11) throw new Error('Marker outputs ABI');
-  if (JSON.stringify(await reaper.EnumProjectMarkers3(0, 2)) !== '[0,false,0,0,null,0,0]') throw new Error('End of enumeration');
-  if (JSON.stringify(await reaper.TimeMap2_timeToBeats(0, 1.25)) !== '[2.5,0,4,2.5,4]') throw new Error('Beat outputs ABI');
-  const transport = await reaper.transaction.batch(b => {
-    const position = b.GetPlayPosition();
-    const state = b.GetPlayState();
-    const [beats] = b.TimeMap2_timeToBeats(0, position);
-    return { position, state, beats, valid: b.ValidatePtr2(0, track, 'MediaTrack*') };
-  });
-  if (JSON.stringify(transport) !== '{"position":2.5,"state":1,"beats":5,"valid":true}') throw new Error('Transport batch');
-  if (await reaper.SetEditCurPos(5, true, false) !== undefined || await reaper.GetCursorPosition() !== 5) throw new Error('Void result/cursor write');
-  const nativeColor = await reaper.ColorToNative(37, 149, 211);
-  if (JSON.stringify(await reaper.ColorFromNative(nativeColor)) !== '[37,149,211]') throw new Error('Color outputs ABI');
-  await reaper.transaction.batch([{ method: 'SetTrackColor', args: [track, nativeColor | 0x1000000] }], { undoLabel: 'Color test' });
-  if (await reaper.GetTrackColor(track) !== (nativeColor | 0x1000000)) throw new Error('Color readback');
-  if (await reaper.TrackFX_GetCount(track) !== 1 || await reaper.TrackFX_GetNumParams(track, 0) !== 1) throw new Error('FX count ABI');
-  if (JSON.stringify(await reaper.TrackFX_GetFXName(track, 0)) !== '[true,"EQ"]') throw new Error('FX name ABI');
-  if (JSON.stringify(await reaper.TrackFX_GetParam(track, 0, 0)) !== '[0.5,0,1]') throw new Error('FX parameter ABI');
+  const {name} = await reaper.audio.getTrackMix(track);
+  if (name !== EXPECTED) throw new Error('Wrong selected track');
+  if ('CountTracks' in reaper || 'batch' in reaper.transaction || 'setBufferSize' in reaper.debug)
+    throw new Error('Retired API exposed');
   const token = window.keepState = crypto.randomUUID();
   if (!await reaper.window.setDocked(true) || !await reaper.window.isDocked()) throw new Error('Dock failed');
   if (await reaper.window.setDocked(false) || await reaper.window.isDocked()) throw new Error('Undock failed');
   if (window.keepState !== token) throw new Error('Page state lost');
-  if ((await reaper.GetTrackName(track))[1] !== name) throw new Error('Bridge broken after undocking');
+  if ((await reaper.audio.getTrackMix(track)).name !== name) throw new Error('Bridge broken after undocking');
   if (!await reaper.window.setDocked(true)) throw new Error('Second dock failed');
   document.querySelector('h1').textContent = 'PASS: ' + name;
   await off();
@@ -728,8 +707,8 @@ try:
     el('pan').value = '0.5'; el('pan').dispatchEvent(new Event('input')); el('pan').dispatchEvent(new Event('change'));
     await until(() => el('activity').textContent.includes('→ +0.500 (50.0% R) · REAPER readback'));
     // A host-side change arrives through project events, without touching the slider.
-    await reaper.SetMediaTrackInfo_Value(await reaper.GetSelectedTrack(0, 0), 'D_PAN', -0.25);
-    await until(() => el('activity').textContent.includes('→ -0.250 (25.0% L) · REAPER readback'));
+    await reaper.audio.setTrackValueLatest(await reaper.audio.getSelectedTrackRef(), 'D_PAN', -0.25);
+    await until(() => el('activity').textContent.includes('→ -0.250 (25.0% L) · Lua readback'));
     click('center-pan');
     await until(() => el('activity').textContent.includes('→ 0.000 (center) · REAPER readback'));
   }
@@ -744,13 +723,12 @@ try:
   await until(() => el('diagnostic-backend').textContent === 'WebView2' && !el('refresh-diagnostics').disabled);
   if (el('diagnostic-panel').hidden || el('diagnostic-details').open || el('diagnostics').getAttribute('aria-expanded') !== 'true') throw new Error('Diagnostic disclosure state');
   const snapshot = JSON.parse(el('diagnostic-output').textContent);
-  if (snapshot.api.implemented !== 730 || snapshot.api.bindings || snapshot.api.availableMethods) throw new Error('Diagnostic snapshot contains redundant API dump');
+  if (!snapshot.backend || !snapshot.runtime || 'api' in snapshot) throw new Error('Diagnostic snapshot contains redundant API dump');
   el('diagnostic-details').open = true;
   if (el('diagnostic-output').getBoundingClientRect().height > 261) throw new Error('Diagnostic JSON is not bounded');
   click('refresh-diagnostics'); await until(() => !el('refresh-diagnostics').disabled);
   click('diagnostics');
   if (!el('diagnostic-panel').hidden || el('diagnostic-details').open) throw new Error('Diagnostics did not fold back');
-  if (!el('api-coverage').textContent.includes('730 bound')) throw new Error('Coverage display');
   click('read-project'); await until(() => !el('read-project').disabled);
   if (EMPTY_PROJECT) {
     if (!el('read-fx').disabled || !el('apply-color').disabled || !el('marker-list').textContent.includes('No markers')) throw new Error('Empty project controls');
@@ -764,9 +742,9 @@ try:
   if (EMPTY_PROJECT && el('check-results').querySelectorAll('.skip').length !== 3) throw new Error('Empty project should skip track checks');
   if (!EMPTY_PROJECT) {
   el('track-color').value = '#2595d3'; click('apply-color'); await until(() => !el('apply-color').disabled);
-  if (await reaper.GetTrackColor(await reaper.GetSelectedTrack(0, 0)) !== ((await reaper.ColorToNative(37,149,211)) | 0x1000000)) throw new Error('Apply color');
+  if (!el('activity').textContent.includes('#2595d3')) throw new Error('Apply color');
   click('reset-color'); await until(() => !el('reset-color').disabled);
-  if (await reaper.GetTrackColor(await reaper.GetSelectedTrack(0, 0)) !== 0) throw new Error('Default color');
+  if (!el('activity').textContent.includes('Default color')) throw new Error('Default color');
   }
   el('cursor-target').value = '7.25'; click('move-cursor'); await until(() => !el('move-cursor').disabled);
   if (el('cursor-position').textContent !== '7.250 s') throw new Error('Move cursor display');
@@ -819,7 +797,7 @@ try:
   };
   const el = id => document.getElementById(id);
   await until(() => !el('refresh').disabled && el('track-name').textContent === EXPECTED);
-  if (!el('status').textContent.includes('REAPER APIs available')) throw new Error('Missing capability state');
+  if (!el('status').textContent.includes('Connected to ReaWebAPI')) throw new Error('Missing connection state');
   el('refresh').click();
   await until(() => el('track-name').textContent === EXPECTED);
   const state = window.starterState = 'preserved';
@@ -867,8 +845,8 @@ try:
   const read = await reaper.fs.readFile('roundtrip.bin', {encoding:'binary'});
   if (read.length !== bytes.length || read.some((v,i)=>v!==bytes[i])) throw new Error('Binary file mismatch');
   await reaper.transaction.withUndo('Gesture smoke', async () => {
-    const track = await reaper.GetSelectedTrack(0, 0);
-    await reaper.SetMediaTrackInfo_Value(track, 'D_VOL', .5);
+    const track = await reaper.audio.getSelectedTrackRef();
+    await reaper.audio.setTrackValueLatest(track, 'D_VOL', .5);
   });
   for (const state of [true, false, true]) {
     if (await reaper.window.setDocked(state) !== state) throw new Error('Dock failed');
@@ -1067,7 +1045,7 @@ try:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'MODERN PASS'
             assert extra_calls == {'project'}, extra_calls
             if args.dev: print('Development mode: loopback entry, Vite modules, HTTP fetch, Worker and live CSS HMR passed')
-            print('Modern template: IIFE/CSS, local resources, Blob Worker, 100KB binary file round-trip, batch/managed Undo and docking passed')
+            print('Modern template: IIFE/CSS, local resources, Blob Worker, 100KB binary file round-trip, managed Undo and docking passed')
         elif args.starter:
             assert json.loads(diagnostics(ids[0]))['window']['title'] == 'STARTER PASS'
             assert extra_calls == set(), extra_calls

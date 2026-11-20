@@ -1,6 +1,5 @@
 """External control protocol and coexistence, over real loopback sockets."""
 import json
-import base64
 import os
 from pathlib import Path
 import socket
@@ -103,6 +102,39 @@ class WebSocket:
         self.sock.close()
 
 
+def check_external_methods(client):
+    caps = client.call('system.getCapabilities')
+    assert {'api.call', 'api.batch'}.isdisjoint(caps['methods'])
+    assert {'api', 'batchMethods'}.isdisjoint(caps)
+    assert {'batchCalls', 'valueBytes'}.isdisjoint(caps['limits'])
+    client.call('api.call', {'name': 'CountTracks', 'args': [0]}, error='UNKNOWN_METHOD')
+    client.call('api.batch', {'calls': [{'method': 'CountTracks', 'args': [0]}]}, error='UNKNOWN_METHOD')
+    assert client.call('system.getInfo', fragmented=True)['protocolVersion'] == 1
+    return caps
+
+
+def subscribe_projects(client):
+    return client.call('events.subscribe', {'event': 'projectChanged'})['subscriptionId']
+
+
+def project_snapshot(client, subscription, after_epoch=0):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        client.call('system.getInfo')
+        for event in reversed(client.events):
+            if event.get('subscriptionId') != subscription:
+                continue
+            data = event['data']
+            if data['projectEpoch'] <= after_epoch:
+                continue
+            ids = [p['id'] for p in data['projects']]
+            assert data['activeProject'] and data['activeProject'] in ids, data
+            assert len(ids) == len(set(ids)) and data['revision'] >= 1
+            return data
+        time.sleep(0.025)
+    raise AssertionError(f'Missing projectChanged snapshot after epoch {after_epoch}')
+
+
 def main():
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', 0))
@@ -132,7 +164,7 @@ def main():
                 return client
 
             a = connect()
-            a.call('api.call', dict(name='CountTracks', args=[0]), error='AUTH_REQUIRED')
+            a.call('system.getInfo', error='AUTH_REQUIRED')
             a.call('auth.authenticate', dict(token='wrong', protocolVersion=1), error='AUTH_FAILED')
             a.closed()
             wrong_version = connect()
@@ -141,8 +173,11 @@ def main():
             a, b = connect(config['token']), connect(config['token'])
             assert command('stats')['platforms'] == 0, 'External Client must not create a WebView'
             assert a.call('system.getInfo')['protocolVersion'] == 1
-            capabilities = a.call('system.getCapabilities')
-            assert 'CountTracks' in capabilities['api']['availableMethods']
+            runtime_query = {'service': 'runtime', 'method': 'getProjectSummary'}
+            assert a.call('service.invoke', runtime_query) == {'name': 'Test project', 'trackCount': 1, 'playState': 0}
+            a.call('service.invoke', dict(runtime_query, payload={'name': 'GetTrack'}), error='INVALID_ARGUMENT')
+            assert a.call('service.invoke', {'service': 'runtime', 'method': 'getHostVersion'}) == '7.external-test'
+            capabilities = check_external_methods(a)
             assert len(capabilities['events']) == 9
             a.call('system.getInfo', {'extra': True}, error='INVALID_ARGUMENT')
             a.call('window.close', error='UNKNOWN_METHOD')
@@ -150,49 +185,16 @@ def main():
                 occupied.bind(('127.0.0.1', 0)); occupied.listen()
                 command('port', value=occupied.getsockname()[1], expect='TRANSPORT_UNAVAILABLE')
                 assert a.call('system.getInfo')['protocolVersion'] == 1
-            assert a.call('api.call', dict(name='CountTracks', args=[0]), fragmented=True) == 1
             a.frame('ping', opcode=9)
             assert a.receive_frame() == (10, b'ping')
-            for forbidden in ['ReaWeb_Open', 'ReaWeb_Batch', 'GetFunc', 'reaper.window.close', 'BR_GetMouseCursorContext']:
-                a.call('api.call', dict(name=forbidden, args=[]), error='UNKNOWN_API')
-            a.call('api.call', dict(name='CountTracks', args=[]), error='INVALID_ARGUMENT')
-            a.call('api.call', dict(name='InsertTrackAtIndex', args=[0, False]), error='API_UNAVAILABLE')
-            handle = a.call('api.call', dict(name='GetTrack', args=[0, 0]))
-            assert handle['type'] == 'MediaTrack' and len(handle['id']) > 64
-            assert a.call('api.call', dict(name='GetTrackName', args=[handle])) == [True, 'Track 测试']
-            b.call('api.call', dict(name='GetTrackName', args=[handle]), error='INVALID_HANDLE')
-            a.call('api.call', dict(name='GetTrackName', args=[dict(type='MediaTrack', id='forged')]), error='INVALID_HANDLE')
-            batch = [dict(method='GetTrack', args=[0, 0]), dict(method='GetTrackName', args=[{'$ref': 0}])]
-            assert a.call('api.batch', dict(calls=batch, undoLabel='External test'))[1] == [True, 'Track 测试']
-            assert command('stats')['undo'] == command('stats')['refresh'] == 0
-            failing = [dict(method='CountTracks', args=[0]), dict(method='SetMediaTrackInfo_Value', args=[handle, 'TEST', 9])]
-            error = a.call('api.batch', dict(calls=failing), error='BATCH_FAILED')
-            assert error['details']['completed'] == 1 and error['details']['rolledBack'] is False
-            a.call('api.batch', dict(calls=[dict(method='Main_OnCommand', args=[0, 0])]), error='INVALID_ARGUMENT')
-            a.call('api.batch', dict(calls=[dict(method='CountTracks', args=[0])] * 129), error='INVALID_ARGUMENT')
-            item = a.call('api.call', dict(name='GetMediaItem', args=[0, 0]))
-            take = a.call('api.call', dict(name='GetActiveTake', args=[item]))
-            encoded = {'__reawebBytes': base64.b64encode(bytes(range(256))).decode()}
-            assert a.call('api.call', dict(name='MIDI_SetAllEvts', args=[take, encoded])) is True
-            assert a.call('api.call', dict(name='MIDI_GetAllEvts', args=[take])) == [True, encoded]
-            accessor = a.call('api.call', dict(name='CreateTrackAudioAccessor', args=[handle]))
-            doubles = {'__reawebFloat64': base64.b64encode(struct.pack('<dd', 0.5, -1.0)).decode()}
-            writeback = a.call('api.call', dict(name='GetAudioAccessorSamples', args=[accessor, 48000, 1, 0, 2, doubles]))
-            assert writeback['__reawebCall'] is True and writeback['value'] == 1
-            assert writeback['arrays'][0]['index'] == 5
-            assert struct.unpack('<dd', base64.b64decode(writeback['arrays'][0]['values']['__reawebBytes'])) == (0.75, -0.75)
             payload = {'unicode': '外部客户端', 'buffer': {'type': 'binary', 'data': 'AAH/gA=='}}
             assert a.call('service.invoke', dict(service='test', method='echo', payload=payload)) == payload
             assert a.call('service.invoke', dict(service='test', method='consumer')) == {'windowId': 0}
             assert a.call('service.send', dict(service='test', method='input', payload=payload)) == {'accepted': True}
             a.call('service.invoke', dict(service='absent', method='echo'), error='SERVICE_NOT_FOUND')
             a.call('service.invoke', dict(service='test', method='absent'), error='METHOD_NOT_FOUND')
-            assert command('legacy')['result'] == 1
-            assert command('legacy', method='GetTrackName', args=[handle])['error']['code'] == 'STALE_HANDLE'
-            undo = command('legacy', method='ReaWeb_BeginUndo', args=['Legacy undo'])['result']
-            a.call('api.call', dict(name='CountTracks', args=[0]), error='UNDO_BUSY')
-            command('legacy', method='ReaWeb_EndUndo', args=[undo])
-            assert a.call('api.call', dict(name='CountTracks', args=[0])) == 1
+            assert command('web')['error']['code'] == 'UNKNOWN_API'
+            assert command('web', method='ReaWeb_Batch', args=[[]])['error']['code'] == 'UNKNOWN_API'
             subscription = a.call('service.subscribe', dict(service='test', event='update'))['subscriptionId']
             command('emit', target=True)
             a.call('system.getInfo')
@@ -200,15 +202,18 @@ def main():
             command('emit')
             a.call('system.getInfo')
             assert any(e.get('subscriptionId') == subscription and e.get('service') == 'test' for e in a.events)
-            native = a.call('events.subscribe', dict(event='projectChanged'))['subscriptionId']
-            deadline = time.monotonic() + 2
-            while not any(e.get('subscriptionId') == native for e in a.events) and time.monotonic() < deadline:
-                time.sleep(0.02)
-                a.call('system.getInfo')
-            event = next(e for e in a.events if e.get('subscriptionId') == native)
-            assert event['data']['revision'] >= 1 and event['data']['projectEpoch'] >= 1
-            assert len(event['data']['activeProject']) > 64 and ':' in event['data']['activeProject']
-            assert a.call('events.unsubscribe', dict(subscriptionId=native)) is True
+            sub_a, sub_b = subscribe_projects(a), subscribe_projects(b)
+            old_a, old_b = project_snapshot(a, sub_a), project_snapshot(b, sub_b)
+            assert old_a['activeProject'] != old_b['activeProject']
+            second = subscribe_projects(a)
+            assert project_snapshot(a, second)['activeProject'] == old_a['activeProject']
+            assert a.call('events.unsubscribe', dict(subscriptionId=second)) is True
+            a.events.clear()
+            command('generation')  # Reload at the same native project address.
+            new_a = project_snapshot(a, sub_a, old_a['projectEpoch'])['activeProject']
+            new_b = project_snapshot(b, sub_b, old_b['projectEpoch'])['activeProject']
+            assert len({new_a, new_b, old_a['activeProject'], old_b['activeProject']}) == 4
+            assert all(e.get('subscriptionId') != second for e in a.events)
             b.call('service.unsubscribe', dict(subscriptionId=subscription), error='INVALID_ARGUMENT')
             stream = a.call('stream.open', dict(name='test.binary'))
             stream_socket = WebSocket(stream['endpoint'], 'http://arbitrary.external.origin')
@@ -253,8 +258,7 @@ def main():
                     break
                 time.sleep(0.01)
             assert stats['cancelled'] >= 2 and stats['streams']['consumers'] == 1, stats
-            assert stats['accessorsDestroyed'] == 1, stats
-            assert command('legacy')['result'] == 1
+            assert command('web')['error']['code'] == 'UNKNOWN_API'
             token = command('rotate')['token']
             b.closed()
             assert command('stats')['streams']['consumers'] == 0
@@ -262,10 +266,7 @@ def main():
             revoked.call('auth.authenticate', dict(token=config['token'], protocolVersion=1), error='AUTH_FAILED')
             revoked.closed()
             c = connect(token)
-            c.call('api.call', dict(name='GetTrackName', args=[handle]), error='INVALID_HANDLE')
-            live_handle = c.call('api.call', dict(name='GetTrack', args=[0, 0]))
-            command('invalidate')
-            c.call('api.call', dict(name='GetTrackName', args=[live_handle]), error='STALE_HANDLE')
+            assert project_snapshot(c, subscribe_projects(c))['activeProject'] not in {new_a, new_b}
             c.call('service.subscribe', dict(service='test', event='update'))
             c.request('service.invoke', dict(service='test', method='pending'))
             c.call('system.getInfo')
@@ -275,10 +276,10 @@ def main():
             assert any(m.get('event') == 'unloaded' for m in messages)
             command('enabled', value=False)
             c.closed()
-            assert command('legacy')['result'] == 1
+            assert command('web')['error']['code'] == 'UNKNOWN_API'
             command('enabled', value=True)
             d = connect(token)
-            assert d.call('api.call', dict(name='CountTracks', args=[0])) == 1
+            assert d.call('service.invoke', runtime_query)['trackCount'] == 1
             command('stop')
             assert process.wait(timeout=5) == 0
             assert 'WebViewColorProfile=sRGB' in Path(directory, 'ReaWebAPI.ini').read_text()

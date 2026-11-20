@@ -8,8 +8,6 @@
 using namespace reaweb;
 #define CHECK(c) do { if (!(c)) throw std::runtime_error("Check failed: " #c); } while (false)
 namespace {
-int item_storage = 0, take_storage = 0, accessor_storage = 0, accessors_destroyed = 0;
-std::string midi_bytes;
 struct TestWindow : Window {
   WindowOptions options;
   std::vector<Json> received;
@@ -53,46 +51,28 @@ int main(int argc, char** argv) {
     write_external_settings(root / "ReaWebAPI.ini", settings);
     auto persisted = read_external_settings(root / "ReaWebAPI.ini");
     CHECK(persisted.enabled && persisted.port == settings.port && persisted.token == settings.token);
-    int project = 0, track = 0, cancelled = 0, changes = 0, undo = 0, refresh = 0, window_id = 0;
+    int project = 0, track = 0, cancelled = 0, window_id = 0;
     uint64_t generation = 0, pending = 0, service = 0, stream = 0;
-    bool valid = true;
     const auto main_thread = std::this_thread::get_id();
     adapter::Host host;
     host.current_project = [&]() -> void* { CHECK(std::this_thread::get_id() == main_thread); return &project; };
     host.version = [] { return "7.external-test"; };
     host.count_tracks = [](void*) { return 1; };
+    host.project_name = [](void*) { return std::string("Test project"); };
+    host.play_state = [] { return 0; };
     host.get_track = [&](void*, int index) -> void* { return index == 0 ? &track : nullptr; };
     host.count_selected_tracks = [](void*) { return 1; };
     host.get_selected_track = host.get_track;
-    host.valid_track = [&](void*, void* value) { return valid && (value == &track || value == &item_storage || value == &take_storage); };
+    host.valid_track = [&](void*, void* value) { return value == &track; };
     host.track_guid = [](void*) { return Guid{}; };
     host.track_name = [](void*) { return std::string(u8"Track 测试"); };
     host.get_track_value = [](void*, const std::string&) { return 0.5; };
     host.set_track_value = [](void*, const std::string&, double value) { return value != 9; };
     host.track_color = [](void*) { return 0; };
-    host.change_count = [&](void*) { return changes; };
+    host.change_count = [](void*) { return 0; };
     host.project_generation = [&] { return generation; };
-    host.begin_undo = [&](void*) { ++undo; };
-    host.end_undo = [&](void*, const std::string&) { --undo; };
-    host.prevent_refresh = [&](int value) { refresh += value; };
     adapter::connect(host);
     host.native_function = [](const char* name) -> void* {
-      if (std::string(name) == "realloc_cmd_register_buf") return reinterpret_cast<void*>(+[](char**, int*) { return 1; });
-      if (std::string(name) == "realloc_cmd_clear") return reinterpret_cast<void*>(+[](int) {});
-      if (std::string(name) == "GetMediaItem") return reinterpret_cast<void*>(+[](void*, int) -> void* { return &item_storage; });
-      if (std::string(name) == "GetActiveTake") return reinterpret_cast<void*>(+[](void*) -> void* { return &take_storage; });
-      if (std::string(name) == "MIDI_SetAllEvts") return reinterpret_cast<void*>(+[](void*, const char* bytes, int size) {
-        midi_bytes.assign(bytes, size); return true;
-      });
-      if (std::string(name) == "MIDI_GetAllEvts") return reinterpret_cast<void*>(+[](void*, char* bytes, int* size) {
-        if (size_t(*size) < midi_bytes.size()) { *size = int(midi_bytes.size()); return false; }
-        std::memcpy(bytes, midi_bytes.data(), midi_bytes.size()); *size = int(midi_bytes.size()); return true;
-      });
-      if (std::string(name) == "CreateTrackAudioAccessor") return reinterpret_cast<void*>(+[](void*) -> void* { return &accessor_storage; });
-      if (std::string(name) == "DestroyAudioAccessor") return reinterpret_cast<void*>(+[](void*) { ++accessors_destroyed; });
-      if (std::string(name) == "GetAudioAccessorSamples") return reinterpret_cast<void*>(+[](void*, int, int channels, double, int samples, double* output) {
-        for (int i = 0; i < channels * samples; ++i) output[i] += 0.25; return 1;
-      });
       if (std::string(name) == "EnumProjects") return reinterpret_cast<void*>(+[](int index, char* path, int capacity) -> void* {
         if (path && capacity) path[0] = '\0'; return index <= 0 ? adapter::host->current_project() : nullptr;
       });
@@ -142,17 +122,16 @@ int main(int argc, char** argv) {
         Json result;
         try {
           const auto cmd = command.at("cmd").get<std::string>();
-          if (cmd == "legacy") {
+          if (cmd == "web") {
             if (!window) {
               window_id = runtime.open("Test/index.html"); CHECK(web_call(runtime, "__reawebHello", {1}).contains("result"));
               CHECK(web_call(runtime, "ReaWeb_ServiceSubscribe", {"test", "update"}).contains("result"));
             }
             result = web_call(runtime, command.value("method", "CountTracks"), command.value("args", Json::array({0})));
-          } else if (cmd == "stats") result = {{"cancelled", cancelled}, {"streams", runtime.streams().info()}, {"platforms", platform_count}, {"undo", undo}, {"refresh", refresh}, {"accessorsDestroyed", accessors_destroyed}};
+          } else if (cmd == "stats") result = {{"cancelled", cancelled}, {"streams", runtime.streams().info()}, {"platforms", platform_count}};
           else if (cmd == "rotate") { settings.token = external_token(); runtime.configure_external(settings); result = {{"token", settings.token}}; }
           else if (cmd == "enabled") { settings.enabled = command.at("value"); runtime.configure_external(settings); result = true; }
           else if (cmd == "port") { auto candidate = settings; candidate.port = command.at("value"); runtime.configure_external(candidate); settings = candidate; result = true; }
-          else if (cmd == "invalidate") { valid = false; ++changes; result = true; }
           else if (cmd == "generation") { ++generation; result = true; }
           else if (cmd == "publish") { unsigned char bytes[] = {0, 255, 128, 1}; result = runtime.streams().publish(REAWEB_BINARY, stream, bytes, sizeof(bytes), 1, 1.25); }
           else if (cmd == "emit") { result = runtime.services().emit(service, command.value("target", false) ? window_id : 0, "update", "{\"value\":1}"); }

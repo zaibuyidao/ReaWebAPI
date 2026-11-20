@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.9.48 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.9.49 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -68,31 +68,18 @@ configure_file("${reaper_sdk_SOURCE_DIR}/sdk/reaper_plugin_functions.h"
 file(COPY "${wdl_SOURCE_DIR}/WDL/" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/WDL")
 
 find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
-# Offline and deterministic: builds never fetch or silently update API definitions.
-file(GLOB REAWEB_SYNC_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/api_sync/*.py")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  ${REAWEB_SYNC_SOURCES} tools/native_bindings.py api/reaper_api.json api/bindings.json src/core/core.cpp
-  runtime/reaper.js runtime/reaper.d.ts runtime/reaper-api.generated.js runtime/reaper-api.generated.d.ts
-  docs/api-reference.md)
-execute_process(COMMAND "${Python3_EXECUTABLE}" -m tools.api_sync export-runtime
-  --output "${CMAKE_CURRENT_BINARY_DIR}/generated/api_schema.hpp"
-  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESULT_VARIABLE REAWEB_SCHEMA_RESULT)
-if(NOT REAWEB_SCHEMA_RESULT EQUAL 0)
-  message(FATAL_ERROR "API schema validation failed. Run python -m tools.api_sync verify.")
-endif()
-execute_process(COMMAND "${Python3_EXECUTABLE}" tools/native_bindings.py
-  --output "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp"
-  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" RESULT_VARIABLE REAWEB_NATIVE_RESULT)
-if(NOT REAWEB_NATIVE_RESULT EQUAL 0)
-  message(FATAL_ERROR "Native API compilation failed. No incomplete bindings are emitted.")
-endif()
-
 find_package(Threads REQUIRED)
+set(REAWEB_BRIDGE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/bridge_script.hpp")
+add_custom_command(OUTPUT "${REAWEB_BRIDGE_HEADER}"
+  COMMAND "${Python3_EXECUTABLE}" tools/bridge_script.py --output "${REAWEB_BRIDGE_HEADER}"
+          runtime/reaper.js
+  DEPENDS tools/bridge_script.py runtime/reaper.js
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" VERBATIM)
+add_custom_target(reaweb_bridge_script DEPENDS "${REAWEB_BRIDGE_HEADER}")
 add_library(reaweb_core STATIC
   src/core/core.cpp
-  src/core/reaper_api.cpp
-  src/core/batch.cpp
-  src/core/native.cpp
+  src/core/binary.cpp
+  src/core/runtime_calls.cpp
   src/core/worker.cpp
   src/runtime/services.cpp
   src/runtime/external_settings.cpp
@@ -105,9 +92,9 @@ add_library(reaweb_core STATIC
   src/runtime/file_writer.cpp
   src/runtime/system.cpp
   src/runtime/theme.cpp
-  src/web/web_resources.cpp
-  "${CMAKE_CURRENT_BINARY_DIR}/generated/native_api.cpp")
+  src/web/web_resources.cpp)
 target_include_directories(reaweb_core PUBLIC src)
+add_dependencies(reaweb_core reaweb_bridge_script)
 target_include_directories(reaweb_core SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/sdk")
 target_include_directories(reaweb_core SYSTEM PRIVATE "${lunasvg_SOURCE_DIR}/plutovg/source")
 target_compile_definitions(reaweb_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

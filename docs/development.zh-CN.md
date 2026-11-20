@@ -11,7 +11,6 @@
 ```text
 SDK/
   reaper.d.ts
-  reaper-api.generated.d.ts
   runtime-api.d.ts
   starter/
     reawebapi-starter.lua
@@ -35,100 +34,20 @@ v0.3.9.14 起，`ReaWeb_Open` 第四参数支持 EEL2 `0/1` 和 Lua `false/true`
 
 ## 调用约定
 
+网页通过 `window.reaper` 的运行时命名空间访问宿主。 已认证的外部 WebSocket 客户端可通过 `system.getCapabilities` 查询具名服务、事件和流。
+
 ```javascript
 await reaper.lifecycle.ready;
-const track = await reaper.GetSelectedTrack(0, 0);
+const track = await reaper.audio.getSelectedTrackRef();
 if (track) {
-  const [ok, name] = await reaper.GetTrackName(track);
-  if (ok) console.log(name);
+  const {name} = await reaper.audio.getTrackMix(track);
+  console.log(name);
+  await reaper.transaction.withUndo('Center pan', () =>
+    reaper.audio.setTrackValueLatest(track, 'D_PAN', 0));
 }
 ```
 
-所有方法均返回 Promise，包括 setter 和无返回值接口。方法会自动等待初次握手，显式等待 `reaper.lifecycle.ready` 可以集中处理启动错误。准确签名及返回名称见 [API 参考](api-reference.md)，单位、标志位、参数键和 REAPER 行为见每项的官方链接。
-
-| 原生 / Lua 概念 | JavaScript 约定 |
-| --- | --- |
-| 单返回值 | `await` 后得到标量 |
-| 多返回值 | 按 Lua 顺序得到数组，包含适用的原生返回值 |
-| 无返回值 | `undefined` |
-| 可选输入 | 省略尾部参数，或传 `null` / `undefined` 保留中间位置 |
-| 当前工程 | 在 `ReaProject` 参数位传 `0` 或 `null` |
-| 原生对象指针 | 声明中对应的类型化句柄或 `null` |
-| GUID | 带大括号的 GUID 字符串 |
-| RECT | 按 Lua 顺序展开的四个坐标 |
-| MIDI / 配置字节 | `Uint8Array`，二进制结果也返回此类型 |
-| 音频数组 | `Float64Array` 或 `number[]`，Promise 完成前回写 |
-
-必填输入不会自动补默认值。布尔参数需传布尔值，整数需符合原生类型范围及 JavaScript 安全整数范围。普通数值输入必须有限。文本按 UTF-8 处理并拒绝嵌入 NUL，二进制接口会保留零字节及高位字节。`Float64Array` 保留 IEEE 754 特殊值，普通 `number[]` 输入则要求元素有限。
-
-目录包含标准 C/Lua API，不包含 Lua 运行时辅助函数。使用 DOM/canvas 编写 UI，使用浏览器计时器或宿主事件刷新。没有 `reaper.defer`、`gfx`、Lua `require`、SWS 或第三方扩展方法。浏览器计时器不适合让 REAPER API 承担实时音频处理。
-
-## 可用性、工程与句柄
-
-```javascript
-const { api } = await reaper.system.getCapabilities();
-if (!api.availableMethods.includes('GetTrackName')) {
-  throw new Error('当前 REAPER 没有提供 GetTrackName');
-}
-const [project] = await reaper.EnumProjects(-1);
-if (project) console.log(await reaper.CountTracks(project));
-```
-
-`implemented` 是编入扩展的绑定数量，`available` 是当前 REAPER 能解析到的函数数量。目录对应 7.80，完整可用需该版本或更新版本。已知但宿主缺少的函数会拒绝调用并返回 `API_UNAVAILABLE`。
-
-句柄归属于一个 WebView 文档。不要解析 ID、写入持久化设置、从地址构造句柄或跨窗口传递。对象删除、文档重载或出现 `STALE_HANDLE` 后需重新获取。句柄可引用其他已打开工程的对象，但切换当前工程时，旧排队请求会返回 `PROJECT_CHANGED`。此时刷新界面，由用户明确重做写操作。
-
-## 写操作与 Undo
-
-对于支持的操作，可用批处理形成一个同步 Undo 步骤：
-
-```javascript
-const track = await reaper.GetSelectedTrack(0, 0);
-if (track) {
-  await reaper.transaction.batch(b => {
-    b.SetMediaTrackInfo_Value(track, 'D_PAN', 0);
-    b.SetMediaTrackInfo_Value(track, 'B_MUTE', 0);
-  }, { undoLabel: '居中并取消轨道静音' });
-}
-```
-
-[批处理契约](host-api.zh-CN.md#批处理与连续参数) 覆盖 456 个已审核标准 API，每组最多 128 项。Builder 回调同步执行，支持延迟结果引用和多返回值解构。返回对象或数组可选择结果并推导类型，不返回值则取得按调用顺序排列的原生结果数组。显式调用数组及全部 730 项普通 Mirror 调用保持可用。批处理不是事务，中途失败不会撤销已经完成的写入，错误中会报告已完成结果。
-
-跨 await 的连续操作可使用 `reaper.transaction.withUndo` 或 `reaper.transaction.beginUndo` / `reaper.transaction.endUndo`；宿主负责重载、关闭、工程变化和 30 秒超时清理，方法范围与批处理相同。原生 Undo 方法仍可单独调用，但调用者须负责配对，不能依赖页面关闭后的 finally 请求。
-
-滑块可使用 `reaper.audio.setTrackValueLatest`，合并同一轨道和参数的等待值。它不会自动生成 Undo 手势。有依赖的调用按顺序 `await`，独立读取采用有限并发，不要一次排队数千次。
-
-## 二进制与资源释放
-
-```javascript
-// 读取 MIDI 字节，不将其转为文本。
-const item = await reaper.GetSelectedMediaItem(0, 0);
-const take = item ? await reaper.GetActiveTake(item) : null;
-if (take && await reaper.TakeIsMIDI(take)) {
-  const [ok, bytes] = await reaper.MIDI_GetAllEvts(take);
-  if (ok) console.log(bytes.byteLength);
-}
-```
-
-```javascript
-const track = await reaper.GetSelectedTrack(0, 0);
-const accessor = track ? await reaper.CreateTrackAudioAccessor(track) : null;
-if (accessor) {
-  try {
-    const channels = 2, frames = 256;
-    const samples = new Float64Array(channels * frames);
-    const start = await reaper.GetAudioAccessorStartTime(accessor);
-    const status = await reaper.GetAudioAccessorSamples(accessor, 48000, channels, start, frames, samples);
-    if (status > 0) console.log(samples[0]);
-  } finally {
-    await reaper.DestroyAudioAccessor(accessor);
-  }
-}
-```
-
-等待期间不要调整、转移或复用音频数组，完成 `await` 后再读取。容量需覆盖声道数、采样帧数，以及峰值 API 额外需要的数据块，具体布局见相应官方说明。
-
-创建的 audio accessor、joystick 及未交给工程的 PCM source，应在用完后显式销毁。页面关闭或重载也会释放仍由本页面持有的资源。将创建的 PCM source 赋给 Take 后，所有权转移到工程，不能直接销毁仍被 Take 使用的源。共享或替换资源前，应阅读对应原生 API 的说明。
+读取工程名和轨道数可调用 `reaper.host.service('runtime').invoke('getProjectSummary')`.
 
 ## 事件、界面和存储
 
@@ -150,8 +69,8 @@ await stop();
 
 ```javascript
 try {
-  const track = await reaper.GetSelectedTrack(0, 0);
-  if (track) console.log(await reaper.GetTrackName(track));
+  const track = await reaper.audio.getSelectedTrackRef();
+  if (track) console.log(await reaper.audio.getTrackMix(track));
 } catch (error) {
   console.error(error); // 桥接错误带有 code 和可选 details。
 }

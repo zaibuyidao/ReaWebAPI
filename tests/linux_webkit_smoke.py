@@ -80,7 +80,7 @@ def receive_until(condition, timeout=20):
                 value = '7.smoke'
                 if request['method'] == '__reawebHello':
                     value = dict(protocol=1, projectEpoch=1, events=['windowstatechange'],
-                                 methods=list(json.loads((root / 'api/bindings.json').read_text())['functions']))
+                                 methods=['ReaWeb_GetPlatform','ReaWeb_SetTitle','ReaWeb_GetWindowState'])
                 elif request['method'] in ('ReaWeb_GetWindowState', 'ReaWeb_Subscribe'):
                     value = dict(framelessActive=False)
                 response = {'id': request['id'], 'document': request['document'], 'result': value}
@@ -111,11 +111,11 @@ try:
         filling = True
         receive_until(lambda: idle_state is not None and idle_state['ready'] == idle_target)
         filling = False
-    bridge = '(() => {\n' + (root / 'runtime/reaper-api.generated.js').read_text() + (root / 'runtime/reaper.js').read_text() + '\n})();'
-    script = bridge + '\nwindow.token="kept"; reaper.GetAppVersion().then(v => reaper.CountTracks(v === "7.smoke" ? 0 : 999));'
+    bridge = '(() => {\n' + (root / 'runtime/reaper.js').read_text() + '\n})();'
+    script = bridge + '\nwindow.token="kept"; reaper.system.getPlatform().then(v => reaper.window.setTitle(v));'
     send(dict(id=1, op='open', uri=page.as_uri(), script=script))
     geometry(1, parents[0])
-    receive_until(lambda: (1, 'CountTracks', [0]) in results)
+    receive_until(lambda: (1, 'ReaWeb_SetTitle', ['7.smoke']) in results)
     if idle_target: assert (1, 'container', True) in results
     for background, expected in [('#182838', 0x182838), ('#e8d8c8', 0xe8d8c8), ('rgba(0,0,0,.5)', 0xffffff), ('#182838', 0x182838)]:
         results[:] = [row for row in results if row[1] != 'background']
@@ -173,7 +173,7 @@ try:
     assert set(first_children).issubset(children(parents[1])), 'WebKit was not reparented'
     send(dict(id=2, op='open', uri=page.as_uri(), script=script, lifecycleReload=True))
     geometry(2, parents[0])
-    receive_until(lambda: (2, 'CountTracks', [0]) in results)
+    receive_until(lambda: (2, 'ReaWeb_SetTitle', ['7.smoke']) in results)
     if idle_target:
         assert (2, 'container', True) in results
         filling = True
@@ -182,8 +182,8 @@ try:
         send(dict(id=0, op='idle-pool', target=0))
         receive_until(lambda: idle_state['target'] == 0 and idle_state['ready'] == 0 and idle_state['pending'] == 0)
     send(dict(id=1, op='close'))
-    send(dict(id=2, op='eval', script='reaper.GetTrack(0, 0);'))
-    receive_until(lambda: (2, 'GetTrack', [0, 0]) in results)
+    send(dict(id=2, op='eval', script='reaper.window.getState();'))
+    receive_until(lambda: (2, 'ReaWeb_GetWindowState', []) in results)
     hellos = sum(row[1] == '__reawebHello' for row in results)
     send(dict(id=2, op='eval', script='location.hash="fragment"; reaper.CountSelectedTracks(43);'))
     receive_until(lambda: (2, 'CountSelectedTracks', [43]) in results)

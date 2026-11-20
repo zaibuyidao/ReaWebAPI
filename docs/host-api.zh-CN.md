@@ -6,7 +6,7 @@
 
 [English](host-api.md) | **简体中文** · [开发指南](development.zh-CN.md)
 
-这些接口由 ReaWebAPI 提供，与 [730 项 REAPER API](api-reference.md) 分开。JavaScript 窗口方法作用于当前 WebView 文档，不传窗口 ID，所有方法返回 Promise。准确类型见 `reaper.d.ts`。
+网页通过 `window.reaper` 的运行时命名空间访问宿主。 已认证的外部 WebSocket 客户端可通过 `system.getCapabilities` 查询具名服务、事件和流。
 
 ## 启动与能力
 
@@ -20,9 +20,9 @@
 | `reaper.system.getCapabilities()` | `ReaWebCapabilities` | 版本、协议、注册方法、可用原生函数、事件及限制 |
 | `reaper.debug.getDiagnostics()` | `ReaWebDiagnostics` | 浏览器后端及版本、窗口状态、生命周期、文档/工程代次、队列计数、最近错误和调度预算 |
 
-`capabilities.api` 包含 `schemaVersion`、`reaperVersion`、`catalogueHash`、`official`、`implemented`、`compatible`、`partial`、`missing`、`available`、`availableMethods`、`unavailable` 和逐项 `bindings`。`methods` 同时包含宿主及标准 API，已注册不代表旧版 REAPER 一定提供相应原生函数，实际可用性应查 `api.availableMethods`。
+握手返回运行时命令、事件、限制、窗口和工程标识。
 
-`projectScope` 为 `all`，`limits` 报告请求字节数、批处理及等待调用上限。诊断计数针对当前窗口，`lastError` 是诊断字符串，不是所有调用错误的历史记录。2 ms 调度预算是软预算，不约束单个原生函数的执行时间。
+`projectScope` 为 `all`，`limits` 报告请求字节数及等待调用上限。诊断计数针对当前窗口，`lastError` 是诊断字符串，不是所有调用错误的历史记录。2 ms 调度预算是软预算，不约束单个原生函数的执行时间。
 
 能力与诊断都包含 `webRuntime`：`contract`（1）、`mode`（`app-virtual` / `app-loopback` / `dev-http`）、`appId`、`origin`、`storageIsolation`（`origin`）、`localResources`。详见 [Web Runtime 约定](frontend.zh-CN.md)。
 
@@ -77,58 +77,13 @@
 
 FX 事件追踪焦点、最后触碰参数及工程 changeCount，用于使 FX 界面缓存失效，不是所有插件参数变化的逐条通知。state 是 REAPER 播放状态位掩码；available 为 false 时其他播放字段可能缺省。选择扫描按帧分段，大型选择通知可能晚于 100 ms。
 
-## 批处理与连续参数
+## 连续控制与 Undo
 
-`reaper.transaction.batch(callsOrBuilder, { undoLabel? })` 接受 1–128 个调用，可传入调用数组或同步 Builder 回调。`capabilities.batchMethods` 与 `ReaWebBatchMethod` 列出 456 个已审核接口，覆盖播放状态、工程与对象查询、MIDI、FX、包络、路由、标记、时间映射和格式转换。工程切换、Action 调用、模态对话框、文件读写、资源生命周期操作、手动 Undo/刷新作用区间及音频样本数组不进入批处理。全部 730 项标准 API 仍可单独调用。
-
-一次 RPC 读取播放信息，无需选中轨道：
-
-```javascript
-const data = await reaper.transaction.batch(b => {
-  const position = b.GetPlayPosition();
-  const state = b.GetPlayState();
-  const tempo = b.Master_GetTempo();
-  return { position, state, tempo };
-});
-```
-
-调用在主线程连续执行，减少 RPC 往返，但不会冻结音频时钟或设定轮询频率。新增方法仍需当前 REAPER 版本提供。准入按方法及其全部参数模式审核，可能重新扫描文件或创建资源的 getter 不会仅凭名称放行。
-
-延迟引用也可以连接有依赖关系的调用。以下示例要求索引 0 的轨道存在：
-
-```javascript
-const data = await reaper.transaction.batch(b => {
-  const track = b.GetTrack(0, 0);
-  const [, name] = b.GetTrackName(track);
-  const volume = b.GetMediaTrackInfo_Value(track, 'D_VOL');
-  return { name, volume };
-});
-```
-
-`b` 保留 Mirror 方法名、参数顺序和可选参数位置。方法返回延迟引用，多返回值按 Lua 顺序支持索引和解构。回调可返回引用，或包含引用及字面量的嵌套普通对象、数组，执行后还原为对应结果。不返回值时，与 `batch(calls)` 一样返回按调用顺序排列的原生结果数组。两种形式的无返回值结果均为 `null`。`ReaWebBatchBuilder` 从 Mirror 推导方法签名，`ReaWebBatchResult<T>` 推导回调结果类型。
-
-回调在握手完成后同步执行。引用只属于当前回调，可作为完整 API 参数传递或返回，不能 await、参与算术运算或当作真实句柄读取。引用对象始终为真，不能据此判断条件或与 `null` 比较。依赖原生结果的分支应先在批处理外读取，例如先用 `await reaper.GetSelectedTrack(0, 0)` 检查选择，再收集需要轨道的调用。未知方法、异步回调、跨 Builder 引用和无效结构在发送前以 `INVALID_ARGUMENT` 拒绝。回调自身的异常原样传播。
-
-Builder 将调用转换为现有 `ReaWeb_Batch` 请求，不新增 RPC 或 Native 层。原生校验和 `BATCH_FAILED` 详情保持不变。
-
-`ValidatePtr` 和 `ValidatePtr2` 可校验空句柄或已失效的对象句柄，并返回 `false`。校验结果不会使后续调用自动跳过。其他工程的句柄仍会被拒绝，其他对象 API 仍要求句柄有效。
-
-批处理仅作用于**当前工程**。任何外部工程句柄或对象都会在写入前被拒绝，包括后面条目中的外部句柄。方法、可用性和不含引用的条目参数会预先校验；依赖前面结果的参数在该条执行前校验。引用序号从零开始，可通过最多八段 `path` 选取数组元素或对象属性。引用必须作为完整的顶层参数，不能向后引用。
-
-```javascript
-const results = await reaper.transaction.batch([
-  { method: 'GetSelectedTrack', args: [0, 0] },
-  { method: 'GetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL'] },
-  { method: 'SetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL', 0.5] }
-], { undoLabel: '设置选中轨道音量' });
-// 没有选择时，在 setter 执行前失败。多返回值可用 {$ref: 0, path: [1]} 选取。
-```
-
-每组同步执行并配对刷新保护；可选非空标签最多 256 UTF-8 字节，对应一个 Undo 分组。无返回值占一个 `null` 位置。false/0 保持原生含义，旧有轨道值 setter 的 false 则报错。执行失败报告 `BATCH_FAILED`，包含 `completed`、`results`、`rolledBack: false`，以及可选的 `cause`、`cleanupError`。已经完成的写入保留，**批处理不是事务**。
-
-`reaper.transaction.beginUndo(label)` 返回本页专属 token，`reaper.transaction.endUndo(token)` 关闭分组。`reaper.transaction.withUndo(label, async () => { ... })` 自动通过 finally 清理。托管手势采用同一组已审核 API 和当前工程限制。所有窗口合计只能有一个手势；其他窗口的工程调用、嵌套分组、批处理、手动 Undo/刷新调用返回 `UNDO_BUSY`。浏览器事件之间不会保持刷新锁。
+`reaper.transaction.beginUndo(label)` 返回本页专属 token，`reaper.transaction.endUndo(token)` 关闭分组。`reaper.transaction.withUndo(label, async () => { ... })` 自动通过 finally 清理。托管手势只作用于当前工程。所有窗口合计只能有一个手势；其他窗口的工程调用、嵌套分组及不支持的操作返回 `UNDO_BUSY`。浏览器事件之间不会保持刷新锁。
 
 宿主会在页面重载/关闭、工程切换/加载或 30 秒后关闭分组；结束过期 token 报 `STALE_UNDO`。await 期间其他脚本和用户仍可能编辑工程，因此应保持手势简短。这不是排他锁，也不自动回滚。直接调用原生 Undo 开启的作用区间仍由调用者负责，不受托管清理保护。
+
+`await reaper.audio.getSelectedTrackRef()` 返回第一条选中轨道的引用，无选中轨道时返回 `null`。一次手势内可用同一引用调用 `getTrackMeter` 和 `setTrackValueLatest`。轨道重排后引用仍指向原轨道，切换工程或删除轨道后需重新获取。
 
 `reaper.audio.setTrackValueLatest(track, key, value)` 对 `D_VOL`、`D_PAN`、`B_MUTE`、`I_SOLO` 合并等待值，每组轨道/参数保留一个正在执行及一个最新等待值，最多 128 组。被替代的值返回 `{ applied: false, superseded: true }`。结束手势前应等待所有写入完成。
 
@@ -155,16 +110,12 @@ const results = await reaper.transaction.batch([
 
 ## 错误与限制
 
-`reaper.debug.setBufferSize(bytes)` 设置当前文档固定输出缓冲区的默认容量，并返回新值。范围 4 KiB–16 MiB，默认 64 KiB。REAPER `NeedBig` 缓冲区会自动增长，最终结果仍受大小上限约束。
 
 | 限制 | 数值 |
 | --- | --- |
 | 桥接 JSON 请求 / 结果 | 64 MiB |
 | 单个字符串或二进制值 | 16 MiB |
-| 音频数组 | 1,048,576 个 double 元素 |
 | JavaScript 等待调用 | 256 |
-| 单次批处理 | 128 个调用 |
-| 每页有效句柄 | 65,536 |
 | 执行前排队过期 / 客户端等待保护 | 25 秒 / 30 秒 |
 
 原生调用开始后清除排队等待计时，执行无法抢占。不提供取消或自动重试。页面外部删除对象，也可能使排队调用拿到的句柄在执行前失效。
@@ -172,17 +123,15 @@ const results = await reaper.transaction.batch([
 | 错误码 | 含义及处理 |
 | --- | --- |
 | `NO_RUNTIME` | 没有原生 WebView 通道，通过 Lua 启动器打开 |
-| `PROTOCOL_MISMATCH`、`SCHEMA_MISMATCH` | 桥接或定义不匹配，更新扩展并重开页面 |
+| `PROTOCOL_MISMATCH` | 桥接或定义不匹配，更新扩展并重开页面 |
 | `API_UNAVAILABLE`、`UNKNOWN_API` | 宿主缺少函数或运行时未注册方法，检查能力与名称 |
 | `INVALID_ARGUMENT`、`INVALID_REQUEST`、`INVALID_PATH` | 参数、消息或本地入口路径不正确 |
 | `INVALID_HANDLE`、`STALE_HANDLE` | 句柄类型错误或对象失效，重新获取对象 |
 | `PROJECT_CHANGED`、`DOCUMENT_STALE`、`WINDOW_CLOSED` | 调用环境已变化，刷新状态或重新打开 |
-| `QUEUE_LIMIT`、`HANDLE_LIMIT`、`WINDOW_LIMIT` | 等待调用、句柄或窗口过多 |
-| `BUFFER_LIMIT`、`MESSAGE_LIMIT`、`ARRAY_CHANGED` | 数据过大、固定缓冲区不足或音频数组长度被改变 |
+| `QUEUE_LIMIT`、`WINDOW_LIMIT` | 等待调用或窗口过多 |
+| `BUFFER_LIMIT`、`MESSAGE_LIMIT` | 数据或消息超过大小限制 |
 | `TIMEOUT`、`REQUEST_EXPIRED` | 未及时响应或执行前已过期，重试写入前先检查状态 |
-| `RESOURCE_IN_USE` | 试图销毁仍归 Take 使用的 PCM source |
-| `BATCH_FAILED`、`UNDO_UNAVAILABLE` | 检查已完成结果，或宿主无法提供所需 Undo 分组 |
-| `UNSUPPORTED_PARAMETER`、`UNSUPPORTED_PROJECT` | 参数超出批处理预校验的较窄范围 |
+| `UNDO_UNAVAILABLE` | 宿主无法开始请求的撤销分组 |
 | `UNKNOWN_EVENT`、`DOCK_UNAVAILABLE`、`DOCK_FAILED` | 不支持的事件或停靠失败 |
 | `NATIVE_ERROR`、`WRONG_THREAD` | 原生失败或未从 REAPER 主线程调用入口 |
 | `ICON_FORMAT`、`ICON_INVALID`、`ICON_LIMIT` | 格式不支持、图像无效或超过图标限制 |
@@ -219,7 +168,7 @@ Lua 相对 HTML 路径从 REAPER 的 `Scripts/` 目录解析，模板使用启�
 
 [v0.1.8 Runtime namespaces](runtime-api.md) · [v0.1.8 命名空间接口](runtime-api.zh-CN.md)
 
-JavaScript 使用 `reaper.window.open(path, options?)` 和 `reaper.lifecycle.ready`。Lua 在网页尚未启动时通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。730 项标准 REAPER 镜像名称保持不变。
+JavaScript 使用 `reaper.window.open(path, options?)` 和 `reaper.lifecycle.ready`。Lua 在网页尚未启动时通过 `reaper.ReaWeb_Open(path)` 启动窗口；Lua 原生扩展函数独立于浏览器 SDK。
 
 `reaper.events.off(name, callback)` 可按回调引用取消该事件的全部匹配订阅。使用 `reaper.events.on('native-drop', callback)` 订阅原生拖放事件，返回 files/text/x/y，不合并、不提供初始快照。详见 [Runtime API](runtime-api.zh-CN.md)。
 
@@ -241,7 +190,7 @@ JavaScript 的 `reaper.window.open(path, options?)` 和 `ReaWeb_OpenDev(url)` �
 
 ## Lua 消息桥接
 
-支持两种开发方式。纯 JavaScript 应用使用 REAPER Mirror 和 Runtime API。Lua 后端使用普通 REAPER/ReaScript API，通过消息与 WebView UI 通信。参见[示例](../examples/backends/lua-backend/README.md)。
+支持两种开发方式。纯 JavaScript 应用使用 Runtime API。Lua 后端使用普通 REAPER/ReaScript API，通过消息与 WebView UI 通信。参见[示例](../examples/backends/lua-backend/README.md)。
 
 `ReaWeb_Send(id, message)` 在 `ReaWeb_IsReady(id)` 为真后接受 UTF-8 文本，不序列化 Lua table，也不自动识别 JSON。`reaper.events.on("message", callback)` 接收原始字符串。未订阅时，消息保留在当前文档队列中。消息不合并，不向新监听器回放已投递内容。
 

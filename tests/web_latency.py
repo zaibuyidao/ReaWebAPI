@@ -16,17 +16,16 @@ def run_windows(host):
   const capabilities = await reaper.lifecycle.ready;
   const readyMs = performance.now() - started;
   await reaper.window.setTitle('Latency probe');
-  const track = await reaper.GetSelectedTrack(0, 0);
+  const track = await reaper.audio.getSelectedTrackRef();
   if (!track) throw new Error('Latency probe needs the mock track');
-  const [ok, name] = await reaper.GetTrackName(track);
-  if (!ok) throw new Error('Track name query failed');
+  const {name} = await reaper.audio.getTrackMix(track);
   document.getElementById('output').textContent = name;
   const nameMs = performance.now() - started;
   const samples = [];
   for (let i = 0; i < 30; ++i) {
     const start = performance.now();
-    const [success, value] = await reaper.GetTrackName(track);
-    if (!success || value !== name) throw new Error('Incorrect track response');
+    const {name: value} = await reaper.audio.getTrackMix(track);
+    if (value !== name) throw new Error('Incorrect track response');
     samples.push(performance.now() - start);
   }
   samples.sort((a, b) => a - b);

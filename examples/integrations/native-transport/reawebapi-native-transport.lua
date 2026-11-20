@@ -2,7 +2,7 @@
 -- @version 1.1
 -- Lua opens the window and exits. The page subscribes to native transport snapshots.
 if not reaper.APIExists('ReaWeb_Open') then
-  reaper.MB('This demo requires ReaWebAPI v0.3.9.23 or later. Install the extension and restart REAPER.', 'Native Transport Monitor', 0)
+  reaper.MB('Install the ReaWebAPI build supplied with this example and restart REAPER.', 'Native Transport Monitor', 0)
   return
 end
 local source = debug.getinfo(1, 'S').source

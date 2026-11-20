@@ -52,8 +52,9 @@ action('connect', connect);
 action('disconnect', () => socket?.close());
 action('info', async () => log('system.getInfo', await call('system.getInfo')));
 action('capabilities', async () => log('system.getCapabilities', await call('system.getCapabilities')));
-action('call', async () => log('CountTracks', await call('api.call', {name: 'CountTracks', args: [0]})));
-action('batch', async () => log('api.batch', await call('api.batch', {calls: [{method: 'CountTracks', args: [0]}, {method: 'GetPlayState', args: []}]})));
+const projectSummary = () => call('service.invoke', {service: 'runtime', method: 'getProjectSummary'});
+action('count', async () => log('Track count', (await projectSummary()).trackCount));
+action('project', async () => log('Project and transport', await projectSummary()));
 action('service', async () => log('runtime.getInfo', await call('service.invoke', {service: 'runtime', method: 'getInfo'})));
 action('subscribe', async () => {
   const result = await call('events.subscribe', {event: 'transportChanged'});

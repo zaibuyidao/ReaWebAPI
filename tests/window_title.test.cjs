@@ -4,9 +4,8 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 const { webcrypto } = require('node:crypto');
-const script = '(() => {' + fs.readFileSync(path.join(__dirname, '../runtime/reaper-api.generated.js'), 'utf8') +
-  fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8') + '})();';
-const methods = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '../api/bindings.json'), 'utf8')).functions);
+const script = '(() => {' + fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8') + '})();';
+const methods = [];
 const delay = () => new Promise(resolve => setTimeout(resolve, 5));
 const until = async predicate => {
   for (let i = 0; i < 200; ++i) { if (predicate()) return; await delay(); }

@@ -28,8 +28,8 @@ if not binary.is_file() or binary.stat().st_size == 0:
     raise SystemExit(f'Missing extension: {binary}')
 required = ['Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua', 'Scripts/ReaWebAPI/Example/index.html',
             'Scripts/ReaWebAPI/Example/app.js', 'Scripts/ReaWebAPI/Example/style.css', 'Scripts/ReaWebAPI/Example/logo.svg',
-            'ReaWebAPI/SDK/reaper.d.ts', 'ReaWebAPI/SDK/reaper-api.generated.d.ts',
-            'ReaWebAPI/SDK/reaper-api.generated.js', 'ReaWebAPI/README.md', 'ReaWebAPI/README.zh-CN.md', 'ReaWebAPI/THIRD_PARTY.md']
+            'ReaWebAPI/SDK/reaper.d.ts', 'ReaWebAPI/SDK/runtime-api.d.ts',
+            'ReaWebAPI/SDK/reaper.js', 'ReaWebAPI/README.md', 'ReaWebAPI/README.zh-CN.md', 'ReaWebAPI/THIRD_PARTY.md']
 native_files = [binary]
 obsolete_video = list((args.stage / 'UserPlugins').glob('reaweb-video-*.clap'))
 obsolete_video += list(args.stage.rglob('ReaWebAPI_InstallVideoBackend.lua'))
@@ -69,7 +69,7 @@ if args.release_dir:
     archive_path = args.release_dir / f'ReaWebAPI-{args.platform}-{args.arch}-v{version}.zip'
 if archive_path:
     archive_path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED, strict_timestamps=False) as archive:
         for file in sorted(args.stage.rglob('*')):
             if file.is_file():
                 archive.write(file, file.relative_to(args.stage).as_posix())

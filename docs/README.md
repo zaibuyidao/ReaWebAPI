@@ -10,11 +10,10 @@ Reference for building WebView tools in REAPER.
 | [Runtime Diagnostics](diagnostics.md) | Persistent logs, App/Runtime filtering and observable lifecycle events |
 | [DevTools](devtools.md) | Shortcuts, Inspector layout, saved preferences and platform fallbacks |
 | [SDK](../runtime/README.md) | Type declarations, templates and examples |
-| [REAPER API](api-reference.md) | 730 REAPER 7.80 signatures and return types |
 | [Runtime API](runtime-api.md) | Windows, events, files, audio and App services |
 | [Native Services](native-services.md) | Native events, monitor payloads and C/C++ service integration |
 | [JSFX Web UI](jsfx-webui.md) | Native JSFX editor hosting and bound parameter service / 原生 JSFX 编辑器托管与参数服务 |
-| [External Clients](external-clients.md) | Authenticated localhost access to native APIs, services, events and streams |
+| [External Clients](external-clients.md) | Authenticated localhost access to named services, events and streams |
 | [API inventory](runtime-api-inventory.md) | Runtime namespace and method index |
 | [EEL2 backend](eel-backend-compatibility.md) | Calling conventions, optional parameters, limits and examples |
 | [Host API](host-api.md) | Lua entry points, native bridge behavior and error codes |
@@ -23,7 +22,6 @@ Reference for building WebView tools in REAPER.
 | [Source layout](source-layout.md) | Native modules and build targets |
 | [Release notes](release-notes.md) | Current release |
 
-Extension maintainers can use the [API Sync guide](https://github.com/zaibuyidao/ReaWebAPI/tree/main/api) to update and verify the API catalogue.
 
 [Native Streams](native-streams.md) · [Native Stream 中文](native-streams.zh-CN.md)
 

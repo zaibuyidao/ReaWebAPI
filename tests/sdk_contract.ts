@@ -65,46 +65,33 @@ type dialogSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dialog'], 'open
 type eventsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['events'], 'on' | 'off'>>;
 type lifecycleSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['lifecycle'], 'ready' | 'on'>>;
 type lifecycleEvents = RuntimeAssert<RuntimeEqual<Parameters<ReaWebAPI['lifecycle']['on']>[0], 'before-close' | 'before-reload' | 'cleanup'>>;
-type debugSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['debug'], 'log' | 'warn' | 'error' | 'inspect' | 'getLogs' | 'getDiagnostics' | 'openDevTools' | 'setBufferSize'>>;
+type debugSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['debug'], 'log' | 'warn' | 'error' | 'inspect' | 'getLogs' | 'getDiagnostics' | 'openDevTools'>>;
 type fsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['fs'], 'openMedia' | 'openWrite' | 'readText' | 'writeText' | 'readBinary' | 'writeBinary' | 'readFile' | 'writeFile' | 'moveFile' | 'stat' | 'readDirectory' | 'makeDirectory' | 'watch'>>;
-type audioSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['audio'], 'getFileInfo' | 'getWaveform' | 'getTrackMeter' | 'setTrackValueLatest' | 'openStream' | 'resetMeter' | 'decodeMeter'>>;
+type audioSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['audio'], 'getFileInfo' | 'getWaveform' | 'getTrackMeter' | 'getSelectedTrackRef' | 'getTrackMix' | 'applyTrackGain' | 'controlTransport' | 'setTrackValueLatest' | 'openStream' | 'resetMeter' | 'decodeMeter'>>;
 type clipboardSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['clipboard'], 'readText' | 'writeText' | 'readBinary' | 'writeBinary'>>;
 type dragDropSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dragDrop'], 'startFiles' | 'startText'>>;
 type appSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['app'], 'getId' | 'getName' | 'getVersion' | 'getRootPath' | 'getDataPath'>>;
 type systemSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['system'], 'getPlatform' | 'getArchitecture' | 'revealInFileManager' | 'openExternal' | 'getCapabilities' | 'getDevices' | 'getDisplays' | 'openMIDIInput' | 'schedule'>>;
-type transactionSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['transaction'], 'batch' | 'beginUndo' | 'endUndo' | 'withUndo'>>;
+type transactionSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['transaction'], 'beginUndo' | 'endUndo' | 'withUndo'>>;
 
-async function contract(track: MediaTrackHandle, take: MediaItem_TakeHandle) {
-  const name: [boolean, string] = await reaper.GetTrackName(track);
-  const midi: [boolean, Uint8Array] = await reaper.MIDI_GetAllEvts(take);
-  const project: [ReaProjectHandle | null, string] = await reaper.EnumProjects(-1);
-  await reaper.MIDI_SetNote(take, 0, null, undefined, null, null, null, 60);
-  await reaper.transaction.batch([{ method: 'CountTracks', args: [0] }]);
-  await reaper.transaction.batch([
-    { method: 'GetTrack', args: [0, 0] },
-    { method: 'SetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL', 0.5] }
-  ]);
+async function contract() {
   const text: string = await reaper.fs.readFile('data.json');
   const bytes: Uint8Array = await reaper.fs.readFile('data.bin', {encoding:'binary'});
   await reaper.fs.writeFile('copy.bin', bytes, {encoding:'binary'});
   const value: number = await reaper.transaction.withUndo('edit', async () => 42);
   const runtime: ReaWebRuntimeInfo = (await reaper.system.getCapabilities()).webRuntime;
   const contractVersion: 1 = runtime.contract;
-  // @ts-expect-error Destructive project lifetime calls are excluded from batching.
-  await reaper.transaction.batch([{method:'Main_OnCommand', args:[40004, 0]}]);
   // @ts-expect-error Binary writes must explicitly select their encoding.
   await reaper.fs.writeFile('copy.bin', bytes);
-  // @ts-expect-error Track and take handles are different native types.
-  await reaper.GetTrackName(take);
-  // @ts-expect-error A batch must explicitly specify its project argument.
-  await reaper.transaction.batch([{ method: 'CountTracks', args: [] }]);
-  // @ts-expect-error The standard API also requires a project argument.
-  await reaper.CountTracks();
-  // @ts-expect-error Binary results are not strings.
-  const wrong: [boolean, string] = await reaper.MIDI_GetAllEvts(take);
+  // @ts-expect-error The WebView has no top-level REAPER mirror.
+  await reaper.CountTracks(0);
+  // @ts-expect-error The batch builder and call-array entry point were retired.
+  await reaper.transaction.batch([]);
+  // @ts-expect-error Native output buffer configuration is no longer a WebView operation.
+  await reaper.debug.setBufferSize(65536);
 }
 
-async function runtimeContract(track: MediaTrackHandle, take: MediaItem_TakeHandle) {
+async function runtimeContract(track: ReaWebTrackRef, take: { type: "MediaItem_Take"; id: string }) {
   const icon: boolean = await reaper.window.setIcon('logo.svg');
   const iconVisibility: boolean = await reaper.window.setIconVisible(false);
   const iconVisible: boolean = (await reaper.window.getState()).iconVisible;
@@ -182,6 +169,16 @@ async function runtimeContract(track: MediaTrackHandle, take: MediaItem_TakeHand
   const stop = await reaper.events.on('track-added', event => { const ids: string[] = event.guids; });
   const waveform: ReaWebWaveform = await reaper.audio.getWaveform('sample.wav', {points:1024});
   const meter: ReaWebTrackMeter = await reaper.audio.getTrackMeter(track);
+  const ref = await reaper.audio.getSelectedTrackRef();
+  if (ref) {
+    await reaper.audio.getTrackMeter(ref);
+    const mix = await reaper.audio.getTrackMix(ref);
+    await reaper.audio.applyTrackGain(ref, mix.volume, 'Restore gain');
+    await reaper.audio.controlTransport('pause');
+    // @ts-expect-error Only the three transport buttons are supported.
+    await reaper.audio.controlTransport('Main_OnCommand');
+    await reaper.audio.setTrackValueLatest(ref, 'D_VOL', 0.5);
+  }
   const theme: ReaWebTheme = await reaper.theme.getColors();
   const logs: ReaWebLogEntry[] = await reaper.debug.getLogs();
   // @ts-expect-error Take handles cannot be used as track meters.
@@ -189,7 +186,7 @@ async function runtimeContract(track: MediaTrackHandle, take: MediaItem_TakeHand
   // @ts-expect-error Event payloads depend on their event name.
   await reaper.events.on('tempo-changed', event => { event.guids; });
   // @ts-expect-error Mirror methods still return Promise values.
-  const wrong: MediaTrackHandle | null = reaper.GetTrack(0, 0);
+  const wrong: ReaWebTrackRef | null = reaper.GetTrack(0, 0);
   await cleanup(); await stop();
 }
 
@@ -226,66 +223,6 @@ async function appContract() {
   reaper.debug.info('hello');
   // @ts-expect-error Namespace remains camelCase, without a lowercase alias.
   reaper.dragdrop.startText('hello');
-}
-
-type builderSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebBatchBuilder, ReaWebBatchMethod>>;
-async function batchBuilderContract(track: MediaTrackHandle, take: MediaItem_TakeHandle) {
-  const data = await reaper.transaction.batch(b => {
-    const track = b.GetTrack(0, 0);
-    const [, name] = b.GetTrackName(track);
-    const volume = b.GetMediaTrackInfo_Value(track, 'D_VOL');
-    b.SetMediaTrackInfo_Value(track, 'D_VOL', volume);
-    b.GetSetMediaTrackInfo_String(track, 'P_NAME', name, true);
-    const [, bytes] = b.MIDI_GetAllEvts(take);
-    b.MIDI_SetAllEvts(take, bytes);
-    b.MIDI_SetNote(take, 0, null, undefined, null, null, null, 60);
-    return { name, volume, track, bytes, nested: [volume, name] as const };
-  }, { undoLabel: 'Edit' });
-  const name: string = data.name;
-  const volume: number = data.volume;
-  const handle: MediaTrackHandle | null = data.track;
-  const bytes: Uint8Array = data.bytes;
-  const nested: readonly [number, string] = data.nested;
-  const tuple: [boolean, string] = await reaper.transaction.batch(b => b.GetTrackName(track));
-  const transport: { position: number; state: number; beats: number; display: string; valid: boolean } =
-    await reaper.transaction.batch(b => {
-      const position = b.GetPlayPosition();
-      const [beats] = b.TimeMap2_timeToBeats(0, position);
-      return { position, state: b.GetPlayState(), beats,
-        display: b.format_timestr_pos(position, '', 0), valid: b.ValidatePtr2(0, track, 'MediaTrack*') };
-    });
-  await reaper.transaction.batch([
-    { method: 'GetPlayPositionEx', args: [0] },
-    { method: 'GetPlayStateEx', args: [0] },
-    { method: 'TimeMap2_timeToBeats', args: [0, { $ref: 0 }] }
-  ]);
-  const fxName: [boolean, string] = await reaper.transaction.batch(b => b.TrackFX_GetParamName(track, 0, 0));
-  const voidResult: null = await reaper.transaction.batch(b => b.UpdateArrange());
-  const raw: unknown[] = await reaper.transaction.batch(b => { b.UpdateArrange(); });
-  // @ts-expect-error Builder callbacks cannot return Promises.
-  await reaper.transaction.batch(async b => b.CountTracks(0));
-  await reaper.transaction.batch(b => {
-    // @ts-expect-error Action dispatch is outside the reviewed batch set.
-    b.Main_OnCommand(40004, 0);
-    // @ts-expect-error File rescanning is outside the reviewed batch set.
-    b.EnumInstalledFX(-1);
-    // @ts-expect-error Audio sample arrays remain individual calls.
-    b.GetMediaItemTake_Peaks(take, 100, 0, 2, 10, 0, new Float64Array(40));
-    // @ts-expect-error Project variants require an explicit project.
-    b.GetPlayStateEx();
-    // @ts-expect-error Runtime services are not Mirror builder methods.
-    b.window.close();
-    // @ts-expect-error Mirror argument requirements are preserved.
-    b.CountTracks();
-    // @ts-expect-error Deferred track and take handles remain distinct.
-    b.GetTrackName(b.GetActiveTake(b.GetMediaItem(0, 0)));
-    // @ts-expect-error A string reference cannot supply a numeric argument.
-    b.SetMediaTrackInfo_Value(track, 'D_VOL', b.GetTrackName(track)[1]);
-    // @ts-expect-error Deferred numbers are not usable before execution.
-    const count: number = b.CountTracks(0);
-    // @ts-expect-error Ordinary Mirror calls do not accept builder references.
-    reaper.GetTrackName(b.GetTrack(0, 0));
-  });
 }
 
 async function streamContract() {

@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 
-from external_client_contract import WebSocket
+from external_client_contract import WebSocket, check_external_methods, project_snapshot, subscribe_projects
 
 
 def main():
@@ -49,19 +49,61 @@ def main():
     token = secrets.token_hex(32)
     (root / 'ReaWebAPI.ini').write_text(f'[ExternalClients]\nEnabled=1\nPort={port}\nAccessToken={token}\n')
     (root / 'index.html').write_text('<!doctype html><title>External coexistence test</title><script src="app.js" defer></script>')
-    (root / 'app.js').write_text('''(async () => {
-      await reaper.lifecycle.ready;
-      const initial = await reaper.CountTracks(0);
-      const dispose = await reaper.events.on('trackStateChanged', async () => {
-        await reaper.fs.writeText('legacy.json', JSON.stringify({count: await reaper.CountTracks(0)}), {overwrite:true});
+    fixture = Path(__file__).resolve().parent / 'fixtures/retired-mirror-names.json'
+    shutil.copyfile(fixture, root / 'former-methods.json')
+    (root / 'app.js').write_text("""(async () => {
+      const caps = await reaper.lifecycle.ready;
+      const names = await (await fetch('former-methods.json')).json();
+      if (names.length !== 730 || new Set(names).size !== 730 || names.some(n => n in reaper || caps.methods.includes(n)) ||
+          'batch' in reaper.transaction || 'setBufferSize' in reaper.debug ||
+          'api' in caps || 'batchMethods' in caps) throw Error('Retired WebView API exposed');
+      // Exercise the actual wire dispatcher with a valid document and request ID.
+      for (const [method,args] of [['CountTracks',[0]],['ReaWeb_Batch',[[{method:'CountTracks',args:[0]}]]],
+                                   ['ReaWeb_SetBufferSize',[65536]]]) {
+        const stringify = JSON.stringify;
+        JSON.stringify = function(value, ...rest) {
+          if (value?.method === 'ReaWeb_GetWindowState') value = {...value,method,args};
+          return stringify(value, ...rest);
+        };
+        try {
+          await reaper.window.getState();
+          throw Error('Unexpected native success: ' + method);
+        } catch (error) { if (error.code !== 'UNKNOWN_API') throw error; }
+        finally { JSON.stringify = stringify; }
+      }
+      await reaper.window.getState();
+      const count = async () => (await reaper.host.service('runtime').invoke('getProjectSummary')).trackCount;
+      await reaper.events.on('trackStateChanged', async () => {
+        await reaper.fs.writeText('event.json', JSON.stringify({count:await count()}), {overwrite:true});
       });
-      await reaper.fs.writeText('legacy-ready.json', JSON.stringify({count:initial}), {overwrite:true});
-    })().catch(error => console.error(error));''')
+      await reaper.fs.writeText('web-ready.json', JSON.stringify({count:await count()}), {overwrite:true});
+    })().catch(error => reaper.fs.writeText('web-error.txt', String(error), {overwrite:true}));""")
     (root / 'launch.lua').write_text('''local root = debug.getinfo(1, 'S').source:sub(2):match('^(.*[/\\\\])')
 local file = assert(io.open(root .. 'launcher.txt', 'w'))
 file:write(reaper.GetResourcePath(), '\\n', tostring(reaper.APIExists('ReaWeb_Open')))
 file:close()
 assert(reaper.ReaWeb_Open(root .. 'index.html') > 0, reaper.ReaWeb_GetLastError())
+local function requested(name)
+  local path = root .. name
+  local f = io.open(path, 'r')
+  if not f then return false end
+  f:close()
+  assert(os.remove(path))
+  return true
+end
+local function tick()
+  if requested('add-track') then
+    reaper.InsertTrackAtIndex(reaper.CountTracks(0), true)
+    reaper.TrackList_AdjustWindows(false)
+    reaper.UpdateArrange()
+  elseif requested('reload-project') then
+    local fixture = root .. 'fixture.rpp'
+    reaper.Main_SaveProjectEx(0, fixture, 0)
+    reaper.Main_openProject('noprompt:' .. fixture)
+  end
+  reaper.defer(tick)
+end
+tick()
 ''')
     clients = []
     with (root / 'process.log').open('w') as log:
@@ -71,7 +113,7 @@ assert(reaper.ReaWeb_Open(root .. 'index.html') > 0, reaper.ReaWeb_GetLastError(
             startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startup.wShowWindow = 0
         process = subprocess.Popen([str(args.reaper.resolve()), '-newinst', '-cfgfile', str(root / 'reaper.ini'),
-                                    '-new', '-nosplash', '-splashlog', str(root / 'startup.log')],
+                                    '-new', '-nosplash', '-splashlog', str(root / 'startup.log'), str(root / 'launch.lua')],
                                    stdout=log, stderr=log, startupinfo=startup)
         (root / 'process.pid').write_text(str(process.pid))
         try:
@@ -85,24 +127,27 @@ assert(reaper.ReaWeb_Open(root .. 'index.html') > 0, reaper.ReaWeb_GetLastError(
                     if process.poll() is not None or time.monotonic() > deadline:
                         raise RuntimeError(f'REAPER did not accept connections, exit code: {process.poll()}. See {root / "startup.log"} and {root / "process.log"}') from error
                     time.sleep(0.1)
+            a.call('system.getInfo', error='AUTH_REQUIRED')
             a.call('auth.authenticate', {'token': token, 'protocolVersion': 1})
+            check_external_methods(a)
             info = a.call('system.getInfo')
             assert a.call('service.invoke', {'service': 'runtime', 'method': 'getInfo'})['version'] == info['version']
-            launcher = a.call('api.call', {'name': 'AddRemoveReaScript', 'args': [True, 0, str(root / 'launch.lua'), True]})
-            assert launcher > 0, 'Could not register the isolated WebView test launcher'
-            a.call('api.call', {'name': 'Main_OnCommand', 'args': [launcher, 0]})
-            ready = root / 'legacy-ready.json'
+            ready = root / 'web-ready.json'
             while not ready.exists() and time.monotonic() < deadline:
                 time.sleep(0.05)
-            assert ready.exists(), 'Legacy WebView failed to start'
+            assert ready.exists(), (root / 'web-error.txt').read_text() if (root / 'web-error.txt').exists() else 'WebView failed to start'
             initial = json.loads(ready.read_text())['count']
-            assert a.call('api.call', {'name': 'CountTracks', 'args': [0]}) == initial
+            summary = a.call('service.invoke', {'service': 'runtime', 'method': 'getProjectSummary'})
+            assert summary['trackCount'] == initial and isinstance(summary['playState'], int)
+            assert a.call('service.invoke', {'service': 'runtime', 'method': 'getHostVersion'}) == info['reaperVersion']
+            b = WebSocket(f'ws://127.0.0.1:{port}'); clients.append(b)
+            b.call('auth.authenticate', {'token': token, 'protocolVersion': 1})
+            sub_a, sub_b = subscribe_projects(a), subscribe_projects(b)
+            old_a, old_b = project_snapshot(a, sub_a), project_snapshot(b, sub_b)
+            assert old_a['activeProject'] != old_b['activeProject']
             event = a.call('events.subscribe', {'event': 'trackStateChanged'})['subscriptionId']
-            a.call('api.call', {'name': 'InsertTrackAtIndex', 'args': [initial, True]})
-            result = a.call('api.batch', {'calls': [{'method': 'GetTrack', 'args': [0, initial]},
-                {'method': 'GetTrackName', 'args': [{'$ref': 0}]}]})
-            assert result[0]['type'] == 'MediaTrack' and result[1][0] is True
-            legacy = root / 'legacy.json'
+            (root / 'add-track').touch()
+            legacy = root / 'event.json'
             deadline = time.monotonic() + 8
             while time.monotonic() < deadline:
                 a.call('system.getInfo')
@@ -112,29 +157,36 @@ assert(reaper.ReaWeb_Open(root .. 'index.html') > 0, reaper.ReaWeb_GetLastError(
                 except (OSError, ValueError):
                     pass
                 time.sleep(0.05)
-            assert json.loads(legacy.read_text())['count'] == initial + 1
+            assert json.loads(legacy.read_text())['count'] == initial + 1, (a.events, a.call('service.invoke', {'service': 'runtime', 'method': 'getProjectSummary'}))
             assert any(e.get('subscriptionId') == event for e in a.events)
+            (root / 'reload-project').touch()
+            new_a = project_snapshot(a, sub_a, old_a['projectEpoch'])
+            new_b = project_snapshot(b, sub_b, old_b['projectEpoch'])
+            assert len({p['activeProject'] for p in (old_a, old_b, new_a, new_b)}) == 4
+            assert a.call('events.unsubscribe', {'subscriptionId': sub_a}) is True
             a.call('service.invoke', {'service': 'stream.test', 'method': 'start'})
             stream = a.call('stream.open', {'name': 'test.video'})
             binary = WebSocket(stream['endpoint']); clients.append(binary)
             opcode, packet = binary.receive_frame()
             assert opcode == 2 and packet[:4] == b'RWS\x01' and len(packet) == 40 + 240 * 160 * 4
             binary.frame(b'\1', opcode=2)
-            a.close()
+            assert a.call('stream.close', {'consumerId': stream['consumerId']}) is True
             try:
                 while binary.receive_frame()[0] != 8:
                     pass
             except (EOFError, ConnectionResetError):
                 pass
             binary.close()
-            b = WebSocket(f'ws://127.0.0.1:{port}'); clients.append(b)
-            b.call('auth.authenticate', {'token': token, 'protocolVersion': 1})
-            assert b.call('api.call', {'name': 'CountTracks', 'args': [0]}) == initial + 1
-            b.call('api.call', {'name': 'GetTrackName', 'args': [result[0]]}, error='INVALID_HANDLE')
-            b.call('api.call', {'name': 'DeleteTrack', 'args': [b.call('api.call', {'name': 'GetTrack', 'args': [0, initial]})]})
+            a.close()
+            assert b.call('service.invoke', {'service': 'runtime', 'method': 'getProjectSummary'})['trackCount'] == initial + 1
+            c = WebSocket(f'ws://127.0.0.1:{port}'); clients.append(c)
+            c.call('auth.authenticate', {'token': token, 'protocolVersion': 1})
+            fresh = project_snapshot(c, subscribe_projects(c))
+            assert fresh['activeProject'] not in {new_a['activeProject'], new_b['activeProject']}
             b.call('service.invoke', {'service': 'stream.test', 'method': 'stop'})
-            report = {'passed': True, 'info': info, 'checks': ['authentication', 'native calls', 'batch references',
-                'shared project events', 'legacy WebView coexistence', 'native service', 'binary stream', 'disconnect cleanup', 'handle isolation']}
+            report = {'passed': True, 'info': info, 'checks': ['authentication', 'external mirror removal and wire rejection',
+                'WebView mirror removal and wire rejection', 'named service', 'track events', 'project reload',
+                'session-scoped project IDs', 'unsubscribe', 'binary stream open/read/close', 'reconnect']}
             (root / 'result.json').write_text(json.dumps(report, indent=2))
             print(json.dumps(report), flush=True)
         finally:

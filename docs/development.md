@@ -9,7 +9,6 @@ Install the extension for your REAPER architecture, then copy the SDK directory 
 ```text
 SDK/
   reaper.d.ts
-  reaper-api.generated.d.ts
   runtime-api.d.ts
   starter/
     reawebapi-starter.lua
@@ -33,100 +32,20 @@ Since v0.3.9.14, `ReaWeb_Open` argument four accepts EEL2 `0/1` and Lua `false/t
 
 ## Calling conventions
 
+Web pages access the host through the runtime namespaces on `window.reaper`. Authenticated external WebSocket clients can discover named services, events and streams through `system.getCapabilities`.
+
 ```javascript
 await reaper.lifecycle.ready;
-const track = await reaper.GetSelectedTrack(0, 0);
+const track = await reaper.audio.getSelectedTrackRef();
 if (track) {
-  const [ok, name] = await reaper.GetTrackName(track);
-  if (ok) console.log(name);
+  const {name} = await reaper.audio.getTrackMix(track);
+  console.log(name);
+  await reaper.transaction.withUndo('Center pan', () =>
+    reaper.audio.setTrackValueLatest(track, 'D_PAN', 0));
 }
 ```
 
-Every method returns a Promise, including setters and void APIs. API calls automatically wait for the initial handshake, but awaiting `reaper.lifecycle.ready` gives one place to show startup failures. Use the generated [reference](api-reference.md) for the exact JavaScript signature and return labels, and its official links for units, flags, parameter keys and REAPER behavior.
-
-| Native/Lua concept | JavaScript contract |
-| --- | --- |
-| One return value | A scalar after `await` |
-| Multiple return values | An array in Lua order, including the native return value where present |
-| No return values | `undefined` |
-| Optional input | Omit trailing arguments, or use `null`/`undefined` for a positional hole |
-| Current project | `0` or `null` in a `ReaProject` slot |
-| Native object pointer | Typed opaque handle or `null`, as declared |
-| GUID | Braced GUID string |
-| RECT | Four coordinates in the Lua parameter/return order |
-| MIDI/configuration bytes | `Uint8Array`, with binary results returned as `Uint8Array` |
-| Audio sample array | `Float64Array` or `number[]`, updated before the Promise resolves |
-
-Required inputs are not filled automatically. Boolean parameters require booleans. Integer inputs must fit their native type and JavaScript's safe range. Ordinary numeric inputs must be finite. Text inputs are UTF-8 and reject embedded NUL. Binary APIs preserve zero bytes and high bytes. `Float64Array` preserves IEEE 754 values, while ordinary `number[]` inputs require finite elements.
-
-The catalogue covers standard C/Lua APIs, not Lua runtime helpers. Use DOM/canvas for UI and browser timers or host events for refresh. `reaper.defer`, `gfx`, Lua `require`, SWS and third-party extension methods are not supplied. Browser timers do not make REAPER API calls suitable for real-time audio processing.
-
-## Availability, projects and handles
-
-```javascript
-const { api } = await reaper.system.getCapabilities();
-if (!api.availableMethods.includes('GetTrackName')) {
-  throw new Error('This REAPER installation does not provide GetTrackName');
-}
-const [project] = await reaper.EnumProjects(-1);
-if (project) console.log(await reaper.CountTracks(project));
-```
-
-`implemented` describes the extension's bindings. `available` describes functions resolved in the running REAPER. The catalogue targets 7.80, and complete availability requires that version or newer. A known but unavailable function rejects with `API_UNAVAILABLE`.
-
-Handles belong to one WebView document. Do not inspect their IDs, serialize them into settings, construct them from addresses or pass them between windows. Reacquire objects after deletion, document reload or `STALE_HANDLE`. Handles can refer to other open projects, but queued requests are rejected with `PROJECT_CHANGED` when the current project changes. Refresh UI state and let the user repeat a write deliberately.
-
-## Writes and Undo
-
-Use a batch for supported operations that should form one synchronous Undo step:
-
-```javascript
-const track = await reaper.GetSelectedTrack(0, 0);
-if (track) {
-  await reaper.transaction.batch(b => {
-    b.SetMediaTrackInfo_Value(track, 'D_PAN', 0);
-    b.SetMediaTrackInfo_Value(track, 'B_MUTE', 0);
-  }, { undoLabel: 'Center and unmute track' });
-}
-```
-
-The [batch contract](host-api.md#batches-and-continuous-controls) covers 456 reviewed standard APIs and up to 128 calls. Builder callbacks are synchronous, with deferred result references and tuple destructuring. Return an object or array to select typed results, or omit the return value for the ordered native result array. The explicit call-array form and all 730 ordinary Mirror calls remain available. A batch is not a transaction: completed writes remain if a later call fails, and its error reports completed results.
-
-For continuous controls across awaits, use managed Undo as described in the [host reference](host-api.md#batches-and-continuous-controls). It uses the reviewed batch API set and closes on reload, close, project change or after 30 seconds. Raw REAPER Undo scopes remain available outside this set, but callers must pair them and cannot rely on cleanup requests after a page closes.
-
-For slider input, `reaper.audio.setTrackValueLatest` coalesces waiting values for a track/key. It does not create an Undo gesture. Await dependent calls in order. Use bounded concurrency for independent reads rather than enqueueing thousands of calls.
-
-## Binary data and owned resources
-
-```javascript
-// Read MIDI bytes without converting them to text.
-const item = await reaper.GetSelectedMediaItem(0, 0);
-const take = item ? await reaper.GetActiveTake(item) : null;
-if (take && await reaper.TakeIsMIDI(take)) {
-  const [ok, bytes] = await reaper.MIDI_GetAllEvts(take);
-  if (ok) console.log(bytes.byteLength);
-}
-```
-
-```javascript
-const track = await reaper.GetSelectedTrack(0, 0);
-const accessor = track ? await reaper.CreateTrackAudioAccessor(track) : null;
-if (accessor) {
-  try {
-    const channels = 2, frames = 256;
-    const samples = new Float64Array(channels * frames);
-    const start = await reaper.GetAudioAccessorStartTime(accessor);
-    const status = await reaper.GetAudioAccessorSamples(accessor, 48000, channels, start, frames, samples);
-    if (status > 0) console.log(samples[0]);
-  } finally {
-    await reaper.DestroyAudioAccessor(accessor);
-  }
-}
-```
-
-Do not resize, transfer or reuse an audio array while a call is pending. Read its contents after `await`. Allocate enough elements for channels, frames and the extra blocks required by peak APIs. See each API's official buffer layout.
-
-Explicitly destroy created audio accessors, joysticks and unattached PCM sources when finished. Page closure/reload also releases resources still owned by that document. Assigning a created PCM source to a take transfers ownership to the project. Do not destroy a source still used by a take. See the corresponding native API before sharing or replacing resources.
+Read the project name and track count with `reaper.host.service('runtime').invoke('getProjectSummary')`.
 
 ## Events, UI and storage
 
@@ -150,8 +69,8 @@ Bridge failures reject with `Error` plus `code` and optional `details`. Native A
 
 ```javascript
 try {
-  const track = await reaper.GetSelectedTrack(0, 0);
-  if (track) console.log(await reaper.GetTrackName(track));
+  const track = await reaper.audio.getSelectedTrackRef();
+  if (track) console.log(await reaper.audio.getTrackMix(track));
 } catch (error) {
   console.error(error); // Includes code/details for bridge failures.
 }

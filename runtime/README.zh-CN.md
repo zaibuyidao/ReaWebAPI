@@ -6,8 +6,7 @@
 
 | SDK 包内入口 | 用途 |
 | --- | --- |
-| `reaper.d.ts` | 类型声明入口，引用 Mirror 和 Runtime 声明 |
-| `reaper-api.generated.d.ts` | 730 项 REAPER API 签名和返回类型 |
+| `reaper.d.ts` | 网页 SDK 类型入口，引用 `runtime-api.d.ts` |
 | `runtime-api.d.ts` | Runtime 命名空间和数据类型 |
 | `native-transport/` | [Realtime 播放状态](../docs/realtime.zh-CN.md)，演示普通 Web 的 60/120 Hz 订阅、原始位置变化统计和 CSV 导出 |
 | `jsfx-webui.mjs` | [JSFX Web UI](../docs/jsfx-webui.zh-CN.md) 的共享 `editor` 尺寸、`params` 参数绑定、Promise 合并写入、参数组手势、DSP 流、状态、命令和二进制资源。 |
@@ -19,17 +18,17 @@
 | `web-runtime/` | 模块、资源、存储和浏览器能力检查 |
 | `app-manifest.schema.json` | 应用元数据格式 |
 
-将 SDK 复制到工作目录，在 REAPER 的 Action List 运行 `starter/reawebapi-starter.lua`。整合现有项目时，在 `jsconfig.json` 或 `tsconfig.json` 中包含 `reaper.d.ts`，并将三个声明文件保存在同一目录。
+将 SDK 复制到工作目录，在 REAPER 的 Action List 运行 `starter/reawebapi-starter.lua`。整合现有项目时，在 `jsconfig.json` 或 `tsconfig.json` 中包含 `reaper.d.ts`，并将两个声明文件保存在同一目录。
 
 修改 `starter/index.html` 的 `<title>` 即可自定义模板的原生窗口名称。动态标题和显式覆盖见[窗口标题](../docs/runtime-api.zh-CN.md#窗口标题)。
 
-扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开页面。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。普通 App 未定义 `app.json.id` 时，在根目录的 `.reawebapi/identity.json` 持久化随机 ID。移动时保留标记即可保留身份，复制后若原绑定仍有效，副本自动获得独立身份。启动脚本文件名不再决定 App ID，旧 launcher 身份的存储不自动迁移。生产页面通常使用 `reaweb://<appId>/...`。macOS/Linux 的 required App 使用经过认证、持久绑定的回环来源，详见前端指南。显式 ID 仍须全局唯一。JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Mirror 和 Runtime API。
+扩展自动注入浏览器运行时。Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开页面。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。普通 App 未定义 `app.json.id` 时，在根目录的 `.reawebapi/identity.json` 持久化随机 ID。移动时保留标记即可保留身份，复制后若原绑定仍有效，副本自动获得独立身份。启动脚本文件名不再决定 App ID，旧 launcher 身份的存储不自动迁移。生产页面通常使用 `reaweb://<appId>/...`。macOS/Linux 的 required App 使用经过认证、持久绑定的回环来源，详见前端指南。显式 ID 仍须全局唯一。JavaScript 在 `reaper.lifecycle.ready` 完成后调用 Runtime API。
 
-`reaper.transaction.batch(b => { ... })` 在同步回调内收集已审核的 Mirror 调用，自动处理结果引用和多返回值解构。返回引用、对象或数组可选择结果并推导类型。[批处理契约](../docs/host-api.zh-CN.md#批处理与连续参数) 同时说明原有调用数组形式。
+已认证的外部 WebSocket 客户端可通过 `system.getCapabilities` 查询具名服务、事件和流。
 
-[开发指南](../docs/development.zh-CN.md) · [REAPER API](../docs/api-reference.md) · [Runtime API](../docs/runtime-api.zh-CN.md) · [接口清单](../docs/runtime-api-inventory.md) · [DevTools](../docs/devtools.zh-CN.md)
+[开发指南](../docs/development.zh-CN.md) · [Runtime API](../docs/runtime-api.zh-CN.md) · [接口清单](../docs/runtime-api-inventory.md) · [DevTools](../docs/devtools.zh-CN.md)
 
-纯 JavaScript 应用使用 REAPER Mirror 和 Runtime API。需要由 Lua 管理工程逻辑时，参见 [Lua 后端 + WebView 示例](../examples/backends/lua-backend/README.md)。平台安装包将其放在 `Scripts/ReaWebAPI/Example/lua-backend`，SDK 提供 `lua-backend/`。
+纯 JavaScript 应用使用 REAPER Runtime API。需要由 Lua 管理工程逻辑时，参见 [Lua 后端 + WebView 示例](../examples/backends/lua-backend/README.md)。平台安装包将其放在 `Scripts/ReaWebAPI/Example/lua-backend`，SDK 提供 `lua-backend/`。
 
 EEL2 后端使用同一消息桥。SDK 提供[最简示例](../examples/backends/eel-backend/README.zh-CN.md)和[双向轨道混音示例](../examples/backends/eel-mixer/README.zh-CN.md)，分别安装于 `eel-backend/` 和 `eel-mixer/`。
 

@@ -9,9 +9,8 @@
 namespace reaweb {
 class ExternalConnection {
 public:
-  struct Request { Json data; std::chrono::steady_clock::time_point received; size_t bytes; uint64_t project; bool authenticated; };
+  struct Request { Json data; std::chrono::steady_clock::time_point received; size_t bytes; bool authenticated; };
   std::atomic<bool> alive{true}, authenticated{false}, closing{false};
-  std::atomic<uint64_t> project_epoch{0};
   bool take(Request& request, const std::function<bool(const Json&)>& input = {});
   bool send(Json message, bool close = false);
   void close();

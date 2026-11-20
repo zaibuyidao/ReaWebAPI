@@ -8,6 +8,6 @@
 
 使用此模板创建 App 时，在 `public/app.json` 中设置唯一的 `id`。Vite 将清单复制到 `dist/`，用于确定生产 App 的虚拟 origin。
 
-示例涵盖 Mirror-aware Undo 批处理、文件操作、剪贴板、外链、播放事件、资源和 Worker。音量控件修改选中轨道，并通过 Builder 返回轨道名和音量。Read transport 按钮通过一次批量 RPC 读取播放位置、状态和速度，无需选中轨道。保存按钮将数据写入应用文件基准目录下的 `snapshot.json`。
+音量按钮通过当前工程的轨道引用修改选中轨道，记录一步撤销，并回读轨道名和实际音量。Read transport 按钮通过 runtime 服务一次读取播放位置、状态和速度。保存按钮将数据写入应用文件基准目录下的 `snapshot.json`。
 
 资源路径和开发配置见 [Web 运行环境](../../../docs/frontend.zh-CN.md)。

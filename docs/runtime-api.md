@@ -4,15 +4,15 @@
 
 **English** | [简体中文](runtime-api.zh-CN.md)
 
-JavaScript Runtime fixes seventeen namespace boundaries: `reaper.window`, `reaper.theme`, `reaper.dialog`, `reaper.events`, `reaper.lifecycle`, `reaper.debug`, `reaper.fs`, `reaper.audio`, `reaper.clipboard`, `reaper.dragDrop`, `reaper.app`, `reaper.system`, `reaper.transaction`, `reaper.host`, `reaper.stream`, `reaper.realtime`, `reaper.video`. All 730 REAPER methods retain their names, Promise results, typed handles and Lua argument/result order. Distribute `reaper.d.ts`, `reaper-api.generated.d.ts` and `runtime-api.d.ts` together. `capabilities.runtime.contract` is 2 (host SDK), while `webRuntime.contract` remains 1 (Web resources/storage).
+Web pages access the host through the runtime namespaces on `window.reaper`. Distribute `reaper.d.ts` and `runtime-api.d.ts`.
 
-Use `await reaper.lifecycle.ready` for the handshake. Batches and managed Undo belong to `reaper.transaction`; coalesced mixer controls belong to `reaper.audio`. `reaper.system.getCapabilities()` reports capabilities and `reaper.debug.setBufferSize(bytes)` configures fixed native output buffers. The [host services reference](host-api.md) details their existing argument, error and cleanup contracts.
+Await `reaper.lifecycle.ready` to observe the handshake.
 
-All seventeen namespaces provide implemented members: 91 methods and one Promise property, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
+All seventeen namespaces provide implemented members: the methods and readiness Promise in the inventory, plus `invoke/send/on/off` on Host Service proxies. `capabilities.runtime.reservedNamespaces` is empty. See the [API inventory](runtime-api-inventory.md).
 
 `reaper.host` retains the Lua Backend route. `reaper.host.service(name)` routes to named native services. `reaper.events` adds native selection, track, transport, project and timeline sources. See [Native Services](native-services.md) for payloads, thread boundaries and lifecycle rules. Existing Clipboard, Drag & Drop, Window/Dock/Focus and System interfaces remain unchanged.
 
-`transaction.batch` accepts call arrays or synchronous Mirror Builder callbacks, with automatic references, tuple destructuring and typed result selection. Both forms use the existing native batch implementation. `transaction` also provides Undo groups, without atomic rollback or isolation: completed writes remain applied and other edits may interleave. See the [batch contract](host-api.md#batches-and-continuous-controls).
+Use `transaction.withUndo` to group related edits into one undo step.
 
 `system.getCapabilities()` and `debug.getDiagnostics()` include `webRuntime.crossOriginIsolation` and `webRuntime.browser`. They await a cached per-document browser probe. The handshake snapshot may still contain untested `null` fields. See [field semantics, errors and lifecycle](frontend.md#app-level-cross-origin-isolation).
 
@@ -129,7 +129,7 @@ Host callbacks only update thread-safe counters. REAPER queries and JS dispatch 
 ```js
 const info = await reaper.audio.getFileInfo('/path/to/audio.wav');
 const waveform = await reaper.audio.getWaveform(info.path, {points:1024});
-const track = await reaper.GetSelectedTrack(0, 0);
+const track = await reaper.audio.getSelectedTrackRef();
 const meter = track ? await reaper.audio.getTrackMeter(track) : null;
 ```
 
@@ -193,7 +193,7 @@ await reaper.events.on('message', text => {
 await reaper.host.send({ type: 'setVolume', value: 0.5 });
 ```
 
-Messages are FIFO, without coalescing, initial snapshots or replay. The current document owns both queues. Close/reload clears them. Limits: 1 MiB UTF-8 per message, 256 pending messages per direction, 16 MiB total queued payload per window. See the [Lua contract](host-api.md#lua-message-bridge) and [Lua backend example](../examples/backends/lua-backend/README.md). The existing pure JavaScript Mirror/Runtime workflow remains available.
+Messages are FIFO, without coalescing, initial snapshots or replay. The current document owns both queues. Close/reload clears them. Limits: 1 MiB UTF-8 per message, 256 pending messages per direction, 16 MiB total queued payload per window. See the [Lua contract](host-api.md#lua-message-bridge) and [Lua backend example](../examples/backends/lua-backend/README.md). The existing pure JavaScript Runtime workflow remains available.
 
 Native Streams and platform additions: [English](native-streams.md) · [中文](native-streams.zh-CN.md).
 

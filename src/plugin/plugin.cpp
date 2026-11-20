@@ -309,7 +309,6 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     auto prevent_refresh = load<void (*)(int)>(rec, "PreventUIRefresh");
     Host host;
     host.native_function = rec->GetFunc;
-    host.valid_window = [](void* w) { return IsWindow(static_cast<HWND>(w)) != 0; };
     host.current_project = [enum_projects] { return enum_projects(-1, nullptr, 0); };
     host.count_selected_tracks = [count_selected](void* p) { return count_selected(static_cast<ReaProject*>(p)); };
     host.get_selected_track = [get_selected](void* p, int i) { return get_selected(static_cast<ReaProject*>(p), i); };

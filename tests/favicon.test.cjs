@@ -4,9 +4,8 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 const { webcrypto } = require('node:crypto');
-const script = '(() => {' + fs.readFileSync(path.join(__dirname, '../runtime/reaper-api.generated.js'), 'utf8') +
-  fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8') + '})();';
-const methods = Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, '../api/bindings.json'), 'utf8')).functions);
+const script = '(() => {' + fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8') + '})();';
+const methods = [];
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16"/></svg>';
 const link = (href, options = {}) => ({ nodeType: 1, tagName: 'LINK', rel: 'icon', type: '', media: '', href,
   getAttribute(name) { return this[name]; }, querySelector() { return null; }, ...options });

@@ -93,7 +93,7 @@ bool ExternalConnection::receive(const std::string& text) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!alive || closing || pending_.size() >= ExternalTransport::pending_limit ||
       input_bytes_ + text.size() > message_limit || !pending_.insert(data["id"].get<uint64_t>()).second) return false;
-  requests_.push_back({std::move(data), Time::now(), text.size(), project_epoch.load(), authenticated.load()}); input_bytes_ += text.size();
+  requests_.push_back({std::move(data), Time::now(), text.size(), authenticated.load()}); input_bytes_ += text.size();
   return true;
 }
 std::string ExternalConnection::output() {

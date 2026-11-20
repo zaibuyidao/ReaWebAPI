@@ -8,6 +8,6 @@ In the source repository, this template reads declarations from `../../../runtim
 
 Set a unique `id` in `public/app.json` when creating an App from this template. Vite copies it into `dist/` for the production origin.
 
-The example covers Mirror-aware Undo batches, file operations, clipboard, external links, transport events, resources and a Worker. The gain control edits the selected track and returns its name and volume through the Builder. Read transport batches playback position, state and tempo in one RPC without requiring a track selection. Save writes `snapshot.json` in the App's file base.
+The gain button uses a project-scoped track reference and records one Undo step. It displays the track name and reads back the applied volume. Read transport uses the runtime service to get playback position, state and tempo in one request. Save writes `snapshot.json` in the App's file base.
 
 See the [Web runtime guide](../../../docs/frontend.md) for resource paths and development configuration.

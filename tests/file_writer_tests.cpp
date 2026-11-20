@@ -26,6 +26,10 @@ int main(int argc, char** argv) {
     auto read = [&](const fs::path& path) { std::ifstream f(path, std::ios::binary); return std::string(std::istreambuf_iterator<char>(f), {}); };
     auto open = [&](const std::string& path, Json options) { return call("ReaWeb_OpenWrite", {path, options}).at("id").get<std::string>(); };
     auto write = [&](const Json& id, const std::string& bytes, uint64_t offset) { return call("ReaWeb_WriteChunk", {id, encode_binary(bytes.data(), bytes.size()), offset}); };
+    const std::string binary("\0\x80\xff\0", 4);
+    const Json wire = {{"__reawebBytes", "AID/AA=="}};
+    CHECK(encode_binary(binary.data(), binary.size()) == wire);
+    CHECK(decode_binary(wire) == binary);
     auto id = open("empty", {{"expectedBytes", 0}});
     CHECK(call("ReaWeb_CommitWrite", {id}).at("bytes") == 0);
     CHECK(fs::file_size(root / "empty") == 0);

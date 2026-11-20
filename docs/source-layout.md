@@ -8,9 +8,7 @@ v0.1.8 按职责组织原生代码。根目录 `runtime/` 是浏览器 SDK，`sr
 src/
 ├─ core/
 │  ├─ core.cpp / core.hpp
-│  ├─ reaper_api.cpp
-│  ├─ batch.cpp / batch.hpp
-│  ├─ native.cpp / native.hpp / native_call.hpp
+│  ├─ runtime_calls.cpp / binary.cpp
 │  ├─ worker.cpp / worker.hpp
 │  └─ file_time.hpp
 ├─ runtime/
@@ -84,7 +82,7 @@ Release installation paths remain unchanged. ReaPack packages only the six main 
 
 | Directory | Responsibility / 职责 |
 | --- | --- |
-| `core/` | Bridge registration and dispatch, 730 Mirror bindings and native marshalling, synchronous batch validation/execution, worker queues, lossless file-time conversion / 桥接与镜像、批处理、工作队列、时间戳基础工具 |
+| `core/` | Bridge registration and dispatch, dedicated host commands and binary encoding, worker queues, lossless file-time conversion / 桥接与专用宿主命令、二进制编码、工作队列、时间戳基础工具 |
 | `runtime/` | Session scheduling and host-call routing in `runtime.cpp`; window ownership/state in `window.cpp`; events, lifecycle, logs, managed Undo and portable App/audio/theme/file/system/drag services in their matching files / 会话与各功能域实现 |
 | `platform/` | Abstract host window interface and OS/WebView implementations; SWELL window support shared by macOS and Linux / 平台抽象、系统窗口、WebView 和共享 SWELL 窗口代码 |
 | `web/` | Read-only virtual App resources, stable identity and resource-path validation / 虚拟本地资源、稳定身份和路径校验 |
@@ -104,24 +102,23 @@ Windows uses JPEG for Hosted JSFX readiness captures and PNG for ordinary Apps. 
 
 Windows 的托管 JSFX 就绪截图使用 JPEG，普通 App 使用 PNG。编码图像不用于显示，自动首次展示仍需等待截图完成并通过导航代次校验。
 
-External Clients add an optional localhost protocol inside the same extension. `ReaperApiCore` owns shared native calls, handles and Batch. `Runtime` schedules windows and External Sessions using the same service registry, monitor manager and stream hub. The External transport handles sockets and JSON only. See [External Clients](external-clients.md).
+External Clients add an optional localhost protocol inside the same extension. `Runtime` schedules windows and External Sessions using the same service registry, monitor manager and stream hub. The External transport handles sockets and JSON only. See [External Clients](external-clients.md).
 
-External Client 在同一扩展内增加可选本机协议。`ReaperApiCore` 提供共享原生调用、Handle 和 Batch，`Runtime` 管理窗口与 External Session 的调度，复用同一 Service Registry、Monitor Manager 和 Stream Hub。External Transport 仅处理 socket 与 JSON。参见 [External Client](external-clients.zh-CN.md)。
+External Client 在同一扩展内增加可选本机协议。`Runtime` 管理窗口与 External Session 的调度，复用同一 Service Registry、Monitor Manager 和 Stream Hub。External Transport 仅处理 socket 与 JSON。参见 [External Client](external-clients.zh-CN.md)。
 
-The public API consists of 730 REAPER Mirror bindings, thirteen Lua `ReaWeb_*` host APIs and sixteen JavaScript Runtime namespaces.
+The WebView exposes runtime namespaces. External WebSocket sessions use named services, events and streams.
 
-公开接口包含 730 项 REAPER Mirror、13 项 Lua `ReaWeb_*` 宿主 API 和 16 个 JavaScript Runtime 命名空间。
+网页公开运行时命名空间。外部 WebSocket 会话通过具名服务、事件和流访问宿主。
 
-Namespace names do not require one C++ file each. `reaper.dialog.*` wraps the `GetUserFileName` Mirror in `runtime/reaper.js`. Clipboard operations use the common asynchronous dispatcher and the OS implementations in `platform/`.
+`reaper.dialog.*` dispatches a dedicated host command to the official SDK function `GetUserFileName`.
 
-命名空间不要求与 C++ 文件一一对应。`reaper.dialog.*` 在 `runtime/reaper.js` 包装 `GetUserFileName` Mirror。剪贴板由通用异步分发和 `platform/` 内各系统实现承接。
+`reaper.dialog.*` 通过专用宿主命令调用官方 SDK 函数 `GetUserFileName`。
 
 ## Maintenance / 维护
 
 - Use includes relative to the `src/` root, such as `core/core.hpp`, `runtime/runtime.hpp` and `platform/platform.hpp`; do not add every subdirectory to the include search path.
-- Register new translation units explicitly in `CMakeLists.txt`. API generation and ABI test generation use the same qualified include paths.
-- API Sync reads `src/core/core.cpp`; SDK batch checks read `src/core/batch.hpp`. Keep those source checks synchronized when moving the registries.
-- Keep build-generated `api_schema.hpp`, `native_api.cpp` and `bridge_script.hpp` in the build directory.
+- Register new translation units explicitly in `CMakeLists.txt`.
+- Keep build-generated `bridge_script.hpp` in the build directory.
 - Run the existing API, native ABI, Runtime, Python/SDK and packaging checks after structural changes. Keep validation records locally; see the [developer guide](development.md) for build instructions.
 
 Native Streams and platform additions: [English](native-streams.md) · [中文](native-streams.zh-CN.md).

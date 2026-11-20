@@ -178,8 +178,8 @@ void test_bridge_health(const fs::path& root, const fs::path& entry) {
   Host host;
   host.current_project = []() -> void* { return nullptr; };
   host.native_function = [](const char* name) -> void* {
-    if (std::string(name) == "CountTracks") return reinterpret_cast<void*>(+[](void*) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(550)); return 0;
+    if (std::string(name) == "OnStopButton") return reinterpret_cast<void*>(+[]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(550));
     });
     return nullptr;
   };
@@ -202,7 +202,7 @@ void test_bridge_health(const fs::path& root, const fs::path& entry) {
     pump(5100);
     CHECK(window->diagnostic_probes.empty() && window->diagnostic_modes.empty());
     CHECK(runtime.diagnostics(id)["bridgeHealth"]["enabled"] == false);
-    result(runtime, *window, window->send("CountTracks", {0}));
+    result(runtime, *window, window->send("ReaWeb_TransportControl", {"stop"}));
     std::this_thread::sleep_for(std::chrono::milliseconds(2100)); runtime.tick();
     runtime.configure_diagnostics({true, false, "unmatched"});
     CHECK(window->diagnostic_modes.empty() && other->diagnostic_modes.empty());
@@ -243,7 +243,7 @@ void test_bridge_health(const fs::path& root, const fs::path& entry) {
     runtime.configure_diagnostics({false, true, ""});
     CHECK(runtime.diagnostics(other_id)["bridgeHealth"]["enabled"] == true);
     CHECK(other->diagnostic_modes.back());
-    result(runtime, *window, window->send("CountTracks", {0}));
+    result(runtime, *window, window->send("ReaWeb_TransportControl", {"stop"}));
     runtime.configure_diagnostics({true, false, "diagnostic-other"});
     CHECK(!window->diagnostic_modes.back() && runtime.diagnostics(id)["bridgeHealth"]["enabled"] == false);
     CHECK(!runtime.diagnostics(id)["bridgeHealth"].contains("callbackErrors"));
@@ -254,7 +254,7 @@ void test_bridge_health(const fs::path& root, const fs::path& entry) {
     pump(5100);
     CHECK(window->diagnostic_probes.size() == probes && other->diagnostic_probes.empty());
     CHECK(!runtime.diagnostics(id)["bridgeHealth"].contains("callbackErrors"));
-    result(runtime, *window, window->send("CountTracks", {0}));
+    result(runtime, *window, window->send("ReaWeb_TransportControl", {"stop"}));
     std::this_thread::sleep_for(std::chrono::milliseconds(2100)); runtime.tick();
     const auto invalid = ++window->sequence;
     window->options.on_message(Json{{"id", invalid}, {"document", window->document}, {"method", "NotAnAPI"},
@@ -291,8 +291,6 @@ int main() {
     const auto main_thread = std::this_thread::get_id();
     adapter::Host host;
     host.current_project = [&] { CHECK(std::this_thread::get_id() == main_thread); return current; };
-    host.count_tracks = [&](void*) { CHECK(std::this_thread::get_id() == main_thread); ++calls; return 3; };
-    host.get_track = [&](void*, int index) -> void* { order.push_back(index); std::this_thread::sleep_for(std::chrono::milliseconds(1)); return nullptr; };
     host.project_generation = [&] { return generation; };
     host.change_count = [&](void*) { return changes; };
     host.count_selected_tracks = [&](void*) { ++selection_checks; return selected_count; };
@@ -301,6 +299,16 @@ int main() {
     host.valid_track = [&](void*, void* p) { return p == &track; };
     host.track_guid = [&](void*) { return guid; };
     adapter::connect(host);
+    host.native_function = [&, resolve = host.native_function](const char* name) -> void* {
+      const std::string fn(name);
+      if (fn == "OnStopButton" || fn == "OnPlayButton" || fn == "OnPauseButton") {
+        CHECK(std::this_thread::get_id() == main_thread);
+        if (fn == "OnStopButton") ++calls;
+        else { order.push_back(fn == "OnPlayButton" ? 1 : 2); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+        return reinterpret_cast<void*>(+[] {});
+      }
+      return resolve(name);
+    };
     std::set<void*> docked;
     std::vector<std::string> errors;
     DockApi docks{nullptr,
@@ -930,7 +938,7 @@ int main() {
       Runtime runtime(host, root, [&](const std::string& error) { errors.push_back(error); }, docks);
       const auto id = runtime.open("Tool/index.html"); auto first = windows.back().lock();
       CHECK(runtime.is_open(id) && !runtime.is_ready(id));
-      CHECK(result(runtime, *first, first->send("CountTracks", {0}))["error"]["code"] == "DOCUMENT_STALE");
+      CHECK(result(runtime, *first, first->send("ReaWeb_TransportControl", {"stop"}))["error"]["code"] == "DOCUMENT_STALE");
       CHECK(calls == 0);
       CHECK(result(runtime, *first, first->send("__reawebHello", {1}))["result"]["protocol"] == 1);
       result(runtime, *first, first->send("ReaWeb_Subscribe", {"native-timer"}));
@@ -1035,7 +1043,7 @@ int main() {
       first->options.on_drop({{"files", Json::array()}, {"text", "ignored"}, {"x", 0}, {"y", 0}});
       result(runtime, *first, first->send("ReaWeb_Subscribe", {"native-drop"}));
       CHECK(count_drops() == 3); // No snapshot replay.
-      CHECK(result(runtime, *first, first->send("CountTracks", {0}))["result"] == 3 && calls == 1);
+      CHECK(result(runtime, *first, first->send("ReaWeb_TransportControl", {"stop"}))["result"].is_null() && calls == 1);
       CHECK(runtime.set_docked(id, true) && runtime.is_docked(id));
       CHECK(!runtime.set_docked(id, false));
       CHECK(first->options.on_dock_toggle);
@@ -1149,17 +1157,17 @@ int main() {
       until(runtime, [&] { return selection_event(before, "track-selected", 1); });
       // A project edit also invalidates immediately, without a surface callback.
       reads = selected_reads; ++changes; runtime.tick(); CHECK(selected_reads > reads);
-      const auto queued = first->send("CountTracks", Json::array({0}), 1);
+      const auto queued = first->send("ReaWeb_TransportControl", Json::array({"stop"}), 1);
       current = &other;
       CHECK(result(runtime, *first, queued)["error"]["code"] == "PROJECT_CHANGED");
       CHECK(calls == 1);
-      CHECK(result(runtime, *first, first->send("CountTracks", Json::array({0}), 0, 1))["error"]["code"] == "REQUEST_EXPIRED");
+      CHECK(result(runtime, *first, first->send("ReaWeb_TransportControl", Json::array({"stop"}), 0, 1))["error"]["code"] == "REQUEST_EXPIRED");
       CHECK(calls == 1);
-      const auto before_reload = first->send("CountTracks", {0});
+      const auto before_reload = first->send("ReaWeb_TransportControl", {"stop"});
       ++generation;
       CHECK(result(runtime, *first, before_reload)["error"]["code"] == "PROJECT_CHANGED");
       CHECK(runtime.diagnostics(id)["projectEpoch"] == 3 && calls == 1);
-      const auto abandoned = first->send("CountTracks", {0});
+      const auto abandoned = first->send("ReaWeb_TransportControl", {"stop"});
       first->icons.clear(); first->icon_visible = true;
       first->options.on_navigation(); first->document = "reloaded";
       result(runtime, *first, first->send("__reawebHello", {1}));
@@ -1177,15 +1185,15 @@ int main() {
       CHECK(second->icon_visible && second->icons.empty());
       result(runtime, *second, second->send("__reawebHello", {1}));
       CHECK(result(runtime, *second, second->send("ReaWeb_GetAppInfo"))["result"] == app);
-      for (int n = 0; n < 16; ++n) first->send("GetTrack", {0, 1});
-      second->send("GetTrack", {0, 2});
+      for (int n = 0; n < 16; ++n) first->send("ReaWeb_TransportControl", {"play"});
+      second->send("ReaWeb_TransportControl", {"pause"});
       std::this_thread::sleep_for(std::chrono::milliseconds(30));
       until(runtime, [&] { return order.size() == 17; });
       CHECK(std::find(order.begin(), order.end(), 2) - order.begin() <= 1);
       bool rejected = false;
       std::thread wrong([&] { try { runtime.open("Tool/index.html"); } catch (const Error& e) { rejected = e.code == "WRONG_THREAD"; } });
       wrong.join(); CHECK(rejected);
-      for (int n = 0; n < 40; ++n) { first->send("CountTracks", {0}); second->send("CountTracks", {0}); }
+      for (int n = 0; n < 40; ++n) { first->send("ReaWeb_TransportControl", {"stop"}); second->send("ReaWeb_TransportControl", {"stop"}); }
       until(runtime, [&] { return calls == 81; });
       until(runtime, [&] { return runtime.diagnostics(id)["pendingCalls"] == 0 && runtime.diagnostics(second_id)["pendingCalls"] == 0; });
       CHECK(errors.empty());
@@ -1208,7 +1216,7 @@ int main() {
       CHECK(window->bounds["x"] == 123 && window->bounds["width"] == 777 && runtime.is_docked(id));
       CHECK(!window->inspector.floating && window->inspector.width_ratio == 0.57);
       result(runtime, *window, window->send("__reawebHello", {1}));
-      for (int n = 0; n < 257; ++n) window->send("CountTracks", {0});
+      for (int n = 0; n < 257; ++n) window->send("ReaWeb_TransportControl", {"stop"});
       runtime.tick(); CHECK(!runtime.is_open(id));
       CHECK(runtime.diagnostics(id)["stage"] == "failed");
       CHECK(errors.size() == 1 && errors[0].find("queue limit") != std::string::npos);
@@ -1218,6 +1226,9 @@ int main() {
       int began = 0, ended = 0;
       host.begin_undo = [&](void* p) { CHECK(p == current); ++began; };
       host.end_undo = [&](void*, const std::string&) { ++ended; };
+      host.get_track = [&](void*, int index) -> void* { return index == 0 ? &track : nullptr; };
+      host.track_count = [] { return 1; };
+      host.track_identity = [](int) { return "test-track"; };
       host.count_selected_items = [](void*) { return 1; };
       std::string active_take = "take-one";
       host.item_identity = [&](void*, int) { return std::make_pair(std::string("item-one"), active_take); };
@@ -1244,8 +1255,26 @@ int main() {
       until(runtime, [&] { for (size_t i = before; i < window->responses.size(); ++i) if (window->responses[i].value("event", "") == "takeselectionchange") return true; return false; });
       auto token = result(runtime, *window, window->send("ReaWeb_BeginUndo", {"gesture"}))["result"];
       CHECK(token.is_string() && began == 1);
-      CHECK(result(runtime, *window, window->send("Main_OnCommand", {40004, 0}))["error"]["code"] == "UNDO_BUSY");
+      auto selected = result(runtime, *window, window->send("ReaWeb_GetSelectedTrackRef"));
+      if (selected.contains("error")) throw std::runtime_error(selected.dump());
+      auto target = selected.at("result");
+      int track_writes = 0;
+      host.set_track_value = [&](void* t, const std::string& key, double value) {
+        CHECK(t == &track && key == "D_PAN" && value == .25); ++track_writes; return true;
+      };
+      Json write = {target, "D_PAN", .25};
+      CHECK(result(runtime, *window, window->send("ReaWeb_SetTrackValue", write)).at("result") == true);
+      const auto peer_id = runtime.open("Tool/index.html");
+      auto peer = windows.back().lock();
+      result(runtime, *peer, peer->send("__reawebHello", {1}));
+      CHECK(result(runtime, *peer, peer->send("ReaWeb_SetTrackValue", write))["error"]["code"] == "UNDO_BUSY");
+      runtime.close(peer_id); runtime.tick();
+      CHECK(result(runtime, *window, window->send("Main_OnCommand", {40004, 0}))["error"]["code"] == "UNKNOWN_API");
       CHECK(result(runtime, *window, window->send("ReaWeb_EndUndo", Json::array({token})))["result"] == true && ended == 1);
+      auto queued_write = window->send("ReaWeb_SetTrackValue", write);
+      ++generation;
+      CHECK(result(runtime, *window, queued_write)["error"]["code"] == "PROJECT_CHANGED" && track_writes == 1);
+      host.set_track_value = {};
       result(runtime, *window, window->send("ReaWeb_BeginUndo", {"reload"}));
       window->options.on_navigation(); window->document = "second";
       CHECK(ended == 2);
@@ -1351,21 +1380,27 @@ int main() {
       int latency_calls = 0, selection_count = 1;
       uint64_t revision = 0;
       latency_host.current_project = [&]() -> void* { CHECK(std::this_thread::get_id() == main_thread); return &storage; };
-      latency_host.count_tracks = [&](void*) { CHECK(std::this_thread::get_id() == main_thread); ++latency_calls; return 3; };
       latency_host.count_selected_tracks = [&](void*) { return selection_count; };
       latency_host.get_selected_track = [&](void*, int) -> void* { return &track; };
       latency_host.valid_track = [&](void*, void* value) { return value == &track; };
       latency_host.track_guid = [&](void*) { return guid; };
       latency_host.event_revision = [&](const std::string&) { return revision; };
       adapter::connect(latency_host);
+      latency_host.native_function = [&, resolve = latency_host.native_function](const char* name) -> void* {
+        if (std::string(name) == "OnStopButton") {
+          CHECK(std::this_thread::get_id() == main_thread); ++latency_calls;
+          return reinterpret_cast<void*>(+[] {});
+        }
+        return resolve(name);
+      };
       Runtime runtime(latency_host, root, [](const std::string&) {}, docks);
       const auto id = runtime.open("Tool/index.html"); auto window = windows.back().lock();
       result(runtime, *window, window->send("__reawebHello", {1}));
       const auto before = latency_calls;
-      const auto request = window->send("CountTracks", {0});
+      const auto request = window->send("ReaWeb_TransportControl", {"stop"});
       CHECK(latency_calls == before && window->response(request).is_null()); // No native execution in the WebView callback.
       runtime.tick();
-      CHECK(latency_calls == before + 1 && window->response(request)["result"] == 3);
+      CHECK(latency_calls == before + 1 && window->response(request).contains("result"));
       CHECK(runtime.diagnostics(id)["pendingCalls"] == 0);
       result(runtime, *window, window->send("ReaWeb_Subscribe", {"selectionchange"}));
       until(runtime, [&] { return runtime.diagnostics(id)["pendingCalls"] == 0; });
@@ -1383,7 +1418,7 @@ int main() {
       CHECK(window->response(large)["result"] == true);
       CHECK(runtime.diagnostics(id)["window"]["title"] == "second");
       // An already queued fast request is invalidated by navigation as usual.
-      const auto stale = window->send("CountTracks", {0});
+      const auto stale = window->send("ReaWeb_TransportControl", {"stop"});
       window->options.on_navigation();
       runtime.tick();
       CHECK(window->response(stale).is_null() && latency_calls == before + 1);

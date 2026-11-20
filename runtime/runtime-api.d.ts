@@ -1,4 +1,4 @@
-/** ReaWebAPI Runtime contract 2. Standard REAPER APIs use their original names. */
+/** ReaWebAPI Runtime contract 2. */
 type ReaWebDispose = () => Promise<void>;
 interface ReaWebVideoOptions {
   /** updateRate follows the project by default, or accepts a fixed finite rate from 1 to 75 FPS. */
@@ -309,6 +309,12 @@ interface ReaWebEvents {
   'project-saved': { projectEpoch: number; path: string; observation: 'file-updated-and-project-clean' };
   'theme-changed': ReaWebTheme;
 }
+/** Identifies a track within one project epoch. The index is only a lookup hint. */
+interface ReaWebTrackRef {
+  readonly projectEpoch: number;
+  readonly guid: string;
+  readonly index?: number;
+}
 interface ReaWebAPI {
   readonly video: {
     getSourceInfo(): Promise<ReaWebVideoSourceInfo>;
@@ -464,10 +470,6 @@ interface ReaWebAPI {
     apply(element?: HTMLElement): Promise<ReaWebDispose>;
   };
   readonly debug: {
-    /** Capacity for fixed native output buffers in this document (4096..16777216 bytes). Default 65536.
-     * NeedBig buffers grow through REAPER's allocator automatically. */
-    setBufferSize(bytes: number): Promise<number>;
-
     log(...values: unknown[]): Promise<boolean>;
     warn(...values: unknown[]): Promise<boolean>; error(...values: unknown[]): Promise<boolean>;
     inspect(value: unknown): Promise<boolean>; getLogs(): Promise<ReaWebLogEntry[]>;
@@ -481,19 +483,6 @@ interface ReaWebAPI {
     on(name: 'before-close' | 'before-reload' | 'cleanup', callback: (event: ReaWebCleanupEvent) => void | Promise<void>): Promise<ReaWebDispose>;
   };
   readonly transaction: {
-    /** 1–128 synchronous calls on the current project. Literal arguments are validated up front;
-     * references are resolved and validated before their call. See capabilities.batchMethods.
-     * BATCH_FAILED includes completed/results/cause; completed writes are not rolled back.
-     */
-    batch(calls: ReaWebBatchCall[], options?: { undoLabel?: string }): Promise<unknown[]>;
-    /** Collect Mirror calls synchronously. Tuple results support indexing and destructuring.
-     * Return a reference or nested plain object/array to select results; no return yields the ordered result array.
-     * References are not Promises or values for branching/arithmetic. Native void results remain null.
-     */
-    batch<T>(callback: (builder: ReaWebBatchBuilder) => T & (T extends PromiseLike<unknown> ? never : unknown),
-      options?: { undoLabel?: string }): Promise<ReaWebBatchResult<T>>;
-    /** One managed gesture at a time. Ends on close, reload, project change or after 30 seconds.
-     * Does not hold PreventUIRefresh across browser events. Uses the reviewed batch API set. End before batching. */
     beginUndo(label: string): Promise<string>;
     endUndo(token: string): Promise<boolean>;
     withUndo<T>(label: string, callback: () => T | Promise<T>): Promise<T>;
@@ -538,11 +527,16 @@ interface ReaWebAPI {
     /** Explicit coalescing: one in-flight write and the latest waiting value per track/key.
      * Superseded values settle without being sent. Does not create an Undo gesture.
      */
-    setTrackValueLatest(track: MediaTrackHandle, key: ReaWebContinuousTrackKey, value: number): Promise<{ applied: boolean; superseded: boolean }>;
+    setTrackValueLatest(track: ReaWebTrackRef, key: ReaWebContinuousTrackKey, value: number): Promise<{ applied: boolean; superseded: boolean }>;
 
     getFileInfo(path: string): Promise<ReaWebAudioFileInfo>;
     getWaveform(path: string, options?: ReaWebWaveformOptions): Promise<ReaWebWaveform>;
-    getTrackMeter(track: MediaTrackHandle): Promise<ReaWebTrackMeter>;
+    /** Returns the first selected track in the current project, or null for an empty selection. */
+    getSelectedTrackRef(): Promise<ReaWebTrackRef | null>;
+    getTrackMix(track: ReaWebTrackRef): Promise<{ name: string; volume: number }>;
+    applyTrackGain(track: ReaWebTrackRef, volume: number, undoLabel: string): Promise<{ name: string; volume: number }>;
+    controlTransport(action: 'play' | 'pause' | 'stop'): Promise<null>;
+    getTrackMeter(track: ReaWebTrackRef): Promise<ReaWebTrackMeter>;
   };
 }
 

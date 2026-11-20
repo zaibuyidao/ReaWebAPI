@@ -22,10 +22,10 @@
       do {
         requested = false;
         const revision = selectionRevision;
-        const track = await reaper.GetSelectedTrack(0, 0);
-        const name = track ? await reaper.GetTrackName(track) : null;
+        const track = await reaper.audio.getSelectedTrackRef();
+        const mix = track ? await reaper.audio.getTrackMix(track) : null;
         if (revision !== selectionRevision) continue;
-        label.textContent = name?.[0] ? name[1] : 'No track selected';
+        label.textContent = mix?.name ?? 'No track selected';
       } while (requested);
     } catch (error) {
       label.textContent = 'Refresh to read the current project';
@@ -42,12 +42,9 @@
       label.textContent = 'REAPER connection required';
       return;
     }
-    const { api } = await reaper.lifecycle.ready;
-    if (!api || !Array.isArray(api.availableMethods)) {
+    const { version } = await reaper.lifecycle.ready;
+    if (!reaper.audio?.getSelectedTrackRef || !reaper.audio.getTrackMix) {
       throw new Error('Install the current ReaWebAPI extension and reopen this page.');
-    }
-    if (!['GetSelectedTrack', 'GetTrackName'].every(name => api.availableMethods.includes(name))) {
-      throw new Error('This REAPER installation is missing a required API.');
     }
     // Do not put the first visible track read behind presentation/subscriptions.
     void refresh();
@@ -60,7 +57,7 @@
     });
     refreshButton.addEventListener('click', () => { void refresh(); });
     refreshButton.disabled = false;
-    status.textContent = `${api.available} REAPER APIs available. Edit app.js to begin.`;
+    status.textContent = `Connected to ReaWebAPI ${version}. Edit app.js to begin.`;
   };
   void start().catch(showError);
 })();

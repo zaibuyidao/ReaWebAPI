@@ -40,12 +40,24 @@ Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::str
   host_generation_ = host_.project_generation ? host_.project_generation() : 0;
   project_epoch_ = 1;
   register_native_monitors(monitors_, host_);
-  ReaWeb_ServiceCallbacks builtin{sizeof(ReaWeb_ServiceCallbacks), REAWEB_SERVICE_ABI, &services_,
-    [](void* context, uint64_t handle, uint64_t request, int, const char* method, const char*) -> int {
-      if (std::string(method) != "getInfo") return REAWEB_METHOD_NOT_FOUND;
+  ReaWeb_ServiceCallbacks builtin{sizeof(ReaWeb_ServiceCallbacks), REAWEB_SERVICE_ABI, this,
+    [](void* context, uint64_t handle, uint64_t request, int, const char* method, const char* payload) -> int {
+      auto& runtime = *static_cast<Runtime*>(context);
+      const std::string operation(method);
+      Json result;
+      if (operation == "getInfo") result = {{"version", REAWEB_VERSION}, {"serviceABI", REAWEB_SERVICE_ABI}};
+      else {
+        if (payload && std::string(payload) != "null") return REAWEB_INVALID_ARGUMENT;
+        if (operation == "getHostVersion") result = host_version(runtime.host_);
+        else if (operation == "getProjectSummary") result = project_summary(runtime.host_);
+        else if (operation == "getTransportSnapshot") {
+          if (!runtime.host_.event_snapshot) return REAWEB_SERVICE_ERROR;
+          result = runtime.host_.event_snapshot("transportchange");
+          if (!result.value("available", false)) return REAWEB_SERVICE_ERROR;
+        } else return REAWEB_METHOD_NOT_FOUND;
+      }
       if (!request) return REAWEB_OK;
-      return static_cast<ServiceRegistry*>(context)->complete(handle, request,
-        Json{{"version", REAWEB_VERSION}, {"serviceABI", REAWEB_SERVICE_ABI}}.dump().c_str(), REAWEB_OK, nullptr);
+      return runtime.services_.complete(handle, request, result.dump().c_str(), REAWEB_OK, nullptr);
     }, nullptr};
   uint64_t handle = 0;
   services_.add("runtime", &builtin, &handle);
@@ -872,17 +884,17 @@ void Runtime::dispatch_requests(Clock::time_point deadline) {
         response["result"]["projectEpoch"] = project_epoch_;
       } else {
         if (!s->ready || s->document != document) throw Error("DOCUMENT_STALE", "The bridge document is no longer active");
-        const bool project_call = method.rfind("ReaWeb", 0) != 0 || method == "ReaWeb_Batch" ||
-          method == "ReaWeb_BeginUndo" || method == "ReaWeb_GetTrackMeter";
+        const bool project_call = method == "ReaWeb_BeginUndo" || method == "ReaWeb_GetTrackMeter" ||
+          method == "ReaWeb_SetTrackValue" || method == "ReaWeb_GetSelectedTrackRef" || method == "ReaWeb_FileDialog" ||
+          method == "ReaWeb_GetTrackMix" || method == "ReaWeb_TransportControl" || method == "ReaWeb_ApplyTrackGain";
         if (project_call && (request.project != project_epoch_ || data.value("project", project_epoch_) != project_epoch_))
           throw Error("PROJECT_CHANGED", "The current project changed. Refresh the tool state before trying again.", {{"projectEpoch", project_epoch_}});
         // Deliver directly before entering a potentially modal native call.
         // Queuing this on the worker would defer delivery until the call returns.
         s->window->evaluate("window.__reawebReceive(" + Json{{"id", data["id"]}, {"document", document}, {"started", true}}.dump() + ");");
-        if (undo_owner_ && (method == "ReaWeb_Batch" ||
-            (project_call && undo_owner_ != s->id) || method.rfind("Undo_", 0) == 0 || method == "PreventUIRefresh"))
-          throw Error("UNDO_BUSY", "End the managed Undo gesture before batching or using another page");
-        if (undo_owner_ && project_call) s->bridge->validate_managed_call(method, data.at("args"));
+        if (undo_owner_ && project_call && undo_owner_ != s->id)
+          throw Error("UNDO_BUSY", "Another page owns the managed Undo gesture");
+        if (undo_owner_ && project_call) s->bridge->validate_managed_call(method);
         if (start_async(*s, request)) { ++s->processed; continue; }
         const bool diagnostic_call = diagnostic_log_.enabled(Diagnostics::Level::Debug, Diagnostics::Scope::Runtime, s->app->id);
         const auto call_started = diagnostic_call ? Clock::now() : Clock::time_point{};

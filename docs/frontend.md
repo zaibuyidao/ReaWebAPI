@@ -2,7 +2,7 @@
 
 **English** | [简体中文](frontend.zh-CN.md) · [Host API](host-api.md)
 
-The **Web Runtime v1** contract defines browser capabilities, resource loading and storage. Its version is independent of the extension version. JavaScript calls the 730 standard REAPER 7.80 APIs through Promises.
+Web Runtime v1 defines browser capabilities, resource loading and storage. Web pages access the host through the runtime namespaces on `window.reaper`.
 
 ## WebView Color Profile
 
@@ -55,7 +55,7 @@ import { render } from './ui.js';
 const config = await (await fetch('./data/config.json')).json();
 localStorage.setItem('theme', 'dark');
 await reaper.lifecycle.ready;
-const track = await reaper.GetTrack(0, 0);
+const track = await reaper.audio.getSelectedTrackRef();
 render(config, track);
 ```
 
@@ -195,7 +195,7 @@ Ordinary production origins use `reaweb://<appId>`. Required macOS/Linux Apps us
 
 In the tested WSLg environment, WebKitGTK's DMA-BUF renderer stalled animation frames despite a visible document. Running the helper with `WEBKIT_DISABLE_DMABUF_RENDERER=1` passed the full browser suite, including native requestAnimationFrame and WebGL. This is an environment setting, not a default forced by the extension or a JS polyfill. Validate the default renderer on your target Linux desktop; when affected, set the variable before launching REAPER. Native GTK viewport allocation is synchronized with the foreign X11 parent's client size.
 
-Implementation: `src/web/web_resources.*` handles local resources; `src/runtime/runtime.*` owns App origins and the shared profile lifetime; `src/platform/windows/platform_win.cpp`, `src/platform/macos/platform_mac.mm` and `src/platform/linux/linux_webkit.cpp` select native profiles and load the entry; `runtime/reaper.d.ts` describes the runtime metadata. Tests cover the native resource boundary, all 730 mirror ABI mappings and actual browser behavior.
+Implementation: `src/web/web_resources.*` handles local resources; `src/runtime/runtime.*` owns App origins and the shared profile lifetime; `src/platform/windows/platform_win.cpp`, `src/platform/macos/platform_mac.mm` and `src/platform/linux/linux_webkit.cpp` select native profiles and load the entry; `runtime/reaper.d.ts` describes the runtime metadata. Tests cover the native resource boundary and actual browser behavior.
 
 Native behavior references: [WebView2 local content](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/working-with-local-content), [WebKitGTK persistent cookies](https://webkitgtk.org/reference/webkit2gtk/2.42.5/method.CookieManager.set_persistent_storage.html). Native cookie persistence is explicitly enabled on Linux.
 

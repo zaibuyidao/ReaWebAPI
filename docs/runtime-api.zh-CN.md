@@ -6,15 +6,15 @@
 
 [English](runtime-api.md) | **简体中文**
 
-JavaScript Runtime 使用下列 17 个命名空间。730 项标准 REAPER 镜像的名称、Promise、参数及返回顺序保持不变。入口声明是 `reaper.d.ts`，它同时引用 `reaper-api.generated.d.ts` 和 `runtime-api.d.ts`。这三个文件应一起分发。
+网页通过 `window.reaper` 的运行时命名空间访问宿主。 分发 `reaper.d.ts` 和 `runtime-api.d.ts`。
 
-`capabilities.runtime.contract` 为 2，描述宿主 SDK；`capabilities.webRuntime.contract` 仍为 1，描述 Web 资源和存储约定。能力信息列出命名空间、事件、清理超时和音频上限；底层标准 API 是否存在仍应查询 `api.availableMethods`。
+`capabilities.runtime.contract` 为 2，`capabilities.webRuntime.contract` 为 1。
 
-就绪入口为 `await reaper.lifecycle.ready`。批处理及托管 Undo 统一到 `reaper.transaction`；连续混音控制使用 `reaper.audio.setTrackValueLatest`；能力查询和固定输出缓冲区设置分别使用 `reaper.system.getCapabilities()`、`reaper.debug.setBufferSize(bytes)`。参数、错误与清理约定见[宿主服务参考](host-api.zh-CN.md)。
+等待 `reaper.lifecycle.ready` 完成握手，再调用运行时服务。
 
 17 个命名空间共 91 个方法和 1 个 Promise 属性，Host Service 代理另提供 `invoke/send/on/off`。`capabilities.runtime.reservedNamespaces` 为空数组。完整方法和类型见 [API 清单](runtime-api-inventory.md)。
 
-`transaction.batch` 接受调用数组或同步 Mirror Builder 回调，支持自动引用、多返回值解构和结果类型推导，两种形式复用现有原生批处理实现。`transaction` 同时管理 Undo 分组，不承诺原子性、回滚或隔离。已完成写入不会自动撤回，其他编辑仍可能交错。详见[批处理契约](host-api.zh-CN.md#批处理与连续参数)。
+使用 `transaction.withUndo` 为相关编辑创建一个撤销步骤。
 
 `system.getCapabilities()` 与 `debug.getDiagnostics()` 新增 `webRuntime.crossOriginIsolation` 和 `webRuntime.browser`，等待当前文档缓存的能力探针。握手快照仍可能包含未检测的 `null` 字段。详见 [字段、错误与生命周期约定](frontend.zh-CN.md#app-级跨源隔离)。
 
@@ -150,7 +150,7 @@ const directory = await reaper.dialog.selectFolder();
 const restoreTheme = await reaper.theme.apply();
 ```
 
-对话框复用标准镜像 `GetUserFileName`，使用 REAPER 提供的原生对话框。取消返回 `null`，错误拒绝 Promise；保存对话框只选择路径，不写文件。`initialPath` 交由 REAPER 对话框解释，建议使用绝对路径。筛选扩展名不带点，`*` 表示所有文件。旧宿主缺少该 API 时返回 `API_UNAVAILABLE`。
+对话框复用官方 C++ SDK 的 `GetUserFileName`，使用 REAPER 提供的原生对话框。取消返回 `null`，错误拒绝 Promise；保存对话框只选择路径，不写文件。`initialPath` 交由 REAPER 对话框解释，建议使用绝对路径。筛选扩展名不带点，`*` 表示所有文件。旧宿主缺少该 API 时返回 `API_UNAVAILABLE`。
 
 `reaper.theme.getColors()` 返回 `{available, colors, cssVariables}`，包括 background/text/highlight/panel/border。`reaper.theme.apply(element?)` 默认作用于根元素，跟随主题变化，取消函数恢复先前的内联 CSS 值。`reaper.events.on('theme-changed', callback)` 仅订阅，不应用样式；缺少主题 API 时提供可用的默认配色并标记 `available:false`。不会修改 REAPER 主题。
 
@@ -172,7 +172,7 @@ button { border-color:var(--reaper-highlight); }
 ```js
 const info = await reaper.audio.getFileInfo('/path/to/audio.wav');
 const waveform = await reaper.audio.getWaveform(info.path, {points:1024});
-const track = await reaper.GetSelectedTrack(0, 0);
+const track = await reaper.audio.getSelectedTrackRef();
 const meter = track ? await reaper.audio.getTrackMeter(track) : null;
 ```
 
@@ -224,7 +224,7 @@ await dispose(); // off 后仍可安全调用
 
 `SDK/app-manifest.schema.json` 定义最小 Manifest。源码执行 `python tools/validate_app.py examples/runtime-features/runtime-demo/app.json`；独立 SDK 执行 `python tools/validate_app.py runtime-demo/app.json`。校验器只读，检查字段、文件存在及符号链接解析后的目录边界，不启动页面。
 
-本版 Manifest 不参与自动安装或启动；应用继续通过 `reaper.window.open` 打开 HTML。没有 App 管理器、自动更新、安装系统或权限执行机制，未实施的 `permissions` 字段会被校验器拒绝。可信应用仍拥有标准镜像及已有文件服务能力，不能将 Web 资源根目录限制误认为 Native API 权限沙箱。
+本版 Manifest 不参与自动安装或启动；应用继续通过 `reaper.window.open` 打开 HTML。没有 App 管理器、自动更新、安装系统或权限执行机制，未实施的 `permissions` 字段会被校验器拒绝。可信应用仍拥有运行时文件服务能力，不能将 Web 资源根目录限制误认为 Native API 权限沙箱。
 
 运行 [Runtime Studio](../examples/runtime-features/runtime-demo/index.html) 对应目录的 `reawebapi-runtime-demo.lua` 可体验窗口、事件、主题、对话框、音频波形、手动电平、诊断和清理状态保存。示例不需要构建。
 
@@ -240,7 +240,7 @@ await reaper.events.on('message', text => {
 await reaper.host.send({ type: 'setVolume', value: 0.5 });
 ```
 
-消息保持 FIFO，不合并、不提供初始快照、不回放。队列归当前文档所有，关闭或重载时清空。单条消息最多 1 MiB UTF-8，每方向最多 256 条，窗口双向合计最多 16 MiB。参见 [Lua 契约](host-api.zh-CN.md#lua-消息桥接)与 [Lua 后端示例](../examples/backends/lua-backend/README.md)。纯 JavaScript 的 Mirror/Runtime 开发方式保持可用。
+消息保持 FIFO，不合并、不提供初始快照、不回放。队列归当前文档所有，关闭或重载时清空。单条消息最多 1 MiB UTF-8，每方向最多 256 条，窗口双向合计最多 16 MiB。参见 [Lua 契约](host-api.zh-CN.md#lua-消息桥接)与 [Lua 后端示例](../examples/backends/lua-backend/README.md)。纯 JavaScript 的 Runtime 开发方式保持可用。
 
 Native Streams and platform additions: [English](native-streams.md) · [中文](native-streams.zh-CN.md).
 

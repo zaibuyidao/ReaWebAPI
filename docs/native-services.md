@@ -22,7 +22,7 @@ await stopUnload();
 
 `on` returns `Promise<Dispose>`, matching `events.on`. `off` removes every registration of the same callback for that event. Service events are discrete, ordered and have no snapshot replay. `unloaded` is reserved. Unregister rejects pending invokes with `EXTENSION_UNLOADED`, emits `unloaded` to interested consumers and removes subscriptions. Subscribe again after registering a replacement. A stale native handle cannot target a replacement. Window close and navigation cancel pending work and remove subscriptions. An unfinished invoke times out after 30 seconds of native execution. Cancellation does not roll back side effects.
 
-The built-in `runtime` service implements `getInfo`, returning `{version, serviceABI}`. It uses the same registry as third-party extensions. State queries and controls retain existing Mirror APIs.
+The built-in `runtime` service implements `getInfo`, returning `{version, serviceABI}`. It uses the same registry as third-party extensions. The service also offers named project and transport queries.
 
 The [`jsfx` service](jsfx-webui.md) synchronizes parameters for an explicitly associated native JSFX editor. Only its bound Hosted WebView can invoke parameter operations.
 
@@ -58,14 +58,10 @@ New sources use the existing `events.on/off` signatures and disposal behavior. A
 
 An initial snapshot is emitted after subscription. `available: false` means required host functions are unavailable. Unchanged snapshots do not increment revision. Project changes invalidate partial scans. Payloads exclude FX, routing, state chunks and full track/marker lists. Refresh only the data your UI needs:
 
-| State/control | Existing Mirror APIs |
-| --- | --- |
-| Track/selection | `CountTracks`, `CountSelectedTracks`, `GetTrack`, `GetSelectedTrack`, `GetTrackName`, `GetTrackColor`, `GetMediaTrackInfo_Value`, `SetMediaTrackInfo_Value` |
-| Transport | `OnPlayButton`, `OnPauseButton`, `OnStopButton`, `CSurf_OnRecord`, `GetPlayState`, `GetCursorPosition`, `GetPlayPosition`, `GetSetRepeat`, `Master_GetPlayRate`, `CSurf_OnPlayRateChange` |
-| Project | `EnumProjects`, `IsProjectDirty`, `GetProjectStateChangeCount` |
-| Timeline | `CountProjectMarkers`, `EnumProjectMarkers3`, `GetLastMarkerAndCurRegion`, `GetSet_LoopTimeRange2` |
+- For the selected track, obtain a track reference with `reaper.audio.getSelectedTrackRef()` and read its name and volume with `reaper.audio.getTrackMix(ref)`.
+- For project name, track count and play state, invoke `getProjectSummary` on the `runtime` service. Native extensions and Lua backends can use the official SDK or ReaScript API for additional project details.
 
-Existing events retain their original names and payloads. Clipboard, native drag/drop, window/dock/focus, platform/architecture and device queries continue through existing Runtime namespaces and Mirror functions. Service/event methods never enter the 730-function REAPER Mirror.
+Existing events retain their original names and payloads. Clipboard, native drag/drop, window/dock/focus, platform/architecture and device queries continue through existing Runtime namespaces.
 
 ## Verification
 

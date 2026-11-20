@@ -35,7 +35,7 @@ pid = os.posix_spawn(helper, [helper, str(output / 'profile')], dict(os.environ,
     file_actions=[(os.POSIX_SPAWN_DUP2, child.fileno(), 3), (os.POSIX_SPAWN_CLOSE, child.fileno())])
 child.close(); parent.setblocking(False)
 buffer, reports = b'', []
-bridge = '(() => {const reawebIsolationRequired=true;\n' + (source / 'runtime/reaper-api.generated.js').read_text() + (source / 'runtime/reaper.js').read_text() + '\n})();'
+bridge = '(() => {const reawebIsolationRequired=true;\n' + (source / 'runtime/reaper.js').read_text() + '\n})();'
 worker_source = (source / 'src/web/browser_probe.hpp').read_text().split('R"JS(', 1)[1].split(')JS";', 1)[0].encode()
 class ControlHandler(BaseHTTPRequestHandler):
     required = False

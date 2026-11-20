@@ -6,8 +6,7 @@ TypeScript declarations, templates and examples for the current ReaWebAPI releas
 
 | Packaged SDK entry | Purpose |
 | --- | --- |
-| `reaper.d.ts` | Type declaration entry point, referencing the Mirror and Runtime declarations |
-| `reaper-api.generated.d.ts` | 730 REAPER API signatures and result types |
+| `reaper.d.ts` | Web SDK declarations referencing `runtime-api.d.ts` |
 | `runtime-api.d.ts` | Runtime namespaces and data types |
 | `native-transport/` | [Realtime transport](../docs/realtime.md): ordinary Web subscriptions at 60/120 Hz, raw position-change metrics and CSV export |
 | `jsfx-webui.mjs` | [JSFX Web UI](../docs/jsfx-webui.md): `params`, shared `editor` sizing, Promise-based coalesced writes, grouped gestures, DSP streams, state, commands and binary resources. |
@@ -19,17 +18,17 @@ TypeScript declarations, templates and examples for the current ReaWebAPI releas
 | `web-runtime/` | Modules, resources, storage and browser capability checks |
 | `app-manifest.schema.json` | App metadata schema |
 
-Copy the SDK to your workspace and run `starter/reawebapi-starter.lua` from REAPER's Action List. For an existing project, include `reaper.d.ts` in `jsconfig.json` or `tsconfig.json` and keep the three declaration files together.
+Copy the SDK to your workspace and run `starter/reawebapi-starter.lua` from REAPER's Action List. For an existing project, include `reaper.d.ts` in `jsconfig.json` or `tsconfig.json` and keep both declaration files together.
 
 Customize the starter's native window name in `starter/index.html` using `<title>`. Dynamic titles and explicit overrides are described under [window titles](../docs/runtime-api.md#window-titles).
 
-The extension injects the browser runtime. Lua opens the page with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. Ordinary Apps without `app.json.id` persist a random ID in `.reawebapi/identity.json` under the App root. Moving the marker preserves identity, and copies split into separate identities when the original binding remains valid. Launcher filenames do not define App IDs, and old launcher-derived storage is not automatically migrated. Production pages normally use `reaweb://<appId>/...`. Required macOS/Linux Apps use a persistent authenticated loopback origin, as described in the frontend guide. Explicit IDs remain globally unique. JavaScript uses the Mirror and Runtime APIs after `reaper.lifecycle.ready` resolves.
+The extension injects the browser runtime. Lua opens the page with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. Ordinary Apps without `app.json.id` persist a random ID in `.reawebapi/identity.json` under the App root. Moving the marker preserves identity, and copies split into separate identities when the original binding remains valid. Launcher filenames do not define App IDs, and old launcher-derived storage is not automatically migrated. Production pages normally use `reaweb://<appId>/...`. Required macOS/Linux Apps use a persistent authenticated loopback origin, as described in the frontend guide. Explicit IDs remain globally unique. JavaScript uses the Runtime APIs after `reaper.lifecycle.ready` resolves.
 
-`reaper.transaction.batch(b => { ... })` collects reviewed Mirror calls with automatic result references and tuple destructuring. Return a reference, object or array to select typed results. The callback is synchronous. The [batch contract](../docs/host-api.md#batches-and-continuous-controls) also documents the existing call-array form.
+Authenticated external WebSocket clients can discover named services, events and streams through `system.getCapabilities`.
 
-[Developer guide](../docs/development.md) · [REAPER API](../docs/api-reference.md) · [Runtime API](../docs/runtime-api.md) · [API inventory](../docs/runtime-api-inventory.md) · [DevTools](../docs/devtools.md)
+[Developer guide](../docs/development.md) · [Runtime API](../docs/runtime-api.md) · [API inventory](../docs/runtime-api-inventory.md) · [DevTools](../docs/devtools.md)
 
-Pure JavaScript apps use the REAPER Mirror and Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](../examples/backends/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
+Pure JavaScript apps use the REAPER Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](../examples/backends/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
 
 EEL2 backends use the same message bridge. The SDK includes a [minimal example](../examples/backends/eel-backend/README.md) and a [bidirectional track mixer](../examples/backends/eel-mixer/README.md), installed under `eel-backend/` and `eel-mixer/`.
 

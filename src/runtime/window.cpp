@@ -155,8 +155,9 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     [this, entry, launcher = app->launcher_source](const std::string& next) { return open_impl(next, entry.parent_path(), "", launcher); },
     [this, id] { close(id); }, [this, id] { devtools(id); },
     [this, id](bool docked) { return set_docked(id, docked); }, [this, id] { return is_docked(id); },
-    [this, id](const std::string& method, const Json& args) { return host_call(id, method, args); }
-  }, std::to_string(id));
+    [this, id](const std::string& method, const Json& args) { return host_call(id, method, args); },
+    [this] { return project_epoch_; }
+  });
   std::weak_ptr<Session> weak = session;
   auto window_resources = app->resources ? std::make_shared<WebResources>(app->resources->root(), app_id, app->resources->isolation_required()) : nullptr;
 #ifndef _WIN32

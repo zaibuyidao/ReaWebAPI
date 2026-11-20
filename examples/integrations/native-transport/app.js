@@ -14,7 +14,7 @@ const messages = {
     bits:'Raw {state} · play {play} / pause {pause} / record {record}', noTimestamp:'No sample timestamp',
     waiting:'Waiting for data · no update for {seconds} seconds', receiving:'{mode} · {count} packets received · No Lua loop',
     switching:'Subscription switch in progress', saveTitle:'Save transport CSV', launchError:'Run the Lua launcher in REAPER.',
-    versionError:'Requires ReaWebAPI v0.3.9.23 or later.', unsupported:'Realtime transport is unavailable on this host.'
+    versionError:'Install the ReaWebAPI build supplied with this transport example.', unsupported:'Realtime transport is unavailable on this host.'
   },
   'zh-CN': {
     language:'语言', title:'实时播放状态', subtitle:'Lua 仅打开窗口后退出 · 无 defer 循环 · 无位置插值',
@@ -29,7 +29,7 @@ const messages = {
     bits:'原始值 {state} · play {play} / pause {pause} / record {record}', noTimestamp:'无采样时间戳',
     waiting:'等待数据 · {seconds} 秒未更新', receiving:'{mode} · 已接收 {count} 个包 · Lua 无循环',
     switching:'订阅切换中', saveTitle:'保存播放状态 CSV', launchError:'请在 REAPER 中运行 Lua 启动脚本。',
-    versionError:'需要 ReaWebAPI v0.3.9.23 或更高版本。', unsupported:'当前宿主不支持 Realtime transport。'
+    versionError:'请安装与本走带示例配套的 ReaWebAPI 扩展。', unsupported:'当前宿主不支持 Realtime transport。'
   }
 };
 let language='en', ready=false, lastError=null, diagnosticSnapshot=null;
@@ -117,9 +117,8 @@ function draw() {
 const action = fn => async () => {try {await fn();} catch(error) {report(error);}};
 el('mode').onchange = action(()=>switchMode(el('mode').value));
 el('reset').onclick = reset;
-el('play').onclick = action(()=>reaper.OnPlayButton());
-el('pause').onclick = action(()=>reaper.OnPauseButton());
-el('stop').onclick = action(()=>reaper.OnStopButton());
+for (const command of ['play', 'pause', 'stop'])
+  el(command).onclick = action(() => reaper.audio.controlTransport(command));
 async function readDiagnostics() {
   diagnosticSnapshot={realtime:await reaper.realtime.getDiagnostics(),frames:(await reaper.debug.getDiagnostics()).frames};
   el('native').textContent=show(diagnosticSnapshot);
@@ -132,7 +131,7 @@ setLanguage('en');
 window.demoReady = (async()=>{
   if(!window.reaper)throw uiError('launchError');
   await reaper.lifecycle.ready;
-  if(!reaper.realtime)throw uiError('versionError');
+  if(!reaper.realtime || !reaper.audio?.controlTransport)throw uiError('versionError');
   const capabilities=await reaper.realtime.getCapabilities();
   if(!capabilities.sources.transport?.available)throw uiError('unsupported');
   await switchMode('60');

@@ -6,7 +6,7 @@ Named C/C++ services use `reaper.host.service(name)` through the [Native Service
 
 **English** | [简体中文](host-api.zh-CN.md) · [Developer guide](development.md)
 
-These are ReaWebAPI host methods, separate from the [730 REAPER APIs](api-reference.md). JavaScript window methods target their current WebView document and do not accept a window ID. All JavaScript methods return Promises. Exact types are in `reaper.d.ts`.
+Web pages access the host through the runtime namespaces on `window.reaper`. Authenticated external WebSocket clients can discover named services, events and streams through `system.getCapabilities`.
 
 ## Startup and capabilities
 
@@ -20,9 +20,9 @@ Small isolated requests and bounded replies use a fast path, while native API ex
 | `reaper.system.getCapabilities()` | `ReaWebCapabilities` | Version, protocol, registered methods, available native APIs, events and limits |
 | `reaper.debug.getDiagnostics()` | `ReaWebDiagnostics` | Backend/browser version, window state, lifecycle stage, document/project generation, queue counters, last error and scheduler budget |
 
-`capabilities.api` contains `schemaVersion`, `reaperVersion`, `catalogueHash`, `official`, `implemented`, `compatible`, `partial`, `missing`, `available`, `availableMethods`, `unavailable` and per-function `bindings`. `methods` includes registered host methods as well as standard APIs. A method being registered does not guarantee that its native function exists in an older REAPER. Check `api.availableMethods` for that.
+The handshake reports runtime commands, events, limits, window ID and project epoch.
 
-`projectScope` is `all`. `limits` reports request bytes, batch calls and pending calls. Diagnostics counters describe this window, and `lastError` is a diagnostic string rather than a complete history of rejected calls. The scheduler's 2 ms budget is a soft dispatch budget, not a deadline for an individual native function.
+`projectScope` is `all`. `limits` reports request bytes and pending calls. Diagnostics counters describe this window, and `lastError` is a diagnostic string rather than a complete history of rejected calls. The scheduler's 2 ms budget is a soft dispatch budget, not a deadline for an individual native function.
 
 Both capabilities and diagnostics include `webRuntime`: `contract` (1), `mode` (`app-virtual` / `app-loopback` / `dev-http`), `appId`, `origin`, `storageIsolation` (`origin`), and `localResources`. See the [Web Runtime contract](frontend.md).
 
@@ -77,58 +77,13 @@ Project changes and native track-selection notifications are observed on each ma
 
 FX events observe focus, last-touched parameters and project changeCount to invalidate cached FX UI; they do not report every plugin parameter edit. Transport state is the REAPER bitmask; when available is false other transport fields may be absent. Selection scans are incremental, so large selections may take longer than 100 ms.
 
-## Batches and continuous controls
+## Continuous controls and Undo
 
-`reaper.transaction.batch(callsOrBuilder, { undoLabel? })` accepts 1–128 calls, supplied as a call array or collected by a synchronous Builder callback. `capabilities.batchMethods` and `ReaWebBatchMethod` list 456 reviewed APIs for transport, project and object queries, MIDI, FX, envelopes, routing, markers, time mapping and conversion helpers. Project switching, action dispatch, modal dialogs, file I/O, resource lifecycle operations, manual Undo/refresh scopes and audio sample buffers are excluded. All 730 standard APIs remain callable individually.
-
-Read transport values in one RPC without requiring a selected track:
-
-```javascript
-const data = await reaper.transaction.batch(b => {
-  const position = b.GetPlayPosition();
-  const state = b.GetPlayState();
-  const tempo = b.Master_GetTempo();
-  return { position, state, tempo };
-});
-```
-
-Calls execute consecutively on the main thread. This reduces RPC round trips without freezing the audio clock or setting a polling rate. New methods still require availability in the installed REAPER version. Admission is reviewed per method, including all argument modes. Getters that can rescan files or instantiate resources are not admitted merely by name.
-
-References can also connect dependent calls. This example requires a track at index zero:
-
-```javascript
-const data = await reaper.transaction.batch(b => {
-  const track = b.GetTrack(0, 0);
-  const [, name] = b.GetTrackName(track);
-  const volume = b.GetMediaTrackInfo_Value(track, 'D_VOL');
-  return { name, volume };
-});
-```
-
-`b` preserves Mirror names, argument order and optional slots. Its methods return deferred references, with tuple indexing and destructuring in Lua result order. Return a reference or a nested plain object/array containing references and literals to select the resolved result. Omit the return value to receive the ordered native result array, as with `batch(calls)`. Void results remain `null` in both forms. `ReaWebBatchBuilder` derives method signatures from the Mirror, and `ReaWebBatchResult<T>` resolves the callback's result type.
-
-The callback runs after the handshake and must be synchronous. References belong to that callback and can be passed as complete API arguments or returned, but cannot be awaited, used for arithmetic or inspected as real handles. They are always truthy objects, so do not branch on them or compare them to `null`. Read outside the batch when control flow depends on a native result. For example, check selection with `await reaper.GetSelectedTrack(0, 0)` before collecting calls that require a selected track. Unknown methods, async callbacks, cross-builder references and invalid structures reject with `INVALID_ARGUMENT` before dispatch. Callback exceptions propagate unchanged.
-
-The Builder lowers calls to the existing `ReaWeb_Batch` request, with no additional RPC or Native layer. Native validation and `BATCH_FAILED` details remain unchanged.
-
-`ValidatePtr` and `ValidatePtr2` can test null or expired object handles and return `false`. They do not conditionally skip later calls. Foreign-project handles are still rejected, and other object APIs still require live handles.
-
-Batches operate on the **current project only**. Foreign project handles and objects are rejected before any write, including a foreign handle later in the batch. Methods, availability and arguments of calls without references are prevalidated. Arguments depending on earlier results are validated just before their call. Reference indices start at zero; optional paths select array elements or object properties, with at most eight segments. References must be complete top-level arguments and cannot point forward.
-
-```javascript
-const results = await reaper.transaction.batch([
-  { method: 'GetSelectedTrack', args: [0, 0] },
-  { method: 'GetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL'] },
-  { method: 'SetMediaTrackInfo_Value', args: [{ $ref: 0 }, 'D_VOL', 0.5] }
-], { undoLabel: 'Set selected track volume' });
-// A null selection fails before its setter. Tuple results can use {$ref: 0, path: [1]}.
-```
-
-Each batch executes synchronously with paired refresh protection. An optional non-empty label (up to 256 UTF-8 bytes) creates one Undo block. Native void results occupy `null` slots. False/zero results retain their REAPER meaning; the legacy track-value setter rejects native false. A failed batch reports `BATCH_FAILED` with `completed`, `results`, `rolledBack: false` and optional `cause`/`cleanupError`. Completed writes remain; **this is not a transaction**.
-
-`reaper.transaction.beginUndo(label)` returns a document-owned token; `reaper.transaction.endUndo(token)` closes it. Use `reaper.transaction.withUndo(label, async () => { ... })` for JavaScript finally cleanup. Managed gestures use the same reviewed API set and current-project restriction as batches. One gesture can be active across all windows; other windows' project calls, nested groups, batches and manual Undo/refresh calls reject `UNDO_BUSY`. No refresh lock is held between browser events.
+`reaper.transaction.beginUndo(label)` returns a document-owned token; `reaper.transaction.endUndo(token)` closes it. Use `reaper.transaction.withUndo(label, async () => { ... })` for JavaScript finally cleanup. Managed gestures are scoped to the current project. One gesture can be active across all windows; other windows' project calls, nested groups and unsupported operations reject `UNDO_BUSY`. No refresh lock is held between browser events.
 
 The host closes a gesture on page reload/close, project switch/load or after 30 seconds. Ending an already closed token rejects `STALE_UNDO`. External scripts and user edits can interleave while awaiting; keep gestures short. This grouping cannot prevent external edits or roll back writes. Raw REAPER Undo scopes remain the caller's responsibility and are not covered by managed cleanup.
+
+`await reaper.audio.getSelectedTrackRef()` returns a reference to the first selected track, or `null` when none is selected. Pass the same reference to `getTrackMeter` and `setTrackValueLatest` for the duration of a gesture. The reference follows the track when reordered. Acquire a new reference after switching projects or deleting the track.
 
 `reaper.audio.setTrackValueLatest(track, key, value)` coalesces waiting values for `D_VOL`, `D_PAN`, `B_MUTE` and `I_SOLO`. It retains one in-flight and one latest waiting write per track/key, up to 128 slots. Superseded waiting values resolve to `{ applied: false, superseded: true }`. Await all pending writes before ending a gesture.
 
@@ -155,16 +110,12 @@ Whole-value file calls and clipboard text are limited to 16 MiB. Clipboard write
 
 ## Errors and limits
 
-`reaper.debug.setBufferSize(bytes)` sets the document's default fixed output-buffer capacity and returns the new size. Valid range: 4 KiB–16 MiB, default 64 KiB. REAPER `NeedBig` buffers grow automatically. Large native outputs still need to fit the result limit.
 
 | Limit | Value |
 | --- | --- |
 | Bridge JSON request/result | 64 MiB |
 | String or binary value | 16 MiB |
-| Audio array | 1,048,576 double elements |
 | Pending JavaScript calls | 256 |
-| Batch size | 128 calls |
-| Live handles per document | 65,536 |
 | Queue expiry / client watchdog before execution | 25 s / 30 s |
 
 Once native execution starts, its queue watchdog is cleared. Native functions cannot be preempted. No cancellation or automatic retry is provided. Objects deleted outside the page may invalidate handles before a queued call executes.
@@ -172,17 +123,15 @@ Once native execution starts, its queue watchdog is cleared. Native functions ca
 | Error code | Meaning and response |
 | --- | --- |
 | `NO_RUNTIME` | Missing native WebView transport. Open through the Lua launcher |
-| `PROTOCOL_MISMATCH`, `SCHEMA_MISMATCH` | Incompatible bridge/definitions. Update the extension and reopen the page |
+| `PROTOCOL_MISMATCH` | Incompatible bridge/definitions. Update the extension and reopen the page |
 | `API_UNAVAILABLE`, `UNKNOWN_API` | Native function absent, or method not in this runtime. Check capabilities and API spelling |
 | `INVALID_ARGUMENT`, `INVALID_REQUEST`, `INVALID_PATH` | Invalid values, message or local entry path |
 | `INVALID_HANDLE`, `STALE_HANDLE` | Wrong handle type or expired object. Reacquire the object |
 | `PROJECT_CHANGED`, `DOCUMENT_STALE`, `WINDOW_CLOSED` | Calling context changed. Refresh or reopen before continuing |
-| `QUEUE_LIMIT`, `HANDLE_LIMIT`, `WINDOW_LIMIT` | Too many outstanding calls, handles or windows |
-| `BUFFER_LIMIT`, `MESSAGE_LIMIT`, `ARRAY_CHANGED` | Oversized data, insufficient fixed buffer, or resized sample array |
+| `QUEUE_LIMIT`, `WINDOW_LIMIT` | Too many outstanding calls or windows |
+| `BUFFER_LIMIT`, `MESSAGE_LIMIT` | Value or message exceeds its size limit |
 | `TIMEOUT`, `REQUEST_EXPIRED` | No timely reply, or request expired before execution. Inspect state before repeating writes |
-| `RESOURCE_IN_USE` | Attempt to destroy a PCM source still owned by a take |
-| `BATCH_FAILED`, `UNDO_UNAVAILABLE` | Inspect completed results, or the host cannot provide the requested Undo grouping |
-| `UNSUPPORTED_PARAMETER`, `UNSUPPORTED_PROJECT` | An argument is outside the batch prevalidator's narrower contract |
+| `UNDO_UNAVAILABLE` | The host cannot start the requested Undo group |
 | `UNKNOWN_EVENT`, `DOCK_UNAVAILABLE`, `DOCK_FAILED` | Unsupported event or failed docking request |
 | `ICON_FORMAT`, `ICON_INVALID`, `ICON_LIMIT` | Unsupported format, invalid image or icon limit exceeded |
 | `ICON_APPLY_FAILED`, `ICON_SUPERSEDED` | Native icon application failed, or a newer request replaced this pending request |
@@ -219,7 +168,7 @@ Lua relative HTML paths resolve from REAPER's `Scripts/` directory. The starter 
 
 [v0.1.8 Runtime namespaces](runtime-api.md) · [v0.1.8 命名空间接口](runtime-api.zh-CN.md)
 
-JavaScript opens pages with `reaper.window.open(path, options?)` and waits on `reaper.lifecycle.ready`. Lua bootstrap uses `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains native ReaScript functions. The 730 standard REAPER mirror names are unchanged.
+JavaScript opens pages with `reaper.window.open(path, options?)` and waits on `reaper.lifecycle.ready`. Lua bootstrap uses `reaper.ReaWeb_Open(path)` because the browser has not started yet; the table above contains native ReaScript functions.
 
 `reaper.events.off(name, callback)` removes all matching registrations of that callback. Subscribe to `native-drop` through `reaper.events.on('native-drop', callback)`; it carries files/text/x/y and has neither coalescing nor an initial snapshot. See [Runtime API](runtime-api.md).
 
@@ -241,7 +190,7 @@ JavaScript `reaper.window.open(path, options?)` and `ReaWeb_OpenDev(url)` retain
 
 ## Lua message bridge
 
-Two workflows coexist: pure JavaScript uses the REAPER Mirror and Runtime APIs. A Lua backend uses normal REAPER/ReaScript APIs and exchanges text with a WebView UI. See the [example](../examples/backends/lua-backend/README.md).
+Two workflows coexist: pure JavaScript uses the Runtime APIs. A Lua backend uses normal REAPER/ReaScript APIs and exchanges text with a WebView UI. See the [example](../examples/backends/lua-backend/README.md).
 
 `ReaWeb_Send(id, message)` accepts UTF-8 text after `ReaWeb_IsReady(id)` is true. It does not serialize Lua tables or inspect JSON. The original string reaches `reaper.events.on("message", callback)`. Messages wait for a subscription in that document. Each subscribed callback sees subsequent messages without coalescing or replay.
 

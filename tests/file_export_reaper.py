@@ -90,7 +90,7 @@ try {
     check(!(await reaper.fs.stat('sdk-cancel.bin')).exists,'SDK cancel published');
     await rejects(()=>reaper.fs.writeBinary('old-too-large.bin',new Uint8Array(16*1024*1024+1)),'BUFFER_LIMIT');
     writer=await reaper.fs.openWrite('orphan.bin');await writer.write(new Uint8Array([1,2,3]));
-    await reaper.host.send(JSON.stringify({passed:true,bytes:progress,capability:caps.runtime.fs.streamingWrite,hostVersion:caps.version,reaper:await reaper.GetAppVersion()}));
+    await reaper.host.send(JSON.stringify({passed:true,bytes:progress,capability:caps.runtime.fs.streamingWrite,hostVersion:caps.version,reaper:await reaper.host.service('runtime').invoke('getHostVersion')}));
     sessionStorage.setItem('reload','1');await reaper.window.reload();
   }
 } catch(e) {await reaper.host.send(JSON.stringify({passed:false,error:String(e),code:e.code,stack:e.stack}));}

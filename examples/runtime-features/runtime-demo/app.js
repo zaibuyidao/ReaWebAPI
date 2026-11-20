@@ -23,8 +23,8 @@ function draw() {
 }
 async function selectedTrack() {
   const revision = ++trackRevision;
-  const track = await reaper.GetSelectedTrack(0, 0);
-  const name = track ? (await reaper.GetTrackName(track))[1] : 'No track selected';
+  const track = await reaper.audio.getSelectedTrackRef();
+  const name = track ? (await reaper.audio.getTrackMix(track)).name : 'No track selected';
   if (revision === trackRevision) el('track').textContent = name;
   return track;
 }

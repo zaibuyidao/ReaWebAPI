@@ -16,8 +16,8 @@ def run_windows(host):
   const start=performance.now();
   await reaper.lifecycle.ready;
   const readyMs=performance.now()-start;
-  const track=await reaper.GetSelectedTrack(0,0);
-  document.getElementById('name').textContent=(await reaper.GetTrackName(track))[1];
+  const track=await reaper.audio.getSelectedTrackRef();
+  document.getElementById('name').textContent=(await reaper.audio.getTrackMix(track)).name;
   const usableMs=performance.now()-start;
   if(document.readyState!=='complete')await new Promise(r=>addEventListener('load',r,{once:true}));
   await reaper.host.send(JSON.stringify({readyMs,usableMs,navigation:performance.getEntriesByType('navigation')[0]?.toJSON(),

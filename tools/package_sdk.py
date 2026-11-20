@@ -10,18 +10,15 @@ import zipfile
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.api_sync.generate import verify
+from tools.clean_retired_mirror import clean_stage
 from tools.version import source_version
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def payload(root, version, revision):
-    schema = json.loads((root / 'api/reaper_api.json').read_text(encoding='utf-8-sig'))
-    bindings = json.loads((root / 'api/bindings.json').read_text(encoding='utf-8-sig'))
-    verify(root, schema, bindings)
     paths = {f'ReaWebAPI/SDK/{name}': root / 'runtime' / name for name in (
-        'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper-api.generated.d.ts', 'reaper.js', 'reaper-api.generated.js', 'browser-files.mjs', 'browser-files.d.mts', 'jsfx-webui.mjs', 'jsfx-webui.d.mts', 'README.md', 'README.zh-CN.md')}
+        'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper.js', 'browser-files.mjs', 'browser-files.d.mts', 'jsfx-webui.mjs', 'jsfx-webui.d.mts', 'README.md', 'README.zh-CN.md')}
     paths['ReaWebAPI/docs/jsfx-webui.md'] = root / 'docs/jsfx-webui.md'
     for name in ('video-preview.md', 'video-preview.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
@@ -93,12 +90,9 @@ def payload(root, version, revision):
         paths[f'ReaWebAPI/SDK/modern/{name}'] = root / 'examples/templates/modern' / name
     for name in ('README.md', 'README.zh-CN.md', 'development.md', 'development.zh-CN.md', 'linux-webkit-runtime.md', 'linux-webkit-runtime.zh-CN.md', 'eel-backend-compatibility.md', 'eel-backend-compatibility.zh-CN.md', 'release-notes.zh-CN.md',
                  'devtools.md', 'devtools.zh-CN.md', 'diagnostics.md', 'diagnostics.zh-CN.md',
-                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'api-reference.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
+                 'host-api.md', 'host-api.zh-CN.md', 'runtime-api.md', 'runtime-api.zh-CN.md', 'runtime-api-inventory.md', 'permission-design.md', 'frontend.md', 'frontend.zh-CN.md', 'release-notes.md', 'source-layout.md', 'frame-timer-verification.md', 'frame-timer-verification.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
-    for name in ('reaper_api.json', 'bindings.json'):
-        paths[f'ReaWebAPI/SDK/api/{name}'] = root / 'api' / name
-    for name in ('README.md', 'README.zh-CN.md'):
-        paths[f'ReaWebAPI/api/{name}'] = root / 'api' / name
+    paths['ReaWebAPI/SDK/tools/clean_retired_mirror.py'] = root / 'tools/clean_retired_mirror.py'
     for name in ('README.md', 'README.zh-CN.md', 'THIRD_PARTY.md', 'LICENSE.md', 'COPYING', 'COPYING.LESSER'):
         paths[f'ReaWebAPI/{name}'] = root / name
     # Resolve documentation links from source locations to their installed paths.
@@ -129,8 +123,7 @@ def payload(root, version, revision):
             # Source examples are nested; packaged examples remain beside the SDK declarations.
             content = content.replace(b'../../../runtime/', b'../')
         files[name] = content
-    metadata = dict(version=version, revision=revision, reaperVersion=schema['source']['reaperVersion'],
-                    catalogueHash=schema['catalogueHash'], bindings=len(bindings['functions']))
+    metadata = dict(version=version, revision=revision)
     files['ReaWebAPI/SDK/BUILD.json'] = (json.dumps(metadata, indent=2) + '\n').encode()
     return files
 
@@ -141,6 +134,9 @@ def stage_sdk(stage, version, revision='local', root=ROOT):
     for pattern in ('VALIDATION*.md', 'SMOKE_TEST*.md', '*-isolation-validation*.md'):
         for path in (stage / 'ReaWebAPI/docs').glob(pattern):
             path.unlink()
+    kept = clean_stage(stage)
+    if kept:
+        raise ValueError(f"Unexpected retired paths in staging tree: {kept}")
     for directory in ('ReaWebAPI/SDK/video-preview', 'Scripts/ReaWebAPI/Example/video-preview'):
         (stage / directory / 'ReaWebAPI_VideoPreview.lua').unlink(missing_ok=True)
     for name, content in files.items():

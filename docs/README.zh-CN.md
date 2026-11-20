@@ -10,11 +10,10 @@
 | [Runtime Diagnostics](diagnostics.zh-CN.md) | 持久化日志、App/Runtime 筛选及可观测生命周期事件 |
 | [DevTools](devtools.zh-CN.md) | 快捷键、检查器布局、状态保存及平台降级 |
 | [SDK](../runtime/README.zh-CN.md) | 类型声明、模板和示例 |
-| [REAPER API](api-reference.md) | 730 项 REAPER 7.80 接口签名和返回类型 |
 | [Runtime API](runtime-api.zh-CN.md) | 窗口、事件、文件、音频和应用服务 |
 | [Native Service](native-services.zh-CN.md) | 原生事件、监测数据与 C/C++ 服务接入 |
 | [JSFX Web UI](jsfx-webui.md) | Native JSFX editor hosting and bound parameter service / 原生 JSFX 编辑器托管与参数服务 |
-| [External Client](external-clients.zh-CN.md) | 带认证的本机 Native API、Service、Event 和 Stream 接入 |
+| [External Client](external-clients.zh-CN.md) | 带认证的本机具名服务、事件和流接入 |
 | [接口清单](runtime-api-inventory.md) | Runtime 命名空间和方法索引 |
 | [EEL2 后端](eel-backend-compatibility.zh-CN.md) | 调用约定、可选参数、限制和示例 |
 | [宿主 API](host-api.zh-CN.md) | Lua 入口、原生桥接行为和错误码 |
@@ -23,7 +22,6 @@
 | [源码结构](source-layout.md) | 原生模块与构建目标 |
 | [版本更新](release-notes.md) | 当前版本说明 |
 
-扩展维护者可参考 [API Sync 指南](https://github.com/zaibuyidao/ReaWebAPI/tree/main/api)，更新和校验 API 目录。
 
 [Native Streams](native-streams.md) · [Native Stream 中文](native-streams.zh-CN.md)
 

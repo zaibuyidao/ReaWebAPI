@@ -22,7 +22,7 @@ for app in apps:
     shutil.copytree(root / 'examples/runtime-features/web-runtime', app)
     web_runtime_network.configure(app, endpoints)
     with (app / 'app.js').open('a', encoding='utf-8') as stream:
-        stream.write("\nwindow.runtimeCheck.then(report => reaper.ShowConsoleMsg('RUNTIME_REPORT:' + JSON.stringify(report)));\n")
+        stream.write("\nwindow.runtimeCheck.then(report => reaper.host.send('RUNTIME_REPORT:' + JSON.stringify(report)));\n")
 x = C.CDLL('libX11.so.6')
 x.XOpenDisplay.argtypes = [C.c_char_p]; x.XOpenDisplay.restype = C.c_void_p
 x.XDefaultRootWindow.argtypes = [C.c_void_p]; x.XDefaultRootWindow.restype = C.c_ulong
@@ -33,8 +33,8 @@ x.XSync.argtypes = [C.c_void_p, C.c_int]; x.XCloseDisplay.argtypes = [C.c_void_p
 display = x.XOpenDisplay(None); assert display, 'X11 display required'
 window = x.XCreateSimpleWindow(display, x.XDefaultRootWindow(display), 30, 30, 800, 800, 0, 0, 0)
 x.XMapWindow(display, window); x.XSync(display, 0)
-bridge = '(() => {\n' + (root / 'runtime/reaper-api.generated.js').read_text() + (root / 'runtime/reaper.js').read_text() + '\n})();'
-methods = list(json.loads((root / 'api/bindings.json').read_text())['functions'])
+bridge = '(() => {\n' + (root / 'runtime/reaper.js').read_text() + '\n})();'
+methods = ['ReaWeb_GetWindowState', 'ReaWeb_Subscribe', 'ReaWeb_ServiceInvoke', 'ReaWeb_GetCapabilities', 'ReaWeb_HostSend']
 origins, reports = {}, []
 data = fixture / 'ReaWebAPI' / 'WebViewData'
 data.mkdir(parents=True)
@@ -72,12 +72,12 @@ try:
                         request = json.loads(message['message']); method = request['method']
                         value = None
                         if method == '__reawebHello': value = dict(protocol=1, projectEpoch=1, methods=methods, events=['windowstatechange'])
-                        elif method == 'GetAppVersion': value = '7.smoke'
+                        elif method == 'ReaWeb_ServiceInvoke' and request['args'] == ['runtime', 'getHostVersion', None]: value = '7.smoke'
                         elif method in ('ReaWeb_GetWindowState', 'ReaWeb_Subscribe'): value = dict(framelessActive=False)
                         elif method in ('ReaWeb_DocumentTitle', 'ReaWeb_Favicon'): value = True
                         elif method == 'ReaWeb_GetCapabilities':
                             value = dict(webRuntime=dict(contract=1, origin=origins[app], mode='app-virtual', storageIsolation='origin'))
-                        elif method == 'ShowConsoleMsg':
+                        elif method == 'ReaWeb_HostSend':
                             assert message['id'] == page_id, message
                             report = json.loads(request['args'][0].split(':', 1)[1])
                         else: raise AssertionError(request)

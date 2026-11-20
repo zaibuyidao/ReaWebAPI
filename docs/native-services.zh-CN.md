@@ -18,7 +18,7 @@ await dispose();
 
 `on` 返回 `Promise<Dispose>`，与现有事件 API 一致。`off` 移除该事件中同一 callback 的全部注册。服务事件按顺序投递，不合并，不重放初始状态。`unloaded` 为保留事件。服务注销时，pending invoke 以 `EXTENSION_UNLOADED` 拒绝，并清除订阅。重新注册后需重新订阅。旧句柄不能访问同名新服务。关闭和重载会清理 pending invoke 与订阅。原生执行后 30 秒仍未完成的调用返回 `TIMEOUT`。取消不回滚已执行的业务操作。
 
-内建 `runtime` 服务提供 `getInfo`，返回 `{version, serviceABI}`，与第三方服务使用同一注册机制。状态查询和控制继续复用 Mirror。
+内建 `runtime` 服务提供 `getInfo`，返回 `{version, serviceABI}`，与第三方服务使用同一注册机制。工程摘要由 `getProjectSummary` 提供。
 
 ## C/C++ Extension
 
@@ -50,7 +50,7 @@ callback 应及时返回。不依赖 REAPER 的耗时工作放入扩展工作线
 | `currentRegionChanged` | 当前 Region 的编号、起止位置、名称和颜色，或 `null`。播放时使用播放位置，否则使用编辑光标。 |
 | `loopPointsChanged`、`timeSelectionChanged` | 以秒为单位的 `start`、`end`。 |
 
-新事件共用 `projectEpoch`、`revision`、`available`。订阅后提供初始快照，无变化不增加 revision。失效通知包含 `count`、`invalidated: true`，不携带 FX、路由、State Chunk 或完整列表。通过 `CountSelectedTracks`、`GetSelectedTrack`、`GetTrackName`、`GetMediaTrackInfo_Value`、`EnumProjectMarkers3` 等现有 Mirror 按需读取。工程 ID 是会话内不透明标识，不是 Mirror 句柄。完整字段和控制 API 对照见 [English contract](native-services.md)。
+新事件共用 `projectEpoch`、`revision`、`available`。订阅后提供初始快照，无变化不增加 revision。失效通知包含 `count`、`invalidated: true`，不携带 FX、路由、State Chunk 或完整列表。通过 `reaper.audio.getSelectedTrackRef()` 与 `getTrackMix(ref)` 读取当前轨道，工程名称、轨道数和播放状态可通过 `runtime.getProjectSummary` 获取。工程 ID 是会话内不透明标识，不是 Mirror 句柄。完整字段和控制 API 对照见 [English contract](native-services.md)。
 
 现有旧事件、Clipboard、Drag & Drop、Window/Dock/Focus、System 与设备查询保留原实现和接口。高频二进制 Stream 不属于本版本。
 

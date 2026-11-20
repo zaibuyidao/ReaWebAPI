@@ -12,5 +12,3 @@
 - [LunaSVG 3.5.0](https://github.com/sammycage/lunasvg/tree/v3.5.0) and its pinned PlutoVG submodule, Samuel Habteselassie: MIT. Used for in-memory SVG window icons. PlutoVG includes Sean Barrett’s stb image/font code under MIT and rasterizer/stroker code under the FreeType Project License. This software is based in part on the work of the [FreeType Team](https://freetype.org/).
 
 Dependency notices are included under `ReaWebAPI/licenses/` in platform installation bundles. Exact source revisions and SHA-256 hashes for the nlohmann/json release archive and WebView2 package are pinned in `CMakeLists.txt`.
-
-The API catalogue is derived from the [official REAPER ReaScript documentation](https://www.reaper.fm/sdk/reascript/reascripthelp.html), Cockos Incorporated. It stores factual API signatures and links, with source version and SHA-256 recorded in `api/reaper_api.json`. Full documentation prose is not bundled.

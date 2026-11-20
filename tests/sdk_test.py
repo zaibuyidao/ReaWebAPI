@@ -12,7 +12,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.package_sdk import build_sdk, payload
-from tools.api_sync.generate import verify
+from tools.clean_retired_mirror import RETIRED, clean_stage
 
 
 def check_links(files):
@@ -34,13 +34,6 @@ def check_links(files):
 
 class SdkTests(unittest.TestCase):
     def test_complete_reference_and_source_links(self):
-        schema = json.loads((ROOT / 'api/reaper_api.json').read_text())
-        manifest = json.loads((ROOT / 'api/bindings.json').read_text())
-        verify(ROOT, schema, manifest)
-        doc = (ROOT / 'docs/api-reference.md').read_text(encoding='utf-8')
-        headings = re.findall(r'^### (\w+)$', doc, re.M)
-        self.assertEqual(set(headings), set(schema['functions']))
-        self.assertEqual(len(headings), 730)
         files = {p.relative_to(ROOT).as_posix(): p.read_bytes() for directory in ('docs', 'runtime', 'api', 'examples')
                  for p in (ROOT / directory).rglob('*') if p != ROOT / 'docs/VALIDATION.md'
                  and not p.is_relative_to(ROOT / 'docs/proposals')
@@ -48,17 +41,6 @@ class SdkTests(unittest.TestCase):
         files.update({n: (ROOT / n).read_bytes() for n in ('README.md', 'README.zh-CN.md', 'THIRD_PARTY.md', 'LICENSE.md', 'COPYING', 'COPYING.LESSER')})
         files.update({n: (ROOT / n).read_bytes() for n in ('src/public/reaweb_service.h', 'src/public/reaweb_stream.h', 'src/public/reaweb_tasks.h', 'tests/native_service_extension.cpp', 'tests/native_stream_extension.cpp')})
         check_links(files)
-
-    def test_batch_declarations_match_native_registry(self):
-        source = (ROOT / 'src/core/batch.hpp').read_text(encoding='utf-8')
-        native = set(re.findall(r'"([A-Za-z][A-Za-z0-9_]+)"', source))
-        types = (ROOT / 'runtime/reaper.d.ts').read_text(encoding='utf-8')
-        union = types.split('type ReaWebBatchMethod =', 1)[1].split(';', 1)[0]
-        declared = set(re.findall(r"'([^']+)'", union))
-        self.assertEqual(native, declared)
-        schema = json.loads((ROOT / 'api/reaper_api.json').read_text(encoding='utf-8'))
-        self.assertTrue(native <= set(schema['functions']))
-        self.assertEqual(len(native), 456)
 
     def test_sdk_does_not_require_local_validation(self):
         read_bytes = Path.read_bytes
@@ -75,6 +57,24 @@ class SdkTests(unittest.TestCase):
                              for name in files))
         check_links(files)
 
+    def test_upgrade_preserves_modified_files_and_user_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = root / 'previous.zip'
+            with zipfile.ZipFile(old, 'w') as archive:
+                for name in RETIRED:
+                    archive.writestr(name, b'old release')
+            with zipfile.ZipFile(old) as archive:
+                archive.extractall(root)
+                modified = root / RETIRED[0]
+                modified.write_bytes(b'user changes')
+                user_file = root / 'ReaWebAPI/SDK/api/custom.json'
+                user_file.write_bytes(b'user data')
+                self.assertEqual(clean_stage(root, archive), [RETIRED[0]])
+                self.assertEqual(modified.read_bytes(), b'user changes')
+                self.assertEqual(user_file.read_bytes(), b'user data')
+                self.assertFalse(any((root / name).exists() for name in RETIRED[1:]))
+
     def test_standalone_sdk_content_links_and_checksums(self):
         with tempfile.TemporaryDirectory() as directory:
             archive = build_sdk(Path(directory), '0.1.8.3', 'test-sdk')
@@ -88,7 +88,8 @@ class SdkTests(unittest.TestCase):
                 metadata = json.loads(files['ReaWebAPI/SDK/BUILD.json'])
                 self.assertEqual(metadata['version'], '0.1.8.3')
                 self.assertTrue(files['ReaWebAPI/docs/release-notes.md'].startswith(b'# ReaWebAPI v0.1.8.3\n'))
-                self.assertEqual(metadata['bindings'], 730)
+                self.assertNotIn('externalAPI', metadata)
+                self.assertTrue(set(RETIRED).isdisjoint(files))
                 self.assertEqual(metadata['revision'], 'test-sdk')
                 self.assertIn('ReaWebAPI/SDK/web-runtime/modules/空 格#%.js', files)
                 self.assertIn(b'type="module"', files['ReaWebAPI/SDK/web-runtime/index.html'])

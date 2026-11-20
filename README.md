@@ -8,10 +8,10 @@ Space routing starts from ordinary Apps’ `app.json.dawKeyboard` (default `fals
 
 - [Realtime subscriptions](docs/realtime.md) for transport snapshots at requested rates up to 120 Hz on Windows, macOS and Linux, including playback rate, position-specific tempo and meter, and cumulative QN, with shared sampling and lifecycle diagnostics.
 - [Frame channel](docs/frame-timer-verification.md) with native transport samples and replaceable Lua content, independent of Lua polling frequency on Windows, macOS and Linux. Small frames avoid worker round-trips, and pending state updates coalesce behind one encoded event batch.
-- 730 standard REAPER 7.80 API bindings with TypeScript declarations.
-- Mirror-aware Batch Builder for 456 reviewed APIs, including transport queries and time conversions, with deferred references, tuple destructuring and typed results.
+- Web pages access the host through the runtime namespaces on `window.reaper`.
+- Authenticated external WebSocket clients can discover named services, events and streams through `system.getCapabilities`.
 - Lua or EEL2 backend + WebView UI through `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and `message` events, with fair multi-window delivery and bounded communication turns independent of project sampling.
-- Optional [External Clients](docs/external-clients.md) over authenticated localhost WebSocket, sharing the Native API, Batch, Service, Event and binary Stream capabilities.
+- Optional [External Clients](docs/external-clients.md) over authenticated localhost WebSocket, with access to named services, events and binary streams.
 - [Native Events and Host Services](docs/native-services.md) with subscription-driven state monitoring and a C/C++ extension registry, independent of Lua loops.
 - [JSFX Web UI](docs/jsfx-webui.md) hosts associated JSFX in track, master, take, input, monitoring and nested container FX, with instance-bound `params`, host parameter metadata, loaded-instance enum choices in `enum` (unavailable fields are `null`), normalized writes and grouped Undo gestures. `editor` provides persistent, shared content sizing. The optional EEL SDK adds DSP streams, structured state, commands and binary resources. The [native channel](docs/jsfx-native-channel.md) uses bounded staging programs to reduce EEL compilation overhead during initialization. Initial capability and state reads avoid an additional host scheduling cycle on Windows, macOS and Linux. SDK-managed DSP streams preserve subscriptions across session replacement and transport recovery.
 - [Overlay layers and native mouse routing](docs/window-overlay.md) for floating Apps, with JS/Lua controls and explicit platform requirements.
@@ -45,7 +45,7 @@ Download a package matching your **REAPER process architecture** from [Releases]
 | macOS | ARM64, Intel x64 | macOS 14+ |
 | Linux | x64, ARM64 | Ubuntu 24.04 or compatible, WebKitGTK 4.1, X11/XWayland |
 
-REAPER 6.68+ is supported. REAPER 7.80+ provides the complete API catalogue.
+REAPER 6.68+ is supported.
 
 | Package | Contents |
 | --- | --- |
@@ -73,7 +73,7 @@ Run `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` from the Action List to open 
 
 External programs can enable **External Clients** in the same Preferences page and connect to `ws://127.0.0.1:9123`. The server is disabled by default. See the [protocol](docs/external-clients.md) and [standalone browser Demo](examples/integrations/external-client/README.md).
 
-Lua opens an App with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. In JavaScript, await `reaper.lifecycle.ready`, then call the REAPER Mirror or Runtime namespaces such as `reaper.window` and `reaper.events`. API calls return Promises, with arguments and results following REAPER's Lua signatures.
+Lua opens an App with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. In JavaScript, await `reaper.lifecycle.ready`, then call Runtime namespaces such as `reaper.window` and `reaper.events`. Host calls return Promises.
 
 Start with `SDK/starter/reawebapi-starter.lua` or use `SDK/modern/` for Vite and TypeScript. `SDK/runtime-demo/reawebapi-runtime-demo.lua` opens Runtime Studio.
 
@@ -83,7 +83,7 @@ Set the window name with HTML `<title>` or `document.title`, including Docker la
 
 External HTTP, HTTPS and mailto navigation opens in the system default handler while the App stays open. Open other local HTML with `reaper.window.open(path)`. See [navigation behavior](docs/frontend.md#navigation).
 
-[SDK](runtime/README.md) · [Developer guide](docs/development.md) · [REAPER API](docs/api-reference.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md) · [DevTools](docs/devtools.md)
+[SDK](runtime/README.md) · [Developer guide](docs/development.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md) · [DevTools](docs/devtools.md)
 
 All Apps share `ReaWebAPI/WebViewData/`. App identities, private data and window state remain under `ReaWebAPI/Apps/<appId>/`. Ordinary WebUIs without `app.json.id` persist random IDs in `<App root>/.reawebapi/identity.json`. Moves preserve identity, and copies receive separate IDs when the original binding remains valid. Upgrading an App without an explicit ID or marker creates a new identity without migrating its old launcher-derived storage. Old data is retained. See the [storage contract](docs/frontend.md#resource-origin-and-storage) for legacy-record limits, App IDs, origin isolation and native cookie behavior.
 
@@ -102,11 +102,11 @@ On Windows, use MSVC x64 with `-A x64`. On macOS, select `-DCMAKE_OSX_ARCHITECTU
 
 The extension version is defined by `project(ReaWebAPI VERSION …)` in `CMakeLists.txt`, including an optional fourth component. Pushing to the default branch builds all platforms and publishes `v<version>` after the checks pass. Maintain the current changes in `docs/release-notes.md`. Published versions are not overwritten.
 
-[Source layout](docs/source-layout.md) · [API maintenance](api/README.md) · [Release notes](docs/release-notes.md) · [Third-party notices](THIRD_PARTY.md)
+[Source layout](docs/source-layout.md) · [Release notes](docs/release-notes.md) · [Third-party notices](THIRD_PARTY.md)
 
 Licensed under [LGPL-3.0-or-later](LICENSE.md).
 
-Pure JavaScript apps use the REAPER Mirror and Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](examples/backends/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
+Pure JavaScript apps use the Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](examples/backends/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
 
 EEL2 backends use the same message bridge. The SDK includes a [minimal example](examples/backends/eel-backend/README.md) and a [bidirectional track mixer](examples/backends/eel-mixer/README.md), installed under `eel-backend/` and `eel-mixer/`. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
 
@@ -125,3 +125,11 @@ The [SVG overlay example](examples/windows/overlay/README.md) is a bilingual, si
 `reaper.video` exposes shared project video frames through Native Streams, including direct Windows video-worker delivery and shared native D3D11/Metal presentation on Windows/macOS. Verified video-module mappings include REAPER 7.84–7.86 on Windows x64, macOS ARM64 and Linux x86_64. See [Video Preview](docs/video-preview.md) for installation, API, rendering and platform limits.
 
 Use [sequential file export](docs/file-export.md) for large files while retaining existing `saveBlob()` calls.
+
+## Upgrade from a mirror-enabled version
+
+Close REAPER, back up the installed files, and keep the exact previously installed platform ZIP (or the corresponding standalone SDK ZIP). Extract the new package into the REAPER resource directory. Run the command below with your actual paths. The utility compares each retired file with the previous archive and reports edited files as Preserved. To roll back, close REAPER and restore the original platform package and matching SDK into the same directory.
+
+```sh
+python "/path/to/resource/ReaWebAPI/SDK/tools/clean_retired_mirror.py" --resource-root "/path/to/resource" --previous-package "/path/to/previous.zip"
+```

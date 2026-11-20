@@ -19,24 +19,20 @@ async function main() {
   if (!window.reaper) throw new Error('Open this page with reawebapi-modern.lua or reawebapi-modern-dev.lua in REAPER.');
   const r = window.reaper;
   await r.lifecycle.ready;
-  projectName = await r.GetProjectName(0);
-  el('project').textContent = (projectName || 'Unsaved project') + ' · ' + await r.CountTracks(0) + ' tracks';
+  const runtime = r.host.service('runtime');
+  const project = await runtime.invoke<{ name: string; trackCount: number }>('getProjectSummary');
+  projectName = project.name;
+  el('project').textContent = (projectName || 'Unsaved project') + ' · ' + project.trackCount + ' tracks';
   action('gain', async () => {
-    const track = await r.GetSelectedTrack(0, 0);
+    const track = await r.audio.getSelectedTrackRef();
     if (!track) throw new Error('Select a track first.');
-    return r.transaction.batch(b => {
-      b.SetMediaTrackInfo_Value(track, 'D_VOL', Math.pow(10, -6 / 20));
-      const [, name] = b.GetTrackName(track);
-      return { name, volume: b.GetMediaTrackInfo_Value(track, 'D_VOL') };
-    }, { undoLabel: 'Set track to −6 dB' });
+    return r.audio.applyTrackGain(track, Math.pow(10, -6 / 20), 'Set track to −6 dB');
   });
   action('save', () => r.fs.writeFile('snapshot.json', JSON.stringify({ projectName, saved: new Date().toISOString() }, null, 2), { overwrite: true }));
-  action('transport-snapshot', () => r.transaction.batch(b => {
-    const position = b.GetPlayPosition();
-    const state = b.GetPlayState();
-    const tempo = b.Master_GetTempo();
+  action('transport-snapshot', async () => {
+    const { position, state, tempo } = await runtime.invoke<{ position: number; state: number; tempo: number }>('getTransportSnapshot');
     return { position, state, tempo };
-  }));
+  });
   action('read', async () => JSON.parse(await r.fs.readFile('snapshot.json')));
   action('copy', () => r.clipboard.writeText(projectName));
   action('paste', () => r.clipboard.readText());

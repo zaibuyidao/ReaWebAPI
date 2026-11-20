@@ -18,16 +18,6 @@
 /docs/SMOKE_TEST*.md
 /docs/*-isolation-validation*.md
 !/examples/
-!/api/
-/api/*
-!/api/reaper_api.json
-!/api/bindings.json
-!/api/README.md
-!/api/README.zh-CN.md
-!/api/changelog/
-/api/changelog/*
-!/api/changelog/*.md
-
 !/.github/
 /.github/*
 !/.github/workflows/
@@ -40,13 +30,10 @@
 !/tools/package_sdk.py
 !/tools/release.py
 !/tools/version.py
-!/tools/native_bindings.py
+!/tools/clean_retired_mirror.py
+!/tools/bridge_script.py
 !/tools/validate_app.py
 !/tools/build_webkit_runtime.py
-!/tools/api_sync/
-/tools/api_sync/*
-!/tools/api_sync/*.py
-
 # Generated files inside the allowed source directories.
 CMakeFiles/
 CMakeCache.txt
@@ -90,6 +77,8 @@ Thumbs.db
 !/tests/isolation_emulator.js
 !/tests/reapack_check.rb
 !/tests/CMakeLists.txt
-/tests/native_abi_generated.cpp
+!/tests/fixtures/
+/tests/fixtures/*
+!/tests/fixtures/retired-mirror-names.json
 node_modules/
 /examples/templates/modern/dist/

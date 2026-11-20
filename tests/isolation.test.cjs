@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { webcrypto } = require('node:crypto');
-const methods = Object.keys(JSON.parse(fs.readFileSync('api/bindings.json')).functions);
-const source = fs.readFileSync('runtime/reaper-api.generated.js', 'utf8') + fs.readFileSync('runtime/reaper.js', 'utf8');
+const methods = [];
+const source = fs.readFileSync('runtime/reaper.js', 'utf8');
 function setup({ required = false, isolated = true, workerMode = 'success', loading = false } = {}) {
   const counts = { workers: 0, terminated: 0, revoked: 0, stopped: 0, fetches: 0 };
   let browser = {}, failure;

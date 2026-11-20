@@ -1,10 +1,7 @@
 #include "core/core.hpp"
-#include "core/native.hpp"
 #include "runtime/services.hpp"
 #include "runtime/file_writer.hpp"
-#include "core/batch.hpp"
 #include <regex>
-#include "api_schema.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -12,12 +9,6 @@
 
 namespace reaweb {
 namespace {
-const Json& api_schema() {
-  // Validated, immutable schema projection embedded by the offline build step.
-  static const Json schema = Json::parse(api_schema_json);
-  return schema;
-}
-
 std::string string_arg(const Json& value) {
   if (!value.is_string()) throw Error("INVALID_ARGUMENT", "Expected a string");
   auto str = value.get<std::string>();
@@ -77,14 +68,8 @@ void validate_external_url(const std::string& url) {
     throw Error("INVALID_URL", "External links must include a destination");
 }
 
-Bridge::Bridge(Host& host, Controls controls, std::string session)
-  : ReaperApiCore(host, session), controls_(std::move(controls)), session_(std::move(session)) {
-  for (const auto& entry : native_entries()) {
-    const auto* binding = &entry;
-    add_reaper(entry.name, [this, binding](const Json& args) { return native_->invoke(*binding, args); });
-  }
-  if (methods_.size() != api_schema().at("bindings").size())
-    throw Error("SCHEMA_MISMATCH", "Native API registry does not match the embedded schema");
+Bridge::Bridge(Host& host, Controls controls)
+  : controls_(std::move(controls)), host_(host) {
   add("ReaWeb_Open", 1, 1, [this](const Json& a) { return controls_.open(string_arg(a[0])); });
   add("ReaWeb_OpenEx", 2, 2, [this](const Json& a) {
     string_arg(a[0]);
@@ -106,10 +91,7 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
   add("ReaWeb_GetCapabilities", 0, 0, [this](const Json&) {
     Json names = Json::array();
     for (const auto& entry : methods_) names.push_back(entry.first);
-    auto api = api_schema();
-    api.erase("knownMethods");
-    api.update(native_->capabilities());
-    return Json{{"version", REAWEB_VERSION}, {"protocol", 1}, {"methods", names}, {"api", std::move(api)}, {"projectScope", "all"},
+    return Json{{"version", REAWEB_VERSION}, {"protocol", 1}, {"methods", names}, {"projectScope", "all"},
       {"events", runtime_events()},
       {"runtime", {{"contract", 2}, {"namespaces", {"window", "theme", "dialog", "events", "lifecycle", "debug", "fs", "audio",
                                                   "clipboard", "dragDrop", "app", "system", "transaction", "host", "stream", "realtime", "video"}},
@@ -122,10 +104,8 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
           {"kinds", {"frame", "audio", "spectrum", "meter", "waveform", "binary", "midi"}}}},
         {"dragDrop", {{"maxFiles", 256}, {"maxTextBytes", value_limit}, {"effect", "copy"}}},
         {"cleanupTimeoutMs", 2000}, {"audio", {{"maxChannels", 32}, {"maxWaveformPoints", 8192}, {"maxPendingJobs", 8}}}}},
-      {"batchMethods", batch_methods()},
-      {"limits", {{"requestBytes", message_limit}, {"batchCalls", batch_limit}, {"pendingCalls", 256}}}};
+      {"limits", {{"requestBytes", message_limit}, {"pendingCalls", 256}}}};
   });
-  add("ReaWeb_Batch", 1, 2, [this](const Json& a) { return batch(a); });
   for (const auto* name : {"ReaWeb_StreamOpen", "ReaWeb_StreamDetach"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
   add("ReaWeb_StreamDiagnostics", 0, 0, [this](const Json& a) { return controls_.host_call("ReaWeb_StreamDiagnostics", a); });
@@ -153,11 +133,6 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
     add(name, 3, 3, [](const Json&) -> Json { throw Error("MAIN_THREAD_REQUIRED", "Host Service requires Runtime dispatch"); });
   for (const auto* name : {"ReaWeb_ServiceSubscribe", "ReaWeb_ServiceUnsubscribe"})
     add(name, 2, 2, [](const Json&) -> Json { throw Error("MAIN_THREAD_REQUIRED", "Host Service requires Runtime dispatch"); });
-  add("ReaWeb_SetBufferSize", 1, 1, [this](const Json& a) { return native_->set_buffer_size([&]() -> size_t {
-    if (!a[0].is_number_unsigned() && (!a[0].is_number_integer() || a[0].get<int64_t>() < 0))
-      throw Error("INVALID_ARGUMENT", "bytes must be a positive integer");
-    return a[0].get<size_t>();
-  }()); });
   for (const auto& name : {"ReaWeb_GetWindowState", "ReaWeb_GetDiagnostics", "ReaWeb_Focus"})
     add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
   for (const auto& name : {"ReaWeb_SetShortcutRouting", "ReaWeb_SetMouseMode", "ReaWeb_SetMouseRegions", "ReaWeb_SetTitle", "ReaWeb_SetIcon", "ReaWeb_SetIconVisible", "ReaWeb_SetFrameless", "ReaWeb_SetCornerRadius", "ReaWeb_SetKeyboardCapture", "ReaWeb_SetDawKeyboard", "ReaWeb_Subscribe", "ReaWeb_Unsubscribe"})
@@ -181,23 +156,7 @@ Bridge::Bridge(Host& host, Controls controls, std::string session)
   for (const auto& name : {"ReaWeb_SetBounds", "ReaWeb_SetVisible", "ReaWeb_Log", "ReaWeb_LifecycleSubscribe", "ReaWeb_LifecycleComplete", "ReaWeb_AudioFileInfo", "ReaWeb_DragFiles", "ReaWeb_DragText", "ReaWeb_RevealPath"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });
   add("ReaWeb_AudioWaveform", 1, 2, [this](const Json& a) { return controls_.host_call("ReaWeb_AudioWaveform", a); });
-  add("ReaWeb_GetTrackMeter", 1, 1, [this](const Json& a) {
-    auto track = native_->pointer(a[0], "MediaTrack");
-    if (!track) throw Error("INVALID_HANDLE", "A track meter requires a live track handle");
-    auto peak = reinterpret_cast<double (*)(void*, int)>(native_->resolve("Track_GetPeakInfo"));
-    auto info = reinterpret_cast<double (*)(void*, const char*)>(native_->resolve("GetMediaTrackInfo_Value"));
-    if (!peak || !info) throw Error("API_UNAVAILABLE", "Track meter APIs are unavailable");
-    const double count = info(track, "I_NCHAN");
-    if (!std::isfinite(count) || count < 1 || count > 128 || std::floor(count) != count)
-      throw Error("AUDIO_UNSUPPORTED", "Invalid track channel count");
-    Json values = Json::array(), db = Json::array();
-    for (int channel = 0; channel < static_cast<int>(count); ++channel) {
-      double value = peak(track, channel);
-      if (!std::isfinite(value) || value < 0) throw Error("AUDIO_INVALID_DATA", "Invalid meter value");
-      values.push_back(value); db.push_back(value > 0 ? Json(20 * std::log10(value)) : Json());
-    }
-    return Json{{"channels", static_cast<int>(count)}, {"peak", values}, {"peakDb", db}, {"unit", "linear-amplitude"}};
-  });
+  add_runtime_calls();
 
 }
 
@@ -206,14 +165,6 @@ Bridge::~Bridge() = default;
 void Bridge::add(const std::string& name, size_t min, size_t max, std::function<Json(const Json&)> fn) {
   methods_.emplace(name, Method{min, max, std::move(fn)});
 }
-
-void Bridge::add_reaper(const std::string& name, std::function<Json(const Json&)> fn) {
-  const auto& bindings = api_schema().at("bindings");
-  if (!bindings.contains(name)) throw Error("SCHEMA_MISMATCH", "Unreviewed native binding: " + name);
-  const auto& definition = bindings.at(name);
-  add(name, definition.at("minArgs").get<size_t>(), definition.at("maxArgs").get<size_t>(), std::move(fn));
-}
-
 
 Json parse_request(const std::string& message) {
     if (message.size() > message_limit) throw Error("MESSAGE_LIMIT", "Bridge message exceeds 64 MiB");
@@ -247,16 +198,12 @@ Json Bridge::dispatch_request(const Json& request) {
   try {
     auto method = methods_.find(request.at("method").get<std::string>());
     if (method == methods_.end()) {
-      const auto& known = api_schema().at("knownMethods");
-      const auto& name = request.at("method");
-      if (std::binary_search(known.begin(), known.end(), name))
-        throw Error("SCHEMA_MISMATCH", "Native registry is missing a catalogued API", {{"method", name}});
       throw Error("UNKNOWN_API", "API is not registered in this runtime");
     }
     const auto& args = request["args"];
     if (args.size() < method->second.min_args || args.size() > method->second.max_args)
       throw Error("INVALID_ARGUMENT", "Wrong argument count");
-    observe_project();
+    project_ = host_.current_project();
     return Json{{"id", request["id"]}, {"document", request.value("document", Json())}, {"result", method->second.invoke(args)}};
   } catch (const Error& e) {
     return error_response(request, e.code, e.what(), e.details);

@@ -79,7 +79,7 @@ private:
     uint64_t id = 0, sequence = 0;
     std::string identity;
     std::shared_ptr<ExternalConnection> connection;
-    std::unique_ptr<ReaperApiCore> core;
+    std::map<std::string, std::string> project_ids;
     std::map<std::string, Subscription> subscriptions;
     std::map<std::string, Json> events;
     std::map<std::string, std::string> consumers;

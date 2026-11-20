@@ -1,5 +1,4 @@
 #include "runtime/runtime.hpp"
-#include "core/batch.hpp"
 #include <algorithm>
 #include <regex>
 
@@ -7,7 +6,7 @@ namespace reaweb {
 namespace {
 const std::vector<std::string> events = {"trackSelectionChanged", "trackStateChanged", "transportChanged", "projectChanged",
   "markersChanged", "regionsChanged", "currentRegionChanged", "loopPointsChanged", "timeSelectionChanged"};
-const std::vector<std::string> methods = {"auth.authenticate", "system.getInfo", "system.getCapabilities", "api.call", "api.batch",
+const std::vector<std::string> methods = {"auth.authenticate", "system.getInfo", "system.getCapabilities",
   "service.invoke", "service.send", "service.subscribe", "service.unsubscribe", "events.subscribe", "events.unsubscribe", "stream.open", "stream.close"};
 void shape(const Json& params, std::initializer_list<const char*> required, std::initializer_list<const char*> optional = {}) {
   if (!params.is_object()) throw Error("INVALID_ARGUMENT", "params must be an object");
@@ -73,23 +72,24 @@ void Runtime::sync_external() {
     if (found) continue;
     auto session = std::make_shared<ExternalSession>();
     session->id = ++next_external_; session->identity = external_token(); session->connection = connection;
-    session->core = std::make_unique<ReaperApiCore>(host_, session->identity, true);
-    connection->project_epoch = project_epoch_;
     external_sessions_.emplace(session->id, std::move(session));
   }
 }
 Json Runtime::external_event_data(ExternalSession& session, const std::string& event, Json data) {
-  // The legacy monitor's project identities are internal pointer strings. Only
-  // this transport substitutes session-owned handles, preserving legacy events.
   if (event == "projectChanged" && data.contains("projects")) {
     const auto active = data.value("activeProject", "");
     data["activeProject"] = "";
+    std::map<std::string, std::string> live_ids;
     for (auto& project : data["projects"]) {
       const auto id = project.at("id").get<std::string>();
-      const auto opaque = session.core->project_handle(reinterpret_cast<void*>(uintptr_t(std::stoull(id))));
-      project["id"] = opaque.at("id");
-      if (id == active) data["activeProject"] = project["id"];
+      const auto previous = session.project_ids.find(id);
+      const auto opaque = previous == session.project_ids.end()
+        ? session.identity + ":p" + std::to_string(++session.sequence) : previous->second;
+      live_ids.emplace(id, opaque);
+      project["id"] = opaque;
+      if (id == active) data["activeProject"] = opaque;
     }
+    session.project_ids.swap(live_ids);
   }
   return data;
 }
@@ -169,27 +169,15 @@ bool Runtime::dispatch_external() {
       Json result;
       if (method == "system.getInfo") {
         shape(params, {});
-        result = {{"version", REAWEB_VERSION}, {"protocolVersion", 1}, {"reaperVersion", session->core->call("GetAppVersion", Json::array())}, {"projectEpoch", project_epoch_}};
+        result = {{"version", REAWEB_VERSION}, {"protocolVersion", 1}, {"reaperVersion", host_version(host_)}, {"projectEpoch", project_epoch_}};
       } else if (method == "system.getCapabilities") {
         shape(params, {});
-        result = {{"protocolVersion", 1}, {"methods", methods}, {"api", session->core->api_capabilities()}, {"batchMethods", batch_methods()},
+        result = {{"protocolVersion", 1}, {"methods", methods},
           {"services", services_.info()}, {"events", events}, {"stream", streams_.info()},
-          {"limits", {{"messageBytes", message_limit}, {"valueBytes", value_limit}, {"batchCalls", batch_limit},
+          {"limits", {{"messageBytes", message_limit},
             {"connections", ExternalTransport::connection_limit}, {"pendingRequests", ExternalTransport::pending_limit},
             {"subscriptions", 256}, {"servicePayloadBytes", host_message_limit}, {"serviceTimeoutMs", 30000},
             {"streamConsumers", 64}, {"streamTicketMs", 10000}, {"authenticationTimeoutMs", 5000}}}};
-      } else if (method == "api.call" || method == "api.batch") {
-        if (host_.current_project() != project_ || (host_.project_generation && host_.project_generation() != host_generation_))
-          observe(Clock::now() + std::chrono::microseconds(250));
-        if (request.project != project_epoch_) throw Error("PROJECT_CHANGED", "The current project changed. Refresh the tool state before trying again.", {{"projectEpoch", project_epoch_}});
-        if (undo_owner_) throw Error("UNDO_BUSY", "End the managed Undo gesture before using another consumer");
-        if (method == "api.call") {
-          shape(params, {"name", "args"}); result = session->core->call(name(params, "name"), params["args"]);
-        } else {
-          shape(params, {"calls"}, {"undoLabel"}); Json args = Json::array({params["calls"]});
-          if (params.contains("undoLabel")) args.push_back({{"undoLabel", params["undoLabel"]}});
-          result = session->core->batch(args);
-        }
       } else if (method == "service.invoke" || method == "service.send") {
         shape(params, {"service", "method"}, {"payload"});
         const auto service = name(params, "service"), operation = name(params, "method");
@@ -207,7 +195,8 @@ bool Runtime::dispatch_external() {
         if (session->subscriptions.size() >= 256) throw Error("QUEUE_LIMIT", "Too many subscriptions");
         const auto subscription = session->identity + ":s" + std::to_string(++session->sequence);
         session->subscriptions.emplace(subscription, ExternalSession::Subscription{event, service_name, handle});
-        if (!service) { const auto snapshot = monitors_.snapshot(event); if (!snapshot.is_null()) session->events[subscription] = snapshot; }
+        if (!service) { const auto snapshot = monitors_.snapshot(event); if (!snapshot.is_null() &&
+          (event != "projectChanged" || snapshot.at("projectEpoch") == project_epoch_)) session->events[subscription] = snapshot; }
         result = {{"subscriptionId", subscription}};
       } else if (method == "events.unsubscribe" || method == "service.unsubscribe") {
         shape(params, {"subscriptionId"}); const auto subscription = identifier(params, "subscriptionId");

@@ -2,7 +2,7 @@
 
 ## English
 
-Requires ReaWebAPI v0.3.9.23 or later. Load and run `reawebapi-native-transport.lua` from REAPER's Action List. Lua opens the window and exits without a defer loop. The interface defaults to English. Use **Language** to switch to Simplified Chinese without restarting the subscription.
+Use the ReaWebAPI build supplied with this example. Load and run `reawebapi-native-transport.lua` from REAPER's Action List. Lua opens the window and exits without a defer loop. The interface defaults to English. Use **Language** to switch to Simplified Chinese without restarting the subscription.
 
 Select Realtime 60 Hz, Realtime 120 Hz or Frame comparison. Position and transport state update on each callback. Statistics and the chart refresh every 100 ms. The monitor shows native sampling, page delivery intervals and actual position changes separately. CSV export contains the latest 20,000 transport samples.
 
@@ -23,7 +23,7 @@ With v0.3.9.29, the latest snapshot also shows `playRate`, position-specific `te
 
 ## 中文
 
-需要 ReaWebAPI v0.3.9.23 或更高版本。在 REAPER Action List 中加载并运行 `reawebapi-native-transport.lua`。Lua 打开窗口后退出，没有 defer 循环。界面默认英语，通过 **Language** 切换为简体中文，不会重建订阅。
+使用与此示例配套的 ReaWebAPI 扩展。在 REAPER Action List 中加载并运行 `reawebapi-native-transport.lua`。Lua 打开窗口后退出，没有 defer 循环。界面默认英语，通过 **Language** 切换为简体中文，不会重建订阅。
 
 选择 Realtime 60 Hz、Realtime 120 Hz 或 Frame 对照。播放位置和走带状态随数据回调更新，统计及图表每 100 ms 刷新。面板分别显示原生采样频率、页面交付间隔及位置实际变化频率。CSV 保存最近 20,000 个播放状态样本。订阅代码见上方示例。
 

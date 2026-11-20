@@ -58,7 +58,6 @@ void Runtime::navigate(Session& session) {
   session.allow_reload = false;
   session.lifecycle_action.clear(); session.lifecycle_token.clear();
   session.started = Clock::now();
-  session.bridge->reset_handles();
   // Hiding a Linux hosted view can pump pending messages while parking its X11 child.
   if (session.jsfx && session.window) session.window->set_visible(false);
 }

@@ -240,22 +240,6 @@ if(WIN32)
   target_compile_options(window_icons PRIVATE /utf-8)
 endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/native_abi_generated.cpp"
-  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_native_abi.py" "${CMAKE_CURRENT_BINARY_DIR}/native_abi_generated.cpp"
-  DEPENDS generate_native_abi.py "${PROJECT_SOURCE_DIR}/api/reaper_api.json" "${PROJECT_SOURCE_DIR}/api/bindings.json"
-          "${PROJECT_SOURCE_DIR}/tools/native_bindings.py"
-  VERBATIM)
-add_executable(native_abi "${CMAKE_CURRENT_BINARY_DIR}/native_abi_generated.cpp")
-target_link_libraries(native_abi PRIVATE reaweb_core)
-target_include_directories(native_abi SYSTEM PRIVATE "${PROJECT_BINARY_DIR}/sdk-layout/sdk")
-target_compile_definitions(native_abi PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-if(NOT WIN32)
-  target_compile_definitions(native_abi PRIVATE SWELL_PROVIDED_BY_APP)
-  # The generated test driver is intentionally huge. Test the optimized library,
-  # without spending minutes optimizing the linear list of test assertions.
-  target_compile_options(native_abi PRIVATE -O0)
-endif()
-add_test(NAME native_abi COMMAND native_abi)
 if(MSVC)
   target_compile_options(core_tests PRIVATE /utf-8)
   target_compile_options(runtime_tests PRIVATE /utf-8)
