@@ -451,6 +451,7 @@ interface ReaWebAPI {
     setPosition(x: number, y: number): Promise<ReaWebBounds>;
     show(): Promise<ReaWebWindowState>; hide(): Promise<ReaWebWindowState>;
     getState(): Promise<ReaWebWindowState>;
+    getMaxRefreshRate(): Promise<number | null>;
     /** Changes the current window without navigation. Docker retains the preference until undocking. */
     /** Native client-area input policy. A pending pointer gesture retains its current target. */
     setMouseMode(mode: ReaWebMouseMode): Promise<boolean>;

@@ -60,6 +60,8 @@ struct FakeWindow : Window {
   }
   void clear_icon() override { icons.clear(); ++icon_changes; }
   DevToolsPreferences inspector;
+  bool inspector_key_target(void* target) const override { return target == &inspector; }
+  void max_refresh_rate(Reply reply) override { reply({{"result", 144}}); }
   Json devtools_state() const override { return inspector.state(); }
   void restore_devtools(const Json& value) override { inspector.restore(value); }
   void set_drop_enabled(bool value) override { drop_enabled = value; }
@@ -402,6 +404,10 @@ int main() {
       auto send = [&](bool down, bool repeat = false, const char* document = "first") {
         window->options.on_message("__reawebShortcut:" + Json{{"document",document},{"key",65},{"modifiers",12},{"down",down},{"repeat",repeat}}.dump());
       };
+      CHECK(result(runtime, *window, window->send("ReaWeb_GetMaxRefreshRate"))["result"] == 144);
+      CHECK(result(runtime, *window, window->send("ReaWeb_GetMaxRefreshRate", {1}))["error"]["code"] == "INVALID_ARGUMENT");
+      CHECK(runtime.routes_shortcuts(&window->inspector, [](void*,void*) { return false; }));
+      CHECK(!runtime.routes_shortcuts(window.get(), [](void*,void*) { return false; }));
       send(true); runtime.tick(); CHECK(keys.empty());
       CHECK(result(runtime, *window, window->send("ReaWeb_SetShortcutRouting", {"true"}))["error"]["code"] == "INVALID_ARGUMENT");
       CHECK(runtime.set_shortcut_routing(id, true));

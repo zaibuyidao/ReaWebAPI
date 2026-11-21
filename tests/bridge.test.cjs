@@ -87,6 +87,7 @@ test('The public SDK excludes the former 730 mirror methods and exposes seventee
     "show",
     "hide",
     "getState",
+    "getMaxRefreshRate",
     "setTitle",
     "focus",
     "setDocked",
@@ -626,6 +627,8 @@ test('Runtime namespaces preserve bridge arguments and cancellation', async () =
   await answer(t, 'ReaWeb_FileDialog', [3,'','',''], '/音频', api.dialog.selectFolder());
   const ref = { projectEpoch: 1, guid: '{track-guid}', index: 0 };
   await answer(t, 'ReaWeb_GetSelectedTrackRef', [], ref, api.audio.getSelectedTrackRef());
+  await answer(t, 'ReaWeb_GetMaxRefreshRate', [], 144, api.window.getMaxRefreshRate());
+  await answer(t, 'ReaWeb_GetMaxRefreshRate', [], null, api.window.getMaxRefreshRate());
   await answer(t, 'ReaWeb_GetTrackMix', [ref], {name:'Selected', volume:1}, api.audio.getTrackMix(ref));
   await answer(t, 'ReaWeb_ApplyTrackGain', [ref, .5, 'Gain'], {name:'Selected', volume:.5}, api.audio.applyTrackGain(ref, .5, 'Gain'));
   await answer(t, 'ReaWeb_TransportControl', ['pause'], null, api.audio.controlTransport('pause'));

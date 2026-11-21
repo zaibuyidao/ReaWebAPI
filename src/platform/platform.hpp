@@ -67,6 +67,8 @@ public:
   virtual const char* video_presenter_backend() const { return ""; }
   virtual std::shared_ptr<VideoPresenter> video_presenter(const Json&) { return {}; }
   virtual void devtools() = 0;
+  virtual void max_refresh_rate(Reply reply) { reply({{"result", nullptr}}); }
+  virtual bool inspector_key_target(void*) const { return false; }
   virtual Json devtools_state() const { return nullptr; }
   virtual void restore_devtools(const Json&) {}
   virtual bool closed() const = 0;

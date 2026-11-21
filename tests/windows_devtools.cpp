@@ -1,5 +1,6 @@
 #include "platform/platform.hpp"
 #include <windows.h>
+#include "platform/windows/win_refresh_rate.hpp"
 #include <fstream>
 #include <iostream>
 #include <chrono>
@@ -242,6 +243,15 @@ int main(int argc, char** argv) {
   SetProcessDpiAwarenessContext(dpi_v1 ? DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE : DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
   try {
     for (int i = 1; i < argc; ++i) {
+      if (std::string(argv[i]) == "--display-rate") {
+        auto window = CreateWindowW(L"STATIC", L"Display rate test", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, nullptr, nullptr);
+        CHECK(window);
+        const auto rate = display_max_refresh_rate(window);
+        CHECK(rate.is_null() || (rate.is_number() && rate.get<double>() > 1));
+        std::cout << "Display maximum: " << rate << '\n';
+        DestroyWindow(window);
+        return 0;
+      }
       if (std::string(argv[i]) == "--focus-switching") { focus_switching(false); return 0; }
       if (std::string(argv[i]) == "--focus-switching-separate-profiles") { focus_switching(true); return 0; }
       if (std::string(argv[i]) == "--dialog-navigation") { focus_switching(true, true); return 0; }
@@ -291,6 +301,8 @@ int main(int argc, char** argv) {
     CHECK(!visible(first));
     shortcut(first); pump(windows, [&] { return visible(first); }, "First embedded open");
     auto inspector = inspector_for(first);
+    CHECK(first->inspector_key_target(inspector));
+    CHECK(!first->inspector_key_target(first->native_handle()));
     CHECK(GetPropW(inspector, L"ReaWebAPI.DevTools.Owner"));
     if (first->diagnostics()["devtools"]["embeddedSupported"] != true)
       std::cerr << first->diagnostics().dump() << '\n';

@@ -2,6 +2,7 @@
 const el = id => document.getElementById(id);
 const messages = {
   en: {
+    displayMax:'Maximum display refresh rate', unknownRate:'Unknown',
     fxValue:'Normalized value', setFx:'Set FX parameter', fxChain:'FX chain', fxTrack:'Track GUID (blank for selected track)', fxHeading:'FX parameters', watchFx:'Observe FX on selected track', parameter:'Parameter index',
     trackHeading:'Track controls', watchTrack:'Observe selected track', unwatchTrack:'Stop observing', noTrack:'Select a project track in REAPER.',
     language:'Language', title:'Realtime Transport Monitor', subtitle:'Lua opens the window and exits · No defer loop · No position interpolation',
@@ -19,6 +20,7 @@ const messages = {
     versionError:'Install the ReaWebAPI build supplied with this transport example.', unsupported:'Realtime transport is unavailable on this host.'
   },
   'zh-CN': {
+    displayMax:'显示器最高刷新率', unknownRate:'未知',
     fxValue:'标准化值', setFx:'写入 FX 参数', fxChain:'FX 链', fxTrack:'轨道 GUID（留空使用选中轨道）', fxHeading:'FX 参数', watchFx:'观察选中轨道的 FX', parameter:'参数索引',
     trackHeading:'轨道控制', watchTrack:'观察当前选中轨道', unwatchTrack:'停止观察', noTrack:'请在 REAPER 中选择一条工程轨道。',
     language:'语言', title:'实时播放状态', subtitle:'Lua 仅打开窗口后退出 · 无 defer 循环 · 无位置插值',
@@ -36,6 +38,7 @@ const messages = {
     versionError:'请安装与本走带示例配套的 ReaWebAPI 扩展。', unsupported:'当前宿主不支持 Realtime transport。'
   }
 };
+let displayMax = null;
 let language='en', ready=false, lastError=null, diagnosticSnapshot=null;
 const t=(key, values={})=>messages[language][key].replace(/\{(\w+)\}/g,(_,name)=>String(values[name]??''));
 const uiError=key=>Object.assign(new Error(t(key)),{messageKey:key});
@@ -45,6 +48,7 @@ function setLanguage(value) {
   document.querySelectorAll('[data-i18n]').forEach(node=>{node.textContent=t(node.dataset.i18n);});
   el('mode').setAttribute('aria-label',t('mode'));
   if(!diagnosticSnapshot)el('native').textContent=t('diagnosticsHint');
+  renderDisplayRate();
   if(latest)renderTransport();
   draw();
 }
@@ -175,7 +179,16 @@ el('mode').onchange = action(()=>switchMode(el('mode').value));
 el('reset').onclick = reset;
 for (const command of ['play', 'pause', 'stop'])
   el(command).onclick = action(() => reaper.audio.controlTransport(command));
+function renderDisplayRate() {
+  el('display-max').textContent = displayMax === null ? t('unknownRate') : `${Number(displayMax.toFixed(2))} Hz`;
+}
+async function refreshDisplayRate() {
+  try { displayMax = await reaper.window.getMaxRefreshRate?.() ?? null; }
+  catch { displayMax = null; }
+  renderDisplayRate();
+}
 async function readDiagnostics() {
+  await refreshDisplayRate();
   diagnosticSnapshot={realtime:await reaper.realtime.getDiagnostics(),frames:(await reaper.debug.getDiagnostics()).frames};
   el('native').textContent=show(diagnosticSnapshot);
 }
@@ -192,6 +205,7 @@ window.demoReady = (async()=>{
   if(!capabilities.sources.transport?.available)throw uiError('unsupported');
   el('watch-fx').disabled = !capabilities.sources['fx-parameters']?.available;
   el('watch-track').disabled = !capabilities.sources['track-controls']?.available;
+  void refreshDisplayRate();
   await switchMode('60');
   for(const id of ['play','pause','stop','export','diagnostics'])el(id).disabled=false;
   ready=true;draw();setInterval(draw,100);

@@ -15,6 +15,7 @@ parser.add_argument('--duration', type=float, default=10)
 parser.add_argument('--audio-config', type=Path, help='Use an existing Windows audioconfig section in the disposable profile')
 parser.add_argument('--block-size', type=int, help='Request an audio buffer size in the disposable profile')
 suite = parser.add_mutually_exclusive_group()
+suite.add_argument('--display-rate', action='store_true', help='Compare the native display query with the Native Transport readout')
 suite.add_argument('--fx-parameters', action='store_true', help='Exercise FX subscriptions across track, master, input, monitoring and take chains')
 suite.add_argument('--track-controls', action='store_true', help='Exercise GUID track subscriptions and host changes')
 args = parser.parse_args()
@@ -166,6 +167,24 @@ probe = r'''
   }
 })();
 '''.replace('DURATION', str(round(args.duration * 1000)))
+if args.display_rate:
+    probe = r"""
+(async () => {
+  let result;
+  try {
+    await window.demoReady;
+    await refreshDisplayRate();
+    const hz = await reaper.window.getMaxRefreshRate();
+    const shown = document.getElementById('display-max').textContent;
+    const valid = hz === null || (Number.isFinite(hz) && hz > 0);
+    const expected = hz === null ? t('unknownRate') : `${Number(hz.toFixed(2))} Hz`;
+    result = {passed: valid && shown === expected, hz, shown};
+  } catch (error) {
+    result = {passed: false, error: String(error)};
+  }
+  await reaper.fs.writeText('result.json', JSON.stringify(result), {overwrite:true});
+})();
+"""
 if args.track_controls or args.fx_parameters:
     if args.fx_parameters:
         import math

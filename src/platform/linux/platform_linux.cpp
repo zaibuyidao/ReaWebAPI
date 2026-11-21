@@ -679,6 +679,9 @@ public:
   Json bounds() const override { return window_->placement(); }
   void reload() override { process_->send({{"id", id_}, {"op", "reload"}}); }
   void set_drop_enabled(bool enabled) override { process_->send({{"id", id_}, {"op", "drop-enabled"}, {"enabled", enabled}}); }
+  void max_refresh_rate(Reply reply) override {
+    process_->desktop("ReaWeb_GetMaxRefreshRate", Json::array(), std::move(reply), id_);
+  }
   void start_drag(const Json& payload, Reply reply) override { process_->desktop("ReaWeb_Drag", payload, std::move(reply), id_); }
   std::shared_ptr<VideoMemory> video_memory(const std::string& token, uint32_t bytes) override {
     if (closed() || video_origin_.empty() || !process_->video_native.count(id_)) return {};

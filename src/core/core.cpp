@@ -133,7 +133,7 @@ Bridge::Bridge(Host& host, Controls controls)
     add(name, 3, 3, [](const Json&) -> Json { throw Error("MAIN_THREAD_REQUIRED", "Host Service requires Runtime dispatch"); });
   for (const auto* name : {"ReaWeb_ServiceSubscribe", "ReaWeb_ServiceUnsubscribe"})
     add(name, 2, 2, [](const Json&) -> Json { throw Error("MAIN_THREAD_REQUIRED", "Host Service requires Runtime dispatch"); });
-  for (const auto& name : {"ReaWeb_GetWindowState", "ReaWeb_GetDiagnostics", "ReaWeb_Focus"})
+  for (const auto& name : {"ReaWeb_GetWindowState", "ReaWeb_GetMaxRefreshRate", "ReaWeb_GetDiagnostics", "ReaWeb_Focus"})
     add(name, 0, 0, [this, name](const Json& a) { return controls_.host_call(name, a); });
   for (const auto& name : {"ReaWeb_SetShortcutRouting", "ReaWeb_SetMouseMode", "ReaWeb_SetMouseRegions", "ReaWeb_SetTitle", "ReaWeb_SetIcon", "ReaWeb_SetIconVisible", "ReaWeb_SetFrameless", "ReaWeb_SetCornerRadius", "ReaWeb_SetKeyboardCapture", "ReaWeb_SetDawKeyboard", "ReaWeb_Subscribe", "ReaWeb_Unsubscribe"})
     add(name, 1, 1, [this, name](const Json& a) { return controls_.host_call(name, a); });

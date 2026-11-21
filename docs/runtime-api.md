@@ -28,6 +28,8 @@ On Windows and macOS, new windows automatically become visible after their initi
 
 `reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `setIcon`, `setIconVisible`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `setDawKeyboard`, `setShortcutRouting`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area except for frameless Linux overlays, which permit display overscan. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
 
+Use `await reaper.window.getMaxRefreshRate()` to read the highest refresh rate reported for the window’s display across all available resolutions, in Hz. It returns `null` when the display modes are unavailable, including on XWayland.
+
 ```js
 await reaper.window.setSize(900, 700);
 const stop = await reaper.lifecycle.on('before-close', async () => {

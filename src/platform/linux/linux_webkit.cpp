@@ -11,6 +11,8 @@
 #include <glib-unix.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
+#include "platform/linux/display_modes.hpp"
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include "platform/linux/gtk_drag.hpp"
@@ -702,8 +704,8 @@ public:
     } else if (op == "focus" && parent_) {
       const bool focused = request.value("focused", true);
       set_host_focus(focused);
-      if (focused) {
-        gtk_widget_grab_focus(GTK_WIDGET(view_));
+      if (focused && !(devtools_ && devtools_->floating_active())) {
+        if (!devtools_ || !devtools_->owns_focus()) gtk_widget_grab_focus(GTK_WIDGET(view_));
         auto display = gtk_widget_get_display(plug_);
         gdk_x11_display_error_trap_push(display);
         XSetInputFocus(gdk_x11_display_get_xdisplay(display), gdk_x11_window_get_xid(gtk_widget_get_window(plug_)), RevertToParent, CurrentTime);
@@ -712,6 +714,29 @@ public:
     }
   }
   void start_drag(const Json& payload, std::function<void(Json)> reply) { drag_->start(payload, std::move(reply)); }
+  Json max_refresh_rate() const {
+    auto window = gtk_widget_get_window(GTK_WIDGET(view_));
+    if (!window) return nullptr;
+    auto display = gdk_window_get_display(window);
+    auto monitor = gdk_display_get_monitor_at_window(display, window);
+    if (!monitor || !GDK_IS_X11_MONITOR(monitor)) return nullptr;
+    auto xdisplay = gdk_x11_display_get_xdisplay(display);
+    int opcode, event, error;
+    if (XQueryExtension(xdisplay, "XWAYLAND", &opcode, &event, &error)) return nullptr;
+    int major = 0, minor = 0;
+    if (!XRRQueryVersion(xdisplay, &major, &minor) || major < 1 || (major == 1 && minor < 3)) return nullptr;
+    auto output_id = gdk_x11_monitor_get_output(monitor);
+    if (!output_id) return nullptr;
+    auto root = gdk_screen_get_root_window(gdk_window_get_screen(window));
+    gdk_x11_display_error_trap_push(display);
+    auto resources = XRRGetScreenResourcesCurrent(xdisplay, gdk_x11_window_get_xid(root));
+    auto output = resources ? XRRGetOutputInfo(xdisplay, resources, output_id) : nullptr;
+    const double highest = output ? highest_output_refresh_rate(*resources, *output) : 0;
+    if (output) XRRFreeOutputInfo(output);
+    if (resources) XRRFreeScreenResources(resources);
+    if (gdk_x11_display_error_trap_pop(display)) return nullptr;
+    return highest > 0 ? Json(highest) : Json(nullptr);
+  }
   Json media(const std::string& method, const Json& args) {
     if (!resources_) throw Error("HOST_UNAVAILABLE", "Media URLs require a local App document");
     if (!media_) media_ = std::make_unique<GtkMedia>(resources_);
@@ -754,6 +779,11 @@ struct Process {
         auto it = pages.find(request.at("id").get<int>());
         if (it == pages.end()) throw Error("WINDOW_CLOSED", "Media document is closed");
         respond({{"result", it->second->media(method, args)}}); return;
+      }
+      if (method == "ReaWeb_GetMaxRefreshRate") {
+        auto it = pages.find(request.at("id").get<int>());
+        if (it == pages.end()) throw Error("WINDOW_CLOSED", "Display query window is closed");
+        respond({{"result", it->second->max_refresh_rate()}}); return;
       }
       if (method == "ReaWeb_GetDisplays") {
         Json displays = Json::array(); auto display = gdk_display_get_default();

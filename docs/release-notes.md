@@ -1,3 +1,4 @@
 # ReaWebAPI
 
-- Added project-bound FX parameter writes from web apps, including track, input, monitoring and take FX in nested containers.
+- Added `window.getMaxRefreshRate()` and a display refresh-rate readout in Native Transport.
+- Fixed keyboard focus routing for Console and Network filters in DevTools.

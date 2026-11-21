@@ -19,6 +19,7 @@
 #include <cstring>
 #include <cmath>
 #include "platform/windows/win_devtools.hpp"
+#include "platform/windows/win_refresh_rate.hpp"
 #include "platform/windows/win_icon.hpp"
 #include "platform/windows/win_dock_redraw.hpp"
 #include "platform/windows/win_cursor.hpp"
@@ -837,6 +838,10 @@ public:
   }
   void devtools() override {
     if (devtools_) devtools_->open();
+  }
+  void max_refresh_rate(Reply reply) override { reply({{"result", display_max_refresh_rate(hwnd_)}}); }
+  bool inspector_key_target(void* handle) const override {
+    return devtools_ && devtools_->owns_input(static_cast<HWND>(handle));
   }
   Json devtools_state() const override { return devtools_->state(); }
   void restore_devtools(const Json& value) override { devtools_->restore(value); }

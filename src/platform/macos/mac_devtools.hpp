@@ -210,6 +210,11 @@ public:
     forget_frontend();
     if (supported_) [inspector_ close];
   }
+  bool has_keyboard_focus() const {
+    if (!requested_ || !frontend_ || !frontend_.window.keyWindow) return false;
+    auto responder = frontend_.window.firstResponder;
+    return [responder isKindOfClass:[NSView class]] && [(NSView*)responder isDescendantOf:frontend_];
+  }
   bool visible() const { return requested_ && native_visible(); }
   void open() {
     if (!supported_) throw Error("DEVTOOLS_UNAVAILABLE", fallback_);

@@ -118,7 +118,9 @@ class WinDevTools {
   void focus_inspector() {
     if (!valid()) return;
     SetForegroundWindow(hosted_ ? GetAncestor(panel_, GA_ROOT) : window_);
-    SetFocus(window_);
+    auto target = hosted_ && IsChild(window_, renderer_) ? renderer_ : window_;
+    auto focus = GetFocus();
+    if (focus != target && !IsChild(target, focus)) SetFocus(target);
   }
   void hide(bool activate = true) {
     requested_ = false;
@@ -305,6 +307,9 @@ public:
   void open() {
     if (window_ && !valid()) lost();
     requested_ = true; if (valid()) present();
+  }
+  bool owns_input(HWND target) const {
+    return target && requested_ && window_ && (window_ == target || IsChild(window_, target));
   }
   DevToolsMenuState menu_state() const {
     return {valid() && requested_ && (GetWindowLongPtrW(window_, GWL_STYLE) & WS_VISIBLE) != 0,

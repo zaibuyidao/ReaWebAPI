@@ -1,3 +1,4 @@
 # ReaWebAPI
 
-- 新增网页 FX 参数写入接口，支持轨道主链、输入链、监听链、Take FX 及各链中的嵌套 Container。
+- 新增 `window.getMaxRefreshRate()`，Native Transport 示例可显示显示器最高刷新率。
+- 修复开发者工具控制台和网络筛选框的键盘焦点路由。

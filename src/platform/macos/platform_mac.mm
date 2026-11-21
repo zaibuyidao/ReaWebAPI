@@ -15,6 +15,7 @@
 #include "platform/macos/mac_devtools.hpp"
 #include "platform/macos/mac_resources.hpp"
 #include "platform/macos/mac_video_presenter.hpp"
+#include <algorithm>
 #include <fstream>
 #include <cstring>
 
@@ -544,7 +545,7 @@ public:
     webview_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     window_ = std::make_unique<SwellWindow>(delegate_->options.title, delegate_->options.parent, [this] {
       const auto& capture = delegate_->options.captures_keyboard;
-      if (!webview_->sourceClosed && capture && capture()) [webview_.window makeFirstResponder:webview_];
+      if (!webview_->sourceClosed && !(devtools_ && devtools_->has_keyboard_focus()) && capture && capture()) [webview_.window makeFirstResponder:webview_];
     }, delegate_->options.on_close, true, delegate_->options.hosted);
     delegate_->navigationStarted = [this] { release_video_presenter(); startup_.navigate(delegate_->options.hosted); drag_regions_.clear(); };
     delegate_->options.on_message = [this, receive = delegate_->options.on_message](std::string message) {
@@ -833,6 +834,26 @@ public:
   void cancel_pending_show() override { startup_.cancel(); }
   void show_after_create() override { if (startup_.pending()) window_->set_visible(false); }
   Json bounds() const override { return window_->placement(); }
+  void max_refresh_rate(Reply reply) override {
+    NSScreen* screen = webview_.window.screen;
+    double highest = screen.maximumFramesPerSecond;
+    if (screen) {
+      auto display = [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue];
+      auto modes = CGDisplayCopyAllDisplayModes(display, nullptr);
+      if (modes) {
+        for (CFIndex i = 0; i < CFArrayGetCount(modes); ++i) {
+          auto mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(modes, i);
+          if (CGDisplayModeIsUsableForDesktopGUI(mode))
+            highest = std::max(highest, CGDisplayModeGetRefreshRate(mode));
+        }
+        CFRelease(modes);
+      }
+    }
+    reply({{"result", highest > 0 ? Json(highest) : Json(nullptr)}});
+  }
+  bool inspector_key_target(void* handle) const override {
+    return handle && handle == GetFocus() && devtools_ && devtools_->has_keyboard_focus();
+  }
   void reload() override { [webview_ reload]; }
   bool visible() const override { return !startup_.pending() && window_->visible() && !webview_.hiddenOrHasHiddenAncestor && !webview_.window.miniaturized; }
   bool focused() const override {

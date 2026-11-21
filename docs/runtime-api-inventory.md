@@ -1,8 +1,8 @@
 # Runtime API 完整清单 / Complete API inventory
 
-JavaScript Runtime 公开以下 **17 个命名空间、100 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。
+JavaScript Runtime 公开以下 **17 个命名空间、103 个方法和 1 个 Promise 属性**。Host Service 代理另提供 `invoke/send/on/off`。
 
-The JavaScript Runtime exposes seventeen namespaces: 100 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
+The JavaScript Runtime exposes seventeen namespaces: 103 methods and one Promise property, plus `invoke/send/on/off` on named service proxies. Exact types: [runtime-api.d.ts](../runtime/runtime-api.d.ts). Contracts: [中文](runtime-api.zh-CN.md) · [English](runtime-api.md) · [Native Services](native-services.md).
 
 Lua bootstrap is separate: `reaper.ReaWeb_Open(path)` runs before the browser exists. Lua-only native entry points remain documented in [Host API](host-api.md#lua-entry-points). They are not JavaScript aliases. Native transport command names in `capabilities.methods` are diagnostic wire identifiers, not callable JavaScript property paths; use `capabilities.runtime.namespaces` and this inventory for the public SDK surface.
 
@@ -39,6 +39,7 @@ Lua 后端与 WebView UI 之间的消息。Text messages between a Lua backend a
 | `reaper.window.openDev(url)` | `Promise<number>` | 打开受信任的本机 HTTP 开发服务器 |
 | `reaper.window.getSize()` | `Promise<Size>` | 读取当前窗口外部尺寸及模式、单位 |
 | `reaper.window.setSize(width, height)` | `Promise<ReaWebBounds>` | 设置浮动窗口外部尺寸 |
+| `reaper.window.getMaxRefreshRate()` | `Promise<number \| null>` | 当前窗口所在屏幕在所有可用显示模式中的最高刷新率（Hz），未知时返回 `null` |
 | `reaper.window.getPosition()` | `Promise<Position>` | 读取当前窗口位置及模式、单位 |
 | `reaper.window.setPosition(x, y)` | `Promise<ReaWebBounds>` | 设置浮动窗口位置 |
 | `reaper.window.show()` | `Promise<ReaWebWindowState>` | 显示当前窗口 |

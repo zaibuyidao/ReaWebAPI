@@ -41,6 +41,8 @@ await reaper.window.hide();
 
 另有 `open(path)`、`openDev(url)`、`getState`、`setTitle`、`setIcon`、`setIconVisible`、`focus`、`setDocked`、`isDocked`、`setKeyboardCapture`、`setDawKeyboard`、`close`、`reload`。使用 `setDocked(true)` 停靠、`setDocked(false)` 取消停靠；返回实际停靠状态，取消停靠成功返回 false。创建新窗口返回窗口 ID，其余窗口控制针对当前调用页，不接收 ID。尺寸是包含边框的原生桌面窗口尺寸，坐标是屏幕坐标，返回 `units: 'native'`；不要当作网页 CSS 像素。后端和桌面缩放可能影响它们与 CSS 像素的比例。宽高允许 100–16384，位置允许 -1000000–1000000，系统会将窗口限制到可用屏幕区域。
 
+使用 `await reaper.window.getMaxRefreshRate()` 查询窗口所在显示器在所有可用显示模式中的最高刷新率，单位为 Hz。系统无法提供显示模式时返回 `null`，包括 XWayland 环境。
+
 返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。窗口支持标题、聚焦、停靠和位置保存。
 
 Windows、macOS、Linux 的 WebView 右键菜单包含 **Dock <App> in Docker**（停靠时勾选）、**Reload**、**Open DevTools** / **Hide DevTools**、**Float DevTools** / **Embed DevTools**、**Open <App> Folder** 和 **Close <App>**。DevTools 隐藏时禁用模式切换。包括 Inspect 在内的浏览器默认菜单项被隐藏，底层能力保持启用。页面的 `contextmenu` 处理和 `preventDefault()` 仍然有效。标题栏与 Docker 页签菜单使用相同操作和停靠状态。应用名称跟随当前窗口标题（`setTitle()` 或 HTML 标题），未设置标题时回退到 `app.json` 名称，再回退到 App 目录名。刷新和关闭沿用现有生命周期。Windows 标题栏系统菜单使用相同的应用名称和停靠状态。所有停靠入口与 `setDocked()` 共用逻辑，切换时保留当前文档。

@@ -477,7 +477,8 @@ bool Runtime::start_async(Session& session, const Work& request) {
   const bool media = method == "ReaWeb_OpenMedia" || method == "ReaWeb_CloseMedia";
   const bool drag = method == "ReaWeb_DragFiles" || method == "ReaWeb_DragText";
   const bool binary_clipboard = method == "ReaWeb_ClipboardReadBinary" || method == "ReaWeb_ClipboardWriteBinary";
-  if (!media && !drag && !binary_clipboard && method != "ReaWeb_GetDisplays" && method != "ReaWeb_RevealPath" && method != "ReaWeb_ClipboardReadText" && method != "ReaWeb_ClipboardWriteText" && method != "ReaWeb_OpenExternal") return false;
+  const bool refresh_rate = method == "ReaWeb_GetMaxRefreshRate";
+  if (!media && !drag && !binary_clipboard && !refresh_rate && method != "ReaWeb_GetDisplays" && method != "ReaWeb_RevealPath" && method != "ReaWeb_ClipboardReadText" && method != "ReaWeb_ClipboardWriteText" && method != "ReaWeb_OpenExternal") return false;
   std::weak_ptr<Session> weak = sessions_.at(session.id);
   auto complete = [this, weak, request](Json result) mutable {
     auto s = weak.lock();
@@ -486,6 +487,10 @@ bool Runtime::start_async(Session& session, const Work& request) {
     response.update(result);
     reply(*s, std::move(request), std::move(response));
   };
+  if (refresh_rate) {
+    if (!args.empty()) throw Error("INVALID_ARGUMENT", "GetMaxRefreshRate takes no arguments");
+    session.window->max_refresh_rate(std::move(complete)); return true;
+  }
   if (media) {
     if (args.size() != 1 || !args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected one media path or URL");
     if (!session.app->resources) throw Error("HOST_UNAVAILABLE", "Media URLs require a local App document");

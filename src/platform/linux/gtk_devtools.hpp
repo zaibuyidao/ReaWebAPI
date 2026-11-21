@@ -171,6 +171,16 @@ public:
     if (inspector_view_) present(prefs_.floating);
     else if (!pending_) { pending_ = true; webkit_web_inspector_show(inspector_); }
   }
+  bool owns_focus() const {
+    if (!visible_ || prefs_.floating || !inspector_view_) return false;
+    auto top = gtk_widget_get_toplevel(inspector_view_);
+    if (!GTK_IS_WINDOW(top)) return false;
+    auto focus = gtk_window_get_focus(GTK_WINDOW(top));
+    return focus && (focus == inspector_view_ || gtk_widget_is_ancestor(focus, inspector_view_));
+  }
+  bool floating_active() const {
+    return visible_ && prefs_.floating && gtk_window_is_active(GTK_WINDOW(floating_));
+  }
   DevToolsMenuState menu_state() const { return {visible_, prefs_.floating, true}; }
   void perform(DevToolsAction action) {
     if (action == DevToolsAction::Open) open();

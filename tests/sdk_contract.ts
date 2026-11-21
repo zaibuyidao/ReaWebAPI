@@ -68,7 +68,7 @@ type RuntimeAssert<T extends true> = T;
 type RuntimeEqual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type NoFlatRuntime = RuntimeAssert<RuntimeEqual<Extract<keyof ReaWebAPI, `ReaWeb${string}` | 'ready'>, never>>;
 
-type windowSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['window'], 'open' | 'openDev' | 'getSize' | 'setSize' | 'getPosition' | 'setPosition' | 'show' | 'hide' | 'getState' | 'setTitle' | 'setIcon' | 'setIconVisible' | 'setFrameless' | 'setCornerRadius' | 'focus' | 'setDocked' | 'isDocked' | 'setKeyboardCapture' | 'setDawKeyboard' | 'setShortcutRouting' | 'setMouseMode' | 'setMouseRegions' | 'close' | 'reload'>>;
+type windowSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['window'], 'open' | 'openDev' | 'getSize' | 'setSize' | 'getPosition' | 'setPosition' | 'show' | 'hide' | 'getState' | 'getMaxRefreshRate' | 'setTitle' | 'setIcon' | 'setIconVisible' | 'setFrameless' | 'setCornerRadius' | 'focus' | 'setDocked' | 'isDocked' | 'setKeyboardCapture' | 'setDawKeyboard' | 'setShortcutRouting' | 'setMouseMode' | 'setMouseRegions' | 'close' | 'reload'>>;
 type themeSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['theme'], 'getColors' | 'apply'>>;
 type dialogSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dialog'], 'openFile' | 'saveFile' | 'selectFolder'>>;
 type eventsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['events'], 'on' | 'off'>>;
@@ -103,6 +103,7 @@ async function contract() {
 async function runtimeContract(track: ReaWebTrackRef, take: { type: "MediaItem_Take"; id: string }) {
   const icon: boolean = await reaper.window.setIcon('logo.svg');
   const iconVisibility: boolean = await reaper.window.setIconVisible(false);
+  const displayHz: number | null = await reaper.window.getMaxRefreshRate();
   const iconVisible: boolean = (await reaper.window.getState()).iconVisible;
   // @ts-expect-error Icon visibility requires a boolean.
   await reaper.window.setIconVisible('false');
