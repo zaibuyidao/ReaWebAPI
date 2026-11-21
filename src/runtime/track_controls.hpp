@@ -24,6 +24,8 @@ public:
   enum class Source { controls, fxParameters };
   explicit TrackControls(const Host& host, Source source = Source::controls);
   bool available() const;
+  Json getFxRef(const Json& target, uint64_t projectEpoch);
+  bool setFxParameter(const Json& ref, const Json& index, const Json& value, uint64_t projectEpoch);
   Watch watchFx(const Json& options);
   Watch watch(const Json& options);
   void begin();
@@ -68,6 +70,10 @@ public:
   bool takeAvailable() const { return host_.take_by_guid && takeCount_ && takeParams_.count && takeParams_.normalized; }
   bool containersAvailable() const { return containerApi_; }
 private:
+  Watch parseFxTarget(const Json& options) const;
+  FxReading locateFx(Watch& w, int trackHint = -1);
+  Watch lastWriteTarget_;
+  FxReading locateWritableFx(Watch& w);
   FxReading& resolveFx(Reading&, Watch&);
   MediaTrack* (*track_)(ReaProject*, int) = nullptr;
   double (*value_)(MediaTrack*, const char*) = nullptr;

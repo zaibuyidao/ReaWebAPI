@@ -490,17 +490,33 @@
       catch (error) { if (!failed) throw error; }
     }
   };
-  const setTrackValueLatest = (track, key, value) => new Promise((resolve, reject) => {
-    if (closed) return reject(failure('WINDOW_CLOSED', 'The WebView document was closed'));
+  const setTrackValueLatest = async (track, key, value) => {
+    if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
     if (typeof track?.guid !== 'string' || !track.guid.length || !Number.isSafeInteger(track.projectEpoch) || track.projectEpoch < 1 ||
         !['D_VOL', 'D_PAN', 'B_MUTE', 'I_SOLO'].includes(key) || !Number.isFinite(value))
-      return reject(failure('INVALID_ARGUMENT', 'Expected a project track reference, supported key and finite value'));
+      throw failure('INVALID_ARGUMENT', 'Expected a project track reference, supported key and finite value');
     const project = track.projectEpoch;
     const target = { projectEpoch: project, guid: track.guid };
     if (Number.isInteger(track.index)) target.index = track.index;
-    const token = JSON.stringify([project, track.guid, key]);
+    return queueLatest(JSON.stringify([project, track.guid, key]), 'ReaWeb_SetTrackValue', [target, key, value], project);
+  };
+  const setFxParameterLatest = async (ref, index, normalized) => {
+    if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
+    if (!Number.isSafeInteger(ref?.projectEpoch) || ref.projectEpoch < 1 ||
+        typeof ref.track !== 'string' || typeof ref.fx !== 'string' ||
+        !['main','input','monitoring','take'].includes(ref.chain) ||
+        (ref.chain === 'take' ? typeof ref.take !== 'string' : ref.take !== undefined) ||
+        !Number.isSafeInteger(index) || index < 0 || index > 2147483647 ||
+        !Number.isFinite(normalized) || normalized < 0 || normalized > 1)
+      throw failure('INVALID_ARGUMENT', 'Expected an FX reference, parameter index and normalized value in [0,1]');
+    const target = {projectEpoch:ref.projectEpoch, track:ref.track, fx:ref.fx, chain:ref.chain};
+    if (ref.chain === 'take') target.take = ref.take;
+    const token = JSON.stringify([target.projectEpoch, target.track, target.chain, target.take, target.fx, index]);
+    return queueLatest(token, 'ReaWeb_SetFxParameter', [target, index, normalized], target.projectEpoch);
+  };
+  const queueLatest = (token, method, args, project) => new Promise((resolve, reject) => {
     let entry = latest.get(token);
-    const request = { track: target, key, value, project, resolve, reject };
+    const request = { args, project, resolve, reject };
     if (entry) {
       if (entry.next) entry.next.resolve({ applied: false, superseded: true });
       entry.next = request;
@@ -513,7 +529,7 @@
       let current = first;
       while (current) {
         try {
-          const applied = await call('ReaWeb_SetTrackValue', [current.track, current.key, current.value], current.project);
+          const applied = await call(method, current.args, current.project);
           current.resolve({ applied, superseded: false });
         } catch (error) { current.reject(error); }
         current = entry.next;
@@ -1277,6 +1293,7 @@
     applyTrackGain: host('ReaWeb_ApplyTrackGain'),
     controlTransport: host('ReaWeb_TransportControl'),
     getTrackMeter: track => call('ReaWeb_GetTrackMeter', [track]),
+    getFxRef: host('ReaWeb_GetFxRef'), setFxParameterLatest,
     setTrackValueLatest
   });
   const runCleanup = async event => {

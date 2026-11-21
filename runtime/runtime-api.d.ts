@@ -315,6 +315,8 @@ interface ReaWebTrackRef {
   readonly guid: string;
   readonly index?: number;
 }
+type ReaWebFxTarget = ({chain: 'take'; take: string} | {chain?: 'main' | 'input' | 'monitoring'; take?: never}) & {track: string; fx: string};
+type ReaWebFxRef = Readonly<ReaWebFxTarget & {projectEpoch: number; chain: 'main' | 'input' | 'monitoring' | 'take'}>;
 interface ReaWebAPI {
   readonly video: {
     getSourceInfo(): Promise<ReaWebVideoSourceInfo>;
@@ -335,7 +337,7 @@ interface ReaWebAPI {
       onError?: (error: Error & { code?: string }) => void;
       onClose?: (reason: Error & { code?: string }) => void;
     }): Promise<ReaWebRealtimeSubscription>;
-    subscribe(source: 'fx-parameters', options: ({chain: 'take'; take: string} | {chain?: 'main' | 'input' | 'monitoring'; take?: never}) & { track: string; fx: string; parameters: readonly number[];
+    subscribe(source: 'fx-parameters', options: ReaWebFxTarget & { parameters: readonly number[];
       updateRate?: number; onData?: (state: Readonly<ReaWebFxParametersSnapshot>) => void;
       onError?: (error: Error & { code?: string }) => void;
       onClose?: (reason: Error & { code?: string }) => void;
@@ -538,6 +540,8 @@ interface ReaWebAPI {
      * Superseded values settle without being sent. Does not create an Undo gesture.
      */
     setTrackValueLatest(track: ReaWebTrackRef, key: ReaWebContinuousTrackKey, value: number): Promise<{ applied: boolean; superseded: boolean }>;
+    getFxRef(target: ReaWebFxTarget): Promise<ReaWebFxRef>;
+    setFxParameterLatest(ref: ReaWebFxRef, index: number, normalized: number): Promise<{applied: boolean; superseded: boolean}>;
 
     getFileInfo(path: string): Promise<ReaWebAudioFileInfo>;
     getWaveform(path: string, options?: ReaWebWaveformOptions): Promise<ReaWebWaveform>;

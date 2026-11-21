@@ -30,6 +30,8 @@
 <label><span data-i18n="parameter">Parameter index</span> <input id="fx-index" type="number" min="0" step="1" value="0"></label>
 <button id="watch-fx" data-i18n="watchFx" disabled>Observe FX on selected track</button>
 <button id="unwatch-fx" data-i18n="unwatchTrack" disabled>Stop observing</button></div>
+<div class="controls"><label><span data-i18n="fxValue">Normalized value</span> <input id="fx-value" type="number" min="0" max="1" step="any" value="0.5" required></label>
+<button id="apply-fx" data-i18n="setFx" disabled>Set FX parameter</button></div>
 <pre id="fx-state" aria-live="off"></pre></details>
 <details><summary data-i18n="native">Native diagnostics</summary><pre id="native">Click “Read diagnostics”. Lua writes should be 0.</pre></details>
 <p class="note" data-i18n="csvNote">CSV contains the latest 20,000 transport samples. All readings come from actual callbacks. Playback controls affect the current project.</p>

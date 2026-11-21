@@ -155,7 +155,7 @@ test('The public SDK excludes the former 730 mirror methods and exposes seventee
     "getTrackMix",
     "applyTrackGain",
     "controlTransport",
-    "setTrackValueLatest"
+    "getFxRef", "setFxParameterLatest", "setTrackValueLatest"
   ],
   "clipboard": [
     "readBinary", "writeBinary",
@@ -535,6 +535,23 @@ test('continuous setter only supersedes waiting values', async () => {
   await flush(); assert.equal(t.messages[2].args[2], .3);
   assert.equal(t.messages[2].project, 1);
   t.reply(2, { result: true }); assert.equal((await last).superseded, false);
+});
+test('FX writes coalesce per instance and parameter and retain the original project', async () => {
+  const t = await connected(), audio = t.window.reaper.audio;
+  const ref = {projectEpoch:1, track:'track', chain:'main', fx:'fx'};
+  const first = audio.setFxParameterLatest(ref,2,0);
+  const middle = audio.setFxParameterLatest(ref,2,0.25);
+  const last = audio.setFxParameterLatest(ref,2,1);
+  assert.equal((await middle).superseded,true);
+  await flush();
+  assert.equal(t.messages[1].method,'ReaWeb_SetFxParameter');
+  t.event('projectchange',1,{projectEpoch:2});
+  t.reply(1,{result:true});
+  await first; await flush();
+  assert.equal(t.messages[2].args[2],1); assert.equal(t.messages[2].project,1);
+  t.reply(2,{error:{code:'PROJECT_CHANGED',message:'stale'}});
+  await assert.rejects(last,{code:'PROJECT_CHANGED'});
+  await assert.rejects(audio.setFxParameterLatest(ref,0,NaN),{code:'INVALID_ARGUMENT'});
 });
 test('limits, serialization, unavailable host and protocol mismatch fail cleanly', async () => {
   const t = await connected();

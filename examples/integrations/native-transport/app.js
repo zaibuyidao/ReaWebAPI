@@ -2,7 +2,7 @@
 const el = id => document.getElementById(id);
 const messages = {
   en: {
-    fxChain:'FX chain', fxTrack:'Track GUID (blank for selected track)', fxHeading:'FX parameters', watchFx:'Observe FX on selected track', parameter:'Parameter index',
+    fxValue:'Normalized value', setFx:'Set FX parameter', fxChain:'FX chain', fxTrack:'Track GUID (blank for selected track)', fxHeading:'FX parameters', watchFx:'Observe FX on selected track', parameter:'Parameter index',
     trackHeading:'Track controls', watchTrack:'Observe selected track', unwatchTrack:'Stop observing', noTrack:'Select a project track in REAPER.',
     language:'Language', title:'Realtime Transport Monitor', subtitle:'Lua opens the window and exits · No defer loop · No position interpolation',
     position:'Play Position / seconds', transport:'Transport State', mode:'Subscription mode', frame:'Frame comparison',
@@ -19,7 +19,7 @@ const messages = {
     versionError:'Install the ReaWebAPI build supplied with this transport example.', unsupported:'Realtime transport is unavailable on this host.'
   },
   'zh-CN': {
-    fxChain:'FX 链', fxTrack:'轨道 GUID（留空使用选中轨道）', fxHeading:'FX 参数', watchFx:'观察选中轨道的 FX', parameter:'参数索引',
+    fxValue:'标准化值', setFx:'写入 FX 参数', fxChain:'FX 链', fxTrack:'轨道 GUID（留空使用选中轨道）', fxHeading:'FX 参数', watchFx:'观察选中轨道的 FX', parameter:'参数索引',
     trackHeading:'轨道控制', watchTrack:'观察当前选中轨道', unwatchTrack:'停止观察', noTrack:'请在 REAPER 中选择一条工程轨道。',
     language:'语言', title:'实时播放状态', subtitle:'Lua 仅打开窗口后退出 · 无 defer 循环 · 无位置插值',
     position:'Play Position / 秒', transport:'走带状态', mode:'订阅方式', frame:'Frame 对照',
@@ -137,7 +137,15 @@ el('watch-track').onclick = async () => {
 };
 el('unwatch-track').onclick = action(async () => { if (trackSubscription) await trackSubscription.close(); });
 el('fx-chain').onchange = () => { el('fx-take').disabled = el('fx-chain').value !== 'take'; };
-let fxSubscription;
+let fxSubscription, watchedFx;
+el('apply-fx').onclick = action(async () => {
+  if (!watchedFx) return;
+  const {ref,index} = watchedFx;
+  const input = el('fx-value');
+  if (!input.reportValidity()) return;
+  await reaper.transaction.withUndo(t('setFx'), () =>
+    reaper.audio.setFxParameterLatest(ref,index,input.valueAsNumber));
+});
 el('watch-fx').onclick = async () => {
   const watch = el('watch-fx'), stop = el('unwatch-fx'), state = el('fx-state');
   watch.disabled = true;
@@ -146,13 +154,19 @@ el('watch-fx').onclick = async () => {
     const track = el('fx-track').value.trim() || (await reaper.audio.getSelectedTrackRef())?.guid;
     if (!track) { state.textContent = t('noTrack'); return; }
     const chain = el('fx-chain').value;
-    fxSubscription = await reaper.realtime.subscribe('fx-parameters', {
+    const binding = {
       track, chain, ...(chain === 'take' ? {take:el('fx-take').value.trim()} : {}),
-      fx:el('fx-guid').value.trim(), parameters:[el('fx-index').valueAsNumber],
+      fx:el('fx-guid').value.trim()
+    };
+    const index = el('fx-index').valueAsNumber;
+    const ref = await reaper.audio.getFxRef(binding);
+    fxSubscription = await reaper.realtime.subscribe('fx-parameters', {
+      ...binding, parameters:[index],
       onData: snapshot => { state.textContent = show(snapshot.values); },
-      onClose: reason => { state.textContent = reason.code; stop.disabled = true; }
+      onClose: reason => { watchedFx = null; state.textContent = reason.code; el('apply-fx').disabled = stop.disabled = true; }
     });
-    stop.disabled = fxSubscription.closed;
+    watchedFx = {ref,index};
+    el('apply-fx').disabled = stop.disabled = fxSubscription.closed;
   } catch (error) { state.textContent = error.message; }
   finally { watch.disabled = false; }
 };

@@ -11,6 +11,7 @@
 #include "runtime/native_tasks.hpp"
 #include "runtime/native_producers.hpp"
 #include "runtime/realtime.hpp"
+#include "runtime/track_controls.hpp"
 #include "runtime/external_transport.hpp"
 #include "runtime/external_settings.hpp"
 #include "runtime/diagnostics.hpp"
@@ -205,6 +206,7 @@ private:
   NativeProducers producers_;
   VideoManager video_;
   RealtimeManager realtime_;
+  TrackControls fx_writer_;
   NativeMonitorManager monitors_;
   DockApi dock_;
   fs::path resource_;

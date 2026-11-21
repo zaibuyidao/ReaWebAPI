@@ -79,7 +79,19 @@ local function execute(cmd)
       reaper.TrackFX_Delete(track, index)
     end
     add()
+    if cmd == 'init' then reaper.Undo_OnStateChangeEx('FX fixture ready',-1,-1) end
     return target()
+  elseif cmd == 'undo-write' or cmd == 'redo-write' then
+    local undo = cmd == 'undo-write'
+    local label = (undo and reaper.Undo_CanUndo2 or reaper.Undo_CanRedo2)(0)
+    assert(label == 'FX parameter review', tostring(label))
+    if undo then reaper.Undo_DoUndo2(0) else reaper.Undo_DoRedo2(0) end
+    track = reaper.GetTrack(0,0)
+    assert(reaper.TrackFX_GetFXGUID(track,index) == guid)
+  elseif cmd == 'finish-automation' then
+    reaper.SetTrackAutomationMode(track, 0)
+    local ok, chunk = reaper.GetEnvelopeStateChunk(envelope, '', false)
+    assert(ok and reaper.SetEnvelopeStateChunk(envelope, chunk:gsub('\nACT 1','\nACT 0'), false))
   elseif cmd == 'reorder' then
     assert(reaper.TrackFX_AddByName(track, 'ReaEQ', false, -1000) == 0)
     index = index + 1

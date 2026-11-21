@@ -5,6 +5,8 @@
 #include <limits>
 #include <cstring>
 
+class MediaItem_Take;
+
 namespace reaweb {
 namespace {
 double monotonic() {
@@ -120,7 +122,8 @@ TrackControls::FxReading& TrackControls::resolveFx(Reading& r, Watch& w) {
   w.fxIndex = fx.index;
   return fx;
 }
-TrackControls::Watch TrackControls::watchFx(const Json& options) {
+TrackControls::Watch TrackControls::parseFxTarget(const Json& options) const {
+  if (!options.is_object()) throw Error("INVALID_ARGUMENT", "Expected an FX target");
   Watch w;
   w.guids.push_back(canonical(options.value("track", Json())));
   w.fxGuid = canonical(options.value("fx", Json()));
@@ -135,6 +138,10 @@ TrackControls::Watch TrackControls::watchFx(const Json& options) {
   if ((w.chain == "take" && !takeAvailable()) || (w.chain == "input" && !inputAvailable()) ||
       (w.chain == "monitoring" && !monitoringAvailable()))
     throw Error("REALTIME_UNAVAILABLE", "Requested FX chain unavailable on this host");
+  return w;
+}
+TrackControls::Watch TrackControls::watchFx(const Json& options) {
+  auto w = parseFxTarget(options);
   const auto params = options.value("parameters", Json());
   if (!params.is_array() || params.empty() || params.size() > 32)
     throw Error("INVALID_ARGUMENT", "Expected 1..32 FX parameter indices");
@@ -146,16 +153,64 @@ TrackControls::Watch TrackControls::watchFx(const Json& options) {
       throw Error("INVALID_ARGUMENT", "Duplicate FX parameter index");
     w.parameters.push_back(index);
   }
+  const auto fx = locateFx(w);
+  if (*std::max_element(w.parameters.begin(), w.parameters.end()) >= fx.parameterCount)
+    throw Error("INVALID_ARGUMENT", "Parameter is absent from this FX");
+  return w;
+}
+TrackControls::FxReading TrackControls::locateFx(Watch& w, int trackHint) {
   begin();
   w.epoch = epoch_;
-  auto& track = resolve(w.guids.front(), -1);
+  auto& track = resolve(w.guids.front(), trackHint);
   w.indices.push_back(track.index);
   const auto fx = resolveFx(track, w);
   end();
   if (fx.index < 0) throw Error("STALE_HANDLE", "FX is absent from the requested chain");
-  if (*std::max_element(w.parameters.begin(), w.parameters.end()) >= fx.parameterCount)
-    throw Error("INVALID_ARGUMENT", "Parameter is absent from this FX");
-  return w;
+  return fx;
+}
+TrackControls::FxReading TrackControls::locateWritableFx(Watch& w) {
+  if (!available()) throw Error("API_UNAVAILABLE", "FX parameters are unavailable");
+  int trackHint = -1;
+  if (w.guids == lastWriteTarget_.guids && w.fxGuid == lastWriteTarget_.fxGuid &&
+      w.takeGuid == lastWriteTarget_.takeGuid && w.chain == lastWriteTarget_.chain) {
+    trackHint = lastWriteTarget_.indices.front();
+    w.fxIndex = lastWriteTarget_.fxIndex;
+  }
+  auto fx = locateFx(w, trackHint);
+  lastWriteTarget_ = w;
+  return fx;
+}
+Json TrackControls::getFxRef(const Json& target, uint64_t projectEpoch) {
+  auto w = parseFxTarget(target);
+  locateWritableFx(w);
+  Json ref{{"projectEpoch", projectEpoch}, {"track", w.guids.front()}, {"fx", w.fxGuid}, {"chain", w.chain}};
+  if (w.chain == "take") ref["take"] = w.takeGuid;
+  return ref;
+}
+bool TrackControls::setFxParameter(const Json& ref, const Json& index, const Json& value, uint64_t projectEpoch) {
+  if (!ref.is_object() || !ref.contains("projectEpoch") || !ref["projectEpoch"].is_number_integer())
+    throw Error("INVALID_ARGUMENT", "Expected a project-bound FX reference");
+  if (ref["projectEpoch"] != projectEpoch) throw Error("PROJECT_CHANGED", "The FX belongs to an earlier project");
+  if (!index.is_number_integer() || index < 0 || index > std::numeric_limits<int>::max() ||
+      !value.is_number() || !std::isfinite(value.get<double>()) || value < 0 || value > 1)
+    throw Error("INVALID_ARGUMENT", "Expected a parameter index and normalized value in [0,1]");
+  auto w = parseFxTarget(ref);
+  const auto fx = locateWritableFx(w);
+  if (index >= fx.parameterCount) throw Error("INVALID_ARGUMENT", "Parameter is absent from this FX");
+  const int i = index.get<int>();
+  const double v = value.get<double>();
+  bool applied;
+  if (w.chain == "take") {
+    auto set = reinterpret_cast<bool (*)(MediaItem_Take*, int, int, double)>(host_.native_function("TakeFX_SetParamNormalized"));
+    if (!set) throw Error("API_UNAVAILABLE", "Take FX writes are unavailable");
+    applied = set(static_cast<MediaItem_Take*>(fx.owner), fx.index, i, v);
+  } else {
+    auto set = reinterpret_cast<bool (*)(MediaTrack*, int, int, double)>(host_.native_function("TrackFX_SetParamNormalized"));
+    if (!set) throw Error("API_UNAVAILABLE", "Track FX writes are unavailable");
+    applied = set(static_cast<MediaTrack*>(fx.owner), fx.index, i, v);
+  }
+  if (!applied) throw Error("NATIVE_ERROR", "REAPER rejected the FX parameter write");
+  return true;
 }
 TrackControls::Watch TrackControls::watch(const Json& options) {
   Watch w;

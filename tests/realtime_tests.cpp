@@ -1,5 +1,6 @@
 #include "runtime/realtime.hpp"
 #include "runtime/track_controls.hpp"
+#include "runtime/track_controls.hpp"
 #include <cstring>
 #include <iostream>
 using namespace reaweb;
@@ -190,6 +191,12 @@ void check_fx_chains() {
         else return false;
         return true;
       });
+    if (key == "TrackFX_SetParamNormalized" || key == "TakeFX_SetParamNormalized")
+      return reinterpret_cast<void*>(+[](void* owner,int index,int param,double value) {
+        CHECK(main_thread == std::this_thread::get_id());
+        CHECK(ids.count({owner,index}) == 1 && param == 1);
+        return value == 0.5;
+      });
     if (key == "TrackFX_GetNumParams" || key == "TakeFX_GetNumParams")
       return reinterpret_cast<void*>(+[](void*,int) { return 2; });
     if (key == "TrackFX_GetParamNormalized" || key == "TakeFX_GetParamNormalized")
@@ -201,6 +208,7 @@ void check_fx_chains() {
   };
   StreamHub streams;
   RealtimeManager m(h,streams,std::make_unique<Scheduler>());
+  TrackControls writer(h,TrackControls::Source::fxParameters);
   CHECK(m.capabilities()["sources"]["fx-parameters"]["chains"].size() == 4);
   for (const auto& scope : {"main","input","monitoring","take","master-main"}) {
     const bool masterScope = !std::strcmp(scope,"monitoring") || !std::strcmp(scope,"master-main");
@@ -213,6 +221,12 @@ void check_fx_chains() {
       void* owner = tkScope ? &take : masterScope ? &master : &regular;
       int address = offset | (rec ? input : 0);
       ids = {{{owner,address},fx}};
+      auto ref = writer.getFxRef(opt,7);
+      CHECK(writer.setFxParameter(ref,1,0.5,7));
+      fails([&]{writer.setFxParameter(ref,1,0.5,8);},"PROJECT_CHANGED");
+      fails([&]{writer.setFxParameter(ref,2,0.5,7);},"INVALID_ARGUMENT");
+      fails([&]{writer.setFxParameter(ref,1,1.1,7);},"INVALID_ARGUMENT");
+      fails([&]{writer.setFxParameter(ref,1,0.6,7);},"NATIVE_ERROR");
       auto wrong = opt;
       if (tkScope) wrong["take"] = mt;
       else wrong["chain"] = rec ? "main" : masterScope ? "monitoring" : "input";
@@ -221,6 +235,7 @@ void check_fx_chains() {
       auto before = calls;
       m.housekeeping(); CHECK(calls == before + 1);
       ids.clear(); validTake = !tkScope;
+      fails([&]{writer.setFxParameter(ref,1,0.5,7);},"STALE_HANDLE");
       std::this_thread::sleep_for(std::chrono::milliseconds(40));
       m.housekeeping(); CHECK(m.diagnostics(1)["subscriptions"].empty() && m.diagnostics(2)["subscriptions"].empty());
       validTake = true;

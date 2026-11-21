@@ -76,7 +76,7 @@ type lifecycleSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['lifecycle'],
 type lifecycleEvents = RuntimeAssert<RuntimeEqual<Parameters<ReaWebAPI['lifecycle']['on']>[0], 'before-close' | 'before-reload' | 'cleanup'>>;
 type debugSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['debug'], 'log' | 'warn' | 'error' | 'inspect' | 'getLogs' | 'getDiagnostics' | 'openDevTools'>>;
 type fsSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['fs'], 'openMedia' | 'openWrite' | 'readText' | 'writeText' | 'readBinary' | 'writeBinary' | 'readFile' | 'writeFile' | 'moveFile' | 'stat' | 'readDirectory' | 'makeDirectory' | 'watch'>>;
-type audioSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['audio'], 'getFileInfo' | 'getWaveform' | 'getTrackMeter' | 'getSelectedTrackRef' | 'getTrackMix' | 'applyTrackGain' | 'controlTransport' | 'setTrackValueLatest' | 'openStream' | 'resetMeter' | 'decodeMeter'>>;
+type audioSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['audio'], 'getFileInfo' | 'getWaveform' | 'getTrackMeter' | 'getSelectedTrackRef' | 'getTrackMix' | 'applyTrackGain' | 'controlTransport' | 'getFxRef' | 'setFxParameterLatest' | 'setTrackValueLatest' | 'openStream' | 'resetMeter' | 'decodeMeter'>>;
 type clipboardSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['clipboard'], 'readText' | 'writeText' | 'readBinary' | 'writeBinary'>>;
 type dragDropSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['dragDrop'], 'startFiles' | 'startText'>>;
 type appSurface = RuntimeAssert<RuntimeEqual<keyof ReaWebAPI['app'], 'getId' | 'getName' | 'getVersion' | 'getRootPath' | 'getDataPath'>>;
@@ -369,6 +369,10 @@ async function realtimeContract(reaper: ReaWebAPI) {
   const reading: Readonly<ReaWebTrackControlsSnapshot> | null = tracks.latest();
   await tracks.close();
   void caps; void state; void diagnostics; void reading;
+  const target = await reaper.audio.getFxRef({track:'track-guid', chain:'take', take:'take-guid', fx:'fx-guid'});
+  await reaper.audio.setFxParameterLatest(target, 2, 0.5);
+  // @ts-expect-error Take FX must identify the owning take.
+  await reaper.audio.getFxRef({track:'track-guid', chain:'take', fx:'fx-guid'});
   const fx = await reaper.realtime.subscribe('fx-parameters', { track: 'track-guid', fx: 'fx-guid', parameters: [1, 0] });
   const normalized: number | undefined = fx.latest()?.values[0].normalized;
   void normalized;

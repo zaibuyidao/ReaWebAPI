@@ -107,3 +107,15 @@ const sub = await reaper.realtime.subscribe('fx-parameters', {
 The initial snapshot and subsequent changes contain `{index, normalized}` pairs in request order. Values come from `TrackFX_GetParamNormalized` or `TakeFX_GetParamNormalized` (0–1). Control-surface notifications mark state for a main-thread read. Periodic snapshots catch changes exposed by the host. Sampling depends on main-thread availability and can skip intermediate automation values. The requested rate (1–120 Hz, default 60) limits publication. Overlapping subscriptions share reads per pass. Reordering preserves the binding. Removing the FX, moving it outside the chain or losing a monitored parameter closes it with `STALE_HANDLE`. Switching project closes it with `PROJECT_CHANGED`. Invalid lists or out-of-range indices at subscription time reject with `INVALID_ARGUMENT`.
 
 `fx-parameters.v1` uses little-endian `FP01`, a uint32 count, float64 host time (s) and duration (ms), uint64 project epoch and source sequence, then one float64 per requested index. Page diagnostics report `received`, `receiveHz` and `sequenceGaps` separately from host sampling, publishing and producer drops.
+
+### Writing FX parameters
+
+Resolve the same target once and reuse its project-bound reference for edits. Parameter indices are zero-based and values are normalized (0–1).
+
+```js
+const ref = await reaper.audio.getFxRef({track: trackGuid, fx: fxGuid});
+await reaper.transaction.withUndo('Set FX mix', () =>
+  reaper.audio.setFxParameterLatest(ref, mixIndex, 0.5));
+```
+
+Each parameter has one in-flight write and one pending value per page. A replaced pending write resolves with `superseded: true`. Use the existing begin/end Undo gesture for a drag and await all writes before ending it. Obtain a fresh reference after switching projects. Deleted or moved-out targets reject with `STALE_HANDLE`. Subscribe to observe the value the plug-in actually accepted.

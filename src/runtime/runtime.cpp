@@ -34,7 +34,7 @@ bool small_message(const Json& value, size_t& budget) {
 Runtime::Runtime(Host host, fs::path resource, std::function<void(const std::string&)> log, DockApi dock)
   : host_(std::move(host)), services_([this](auto handle, const auto& service, int window, const auto& name, Json data) {
       service_event(handle, service, window, name, std::move(data));
-    }), producers_(host_, streams_), video_(host_, streams_, {}, make_video_scheduler(), [this] { video_tick(); }), realtime_(host_, streams_), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), diagnostic_log_(resource_), main_thread_(std::this_thread::get_id()) {
+    }), producers_(host_, streams_), video_(host_, streams_, {}, make_video_scheduler(), [this] { video_tick(); }), realtime_(host_, streams_), fx_writer_(host_, TrackControls::Source::fxParameters), dock_(std::move(dock)), resource_(std::move(resource)), log_(std::move(log)), diagnostic_log_(resource_), main_thread_(std::this_thread::get_id()) {
   diagnostic_log_.event(Diagnostics::Level::Debug, Diagnostics::Scope::Runtime, "runtime.start.begin");
   project_ = host_.current_project();
   host_generation_ = host_.project_generation ? host_.project_generation() : 0;
@@ -181,6 +181,8 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
     presenter->layout(args[1]);
     return true;
   }
+  if (method == "ReaWeb_GetFxRef") return fx_writer_.getFxRef(args[0], project_epoch_);
+  if (method == "ReaWeb_SetFxParameter") return fx_writer_.setFxParameter(args[0], args[1], args[2], project_epoch_);
   if (method == "ReaWeb_RealtimeCapabilities") return realtime_.capabilities();
   if (method == "ReaWeb_RealtimeDiagnostics") return realtime_.diagnostics(id);
   if (method == "ReaWeb_RealtimeSubscribe") {
@@ -885,6 +887,7 @@ void Runtime::dispatch_requests(Clock::time_point deadline) {
       } else {
         if (!s->ready || s->document != document) throw Error("DOCUMENT_STALE", "The bridge document is no longer active");
         const bool project_call = method == "ReaWeb_BeginUndo" || method == "ReaWeb_GetTrackMeter" ||
+          method == "ReaWeb_GetFxRef" || method == "ReaWeb_SetFxParameter" ||
           method == "ReaWeb_SetTrackValue" || method == "ReaWeb_GetSelectedTrackRef" || method == "ReaWeb_FileDialog" ||
           method == "ReaWeb_GetTrackMix" || method == "ReaWeb_TransportControl" || method == "ReaWeb_ApplyTrackGain";
         if (project_call && (request.project != project_epoch_ || data.value("project", project_epoch_) != project_epoch_))

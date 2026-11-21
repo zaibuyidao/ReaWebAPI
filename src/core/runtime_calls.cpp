@@ -95,7 +95,8 @@ void* Bridge::audio_track(const Json& ref) {
 void Bridge::validate_managed_call(const std::string& method) {
   // Runtime already checked the gesture owner and queued project epoch.
   // GUID references are resolved against the current project at execution.
-  if (method == "ReaWeb_GetSelectedTrackRef" || method == "ReaWeb_SetTrackValue" ||
+  if (method == "ReaWeb_GetFxRef" || method == "ReaWeb_SetFxParameter" ||
+      method == "ReaWeb_GetSelectedTrackRef" || method == "ReaWeb_SetTrackValue" ||
       method == "ReaWeb_GetTrackMeter" || method == "ReaWeb_GetTrackMix") return;
   throw Error("UNDO_BUSY", "This operation is unavailable inside a managed Undo gesture");
 }
@@ -145,6 +146,8 @@ void Bridge::add_runtime_calls() {
     }
     throw Error("STALE_HANDLE", "Selected track identity is unavailable");
   });
+  add("ReaWeb_GetFxRef", 1, 1, [this](const Json& a) { return controls_.host_call("ReaWeb_GetFxRef", a); });
+  add("ReaWeb_SetFxParameter", 3, 3, [this](const Json& a) { return controls_.host_call("ReaWeb_SetFxParameter", a); });
   add("ReaWeb_SetTrackValue", 3, 3, [this](const Json& a) {
     if ((a[1] != "D_VOL" && a[1] != "D_PAN" && a[1] != "B_MUTE" && a[1] != "I_SOLO") ||
         !a[2].is_number() || !std::isfinite(a[2].get<double>()))

@@ -55,3 +55,15 @@ Transport 使用独立的普通二进制 Native Stream，按最新状态合并�
 首次推送快照，之后仅推送变化。`values` 按请求顺序返回 `{index, normalized}`，数值来自 `TrackFX_GetParamNormalized` 或 `TakeFX_GetParamNormalized`（0–1）。主线程根据宿主通知和定期快照采样，同一轮共享重复读取。请求上限为 1–120 Hz，默认 60 Hz。自动化可能跳过中间值，只能观察宿主公开的参数变化。
 
 重排后继续跟踪原 FX。目标删除、移出主链或参数消失时返回 `STALE_HANDLE`，切换工程返回 `PROJECT_CHANGED`。订阅时参数越界或重复返回 `INVALID_ARGUMENT`。页面诊断的 `received`、`receiveHz` 和 `sequenceGaps` 分别记录接收数、接收频率和序号缺口，可与宿主采样、发布及丢弃计数对照。
+
+### 写入 FX 参数
+
+普通网页可使用与订阅相同的目标获取工程绑定引用，再按从零开始的参数索引写入 0–1 标准化值。
+
+```js
+const ref = await reaper.audio.getFxRef({track: trackGuid, fx: fxGuid});
+await reaper.transaction.withUndo('设置 FX 混合比例', () =>
+  reaper.audio.setFxParameterLatest(ref, mixIndex, 0.5));
+```
+
+同一页面对同一参数仅保留一个正在执行的写入和一个最新待写值，被替代的请求返回 `superseded: true`。拖动时可用已有的 beginUndo/endUndo 将整次操作合为一步撤销，结束前应等待所有写入完成。切换工程后需重新获取引用。目标被删除或移出原链时返回 `STALE_HANDLE`。可通过订阅读回插件接受的实际值。

@@ -145,6 +145,8 @@ REAPER 工程、对象、播放及窗口状态通知。Host state notifications;
 | `reaper.audio.applyTrackGain(track, volume, undoLabel)` | `Promise<{ name, volume }>` | 通过当前工程的轨道引用设置线性音量，记录一步撤销并回读结果 |
 | `reaper.audio.controlTransport(action)` | `Promise<null>` | 操作当前工程的走带，仅接受 `play`、`pause`、`stop` |
 | `reaper.audio.getTrackMeter(track)` | `Promise<ReaWebTrackMeter>` | 接受上述工程轨道引用，读取各声道瞬时峰值及 dBFS |
+| `reaper.audio.getFxRef(target)` | `Promise<ReaWebFxRef>` | 按轨道、FX 和可选 Take GUID 解析当前工程内的 FX |
+| `reaper.audio.setFxParameterLatest(ref, index, normalized)` | `Promise<{ applied, superseded }>` | 合并同一 FX 参数的待写入值，支持 0–1 标准化值和托管撤销 |
 | `reaper.audio.setTrackValueLatest(track, key, value)` | `Promise<{ applied, superseded }>` | 合并连续音量、声像、静音、Solo 写入；不会自动创建 Undo |
 
 ## reaper.clipboard

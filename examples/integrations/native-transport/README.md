@@ -38,3 +38,7 @@ With v0.3.9.29, the latest snapshot also shows `playRate`, position-specific `te
 v0.3.9.29 的最新快照及 CSV 包含 `playRate`、当前位置的 `tempo` 和 `timeSignature`，以及支持小数的累计 `beatPosition`（QN）。
 
 For FX monitoring, choose a chain, enter the FX GUID and a zero-based parameter index. Enter the owning track GUID or leave it blank for the selected track. Monitoring uses the master track GUID and Take FX also requires its take GUID. Choose **Observe FX on selected track**. Compare the normalized value with REAPER while adjusting the parameter. Transport and track subscriptions can remain active.
+
+While observing an FX parameter, enter a normalized value (0–1) and choose **Set FX parameter**. Project FX edits use one undo step per click.
+
+观察 FX 参数时，输入 0–1 的标准化值并点击 **写入 FX 参数**。工程 FX 的每次编辑可单独撤销。
