@@ -48,8 +48,10 @@ el('open').onclick = action(async () => {
   await detach();
   const kind = el('kind').value;
   builtinMeter = kind === 'meter';
-  const aggregate = el('source').value === 'aggregate-track';
-  current = kind === 'named stream' ? await reaper.stream.open(el('name').value) : kind === 'midi' ? await reaper.system.openMIDIInput(Number(el('midi').value)) : await reaper.audio.openStream(kind, { source: aggregate ? 'selected-track' : el('source').value, aggregate, fftSize: 2048, updateRate: 30, ...(kind === 'meter' ? { forceMono: el('mono').checked, integratedMode: el('integrated').value } : {}) });
+  const selection = el('source').value;
+  const aggregate = selection === 'aggregate-track';
+  const tap = ['post-fx', 'post-fader'].includes(selection) ? selection : undefined;
+  current = kind === 'named stream' ? await reaper.stream.open(el('name').value) : kind === 'midi' ? await reaper.system.openMIDIInput(Number(el('midi').value)) : await reaper.audio.openStream(kind, { source: aggregate || tap ? 'selected-track' : selection, ...(tap ? {tap} : {}), aggregate, fftSize: 2048, updateRate: 30, ...(kind === 'meter' ? { forceMono: el('mono').checked, integratedMode: el('integrated').value } : {}) });
   el('info').textContent = show(current.info); el('close').disabled = false;
   el('reset').disabled = kind !== 'meter';
   current.on('data', () => { if (!queued) { queued = true; requestAnimationFrame(draw); } });

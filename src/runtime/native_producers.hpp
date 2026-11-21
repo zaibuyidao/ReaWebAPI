@@ -5,6 +5,7 @@ class NativeProducers {
 public:
   NativeProducers(const Host& host, StreamHub& streams);
   ~NativeProducers();
+  void initialize_track_mixer();
   std::string audio(const std::string& kind, const Json& options, int window);
   void reset_meter(const std::string& name, int window);
   std::string midi(int device, int window);

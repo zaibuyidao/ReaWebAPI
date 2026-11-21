@@ -527,6 +527,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       if (auto section = main_section(0)) translate_key(main, &message, section);
     };
     runtime = std::make_unique<Runtime>(std::move(host), fs::u8path(resource()), log_error, std::move(dock));
+    runtime->producers().initialize_track_mixer();
     runtime->schedule_webview_warmup();
     runtime->configure_webviews(idle_webview_preferences());
     runtime->initialize_jsfx(make_jsfx_editor_discovery());

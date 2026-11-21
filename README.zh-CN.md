@@ -110,7 +110,7 @@ Windows 使用 MSVC x64，并添加 `-A x64`。macOS 使用 `-DCMAKE_OSX_ARCHITE
 
 EEL2 后端使用同一消息桥。SDK 提供[最简示例](examples/backends/eel-backend/README.zh-CN.md)和[双向轨道混音示例](examples/backends/eel-mixer/README.zh-CN.md)，分别安装于 `eel-backend/` 和 `eel-mixer/`。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入包含执行确认、未确认请求限流和最终值保护。
 
-Native Stream 在多路分析间复用轨道采样，支持 `aggregate: true`，用于 Folder 和 Receive Bus 的 pre-FX 源内容同步聚合分析。见 [接口契约](docs/native-streams.zh-CN.md) 和 [Demo](examples/integrations/native-stream/README.md)。
+Native Stream 在多路分析间复用轨道采样，支持 `aggregate: true`，用于 Folder 和 Receive Bus 的 pre-FX 源内容同步聚合分析。见 [接口契约](docs/native-streams.zh-CN.md) 和 [Demo](examples/integrations/native-stream/README.md)。在 macOS arm64、Linux x86_64 和 Windows x64 上，扩展识别宿主混音器后，可在 FX 后（推子前）和推子后采集双声道播放流。
 
 路由中的父轨、总线或上游轨道不含媒体时，聚合 RMS/LUFS 历史仍会持续累计。
 

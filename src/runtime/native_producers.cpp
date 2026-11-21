@@ -1,6 +1,7 @@
 #include "runtime/native_producers.hpp"
 #include "runtime/audio_analysis.hpp"
 #include "runtime/aggregate_source.hpp"
+#include "runtime/native_track_mixer.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -163,12 +164,19 @@ struct NativeProducers::Impl {
     double update_rate = 30;
     std::string name, identity;
     void* track = nullptr;
+    void* project = nullptr;
+#if REAWEB_TRACK_RENDER_CACHE
+    Guid live_guid{};
+    std::atomic<int> track_index{-1};
+#endif
+    bool post_fader = false;
+    std::atomic<uint64_t> live_sequence{0};
     std::shared_ptr<TrackSource> track_source;
     std::unique_ptr<StreamBuffer> input;
     std::unique_ptr<AudioAnalysis> analysis;
     std::atomic<bool> stopping{false};
     std::atomic<int> error{0};
-    bool attached = false;
+    std::atomic<bool> attached{false};
     bool force_mono = false, reset_on_start = true;
     std::string integrated_mode;
     std::vector<float> stereo;
@@ -202,6 +210,92 @@ struct NativeProducers::Impl {
   bool midi_initialized = false;
   bool was_playing = false;
   std::atomic<bool> meter_playing{false};
+  static constexpr int live_track = 3;
+  NativeTrackMixer mixer;
+#if REAWEB_TRACK_RENDER_CACHE
+  std::atomic<unsigned> live_users{0};
+  // The control thread owns one snapshot, the audio thread owns another.
+  // Only the middle slot is exchanged. The audio thread never waits for a
+  // subscription change or releases the last reference to a retired entry.
+  using LiveEntries = std::array<std::shared_ptr<Entry>, 8>;
+  std::array<LiveEntries, 3> live_snapshots{};
+  static constexpr unsigned snapshot_ready = 4;
+  unsigned write_slot = 0, read_slot = 1;
+  std::atomic<unsigned> middle_slot{2};
+  void update_live_entries() {
+    auto& snapshot = live_snapshots[write_slot];
+    auto end = std::copy_if(entries.begin(), entries.end(), snapshot.begin(),
+        [](const auto& entry) { return entry->source == live_track; });
+    std::fill(end, snapshot.end(), nullptr);
+    write_slot = middle_slot.exchange(write_slot | snapshot_ready, std::memory_order_acq_rel) & ~snapshot_ready;
+  }
+  uint64_t audio_cycle = 0;
+  using GetTrack = void* (*)(void*, int);
+  using GetGuid = const void* (*)(void*);
+  using TrackId = int (*)(void*, bool);
+  GetTrack get_track = nullptr;
+  GetGuid get_guid = nullptr;
+  TrackId track_id = nullptr;
+  void hardware_tracks(bool post, int frames, double rate) noexcept {
+    if (!post) ++audio_cycle;
+    if (!live_users.load(std::memory_order_relaxed) || frames < 1 || frames > 8192 ||
+        !std::isfinite(rate) || rate < 8000 || rate > 768000) return;
+    if (middle_slot.load(std::memory_order_acquire) & snapshot_ready)
+      read_slot = middle_slot.exchange(read_slot, std::memory_order_acq_rel) & ~snapshot_ready;
+    auto* project = host.current_project();
+    std::array<void*, 8> visited{};
+    auto end = visited.begin();
+    for (const auto& entry : live_snapshots[read_slot]) {
+      if (!entry) break;
+      if (!entry->attached || entry->stopping || entry->error || entry->project != project ||
+          std::find(visited.begin(), end, entry->track) != end) continue;
+      const auto index = entry->track_index.load(std::memory_order_relaxed);
+      if (index < 0 || get_track(project, index) != entry->track) continue;
+      const auto* guid = get_guid(entry->track);
+      if (!guid || std::memcmp(entry->live_guid.data(), guid, entry->live_guid.size())) continue;
+      *end++ = entry->track;
+      mixer.hardware(post, project, entry->track, frames, rate, audio_cycle);
+    }
+  }
+#else
+  unsigned live_users = 0;
+  void update_live_entries() {}
+#endif
+  struct LiveBuffer {
+    Capture::Header header;
+    std::array<float, 8192 * 2> samples;
+    std::array<double, 8192 * 2> output;
+  };
+  std::unique_ptr<LiveBuffer> live;
+  static void capture_track(void* context, const NativeTrackBlock& block) noexcept {
+    auto& p = *static_cast<Impl*>(context);
+#if REAWEB_TRACK_RENDER_CACHE
+    const auto& subscriptions = p.live_snapshots[p.read_slot];
+#else
+    std::unique_lock<std::mutex> lock(p.mutex, std::try_to_lock);
+    if (!lock.owns_lock()) return;
+    const auto& subscriptions = p.entries;
+#endif
+    for (const auto& entry : subscriptions) {
+      if (!entry) break;
+      if (entry->source != live_track || entry->track != block.track || !entry->attached || entry->stopping || entry->error) continue;
+      if (block.rate != entry->rate) { entry->error = REAWEB_UNSUPPORTED_FORMAT; continue; }
+      auto& buffer = *p.live;
+      buffer.header = {entry->rate, 2, 1, p.meter_playing.load() ? 1u : 0u, 2, 0};
+      auto* samples = block.pcm;
+      unsigned stride = block.channels;
+      if (entry->post_fader && samples && !block.silence) {
+        block.render_output(block, buffer.output.data(), 2);
+        samples = buffer.output.data(); stride = 2;
+      }
+      for (unsigned i = 0; i < block.frames; ++i) for (unsigned ch = 0; ch < 2; ++ch) {
+        const double value = samples && !block.silence ? samples[i * stride + std::min(ch, stride - 1)] : 0;
+        buffer.samples[2 * i + ch] = std::isfinite(value) && std::abs(value) <= std::numeric_limits<float>::max() ? static_cast<float>(value) : 0;
+      }
+      entry->input->publish(&buffer, static_cast<uint32_t>(sizeof(buffer.header) + block.frames * 2 * sizeof(float)),
+                            ++entry->live_sequence, block.position);
+    }
+  }
   explicit Impl(const Host& h, StreamHub& s) : host(h), streams(s), worker([this] { run(); }) {}
   void update_device_channels(int source) {
     // Some hardware hooks leave input_nch/output_nch at zero. Query the device
@@ -210,12 +304,14 @@ struct NativeProducers::Impl {
     if (count) capture[source].device_channels = static_cast<unsigned>(std::clamp(count(), 0, 32));
   }
   ~Impl() {
+    mixer.stop();
     stopping = true; worker.join();
     for (auto& entry : entries) { entry->track_source.reset(); streams.close(entry->handle); }
   }
   void close(const std::shared_ptr<Entry>& entry) {
     entry->stopping = true;
     entry->track_source.reset();
+    if (entry->source == live_track && !--live_users) mixer.active(false);
     if (entry->kind != REAWEB_MIDI && entry->source < 2) --capture[entry->source].users;
     streams.close(entry->handle, entry->error ? entry->error.load() : REAWEB_STREAM_CLOSED);
   }
@@ -231,6 +327,8 @@ struct NativeProducers::Impl {
           entry.stopping = true; retired.push_back(*it); it = entries.erase(it);
         } else ++it;
       }
+      if (std::any_of(retired.begin(), retired.end(), [](const auto& entry) { return entry->source == live_track; }))
+        update_live_entries();
     }
     for (const auto& entry : retired) close(entry);
   }
@@ -272,7 +370,7 @@ struct NativeProducers::Impl {
     const auto* data = packet.data.data(); size_t bytes = packet.data.size();
     bool reset_meter = false, integrate = true;
     unsigned pcm_channels = entry.channels;
-    if (entry.source < 2) {
+    if (entry.source != 2) {
       Capture::Header header; std::memcpy(&header, data, sizeof(header)); data += sizeof(header); bytes -= sizeof(header);
       pcm_channels = header.stored_channels;
       if (entry.kind == REAWEB_METER) {
@@ -326,13 +424,23 @@ struct NativeProducers::Impl {
 };
 NativeProducers::NativeProducers(const Host& host, StreamHub& streams) : impl_(std::make_unique<Impl>(host, streams)) {}
 NativeProducers::~NativeProducers() = default;
+void NativeProducers::initialize_track_mixer() {
+#if REAWEB_TRACK_RENDER_CACHE
+  impl_->get_track = function<Impl::GetTrack>(impl_->host, "GetTrack");
+  impl_->get_guid = function<Impl::GetGuid>(impl_->host, "GetTrackGUID");
+  impl_->track_id = function<Impl::TrackId>(impl_->host, "CSurf_TrackToID");
+  if (!impl_->get_track || !impl_->get_guid || !impl_->track_id || !impl_->host.track_guid ||
+      !impl_->host.current_project || !impl_->host.valid_track) return;
+#endif
+  impl_->mixer.initialize(impl_->host, impl_.get(), Impl::capture_track);
+}
 std::string NativeProducers::audio(const std::string& kind, const Json& options, int window) {
   auto& p = *impl_; auto entry = std::make_shared<Impl::Entry>();
   if (p.worker_failed) throw Error("NATIVE_ERROR", "Audio analysis worker unavailable");
   p.reap();
   { std::lock_guard<std::mutex> lock(p.mutex); if (p.entries.size() >= 8) throw Error("QUEUE_LIMIT", "At most eight built-in producers may be active"); }
   if (!options.is_object()) throw Error("INVALID_ARGUMENT", "Expected audio stream options");
-  for (const auto& value : options.items()) if (value.key() != "source" && value.key() != "fftSize" && value.key() != "updateRate" && value.key() != "aggregate" &&
+  for (const auto& value : options.items()) if (value.key() != "source" && value.key() != "fftSize" && value.key() != "updateRate" && value.key() != "aggregate" && value.key() != "tap" &&
       !(kind == "meter" && (value.key() == "forceMono" || value.key() == "resetOnPlaybackStart" || value.key() == "integratedMode")))
     throw Error("INVALID_ARGUMENT", "Unknown audio stream option: " + value.key());
   if (!options.value("source", Json("master")).is_string() || !options.value("fftSize", Json(2048)).is_number_integer() ||
@@ -345,6 +453,14 @@ std::string NativeProducers::audio(const std::string& kind, const Json& options,
   entry->integrated_mode = options.value("integratedMode", std::string("playback-only"));
   const auto source = options.value("source", std::string("master"));
   const bool aggregate = options.value("aggregate", false);
+  std::string tap;
+  if (options.contains("tap")) {
+    if ((source != "selected-track" && source.rfind("track:", 0) != 0) || !options["tap"].is_string())
+      throw Error("INVALID_ARGUMENT", "tap requires a track source");
+    tap = options["tap"].get<std::string>();
+    if (tap != "pre-fx" && tap != "post-fx" && tap != "post-fader") throw Error("INVALID_ARGUMENT", "Unknown track tap");
+    if (aggregate && tap != "pre-fx") throw Error("INVALID_ARGUMENT", "aggregate requires pre-fx");
+  }
   if (aggregate && source != "selected-track" && source.rfind("track:", 0) != 0)
     throw Error("INVALID_ARGUMENT", "aggregate requires selected-track or track:<GUID>");
   const auto fft = options.value("fftSize", 2048);
@@ -354,6 +470,11 @@ std::string NativeProducers::audio(const std::string& kind, const Json& options,
   entry->kind = kind == "audio" ? REAWEB_AUDIO : kind == "spectrum" ? REAWEB_SPECTRUM : kind == "meter" ? REAWEB_METER : kind == "waveform" ? REAWEB_WAVEFORM : 0;
   if (!entry->kind) throw Error("UNSUPPORTED_FORMAT", "Expected audio, spectrum, meter or waveform");
   entry->source = source == "master" ? 1 : source == "input" ? 0 : 2; entry->window = window; entry->fft_size = fft; entry->update_rate = update;
+  if (tap == "post-fx" || tap == "post-fader") {
+    if (!p.mixer.available()) throw Error("API_UNAVAILABLE", "Native track tap unavailable on this REAPER build");
+    entry->source = Impl::live_track;
+    entry->post_fader = tap == "post-fader";
+  }
   entry->force_mono = options.value("forceMono", false); entry->reset_on_start = options.value("resetOnPlaybackStart", true);
   if (entry->source < 2) {
     p.update_device_channels(entry->source);
@@ -371,13 +492,13 @@ std::string NativeProducers::audio(const std::string& kind, const Json& options,
   char rate[64]{};
   if (device && device("SRATE", rate, sizeof(rate))) {
     const double value = std::strtod(rate, nullptr); if (value >= 8000 && value <= 768000) entry->rate = static_cast<unsigned>(value);
-  } else if (entry->source < 2) throw Error("AUDIO_UNAVAILABLE", "No active hardware audio device");
+  } else if (entry->source != 2) throw Error("AUDIO_UNAVAILABLE", "No active hardware audio device");
   entry->identity = source == "master" ? "hardware-output:0,1" : source == "input" ? "hardware-input:0,1" : source;
   if (entry->source < 2 && entry->kind == REAWEB_METER && entry->channels != 2) {
     entry->identity = entry->source ? "hardware-output:" : "hardware-input:";
     for (unsigned ch = 0; ch < entry->channels; ++ch) entry->identity += (ch ? "," : "") + std::to_string(ch);
   }
-  if (entry->source == 2) {
+  if (entry->source >= 2) {
     if (source == "selected-track") {
       auto selected = function<void* (*)(void*, int)>(p.host, "GetSelectedTrack"); if (selected) entry->track = selected(nullptr, 0);
     } else if (source.rfind("track:", 0) == 0 && p.host.track_count && p.host.track_identity) {
@@ -390,6 +511,21 @@ std::string NativeProducers::audio(const std::string& kind, const Json& options,
       for (int i = 0; get && p.host.track_count && i < p.host.track_count(); ++i)
         if (get(nullptr, i) == entry->track) { entry->identity = "track:" + p.host.track_identity(i); break; }
     }
+  }
+  if (entry->source == Impl::live_track) {
+    entry->identity += ":" + tap;
+    entry->project = p.host.current_project ? p.host.current_project() : nullptr;
+#if REAWEB_TRACK_RENDER_CACHE
+    entry->track_index = p.track_id(entry->track, false) - 1;
+    entry->live_guid = p.host.track_guid(entry->track);
+#endif
+    auto desc = audio_desc(entry->rate, 2);
+    desc.format = REAWEB_BYTES;
+    desc.max_bytes += sizeof(Impl::Capture::Header);
+    entry->input = std::make_unique<StreamBuffer>(REAWEB_AUDIO, desc);
+    if (!p.live) p.live = std::make_unique<Impl::LiveBuffer>();
+  }
+  if (entry->source == 2) {
     auto create = function<void* (*)(void*)>(p.host, "CreateTrackAudioAccessor");
     if (!create || !function<void (*)(void*)>(p.host, "DestroyAudioAccessor") ||
         !function<int (*)(void*, int, int, double, int, double*)>(p.host, "GetAudioAccessorSamples"))
@@ -444,14 +580,19 @@ std::string NativeProducers::audio(const std::string& kind, const Json& options,
   { std::lock_guard<std::mutex> lock(p.mutex); status = p.entries.size() < 8 ? p.streams.create(entry->kind, entry->name.c_str(), &desc, &entry->handle) : REAWEB_QUEUE_LIMIT;
     if (!status) { if (entry->source < 2) ++p.capture[entry->source].users;
       if (p.worker_failed) entry->error = REAWEB_SERVICE_ERROR;
-      p.entries.push_back(entry); } }
+      p.entries.push_back(entry);
+      if (entry->source == Impl::live_track) {
+        p.update_live_entries();
+        if (++p.live_users == 1) p.mixer.active(true);
+      } } }
   if (status) throw Error(StreamHub::code(status), "Cannot create audio analysis stream");
   return entry->name;
 }
 void NativeProducers::reset_meter(const std::string& name, int window) {
   auto& p = *impl_; std::lock_guard<std::mutex> lock(p.mutex);
   for (const auto& entry : p.entries) if (entry->name == name && entry->kind == REAWEB_METER && entry->window == window && !entry->stopping && !entry->error) {
-    entry->request_meter_reset(entry->source < 2 ? p.capture[entry->source].sequence.load() : entry->track_source->sequence);
+    entry->request_meter_reset(entry->source < 2 ? p.capture[entry->source].sequence.load() :
+      entry->source == Impl::live_track ? entry->live_sequence.load() : entry->track_source->sequence);
     return;
   }
   throw Error("INVALID_HANDLE", "Expected a built-in meter opened by this window");
@@ -470,6 +611,9 @@ std::string NativeProducers::midi(int device, int window) {
   p.entries.push_back(entry); return entry->name;
 }
 void NativeProducers::capture(bool output, int frames, double rate, int channels, double* (*get)(bool, int)) noexcept {
+#if REAWEB_TRACK_RENDER_CACHE
+  impl_->hardware_tracks(output, frames, rate);
+#endif
   auto& capture = impl_->capture[output ? 1 : 0];
   ++capture.callbacks;
   capture.callback_frames = frames; capture.callback_channels = channels; capture.has_buffer = get != nullptr;
@@ -504,17 +648,25 @@ void NativeProducers::tick() {
   const auto now = std::chrono::steady_clock::now();
   const auto deadline = now + std::chrono::milliseconds(2);
   ++p.tick_sequence;
-  if (std::any_of(active.begin(), active.end(), [](const auto& entry) { return entry->kind == REAWEB_METER && entry->source < 2; })) {
+  if (std::any_of(active.begin(), active.end(), [](const auto& entry) { return entry->kind == REAWEB_METER && entry->source != 2; })) {
     auto play_state = function<int (*)()>(p.host, "GetPlayState");
     const bool playing = play_state && (play_state() & 1);
     p.meter_playing = playing;
-    for (const auto& entry : active) if (entry->kind == REAWEB_METER && entry->source < 2 && entry->reset_on_start && playing && !p.was_playing) {
-      entry->request_meter_reset(p.capture[entry->source].sequence.load());
+    for (const auto& entry : active) if (entry->kind == REAWEB_METER && entry->source != 2 && entry->reset_on_start && playing && !p.was_playing) {
+      entry->request_meter_reset(entry->source == Impl::live_track ? entry->live_sequence.load() : p.capture[entry->source].sequence.load());
     }
     p.was_playing = playing;
   }
   for (size_t i = 0; i < active.size(); ++i) {
     auto& entry = *active[(i + p.tick_sequence - 1) % active.size()];
+    if (entry.source == Impl::live_track && ((p.host.current_project && p.host.current_project() != entry.project) ||
+        (p.host.valid_track && !p.host.valid_track(entry.project, entry.track)))) entry.error = REAWEB_STREAM_CLOSED;
+#if REAWEB_TRACK_RENDER_CACHE
+    if (entry.source == Impl::live_track && !entry.error) {
+      if (p.host.track_guid(entry.track) != entry.live_guid) entry.error = REAWEB_STREAM_CLOSED;
+      else entry.track_index = p.track_id(entry.track, false) - 1;
+    }
+#endif
     if (!entry.attached || !entry.track_source) continue;
     auto& source = *entry.track_source;
     source.sample(p.tick_sequence, now, deadline);
@@ -552,11 +704,16 @@ void NativeProducers::tick() {
 }
 void NativeProducers::close_window(int window) {
   auto& p = *impl_; std::lock_guard<std::mutex> lock(p.mutex);
+  bool removed_live = false;
   for (auto it = p.entries.begin(); it != p.entries.end();) {
     if ((*it)->window != window) { ++it; continue; }
     if (p.streams.consumers((*it)->handle)) { (*it)->window = 0; ++it; }
-    else { p.close(*it); it = p.entries.erase(it); }
+    else {
+      removed_live |= (*it)->source == Impl::live_track;
+      p.close(*it); it = p.entries.erase(it);
+    }
   }
+  if (removed_live) p.update_live_entries();
 }
 Json NativeProducers::devices() const {
   const auto& host = impl_->host; Json result{{"audio", Json::object()}, {"midiInputs", Json::array()}, {"midiOutputs", Json::array()}};

@@ -111,7 +111,7 @@ Pure JavaScript apps use the Runtime APIs. For Lua-owned project logic, use the 
 
 EEL2 backends use the same message bridge. The SDK includes a [minimal example](examples/backends/eel-backend/README.md) and a [bidirectional track mixer](examples/backends/eel-mixer/README.md), installed under `eel-backend/` and `eel-mixer/`. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
 
-Native Streams share track sampling across analysis views and support `aggregate: true` for synchronized pre-FX source analysis of folders and receive buses: [contract](docs/native-streams.md) · [Demo](examples/integrations/native-stream/README.md).
+Native Streams share track sampling across analysis views and support `aggregate: true` for synchronized pre-FX source analysis of folders and receive buses: [contract](docs/native-streams.md) · [Demo](examples/integrations/native-stream/README.md). Stereo post-FX and post-fader playback streams are available on macOS arm64, Linux x86_64, and Windows x64 when the extension recognizes the host mixer.
 
 Aggregate RMS/LUFS history continues accumulating when routed folders, buses or upstream tracks contain no media.
 

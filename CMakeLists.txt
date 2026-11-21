@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.9.52 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.9.53 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -122,6 +122,8 @@ add_library(reaweb_runtime STATIC
   src/runtime/loudness_meter.cpp
   src/runtime/aggregate_source.cpp
   src/runtime/native_producers.cpp
+  src/runtime/native_track_mixer.cpp
+  src/runtime/native_track_cache.cpp
   src/runtime/video.cpp
   src/video/internal.cpp
   src/video/scheduler.cpp
@@ -154,15 +156,20 @@ add_library(reaweb_runtime STATIC
   src/runtime/transaction.cpp)
 target_link_libraries(reaweb_runtime PUBLIC reaweb_core PRIVATE reaweb_loudness)
 if(APPLE)
+  target_sources(reaweb_runtime PRIVATE src/runtime/native_track_mixer_mac.cpp)
   target_link_libraries(reaweb_runtime PRIVATE "-framework CoreFoundation")
 endif()
 if(UNIX AND NOT APPLE)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(reaweb_runtime PRIVATE src/runtime/native_track_mixer_linux.cpp)
+  endif()
   target_link_libraries(reaweb_runtime PRIVATE dl)
 endif()
 target_include_directories(reaweb_runtime PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_include_directories(reaweb_runtime SYSTEM PRIVATE "${wdl_SOURCE_DIR}/WDL")
 target_include_directories(reaweb_runtime SYSTEM PRIVATE "${reaper_sdk_SOURCE_DIR}/sdk")
 if(WIN32)
+  target_sources(reaweb_runtime PRIVATE src/runtime/native_track_mixer_win.cpp)
   target_link_libraries(reaweb_runtime PRIVATE ws2_32)
 endif()
 

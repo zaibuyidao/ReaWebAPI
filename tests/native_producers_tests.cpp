@@ -1,4 +1,8 @@
 #include "runtime/native_producers.hpp"
+#include "runtime/native_track_mixer.hpp"
+#if REAWEB_TRACK_RENDER_CACHE
+#include "runtime/native_track_cache.hpp"
+#endif
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -41,6 +45,16 @@ int main() {
       return nullptr;
     };
     StreamHub streams; NativeProducers producers(host, streams);
+#if REAWEB_TRACK_RENDER_CACHE
+    // This executable has no REAPER mixer or track cache.
+    CHECK(!native_track_cache_layout().mix);
+    for (const auto* tap : {"post-fx", "post-fader"}) {
+      bool unavailable = false;
+      try { producers.audio("audio", Json{{"source", "selected-track"}, {"tap", tap}}, 1); }
+      catch (const Error& error) { unavailable = error.code == "API_UNAVAILABLE"; }
+      CHECK(unavailable && streams.info()["streams"].empty());
+    }
+#endif
     for (const auto& options : {Json{{"source", "master"}, {"aggregate", true}},
                                Json{{"source", "input"}, {"aggregate", true}},
                                Json{{"source", "selected-track"}, {"aggregate", 1}}, Json{{"forceMono", true}}, Json{{"resetOnPlaybackStart", true}}, Json{{"integratedMode", "continuous"}}}) {

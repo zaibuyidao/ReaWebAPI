@@ -515,6 +515,8 @@ interface ReaWebAPI {
      * All meter history shares one reset lifecycle. processedSeconds counts processed PCM frames / sample rate. */
     openStream(kind: 'audio' | 'spectrum' | 'meter' | 'waveform', options?: {
       source?: 'master' | 'input' | 'selected-track' | `track:${string}`; fftSize?: number; updateRate?: number;
+      /** Track sources only. post-fx reads the parent mix input before fader gain and can include track pan. post-fader includes that gain. */
+      tap?: 'pre-fx' | 'post-fx' | 'post-fader';
       /** Sum routed pre-FX track source PCM. Track sources only, defaults to false. */
       aggregate?: boolean;
       /** Meter only. Cockos mono calibration: subtract 3 dB from global RMS/LUFS, without downmixing PCM. */
