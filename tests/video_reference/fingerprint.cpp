@@ -1,4 +1,4 @@
-#include "video/fingerprint.hpp"
+#include "fingerprint.hpp"
 #include "runtime/jsfx_transfer.hpp"
 #include <algorithm>
 #include <cstdint>

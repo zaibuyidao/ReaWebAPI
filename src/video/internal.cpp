@@ -1,12 +1,10 @@
 #include "video/internal.hpp"
-#include "video/fingerprint.hpp"
-#include "video/builds.hpp"
+#include "video/layout.hpp"
 #define WDL_ALLOW_UNSIGNED_DEFAULT_CHAR
 #include <wdltypes.h>
 #include <video_frame.h>
 #include <cmath>
 #include <cstring>
-#include <fstream>
 #include <thread>
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -63,8 +61,9 @@ class InternalVideo final : public VideoBackend {
   const Host& host;
   std::thread::id main = std::this_thread::get_id();
   Module module;
+  VideoBuild layout{};
   const VideoBuild* build = nullptr;
-  bool verified = false, leased = false;
+  bool leased = false;
   bool has_frame = false;
   int64_t last_index = 0;
   uintptr_t last_frame = 0;
@@ -77,7 +76,7 @@ class InternalVideo final : public VideoBackend {
   }
   template<class T> T internal(size_t offset) const { return reinterpret_cast<T>(module.base + offset); }
 public:
-  explicit InternalVideo(const Host& h) : host(h) {}
+  explicit InternalVideo(const Host& h) : host(h) { supported(); }
   ~InternalVideo() override { stop(); }
   bool supports_i420() const override {
 #if (defined(_WIN64) && (defined(_M_X64) || defined(__x86_64__))) || (defined(__APPLE__) && defined(__aarch64__)) || (defined(__linux__) && defined(__x86_64__))
@@ -87,26 +86,15 @@ public:
 #endif
   }
   bool supported() override {
-    if (!video_builds[0].checksum || std::this_thread::get_id() != main) return false;
+    if (std::this_thread::get_id() != main) return false;
     if (!api<void*>("EnumProjects") || !api<void*>("TimeMap_curFrameRate")) return false;
     const auto loaded = find_module();
-    if (!loaded.base) return false;
-    if (verified && loaded.base == module.base && loaded.path == module.path) return true;
-    if (loaded.base != module.base) leased = false;
-    verified = false; module = loaded;
-    std::ifstream file(module.path, std::ios::binary | std::ios::ate);
-    if (!file) return false;
-    const auto size = file.tellg();
-    if (size <= 0 || size > 64 * 1024 * 1024) return false;
-    std::vector<unsigned char> bytes(static_cast<size_t>(size));
-    file.seekg(0); file.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
-    if (!file) return false;
-    const auto fingerprint = video_module_fingerprint(std::move(bytes));
-    if (const auto* candidate = find_video_build(fingerprint)) {
-      build = candidate;
-      verified = true;
-    }
-    return verified;
+    if (loaded.base == module.base && loaded.path == module.path) return build != nullptr;
+    leased = false;
+    has_frame = false;
+    module = loaded;
+    build = module.base && resolve_video_layout(module.base, module.path, layout) ? &layout : nullptr;
+    return build != nullptr;
   }
   void stop() override {
     has_frame = false;

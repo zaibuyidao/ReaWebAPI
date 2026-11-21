@@ -77,6 +77,10 @@ Thumbs.db
 !/tests/isolation_emulator.js
 !/tests/reapack_check.rb
 !/tests/CMakeLists.txt
+!/tests/video_reference/
+/tests/video_reference/*
+!/tests/video_reference/*.cpp
+!/tests/video_reference/*.hpp
 !/tests/fixtures/
 /tests/fixtures/*
 !/tests/fixtures/retired-mirror-names.json

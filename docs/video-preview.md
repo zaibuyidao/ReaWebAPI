@@ -6,19 +6,15 @@ Run [reawebapi-video-preview.lua](../examples/integrations/video-preview/reaweba
 
 ## Host compatibility
 
-Install the v0.3.9.46 or newer extension for REAPER 7.86, matching the host platform and architecture. The video backend checks a normalized module fingerprint rather than the REAPER version string. Selected build metadata fields are excluded from the fingerprint while code, data and layout remain checked to protect calls through fixed internal offsets.
+REAPER 7.80, 7.81, 7.82, 7.83, 7.84, 7.85 and 7.86 were each tested on Windows x64, macOS arm64 and Linux x86_64. All three platforms were checked for RGBA playback and I420 pixel accuracy. Windows and macOS were also checked for native D3D11 and Metal presentation, respectively.
 
-The backend supports Windows x64, macOS arm64 and Linux x86_64 with mappings for REAPER 7.84, 7.85 and 7.86. Linux also retains its 7.82 mapping. Normalization excludes PE build timestamps, checksums and CodeView identifiers, Mach-O UUIDs and code-signature payloads, and ELF GNU build IDs.
+Install ReaWebAPI v0.3.9.54 for startup layout detection. The backend locates the functions and data slots it needs in the loaded REAPER video module and validates their relationships before reading frames. If REAPER loads the video module later, detection runs when video is first requested. The result is cached for that module.
 
-`getCapabilities()` reports backend startup prerequisites and shared profile limits. The backend is `reaper-internal`. If the module fingerprint does not match, the module cannot be read, or required host APIs or a platform/architecture implementation are missing, `available` is `false`, `openStream()` rejects with `VIDEO_HOST_UNSUPPORTED`, and the demo displays an unavailable message. No desktop-capture permission is required.
+A new REAPER build can use the same detection rules when its video implementation and layout remain compatible. A change that prevents a unique match or fails a layout check disables the video backend. Validate new releases with actual project video on each target platform.
 
-Internal calls are allowed only when the normalized module fingerprint matches the fixed offsets. Rebuilds changing only these normalized fields can pass without adding a version entry. Changes to code, data or layout still require compatibility verification. This check does not replace host-level testing.
+`getCapabilities()` reports `available: false` when detection fails or required host APIs are missing. In that case `openStream()` returns `VIDEO_HOST_UNSUPPORTED`. Project video preview requires no desktop-capture permission.
 
-### Adding a module layout
-
-`src/video/builds.hpp` is the shared registry for the backend and cadence probe. Build with `BUILD_TESTING=ON` and run `video_fingerprint_tests --check <module>...` to check registration for the compiled platform and architecture. Exit codes are 0 for registered modules, 2 for an unknown fingerprint, and 1 for an input error. Without `--check`, the command prints fingerprints only.
-
-For a new fingerprint, verify every function address, data reference and calling convention before adding a mapping. Retain existing entries and run the fingerprint tests plus `tests/video_reaper.py` on the new and retained hosts. Validate native presentation and I420 where supported. Matching a fingerprint does not verify the addresses or runtime behavior. Future REAPER versions are not automatically accepted.
+The historical layouts in `tests/video_reference_builds.hpp` remain available to the independent cadence probe. The fingerprint reader in `tests/video_reference/` is built only for the probe and regression tests. With `BUILD_TESTING=ON`, `video_fingerprint_tests --check <module>...` checks that historical registry.
 
 ## API
 

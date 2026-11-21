@@ -51,8 +51,13 @@ add_test(NAME video COMMAND video_tests)
 add_executable(video_surface_tests video_surface_tests.cpp)
 target_link_libraries(video_surface_tests PRIVATE reaweb_runtime)
 add_test(NAME video_surface COMMAND video_surface_tests)
+add_library(video_reference_fingerprint STATIC
+  video_reference/fingerprint.cpp
+  video_reference/fingerprint_elf.cpp
+  video_reference/fingerprint_macho.cpp)
+target_link_libraries(video_reference_fingerprint PUBLIC reaweb_runtime)
 add_executable(video_fingerprint_tests video_fingerprint_tests.cpp video_fingerprint_elf.cpp video_fingerprint_macho.cpp)
-target_link_libraries(video_fingerprint_tests PRIVATE reaweb_runtime)
+target_link_libraries(video_fingerprint_tests PRIVATE video_reference_fingerprint)
 add_test(NAME video_fingerprint COMMAND video_fingerprint_tests)
 if(REAWEB_BUILD_EXTENSION)
   if((WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64" AND
@@ -69,7 +74,7 @@ if(REAWEB_BUILD_EXTENSION)
     endif()
     set_target_properties(video_internal_probe PROPERTIES PREFIX "" OUTPUT_NAME "reaper_video_internals_probe")
     add_library(video_cadence_probe MODULE EXCLUDE_FROM_ALL video_cadence_probe.cpp)
-    target_link_libraries(video_cadence_probe PRIVATE reaweb_runtime)
+    target_link_libraries(video_cadence_probe PRIVATE video_reference_fingerprint)
     target_include_directories(video_cadence_probe PRIVATE "${PROJECT_BINARY_DIR}/sdk-layout/sdk"
       "${reaper_sdk_SOURCE_DIR}/sdk" "${wdl_SOURCE_DIR}/WDL")
     target_compile_definitions(video_cadence_probe PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

@@ -1,4 +1,4 @@
-#include "video/fingerprint.hpp"
+#include "video_reference/fingerprint.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>

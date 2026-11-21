@@ -6,19 +6,15 @@
 
 ## 主机兼容性
 
-REAPER 7.86 需安装同平台、同架构的 v0.3.9.46 或更新版本扩展。视频后端校验规范化模块指纹，不检查 REAPER 版本号。指纹排除指定构建元数据字段，保留代码、数据和布局校验，用于保护固定内部地址的调用。
+Windows x64、macOS arm64、Linux x86_64 均已逐版实测 REAPER 7.80、7.81、7.82、7.83、7.84、7.85、7.86。三平台均通过 RGBA 动态画面和 I420 像素校验，Windows 和 macOS 还分别通过 D3D11 和 Metal 原生呈现验收。
 
-后端支持 Windows x64、macOS arm64 和 Linux x86_64，包含 REAPER 7.84、7.85 和 7.86 的映射。Linux 另保留 7.82 映射。规范化排除 PE 构建时间戳、校验和与 CodeView 标识，Mach-O UUID 与代码签名载荷，以及 ELF GNU build ID。
+安装 ReaWebAPI v0.3.9.54 后，后端会在启动时从已加载的 REAPER 视频模块中定位取帧所需的函数和数据，并校验它们之间的引用和布局。若 REAPER 稍后才加载视频模块，首次请求视频时会补做校验。结果按已加载的模块缓存。
 
-`getCapabilities()` 查询后端是否具备启动条件及共享配置限制，后端名称为 `reaper-internal`。视频模块指纹不匹配、模块无法读取、缺少必要宿主接口或当前平台/架构没有后端实现时，`available` 为 `false`，`openStream()` 返回 `VIDEO_HOST_UNSUPPORTED`，示例显示不可用提示。无需桌面录制权限。
+新版 REAPER 的视频实现和布局仍符合定位规则时，可以直接使用同一扩展。函数定位结果不唯一或布局校验失败时，扩展会停用视频后端。每个新版本的实际出图仍需在目标平台验收。
 
-只有规范化模块指纹与固定内部地址匹配时才允许调用。仅上述规范化字段变化的模块无需新增版本记录即可通过。代码、数据或布局变化仍需验证兼容性。此检查不替代实机验收。
+`getCapabilities()` 会报告可用状态。校验失败或缺少必要宿主接口时，`available` 为 `false`，`openStream()` 返回 `VIDEO_HOST_UNSUPPORTED`。工程视频预览无需桌面录制权限。
 
-### 新增模块布局
-
-`src/video/builds.hpp` 是后端与采集探针共用的映射表。启用 `BUILD_TESTING=ON` 构建后，运行 `video_fingerprint_tests --check <module>...` 检查模块是否已登记在当前编译平台和架构的映射中。退出码 0 表示已登记，2 表示未知指纹，1 表示输入错误。不加 `--check` 时仅输出指纹。
-
-新增指纹前需逐项核验函数地址、数据引用和调用约定。保留已有条目，在新旧宿主上运行指纹测试及 `tests/video_reaper.py`，并在支持的平台验证原生呈现与 I420。指纹匹配不代表地址或运行行为已验证，未来 REAPER 版本不会自动放行。
+独立采集节奏探针沿用 `tests/video_reference_builds.hpp` 中的历史布局。指纹读取代码位于 `tests/video_reference/`，只参与探针与回归测试的构建。启用 `BUILD_TESTING=ON` 后，`video_fingerprint_tests --check <module>...` 可查询这份历史记录。
 
 ## API
 

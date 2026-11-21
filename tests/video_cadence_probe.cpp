@@ -1,7 +1,7 @@
 // Opt-in observation of REAPER's final-frame cache, not compositor presentation.
 #include "core/core.hpp"
-#include "video/fingerprint.hpp"
-#include "video/builds.hpp"
+#include "video_reference/fingerprint.hpp"
+#include "video_reference_builds.hpp"
 #include "video/scheduler.hpp"
 #define WDL_ALLOW_UNSIGNED_DEFAULT_CHAR
 #include <reaper_plugin.h>

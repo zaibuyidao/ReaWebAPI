@@ -1,5 +1,5 @@
-#include "video/fingerprint.hpp"
-#include "video/builds.hpp"
+#include "video_reference/fingerprint.hpp"
+#include "video_reference_builds.hpp"
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -51,9 +51,10 @@ void registered_builds() {
   CHECK(reaweb::find_video_build("") == nullptr);
   CHECK(reaweb::find_video_build(std::string(64, '0')) == nullptr);
   std::set<std::string> fingerprints;
-  for (const auto& build : reaweb::video_builds) {
-    if (!build.checksum) continue;
-    const std::string fingerprint(build.checksum);
+  for (const auto& entry : reaweb::video_builds) {
+    if (!entry.checksum) continue;
+    const auto& build = entry.layout;
+    const std::string fingerprint(entry.checksum);
     CHECK(fingerprint.size() == 64);
     CHECK(fingerprint.find_first_not_of("0123456789abcdef") == std::string::npos);
     CHECK(fingerprints.insert(fingerprint).second);
