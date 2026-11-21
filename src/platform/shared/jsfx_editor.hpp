@@ -11,14 +11,14 @@ struct JsfxTarget {
   void* object() const { return take ? take : track; }
   bool operator==(const JsfxTarget& other) const { return track == other.track && take == other.take && input == other.input; }
   bool operator!=(const JsfxTarget& other) const { return !(*this == other); }
-  template<class T> T api(Host& host, const char* suffix) const {
+  template<class T> T api(const Host& host, const char* suffix) const {
     const auto name = std::string(take ? "TakeFX_" : "TrackFX_") + suffix;
     auto fn = host.native_function ? reinterpret_cast<T>(host.native_function(name.c_str())) : nullptr;
     if (!fn) throw Error("HOST_UNAVAILABLE", "JSFX Web UI requires " + name);
     return fn;
   }
-  std::string config(Host&, int fx, const std::string& key) const;
-  std::vector<int> indices(Host&) const;
+  std::string config(const Host&, int fx, const std::string& key) const;
+  std::vector<int> indices(const Host&) const;
   int selected(Host&) const;
 };
 class JsfxEditorHost {

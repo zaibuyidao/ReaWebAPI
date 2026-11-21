@@ -19,6 +19,18 @@
 <h2 data-i18n="chart">Packet arrival intervals · last 180 packets, milliseconds</h2><canvas id="chart" width="1000" height="130"></canvas>
 <p class="note" data-i18n="timingNote">Realtime samples on an independent native thread. Scheduling and browser load can delay delivery. Frame is the existing channel used for comparison. Intervals are not end-to-end latency. Host and page clocks cannot be subtracted directly.</p>
 <details open><summary data-i18n="raw">Latest transport snapshot</summary><pre id="raw">Waiting for the first packet…</pre></details>
+<details><summary data-i18n="trackHeading">Track controls</summary>
+<div class="controls"><button id="watch-track" data-i18n="watchTrack" disabled>Observe selected track</button>
+<button id="unwatch-track" data-i18n="unwatchTrack" disabled>Stop observing</button></div>
+<pre id="track-state" aria-live="off"></pre></details>
+<details><summary data-i18n="fxHeading">FX parameters</summary>
+<div class="controls"><label data-i18n="fxChain">FX chain</label><select id="fx-chain" aria-label="FX chain"><option>main</option><option>input</option><option>monitoring</option><option>take</option></select>
+<label><span data-i18n="fxTrack">Track GUID (blank for selected track)</span> <input id="fx-track" size="38"></label>
+<label>Take GUID <input id="fx-take" size="38" disabled></label><label>FX GUID <input id="fx-guid" size="38"></label>
+<label><span data-i18n="parameter">Parameter index</span> <input id="fx-index" type="number" min="0" step="1" value="0"></label>
+<button id="watch-fx" data-i18n="watchFx" disabled>Observe FX on selected track</button>
+<button id="unwatch-fx" data-i18n="unwatchTrack" disabled>Stop observing</button></div>
+<pre id="fx-state" aria-live="off"></pre></details>
 <details><summary data-i18n="native">Native diagnostics</summary><pre id="native">Click “Read diagnostics”. Lua writes should be 0.</pre></details>
 <p class="note" data-i18n="csvNote">CSV contains the latest 20,000 transport samples. All readings come from actual callbacks. Playback controls affect the current project.</p>
 </main></body></html>

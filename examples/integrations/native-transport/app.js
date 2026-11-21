@@ -2,6 +2,8 @@
 const el = id => document.getElementById(id);
 const messages = {
   en: {
+    fxChain:'FX chain', fxTrack:'Track GUID (blank for selected track)', fxHeading:'FX parameters', watchFx:'Observe FX on selected track', parameter:'Parameter index',
+    trackHeading:'Track controls', watchTrack:'Observe selected track', unwatchTrack:'Stop observing', noTrack:'Select a project track in REAPER.',
     language:'Language', title:'Realtime Transport Monitor', subtitle:'Lua opens the window and exits · No defer loop · No position interpolation',
     position:'Play Position / seconds', transport:'Transport State', mode:'Subscription mode', frame:'Frame comparison',
     play:'Play', pause:'Pause / Resume', stop:'Stop', reset:'Reset statistics', export:'Export CSV', diagnostics:'Read diagnostics',
@@ -17,6 +19,8 @@ const messages = {
     versionError:'Install the ReaWebAPI build supplied with this transport example.', unsupported:'Realtime transport is unavailable on this host.'
   },
   'zh-CN': {
+    fxChain:'FX 链', fxTrack:'轨道 GUID（留空使用选中轨道）', fxHeading:'FX 参数', watchFx:'观察选中轨道的 FX', parameter:'参数索引',
+    trackHeading:'轨道控制', watchTrack:'观察当前选中轨道', unwatchTrack:'停止观察', noTrack:'请在 REAPER 中选择一条工程轨道。',
     language:'语言', title:'实时播放状态', subtitle:'Lua 仅打开窗口后退出 · 无 defer 循环 · 无位置插值',
     position:'Play Position / 秒', transport:'走带状态', mode:'订阅方式', frame:'Frame 对照',
     play:'播放', pause:'暂停 / 继续', stop:'停止', reset:'重置统计', export:'导出 CSV', diagnostics:'读取原生诊断',
@@ -115,6 +119,44 @@ function draw() {
   ctx.strokeStyle='#63ddbb';ctx.beginPath();values.forEach((v,i)=>{const x=60+i/179*930,y=120-v/ceiling*100;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();
 }
 const action = fn => async () => {try {await fn();} catch(error) {report(error);}};
+let trackSubscription;
+el('watch-track').onclick = async () => {
+  const watch = el('watch-track'), stop = el('unwatch-track'), state = el('track-state');
+  watch.disabled = true;
+  try {
+    if (trackSubscription) await trackSubscription.close();
+    const ref = await reaper.audio.getSelectedTrackRef();
+    if (!ref) { state.textContent = t('noTrack'); return; }
+    trackSubscription = await reaper.realtime.subscribe('track-controls', {
+      tracks: [ref.guid], onData: snapshot => { state.textContent = show(snapshot.tracks[0]); },
+      onClose: reason => { state.textContent = reason.code; stop.disabled = true; }
+    });
+    stop.disabled = trackSubscription.closed;
+  } catch (error) { state.textContent = error.message; }
+  finally { watch.disabled = false; }
+};
+el('unwatch-track').onclick = action(async () => { if (trackSubscription) await trackSubscription.close(); });
+el('fx-chain').onchange = () => { el('fx-take').disabled = el('fx-chain').value !== 'take'; };
+let fxSubscription;
+el('watch-fx').onclick = async () => {
+  const watch = el('watch-fx'), stop = el('unwatch-fx'), state = el('fx-state');
+  watch.disabled = true;
+  try {
+    if (fxSubscription) await fxSubscription.close();
+    const track = el('fx-track').value.trim() || (await reaper.audio.getSelectedTrackRef())?.guid;
+    if (!track) { state.textContent = t('noTrack'); return; }
+    const chain = el('fx-chain').value;
+    fxSubscription = await reaper.realtime.subscribe('fx-parameters', {
+      track, chain, ...(chain === 'take' ? {take:el('fx-take').value.trim()} : {}),
+      fx:el('fx-guid').value.trim(), parameters:[el('fx-index').valueAsNumber],
+      onData: snapshot => { state.textContent = show(snapshot.values); },
+      onClose: reason => { state.textContent = reason.code; stop.disabled = true; }
+    });
+    stop.disabled = fxSubscription.closed;
+  } catch (error) { state.textContent = error.message; }
+  finally { watch.disabled = false; }
+};
+el('unwatch-fx').onclick = action(async () => { if (fxSubscription) await fxSubscription.close(); });
 el('mode').onchange = action(()=>switchMode(el('mode').value));
 el('reset').onclick = reset;
 for (const command of ['play', 'pause', 'stop'])
@@ -134,6 +176,8 @@ window.demoReady = (async()=>{
   if(!reaper.realtime || !reaper.audio?.controlTransport)throw uiError('versionError');
   const capabilities=await reaper.realtime.getCapabilities();
   if(!capabilities.sources.transport?.available)throw uiError('unsupported');
+  el('watch-fx').disabled = !capabilities.sources['fx-parameters']?.available;
+  el('watch-track').disabled = !capabilities.sources['track-controls']?.available;
   await switchMode('60');
   for(const id of ['play','pause','stop','export','diagnostics'])el(id).disabled=false;
   ready=true;draw();setInterval(draw,100);

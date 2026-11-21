@@ -10,6 +10,14 @@
 
 namespace {
 using namespace reaweb;
+std::string guid_text(const GUID* value) {
+  if (!value) return std::string();
+  char text[40];
+  std::snprintf(text, sizeof(text), "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+    static_cast<unsigned>(value->Data1), value->Data2, value->Data3, value->Data4[0], value->Data4[1],
+    value->Data4[2], value->Data4[3], value->Data4[4], value->Data4[5], value->Data4[6], value->Data4[7]);
+  return std::string(text);
+}
 std::unique_ptr<Runtime> runtime;
 int (*register_api)(const char*, void*) = nullptr;
 void (*console)(const char*) = nullptr;
@@ -18,6 +26,8 @@ std::vector<std::pair<std::string, void*>> registrations;
 std::atomic<uint64_t> project_generation{0};
 std::atomic<uint64_t> marker_revision{0}, fx_revision{0}, save_revision{0};
 std::atomic<uint64_t> selection_revision{0};
+std::atomic<uint64_t> fx_parameter_info_revision{0};
+std::atomic<uint64_t> controls_revision{0}, track_list_revision{0};
 std::atomic<uint64_t> transport_revision{0};
 int (*register_audio_hook)(bool, audio_hook_register_t*) = nullptr;
 audio_hook_register_t audio_hook{
@@ -31,12 +41,15 @@ public:
   const char* GetConfigString() override { return ""; }
   void SetSurfaceSelected(MediaTrack*, bool) override { ++selection_revision; }
   void OnTrackSelection(MediaTrack*) override { ++selection_revision; }
-  void SetTrackListChange() override { ++selection_revision; }
+  void SetTrackListChange() override { ++selection_revision; ++track_list_revision; }
+  void SetSurfaceVolume(MediaTrack*, double) override { ++controls_revision; }
+  void SetSurfacePan(MediaTrack*, double) override { ++controls_revision; }
   void SetPlayState(bool, bool, bool) override { ++transport_revision; }
-  void SetSurfaceMute(MediaTrack*, bool) override { ++selection_revision; }
-  void SetSurfaceSolo(MediaTrack*, bool) override { ++selection_revision; }
+  void SetSurfaceMute(MediaTrack*, bool) override { ++selection_revision; ++controls_revision; }
+  void SetSurfaceSolo(MediaTrack*, bool) override { ++selection_revision; ++controls_revision; }
   void SetSurfaceRecArm(MediaTrack*, bool) override { ++selection_revision; }
   int Extended(int call, void*, void*, void*) override {
+    if (call == CSURF_EXT_TRACKFX_PARAMINFO_CHANGED) { ++fx_parameter_info_revision; return 1; }
     // A callback may originate outside the UI thread. Only publish counters;
     // Runtime reads host state and dispatches JavaScript on the main thread.
     if (call == CSURF_EXT_SETPROJECTMARKERCHANGE) { ++marker_revision; return 1; }
@@ -335,18 +348,36 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
       host.track_identity = [get_track, enum_projects, guid](int index) {
         auto track = get_track(enum_projects(-1, nullptr, 0), index);
         auto value = track ? guid(track) : nullptr;
-        if (!value) return std::string();
-        char text[40];
-        std::snprintf(text, sizeof(text), "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
-          static_cast<unsigned>(value->Data1), value->Data2, value->Data3, value->Data4[0], value->Data4[1],
-          value->Data4[2], value->Data4[3], value->Data4[4], value->Data4[5], value->Data4[6], value->Data4[7]);
-        return std::string(text);
+        return guid_text(value);
       };
     }
+    auto fx_guid = reinterpret_cast<GUID* (*)(MediaTrack*, int)>(get_function("TrackFX_GetFXGUID"));
+    auto take_fx_guid = reinterpret_cast<GUID* (*)(MediaItem_Take*, int)>(get_function("TakeFX_GetFXGUID"));
+    if (fx_guid && take_fx_guid) host.fx_identity = [fx_guid, take_fx_guid](void* owner, int index, bool take) {
+      return guid_text(take ? take_fx_guid(static_cast<MediaItem_Take*>(owner), index)
+                            : fx_guid(static_cast<MediaTrack*>(owner), index));
+    };
+    auto master_track = reinterpret_cast<MediaTrack* (*)(ReaProject*)>(get_function("GetMasterTrack"));
+    if (master_track) host.master_by_guid = [master_track, guid](void* project, const std::string& id) -> void* {
+      auto* master = master_track(static_cast<ReaProject*>(project));
+      return master && guid_text(guid(master)) == id ? master : nullptr;
+    };
+    auto parse_guid = reinterpret_cast<void (*)(const char*, GUID*)>(get_function("stringToGuid"));
+    auto find_take = reinterpret_cast<MediaItem_Take* (*)(ReaProject*, const GUID*)>(get_function("GetMediaItemTakeByGUID"));
+    auto take_track = reinterpret_cast<MediaTrack* (*)(MediaItem_Take*)>(get_function("GetMediaItemTake_Track"));
+    if (parse_guid && find_take && take_track) host.take_by_guid = [=](void* project, void* track, const std::string& id) -> void* {
+      GUID value{};
+      parse_guid(id.c_str(), &value);
+      auto* take = find_take(static_cast<ReaProject*>(project), &value);
+      return take && take_track(take) == track ? take : nullptr;
+    };
     host.event_revision = [](const std::string& name) {
+      if (name == "track-controls") return controls_revision.load();
+      if (name == "track-list") return track_list_revision.load();
       if (name == "transport") return transport_revision.load();
       if (name == "track-selected") return selection_revision.load();
       if (name == "marker-changed") return marker_revision.load();
+      if (name == "fx-parameters") return fx_revision.load() + fx_parameter_info_revision.load();
       if (name == "fx-changed") return fx_revision.load();
       return uint64_t{0};
     };

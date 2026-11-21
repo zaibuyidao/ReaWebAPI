@@ -139,6 +139,8 @@ StreamHub::~StreamHub() {
 }
 const char* StreamHub::code(int status) {
   switch (status) {
+    case stream_track_gone: return "STALE_HANDLE";
+    case stream_project_changed: return "PROJECT_CHANGED";
     case REAWEB_STREAM_NOT_FOUND: return "STREAM_NOT_FOUND";
     case REAWEB_STREAM_CLOSED: return "STREAM_CLOSED";
     case REAWEB_UNSUPPORTED_FORMAT: return "UNSUPPORTED_FORMAT";

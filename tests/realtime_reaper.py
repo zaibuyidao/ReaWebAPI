@@ -14,6 +14,9 @@ for name in ('reaper', 'extension', 'output'):
 parser.add_argument('--duration', type=float, default=10)
 parser.add_argument('--audio-config', type=Path, help='Use an existing Windows audioconfig section in the disposable profile')
 parser.add_argument('--block-size', type=int, help='Request an audio buffer size in the disposable profile')
+suite = parser.add_mutually_exclusive_group()
+suite.add_argument('--fx-parameters', action='store_true', help='Exercise FX subscriptions across track, master, input, monitoring and take chains')
+suite.add_argument('--track-controls', action='store_true', help='Exercise GUID track subscriptions and host changes')
 args = parser.parse_args()
 root = args.output.resolve()
 root.mkdir(parents=True, exist_ok=False)
@@ -163,6 +166,21 @@ probe = r'''
   }
 })();
 '''.replace('DURATION', str(round(args.duration * 1000)))
+if args.track_controls or args.fx_parameters:
+    if args.fx_parameters:
+        import math
+        import struct
+        import wave
+        with wave.open(str(root / 'automation.wav'), 'wb') as audio:
+            audio.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
+            period = b''.join(struct.pack('<h', round(128 * math.sin(i * math.tau / 100))) for i in range(100))
+            audio.writeframes(period * 3840)
+    fixture = 'realtime_fx' if args.fx_parameters else 'realtime_tracks'
+    fixtures = source / 'tests/fixtures'
+    probe = (fixtures / (fixture + '.js')).read_text(encoding='utf-8')
+    launcher = root / 'reawebapi-native-transport.lua'
+    launcher.write_text((fixtures / (fixture + '.lua')).read_text(encoding='utf-8') + '\n' +
+                        launcher.read_text(encoding='utf-8'), encoding='utf-8')
 (root / 'probe.js').write_text(probe, encoding='utf-8')
 with (root / 'index.html').open('a', encoding='utf-8') as file:
     file.write('<script src="probe.js" defer></script>')
@@ -188,6 +206,9 @@ with (root / 'process.log').open('w') as log:
                 raise RuntimeError(f'REAPER exited with {process.returncode}')
             time.sleep(.2)
         else:
+            if (args.track_controls or args.fx_parameters) and sys.platform == 'darwin' and process.poll() is None:
+                subprocess.run(['/usr/bin/sample', str(process.pid), '1', '1', '-file',
+                                str(root / 'host-sample.txt')], stdout=log, stderr=log, timeout=15)
             raise TimeoutError('Realtime acceptance timed out. See disposable profile and process.log')
     finally:
         process.terminate()

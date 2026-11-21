@@ -21,7 +21,16 @@ async function projectVideo() {
   await stream.close();
   const state: ReaWebVideoState = await reaper.video.getState();
   const diagnostics: ReaWebVideoDiagnostics = await reaper.video.getDiagnostics();
-  void caps; void state; void diagnostics;
+  const tracks = await reaper.realtime.subscribe('track-controls', {
+    tracks: ['{11111111-1111-1111-1111-111111111111}'], properties: ['volume', 'solo'],
+    onData(snapshot) {
+      const solo: number | undefined = snapshot.tracks[0].solo;
+      void solo;
+    }
+  });
+  const reading: Readonly<ReaWebTrackControlsSnapshot> | null = tracks.latest();
+  await tracks.close();
+  void caps; void state; void diagnostics; void reading;
   // @ts-expect-error Project output is the only video source.
   await reaper.video.openStream({source: 'file'});
 }
@@ -350,7 +359,20 @@ async function realtimeContract(reaper: ReaWebAPI) {
   const state: Readonly<ReaWebTransportSnapshot> | null = sub.latest();
   await sub.close();
   const diagnostics: ReaWebRealtimeDiagnostics = await reaper.realtime.getDiagnostics();
-  void caps; void state; void diagnostics;
+  const tracks = await reaper.realtime.subscribe('track-controls', {
+    tracks: ['{11111111-1111-1111-1111-111111111111}'], properties: ['volume', 'solo'],
+    onData(snapshot) {
+      const solo: number | undefined = snapshot.tracks[0].solo;
+      void solo;
+    }
+  });
+  const reading: Readonly<ReaWebTrackControlsSnapshot> | null = tracks.latest();
+  await tracks.close();
+  void caps; void state; void diagnostics; void reading;
+  const fx = await reaper.realtime.subscribe('fx-parameters', { track: 'track-guid', fx: 'fx-guid', parameters: [1, 0] });
+  const normalized: number | undefined = fx.latest()?.values[0].normalized;
+  void normalized;
+  await fx.close();
   // @ts-expect-error Only implemented sources are exposed by this SDK.
   await reaper.realtime.subscribe('unknown');
 }

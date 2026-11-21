@@ -45,6 +45,9 @@ struct Host {
   std::function<Json(const std::string&)> event_snapshot;
   std::function<int()> track_count;
   std::function<std::string(int)> track_identity;
+  std::function<std::string(void*, int, bool)> fx_identity;
+  std::function<void*(void*, const std::string&)> master_by_guid;
+  std::function<void*(void*, void*, const std::string&)> take_by_guid;
   std::function<uint64_t(const std::string&)> event_revision;
   std::function<Json()> project_save_state;
 };

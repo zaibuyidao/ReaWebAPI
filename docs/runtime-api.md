@@ -243,7 +243,7 @@ When enabled, unmodified Space outside editable fields uses REAPER's current mai
 
 ## Realtime subscriptions
 
-`reaper.realtime` provides transport subscriptions at requested rates up to 120 Hz. See [Realtime sources](realtime.md) for scheduling, timestamp semantics and cleanup.
+`reaper.realtime` provides read-only subscriptions to transport, track controls and FX parameters at requested rates up to 120 Hz. See [Realtime sources](realtime.md) for scheduling, timestamp semantics and cleanup.
 
 Creation options `layer`, `mouseMode`, `mouseRegions` and current-window setters `setMouseMode`, `setMouseRegions` control [overlay layers and native mouse routing](window-overlay.md).
 

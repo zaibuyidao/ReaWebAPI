@@ -10,6 +10,8 @@
 
 namespace reaweb {
 class JsfxTransfer;
+// Internal stream termination reasons, outside the public ABI.
+inline constexpr int stream_track_gone = 1001, stream_project_changed = 1002;
 inline constexpr uint32_t video_max_frame_bytes = 40u * 1024 * 1024;
 struct VideoFrameLayout { uint32_t width = 0, height = 0, stride = 0; };
 class StreamBuffer {

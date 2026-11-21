@@ -80,5 +80,9 @@ Thumbs.db
 !/tests/fixtures/
 /tests/fixtures/*
 !/tests/fixtures/retired-mirror-names.json
+!/tests/fixtures/realtime_tracks.js
+!/tests/fixtures/realtime_tracks.lua
+!/tests/fixtures/realtime_fx.js
+!/tests/fixtures/realtime_fx.lua
 node_modules/
 /examples/templates/modern/dist/

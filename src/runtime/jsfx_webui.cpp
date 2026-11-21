@@ -23,7 +23,7 @@ Guid object_guid(Host& host, void* object, const char* function) {
   return *static_cast<Guid*>(guid);
 }
 }
-std::string JsfxTarget::config(Host& host, int fx, const std::string& key) const {
+std::string JsfxTarget::config(const Host& host, int fx, const std::string& key) const {
   char buffer[4096]{};
   return api<bool (*)(void*, int, const char*, char*, int)>(host, "GetNamedConfigParm")(
     object(), fx, key.c_str(), buffer, sizeof(buffer)) ? buffer : "";
@@ -32,7 +32,7 @@ int JsfxTarget::selected(Host& host) const {
   const int value = api<int (*)(void*)>(host, input ? "GetRecChainVisible" : "GetChainVisible")(object());
   return value >= 0 && input ? value | 0x1000000 : value;
 }
-std::vector<int> JsfxTarget::indices(Host& host) const {
+std::vector<int> JsfxTarget::indices(const Host& host) const {
   const int count = api<int (*)(void*)>(host, input ? "GetRecCount" : "GetCount")(object());
   std::vector<int> result, pending;
   for (int i = std::min(count, 4096) - 1; i >= 0; --i) pending.push_back(i | (input ? 0x1000000 : 0));

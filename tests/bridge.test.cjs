@@ -347,7 +347,7 @@ function setup(engine = 'windows', document) {
     addEventListener: (name, handler) => { nativeListeners[name] = handler; },
     releaseBuffer: buffer => releasedBuffers.push(buffer)
   });
-  const context = vm.createContext({ window, document, crypto: webcrypto, TextEncoder, console, Uint8Array, Float32Array, Float64Array, DataView, btoa, atob,
+  const context = vm.createContext({ window, document, performance, crypto: webcrypto, TextEncoder, console, Uint8Array, Float32Array, Float64Array, DataView, btoa, atob,
     setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id) });
   vm.runInContext(script, context);
   const reply = (index, payload) => window.__reawebReceive({ id: messages[index].id, document: messages[index].document, ...payload });
@@ -1202,6 +1202,64 @@ test('Realtime decodes musical transport snapshots without altering stream timin
   await close;await subscription.close();
   assert.equal(subscription.closed,true);assert.equal(subscription.latest(),null);
   assert.equal(t.messages.length,before+2);
+});
+
+test('Track controls decode ordered selected properties and reject mismatched packets', async () => {
+  const t = await connected(), sockets = streamSockets(t), errors = [];
+  const tracks = ['{22222222-2222-2222-2222-222222222222}', '{11111111-1111-1111-1111-111111111111}'];
+  const pending = t.window.reaper.realtime.subscribe('track-controls', {
+    tracks, properties:['solo','mute'], onError: e => errors.push(e.code)
+  });
+  await flush();
+  assert.deepEqual(t.messages.at(-1).args, ['track-controls',{tracks, properties:['solo','mute']}]);
+  t.reply(t.messages.length-1,{result:{id:8,stream:'tracks',schema:'track-controls.v1',updateRate:60,tracks,mask:12}});
+  await flush();
+  t.reply(t.messages.length-1,{result:{...streamDescriptor('binary'),format:'bytes',maxBytes:552}});
+  await flush(); sockets[0].onopen();
+  const sub = await pending;
+  const bytes = new Uint8Array(72), view = new DataView(bytes.buffer);
+  view.setUint32(0,0x31304354,true); bytes[4] = 12; bytes[5] = 2;
+  view.setFloat64(8,12.5,true); view.setFloat64(16,0.03,true);
+  view.setBigUint64(24,4n,true); view.setBigUint64(32,7n,true);
+  [1,2,0,5].forEach((value,i) => view.setFloat64(40+i*8,value,true));
+  sockets[0].onmessage(streamPacket(1,6,bytes));
+  const s = sub.latest();
+  assert.deepEqual(JSON.parse(JSON.stringify(s.tracks)), [{guid:tracks[0],mute:true,solo:2},{guid:tracks[1],mute:false,solo:5}]);
+  assert.equal(s.sampledAt,12.5); assert.equal(s.sampleDurationMs,0.03);
+  assert.equal(s.projectEpoch,4n); assert.equal(s.sourceSequence,7n);
+  assert.ok(Object.isFrozen(s.tracks) && Object.isFrozen(s.tracks[0]));
+  bytes[4] = 3;
+  sockets[0].onmessage(streamPacket(2,6,bytes));
+  assert.deepEqual(errors,['UNSUPPORTED_FORMAT']);
+  assert.equal(sub.closed,true);
+});
+
+test('FX parameter packets retain requested order and reject invalid normalized values', async () => {
+  const t = await connected(), sockets = streamSockets(t), errors = [];
+  const options = { track:'{11111111-1111-1111-1111-111111111111}', fx:'{22222222-2222-2222-2222-222222222222}',
+    chain:'take', take:'{33333333-3333-3333-3333-333333333333}', parameters:[7,0] };
+  const pending = t.window.reaper.realtime.subscribe('fx-parameters',{...options,onError:e=>errors.push(e.code)});
+  await flush();
+  assert.deepEqual(t.messages.at(-1).args,['fx-parameters',options]);
+  t.reply(t.messages.length-1,{result:{id:9,stream:'params',schema:'fx-parameters.v1',updateRate:60,...options}});
+  await flush();
+  t.reply(t.messages.length-1,{result:{...streamDescriptor('binary'),format:'bytes',maxBytes:296}});
+  await flush(); sockets[0].onopen();
+  const sub = await pending;
+  const bytes = new Uint8Array(56), view = new DataView(bytes.buffer);
+  view.setUint32(0,0x31305046,true); view.setUint32(4,2,true);
+  view.setFloat64(40,0.75,true); view.setFloat64(48,0.125,true);
+  sockets[0].onmessage(streamPacket(1,6,bytes));
+  assert.equal(sub.latest().fx,options.fx);
+  assert.deepEqual(JSON.parse(JSON.stringify(sub.latest().values)),[{index:7,normalized:0.75},{index:0,normalized:0.125}]);
+  sockets[0].onmessage(streamPacket(4,6,bytes));
+  const pendingStats = t.window.reaper.realtime.getDiagnostics();
+  await flush();
+  t.reply(t.messages.length-1,{result:{subscriptions:[{id:9,published:4}]}});
+  const [row] = (await pendingStats).subscriptions;
+  assert.equal(row.received,2); assert.equal(row.sequenceGaps,2); assert.equal(row.published,4);
+  view.setFloat64(48,NaN,true); sockets[0].onmessage(streamPacket(5,6,bytes));
+  assert.deepEqual(errors,['UNSUPPORTED_FORMAT']); assert.equal(sub.closed,true);
 });
 
 test('Realtime rejects invalid options before allocation and cleans up failed attachments', async()=>{

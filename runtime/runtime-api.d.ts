@@ -335,6 +335,16 @@ interface ReaWebAPI {
       onError?: (error: Error & { code?: string }) => void;
       onClose?: (reason: Error & { code?: string }) => void;
     }): Promise<ReaWebRealtimeSubscription>;
+    subscribe(source: 'fx-parameters', options: ({chain: 'take'; take: string} | {chain?: 'main' | 'input' | 'monitoring'; take?: never}) & { track: string; fx: string; parameters: readonly number[];
+      updateRate?: number; onData?: (state: Readonly<ReaWebFxParametersSnapshot>) => void;
+      onError?: (error: Error & { code?: string }) => void;
+      onClose?: (reason: Error & { code?: string }) => void;
+    }): Promise<ReaWebRealtimeSubscription<ReaWebFxParametersSnapshot>>;
+    subscribe(source: 'track-controls', options: { tracks: readonly string[]; properties?: readonly ReaWebTrackProperty[];
+      updateRate?: number; onData?: (state: Readonly<ReaWebTrackControlsSnapshot>) => void;
+      onError?: (error: Error & { code?: string }) => void;
+      onClose?: (reason: Error & { code?: string }) => void;
+    }): Promise<ReaWebRealtimeSubscription<ReaWebTrackControlsSnapshot>>;
   };
   readonly stream: {
     open(name: string): Promise<ReaWebStream>;
@@ -556,20 +566,38 @@ interface ReaWebTransportSnapshot {
   projectEpoch: bigint; projectChanged: boolean;
   sourceSequence: bigint; sequence: bigint; producerDropped: bigint;
 }
-interface ReaWebRealtimeSubscription {
-  readonly source: 'transport'; readonly updateRate: number;
+type ReaWebTrackProperty = 'volume' | 'pan' | 'mute' | 'solo';
+interface ReaWebTrackControlsSnapshot {
+  source: 'track-controls';
+  tracks: readonly Readonly<{ guid: string; volume?: number; pan?: number; mute?: boolean; solo?: number }>[];
+  sampledAt: number; sampleDurationMs: number;
+  projectEpoch: bigint; sourceSequence: bigint; sequence: bigint; producerDropped: bigint;
+}
+interface ReaWebFxParametersSnapshot {
+  source: 'fx-parameters'; track: string; fx: string;
+  values: readonly Readonly<{ index: number; normalized: number }>[];
+  sampledAt: number; sampleDurationMs: number;
+  projectEpoch: bigint; sourceSequence: bigint; sequence: bigint; producerDropped: bigint;
+}
+interface ReaWebRealtimeSubscription<T extends ReaWebTransportSnapshot | ReaWebTrackControlsSnapshot | ReaWebFxParametersSnapshot = ReaWebTransportSnapshot> {
+  readonly source: T['source']; readonly updateRate: number;
   readonly closed: boolean; readonly error: (Error & { code?: string }) | null;
-  latest(): Readonly<ReaWebTransportSnapshot> | null;
+  latest(): Readonly<T> | null;
   close(): Promise<void>;
 }
 interface ReaWebRealtimeCapabilities {
   version: 1; supported: boolean; hardRealtime: false; maxSubscriptions: number;
   clock: 'host-monotonic-seconds';
   sources: Record<string, { available: boolean; schema: string; minRate: number; maxRate: number;
-    defaultRate: number; policy: 'latest'; sampling: 'native-thread' }>;
+    defaultRate: number; policy: 'latest'; sampling: 'native-thread' | 'main-thread'; chains?: ('main' | 'input' | 'monitoring' | 'take')[]; containers?: boolean; maxParameters?: number }>;
 }
 interface ReaWebRealtimeDiagnostics {
   schedulerRate: number; skippedBusy: number;
-  subscriptions: { id: number; source: string; updateRate: number; published: number; publishDropped: number }[];
-  sources: Record<string, { sampled: number; errors: number; maxSampleIntervalMs: number; lastSampleAt: number }>;
+  subscriptions: { id: number; source: string; updateRate: number; published: number; publishDropped: number;
+    received?: number; receiveHz?: number; sequenceGaps?: number;
+    sampled?: number; unchanged?: number; skippedPeriods?: number; sampleHz?: number; publishHz?: number;
+    sampleDurationMs?: number; lastPublishedAt?: number; sampleToPublishMs?: number;
+    lastTrigger?: 'initial' | 'control-surface' | 'periodic' }[];
+  sources: Record<string, { sampled: number; errors: number; maxSampleIntervalMs: number; lastSampleAt: number;
+    callbackTriggered?: number; periodicSnapshots?: number }>;
 }

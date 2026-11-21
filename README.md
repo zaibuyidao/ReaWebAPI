@@ -6,7 +6,7 @@ ReaWebAPI is a native REAPER extension for building tools with HTML, CSS and Jav
 
 Space routing starts from ordinary Apps’ `app.json.dawKeyboard` (default `false`) or JSFX’s `JSFX_WebUI.dawKeyboard` (default `true`). Both support [`reaper.window.setDawKeyboard()`](docs/runtime-api.md#space-routing) for runtime overrides. Reload restores JSON configuration without writing it.
 
-- [Realtime subscriptions](docs/realtime.md) for transport snapshots at requested rates up to 120 Hz on Windows, macOS and Linux, including playback rate, position-specific tempo and meter, and cumulative QN, with shared sampling and lifecycle diagnostics.
+- [Realtime subscriptions](docs/realtime.md) for transport snapshots, track controls and FX parameters by GUID on Windows, macOS and Linux. Requested rates range from 1 to 120 Hz.
 - [Frame channel](docs/frame-timer-verification.md) with native transport samples and replaceable Lua content, independent of Lua polling frequency on Windows, macOS and Linux. Small frames avoid worker round-trips, and pending state updates coalesce behind one encoded event batch.
 - Web pages access the host through the runtime namespaces on `window.reaper`.
 - Authenticated external WebSocket clients can discover named services, events and streams through `system.getCapabilities`.

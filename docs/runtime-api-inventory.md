@@ -253,7 +253,7 @@ Since v0.3.9.2, `window.setFrameless`, `window.setCornerRadius` and `fs.moveFile
 
 | Method | Returns | Purpose |
 | --- | --- | --- |
-| `reaper.realtime.subscribe(source, options?)` | `Promise<ReaWebRealtimeSubscription>` | Subscribe to a high-rate source; currently transport on Windows, macOS and Linux |
+| `reaper.realtime.subscribe(source, options?)` | `Promise<ReaWebRealtimeSubscription>` | Subscribe to transport, controls on 1–16 tracks, or 1–32 normalized parameters of one FX instance |
 | `reaper.realtime.getCapabilities()` | `Promise<ReaWebRealtimeCapabilities>` | Query supported sources and rates; no sampling starts |
 | `reaper.realtime.getDiagnostics()` | `Promise<ReaWebRealtimeDiagnostics>` | This window's subscriptions and shared sampling counters |
 

@@ -611,7 +611,7 @@
         socket.onclose = event => {
           if (diagnosticEnabled && active && event.code !== 1000) ++health.streamCloses;
           clearTimeout(timeout);
-          const code = ['STREAM_CLOSED', 'EXTENSION_UNLOADED', 'TIMEOUT', 'UNSUPPORTED_FORMAT', 'NATIVE_ERROR'].includes(event.reason) ? event.reason : 'TRANSPORT_ERROR';
+          const code = ['STREAM_CLOSED', 'EXTENSION_UNLOADED', 'TIMEOUT', 'UNSUPPORTED_FORMAT', 'NATIVE_ERROR', 'STALE_HANDLE', 'PROJECT_CHANGED'].includes(event.reason) ? event.reason : 'TRANSPORT_ERROR';
           finish(code, event.reason || 'Native stream connection closed');
           if (!connected) reject(status || failure(code, code));
         };
@@ -885,6 +885,50 @@
   // Realtime sources use ordinary v1 binary streams. JSFX v2 timing and its
   // instance permissions remain separate; source decoders are explicitly versioned.
   const realtimeDecoders = {
+    'fx-parameters.v1': (packet, descriptor) => {
+      const bytes = packet.bytes;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const invalid = () => failure('UNSUPPORTED_FORMAT', 'Invalid FX parameter snapshot');
+      if (bytes.byteLength < 40 || view.getUint32(0, true) !== 0x31305046) throw invalid();
+      const count = view.getUint32(4, true);
+      if (!count || count > 32 || count !== descriptor.parameters.length || bytes.byteLength !== 40 + count * 8) throw invalid();
+      const sampledAt = view.getFloat64(8, true), sampleDurationMs = view.getFloat64(16, true);
+      if (!Number.isFinite(sampledAt) || !Number.isFinite(sampleDurationMs) || sampleDurationMs < 0) throw invalid();
+      const values = descriptor.parameters.map((index, i) => {
+        const normalized = view.getFloat64(40 + i * 8, true);
+        if (!Number.isFinite(normalized) || normalized < 0 || normalized > 1) throw invalid();
+        return Object.freeze({ index, normalized });
+      });
+      return Object.freeze({ source:'fx-parameters', track:descriptor.track, fx:descriptor.fx, values:Object.freeze(values),
+        sampledAt, sampleDurationMs, projectEpoch:view.getBigUint64(24,true), sourceSequence:view.getBigUint64(32,true),
+        sequence:packet.sequence, producerDropped:packet.producerDropped });
+    },
+    'track-controls.v1': (packet, descriptor) => {
+      const { bytes } = packet;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const invalid = () => failure('UNSUPPORTED_FORMAT', 'Invalid track-controls snapshot');
+      if (bytes.byteLength < 40 || view.getUint32(0, true) !== 0x31304354) throw invalid();
+      const mask = view.getUint8(4), count = view.getUint8(5);
+      const keys = ['volume', 'pan', 'mute', 'solo'].filter((_, i) => mask & (1 << i));
+      if (!mask || mask > 15 || mask !== descriptor.mask || !count || count > 16 ||
+          count !== descriptor.tracks.length || bytes.byteLength !== 40 + count * keys.length * 8) throw invalid();
+      const sampledAt = view.getFloat64(8, true), sampleDurationMs = view.getFloat64(16, true);
+      if (!Number.isFinite(sampledAt) || !Number.isFinite(sampleDurationMs) || sampleDurationMs < 0) throw invalid();
+      let offset = 40;
+      const tracks = descriptor.tracks.map(guid => {
+        const track = { guid };
+        for (const key of keys) {
+          const value = view.getFloat64(offset, true);
+          if (!Number.isFinite(value) || (key === 'solo' && !Number.isInteger(value))) throw invalid();
+          track[key] = key === 'mute' ? !!value : value;
+          offset += 8;
+        }
+        return Object.freeze(track);
+      });
+      return Object.freeze({ source: 'track-controls', tracks: Object.freeze(tracks), sampledAt, sampleDurationMs,
+        projectEpoch: view.getBigUint64(24, true), sourceSequence: view.getBigUint64(32, true),
+        sequence: packet.sequence, producerDropped: packet.producerDropped });
+    },
     'transport.v1': packet => {
       const bytes = packet.bytes;
       if (bytes.byteLength !== 64) throw failure('UNSUPPORTED_FORMAT', 'Invalid transport snapshot size');
@@ -920,19 +964,34 @@
         producerDropped: packet.producerDropped });
     }
   };
+  const fxReceipts = new Map();
   api.realtime = Object.freeze({
     getCapabilities: () => call('ReaWeb_RealtimeCapabilities', []),
-    getDiagnostics: () => call('ReaWeb_RealtimeDiagnostics', []),
+    getDiagnostics: async () => {
+      const result = await call('ReaWeb_RealtimeDiagnostics', []);
+      for (const row of result.subscriptions) {
+        const stats = fxReceipts.get(row.id);
+        if (stats) Object.assign(row, { received:stats.count, receiveHz:stats.last > stats.first ?
+          (stats.count - 1) * 1000 / (stats.last - stats.first) : 0, sequenceGaps:stats.gaps });
+      }
+      return result;
+    },
     subscribe: async (source, options = {}) => {
       if (typeof source !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(source) ||
           !options || typeof options !== 'object' || Array.isArray(options) ||
-          Object.keys(options).some(key => !['updateRate', 'onData', 'onError', 'onClose'].includes(key)) ||
+          Object.keys(options).some(key => !['updateRate', 'onData', 'onError', 'onClose'].includes(key) &&
+            !(source === 'track-controls' && ['tracks', 'properties'].includes(key)) &&
+            !(source === 'fx-parameters' && ['track', 'fx', 'parameters', 'chain', 'take'].includes(key))) ||
           ['onData', 'onError', 'onClose'].some(key => options[key] !== undefined && typeof options[key] !== 'function') ||
           (options.updateRate !== undefined && (!Number.isFinite(options.updateRate) || options.updateRate < 1 || options.updateRate > 120)))
         throw failure('INVALID_ARGUMENT', 'Expected source, updateRate (1..120) and optional callbacks');
-      const descriptor = await call('ReaWeb_RealtimeSubscribe', [source, options.updateRate === undefined ? {} : { updateRate: options.updateRate }]);
+      const nativeOptions = {};
+      for (const key of ['updateRate', 'tracks', 'properties', 'track', 'fx', 'parameters', 'chain', 'take'])
+        if (options[key] !== undefined) nativeOptions[key] = options[key];
+      const descriptor = await call('ReaWeb_RealtimeSubscribe', [source, nativeOptions]);
       let stream, current = null, releasing = null, closing = null, error = null;
       const release = () => {
+        fxReceipts.delete(descriptor.id);
         if (!releasing) releasing = closed ? Promise.resolve() : call('ReaWeb_RealtimeUnsubscribe', [descriptor.id]);
         return releasing;
       };
@@ -940,10 +999,22 @@
         const decode = realtimeDecoders[descriptor.schema];
         if (!decode) throw failure('UNSUPPORTED_FORMAT', 'Unknown realtime source schema');
         stream = await openStream(descriptor.stream);
+        const stats = source === 'fx-parameters' ? {count:0, first:0, last:0, gaps:0} : null;
+        if (stats) fxReceipts.set(descriptor.id, stats);
         const receive = () => {
           const packet = stream.latest();
           if (!packet || current?.sequence === packet.sequence) return;
-          try { current = decode(packet); if (options.onData) notify(options.onData, current); }
+          try {
+            const previous = current?.sequence;
+            current = decode(packet, descriptor);
+            if (stats) {
+              stats.last = performance.now();
+              if (!stats.count++) stats.first = stats.last;
+              if (previous !== undefined && current.sequence > previous + 1n)
+                stats.gaps += Number(current.sequence - previous - 1n);
+            }
+            if (options.onData) notify(options.onData, current);
+          }
           catch (reason) { error = reason; if (options.onError) notify(options.onError, reason); void subscription.close().catch(() => {}); }
         };
         const subscription = Object.freeze({
@@ -960,6 +1031,10 @@
         stream.on('error', reason => { error = reason; if (options.onError) notify(options.onError, reason); });
         stream.on('close', reason => {
           current = null;
+          if ((source === 'track-controls' || source === 'fx-parameters') && ['STALE_HANDLE', 'PROJECT_CHANGED', 'NATIVE_ERROR'].includes(reason?.code)) {
+            error = reason;
+            if (options.onError) notify(options.onError, reason);
+          }
           void release().catch(reason => { if (options.onError) notify(options.onError, reason); });
           if (options.onClose) notify(options.onClose, reason);
         });

@@ -286,7 +286,7 @@ const enabled = (await reaper.window.getState()).dawKeyboard;
 
 ## Realtime 订阅
 
-`reaper.realtime` 提供播放状态订阅，请求频率最高 120 Hz。调度、时间戳和清理约定见 [Realtime 数据源](realtime.zh-CN.md)。
+`reaper.realtime` 提供播放状态、轨道控制和 FX 参数的只读订阅，请求频率最高 120 Hz。调度、时间戳和清理约定见 [Realtime 数据源](realtime.zh-CN.md)。
 
 创建选项 `layer`、`mouseMode`、`mouseRegions` 及当前窗口接口 `setMouseMode`、`setMouseRegions` 控制[覆盖层与原生鼠标穿透](window-overlay.zh-CN.md)。
 
