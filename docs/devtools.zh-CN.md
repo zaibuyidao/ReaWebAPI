@@ -38,7 +38,7 @@ WebView2 没有公开的嵌入式检查器控制器。ReaWebAPI 通过 [`OpenDev
 
 面板默认占可用宽度的 40%，拖动检查器分隔线可调整至 20%–80% 并保存比例。调整窗口大小时保留比例，窄窗口同样支持嵌入，不会因宿主尺寸禁用 **Embed DevTools** 或强制切换为 Floating。
 
-公开的 `WKWebView.inspectable` 保持启用。公开 API 没有对应控制器，程序化控制与显示使用经过运行时能力检查的 WebKit 私有接口。AppKit 负责内容视图布局，检查器的停靠控件复用现有模式和宽度偏好。兼容性取决于系统 WebKit 版本，嵌入控制不可用时保留原生浮动窗口，`embeddedSupported` 返回 `false`。原生控制不可用时禁用菜单操作，`nativeToggleSupported` 返回 `false`，`openDevTools()` 以 `DEVTOOLS_UNAVAILABLE` 错误拒绝。仍可通过 Safari 的开发菜单手动检查页面。`fallbackReason` 和 `lastError` 提供能力限制或打开失败的原因。
+ReaWebAPI 在 macOS 13.3 及以上启用 `WKWebView.inspectable`。公开 API 没有对应控制器，程序化控制与显示使用经过运行时能力检查的 WebKit 私有接口。AppKit 负责内容视图布局，检查器的停靠控件复用现有模式和宽度偏好。兼容性取决于系统 WebKit 版本，嵌入控制不可用时保留原生浮动窗口，`embeddedSupported` 返回 `false`。原生控制不可用时禁用菜单操作，`nativeToggleSupported` 返回 `false`，`openDevTools()` 以 `DEVTOOLS_UNAVAILABLE` 错误拒绝。支持时可通过 Safari 的开发菜单手动检查页面。`fallbackReason` 和 `lastError` 提供能力限制或打开失败的原因。
 
 ## 状态保存与诊断
 

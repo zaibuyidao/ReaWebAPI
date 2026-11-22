@@ -44,7 +44,7 @@ App 可通过 `app.json.webRuntime.crossOriginIsolation` 选择跨源隔离。�
 | 平台 | 架构 | 运行环境 |
 | --- | --- | --- |
 | Windows | x64 | Windows 10/11、WebView2 Evergreen、VC++ x64 运行库 |
-| macOS | ARM64、Intel x64 | macOS 14+ |
+| macOS | ARM64、Intel x64 | macOS 13+ |
 | Linux | x64、ARM64 | Ubuntu 24.04 或兼容系统、WebKitGTK 4.1、X11/XWayland |
 
 支持 REAPER 6.68+。

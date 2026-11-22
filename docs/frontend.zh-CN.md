@@ -144,7 +144,9 @@ Lua source 与 `instanceKey` 保留路径解析和窗口复用职责，不再生
       WindowState/
 ```
 
-Windows 共享一个 WebView2 Environment。Linux 共享一个 WebKitGTK context 与辅助进程。macOS 在 `WebViewData/` 保留共享 WKWebsiteDataStore UUID，实际数据库由 WebKit 管理。`origin.json` schema 2 记录 App ID、根目录与虚拟 origin，不包含端口。新建或更新的绑定还保存 `entry`，值为规范化的相对 HTML/HTM 路径，解析符号链接和目录联接后仍须位于根目录内。同一身份路径上的旧 schema 1 记录可升级。旧哈希 App 目录和浏览器数据继续保留，HTTP origin 的存储不自动迁移到虚拟 origin。身份元数据损坏时返回 `APP_ORIGIN_INVALID`。
+Windows 共享一个 WebView2 Environment。Linux 共享一个 WebKitGTK context 与辅助进程。macOS 14 及以上在 `WebViewData/` 保留共享 WebKit 数据存储的 UUID。macOS 13 使用 WebKit 为 REAPER 提供的默认持久存储。两种存储均由 WebKit 管理。从 macOS 13 升级到 macOS 14 或更高版本时会切换存储，`localStorage` 等浏览器数据在升级前后分开保存。
+
+`origin.json` schema 2 记录 App ID、根目录与虚拟 origin，不包含端口。新建或更新的绑定还保存 `entry`，值为规范化的相对 HTML/HTM 路径，解析符号链接和目录联接后仍须位于根目录内。同一身份路径上的旧 schema 1 记录可升级。旧哈希 App 目录和浏览器数据继续保留，HTTP origin 的存储不自动迁移到虚拟 origin。身份元数据损坏时返回 `APP_ORIGIN_INVALID`。
 
 备份时应同时保留共享 profile 与相关 `Apps/<appId>/` 目录。浏览器配额与用户清理数据的规则仍然适用。开发页面保留显式 HTTP origin，不创建生产 origin 记录。External Client 的监听器、配置与认证完全独立。
 

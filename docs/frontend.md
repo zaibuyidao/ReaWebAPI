@@ -144,7 +144,9 @@ All Apps share the existing browser profile. localStorage and IndexedDB are isol
       WindowState/
 ```
 
-Windows shares one WebView2 Environment. Linux shares one WebKitGTK context and helper. macOS retains the shared WKWebsiteDataStore UUID in `WebViewData/`, with database locations managed by WebKit. `origin.json` schema 2 records the App ID, root and virtual origin, with no port. New or updated bindings also store `entry`, a normalized relative HTML/HTM path confined to the root, including resolved symlinks and junctions. Existing schema 1 records at the same identity path can be upgraded. Old hashed App directories and browser data are retained, but HTTP-origin storage is not automatically transferred to the new virtual origin. Malformed identity metadata fails with `APP_ORIGIN_INVALID`.
+Windows shares one WebView2 Environment. Linux shares one WebKitGTK context and helper. On macOS 14 and later, `WebViewData/` retains the UUID of the shared WebKit data store. macOS 13 uses WebKit's default persistent data store for REAPER. WebKit manages both stores. An OS upgrade from macOS 13 to 14 or later switches stores, so browser data such as `localStorage` is separate across that upgrade.
+
+`origin.json` schema 2 records the App ID, root and virtual origin, with no port. New or updated bindings also store `entry`, a normalized relative HTML/HTM path confined to the root, including resolved symlinks and junctions. Existing schema 1 records at the same identity path can be upgraded. Old hashed App directories and browser data are retained, but HTTP-origin storage is not automatically transferred to the new virtual origin. Malformed identity metadata fails with `APP_ORIGIN_INVALID`.
 
 Back up the shared profile and relevant `Apps/<appId>/` directories together. Normal browser quotas and user data clearing still apply. Development pages retain their explicit HTTP origin and create no production origin record. External Client listeners, configuration and authentication are independent.
 

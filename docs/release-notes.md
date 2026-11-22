@@ -1,3 +1,6 @@
 # ReaWebAPI
 
-- Project video preview now locates REAPER's internal video functions and validates its frame-cache layout at startup. Compatible video modules can use the same extension without a per-release fingerprint. Verified in every REAPER release from 7.80 through 7.86 on Windows x64, macOS arm64 and Linux x86_64.
+## Release Notes
+
+- Fixed a startup error in the Native Transport Monitor when older HTML loads the newer script. The monitor can start with older layouts, and the updated page uses a versioned script URL.
+- Lowered the macOS deployment target to 13. During WebView startup, Ventura uses WebKit's default persistent data store, avoiding the macOS 14-only API for opening a named store. macOS 14 and later continue to use the UUID-based store.

@@ -117,7 +117,8 @@ int main(int argc, char** argv) {
       {
         MacDevTools tools(view, [&] { [view.window makeKeyAndOrderFront:nil]; [view.window makeFirstResponder:view]; });
         tick = [&] { tools.tick(); };
-        CHECK(view.inspectable && !tools.visible());
+        CHECK(!tools.visible());
+        if (@available(macOS 13.3, *)) CHECK(view.inspectable);
         CHECK(tools.diagnostics()["nativeToggleSupported"] == true && tools.diagnostics()["embeddedSupported"] == true);
         tools.restore({{"mode", "embedded"}, {"widthRatio", 0.5}});
         CHECK(![menu(tools, @"Open DevTools", @"Float DevTools") itemAtIndex:1].enabled);

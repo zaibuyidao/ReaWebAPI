@@ -123,64 +123,81 @@ function draw() {
   ctx.strokeStyle='#63ddbb';ctx.beginPath();values.forEach((v,i)=>{const x=60+i/179*930,y=120-v/ceiling*100;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();
 }
 const action = fn => async () => {try {await fn();} catch(error) {report(error);}};
-let trackSubscription;
-el('watch-track').onclick = async () => {
+// An older copy of the page can still load this script during an upgrade.
+function bindTrackControls() {
   const watch = el('watch-track'), stop = el('unwatch-track'), state = el('track-state');
-  watch.disabled = true;
-  try {
-    if (trackSubscription) await trackSubscription.close();
-    const ref = await reaper.audio.getSelectedTrackRef();
-    if (!ref) { state.textContent = t('noTrack'); return; }
-    trackSubscription = await reaper.realtime.subscribe('track-controls', {
-      tracks: [ref.guid], onData: snapshot => { state.textContent = show(snapshot.tracks[0]); },
-      onClose: reason => { state.textContent = reason.code; stop.disabled = true; }
-    });
-    stop.disabled = trackSubscription.closed;
-  } catch (error) { state.textContent = error.message; }
-  finally { watch.disabled = false; }
-};
-el('unwatch-track').onclick = action(async () => { if (trackSubscription) await trackSubscription.close(); });
-el('fx-chain').onchange = () => { el('fx-take').disabled = el('fx-chain').value !== 'take'; };
-let fxSubscription, watchedFx;
-el('apply-fx').onclick = action(async () => {
-  if (!watchedFx) return;
-  const {ref,index} = watchedFx;
-  const input = el('fx-value');
-  if (!input.reportValidity()) return;
-  await reaper.transaction.withUndo(t('setFx'), () =>
-    reaper.audio.setFxParameterLatest(ref,index,input.valueAsNumber));
-});
-el('watch-fx').onclick = async () => {
+  if (!watch || !stop || !state) return null;
+  let subscription;
+  watch.onclick = async () => {
+    watch.disabled = true;
+    try {
+      if (subscription) await subscription.close();
+      const ref = await reaper.audio.getSelectedTrackRef();
+      if (!ref) { state.textContent = t('noTrack'); return; }
+      subscription = await reaper.realtime.subscribe('track-controls', {
+        tracks: [ref.guid], onData: snapshot => { state.textContent = show(snapshot.tracks[0]); },
+        onClose: reason => { state.textContent = reason.code; stop.disabled = true; }
+      });
+      stop.disabled = subscription.closed;
+    } catch (error) { state.textContent = error.message; }
+    finally { watch.disabled = false; }
+  };
+  stop.onclick = action(async () => { if (subscription) await subscription.close(); });
+  return watch;
+}
+function bindFxControls() {
   const watch = el('watch-fx'), stop = el('unwatch-fx'), state = el('fx-state');
-  watch.disabled = true;
-  try {
-    if (fxSubscription) await fxSubscription.close();
-    const track = el('fx-track').value.trim() || (await reaper.audio.getSelectedTrackRef())?.guid;
-    if (!track) { state.textContent = t('noTrack'); return; }
-    const chain = el('fx-chain').value;
-    const binding = {
-      track, chain, ...(chain === 'take' ? {take:el('fx-take').value.trim()} : {}),
-      fx:el('fx-guid').value.trim()
-    };
-    const index = el('fx-index').valueAsNumber;
-    const ref = await reaper.audio.getFxRef(binding);
-    fxSubscription = await reaper.realtime.subscribe('fx-parameters', {
-      ...binding, parameters:[index],
-      onData: snapshot => { state.textContent = show(snapshot.values); },
-      onClose: reason => { watchedFx = null; state.textContent = reason.code; el('apply-fx').disabled = stop.disabled = true; }
+  const chain = el('fx-chain'), trackGuid = el('fx-track'), takeGuid = el('fx-take');
+  const fxGuid = el('fx-guid'), parameter = el('fx-index');
+  if (!watch || !stop || !state || !chain || !trackGuid || !takeGuid || !fxGuid || !parameter) return null;
+  const apply = el('apply-fx'), value = el('fx-value');
+  let subscription, watchedFx;
+  chain.onchange = () => { takeGuid.disabled = chain.value !== 'take'; };
+  if (apply && value) {
+    apply.onclick = action(async () => {
+      if (!watchedFx || !value.reportValidity()) return;
+      const {ref,index} = watchedFx;
+      await reaper.transaction.withUndo(t('setFx'), () =>
+        reaper.audio.setFxParameterLatest(ref,index,value.valueAsNumber));
     });
-    watchedFx = {ref,index};
-    el('apply-fx').disabled = stop.disabled = fxSubscription.closed;
-  } catch (error) { state.textContent = error.message; }
-  finally { watch.disabled = false; }
-};
-el('unwatch-fx').onclick = action(async () => { if (fxSubscription) await fxSubscription.close(); });
+  }
+  watch.onclick = async () => {
+    watch.disabled = true;
+    try {
+      if (subscription) await subscription.close();
+      const track = trackGuid.value.trim() || (await reaper.audio.getSelectedTrackRef())?.guid;
+      if (!track) { state.textContent = t('noTrack'); return; }
+      const binding = {
+        track, chain:chain.value, ...(chain.value === 'take' ? {take:takeGuid.value.trim()} : {}),
+        fx:fxGuid.value.trim()
+      };
+      const index = parameter.valueAsNumber;
+      const ref = await reaper.audio.getFxRef(binding);
+      subscription = await reaper.realtime.subscribe('fx-parameters', {
+        ...binding, parameters:[index],
+        onData: snapshot => { state.textContent = show(snapshot.values); },
+        onClose: reason => {
+          watchedFx = null; state.textContent = reason.code; stop.disabled = true;
+          if (apply) apply.disabled = true;
+        }
+      });
+      watchedFx = {ref,index};
+      stop.disabled = subscription.closed;
+      if (apply && value) apply.disabled = subscription.closed;
+    } catch (error) { state.textContent = error.message; }
+    finally { watch.disabled = false; }
+  };
+  stop.onclick = action(async () => { if (subscription) await subscription.close(); });
+  return watch;
+}
+const trackWatch = bindTrackControls(), fxWatch = bindFxControls();
 el('mode').onchange = action(()=>switchMode(el('mode').value));
 el('reset').onclick = reset;
 for (const command of ['play', 'pause', 'stop'])
   el(command).onclick = action(() => reaper.audio.controlTransport(command));
 function renderDisplayRate() {
-  el('display-max').textContent = displayMax === null ? t('unknownRate') : `${Number(displayMax.toFixed(2))} Hz`;
+  const field = el('display-max');
+  if (field) field.textContent = displayMax === null ? t('unknownRate') : `${Number(displayMax.toFixed(2))} Hz`;
 }
 async function refreshDisplayRate() {
   try { displayMax = await reaper.window.getMaxRefreshRate?.() ?? null; }
@@ -203,8 +220,8 @@ window.demoReady = (async()=>{
   if(!reaper.realtime || !reaper.audio?.controlTransport)throw uiError('versionError');
   const capabilities=await reaper.realtime.getCapabilities();
   if(!capabilities.sources.transport?.available)throw uiError('unsupported');
-  el('watch-fx').disabled = !capabilities.sources['fx-parameters']?.available;
-  el('watch-track').disabled = !capabilities.sources['track-controls']?.available;
+  if (fxWatch) fxWatch.disabled = !capabilities.sources['fx-parameters']?.available;
+  if (trackWatch) trackWatch.disabled = !capabilities.sources['track-controls']?.available;
   void refreshDisplayRate();
   await switchMode('60');
   for(const id of ['play','pause','stop','export','diagnostics'])el(id).disabled=false;

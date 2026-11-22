@@ -51,7 +51,7 @@ jobs:
         run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON
       - name: Configure macOS
         if: matrix.platform == 'macos'
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DBUILD_TESTING=ON
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DBUILD_TESTING=ON
       - name: Configure Linux
         if: matrix.platform == 'linux'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON

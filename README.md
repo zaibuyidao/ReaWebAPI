@@ -43,7 +43,7 @@ Download a package matching your **REAPER process architecture** from [Releases]
 | Platform | Architectures | Requirements |
 | --- | --- | --- |
 | Windows | x64 | Windows 10/11, WebView2 Evergreen, VC++ x64 runtime |
-| macOS | ARM64, Intel x64 | macOS 14+ |
+| macOS | ARM64, Intel x64 | macOS 13+ |
 | Linux | x64, ARM64 | Ubuntu 24.04 or compatible, WebKitGTK 4.1, X11/XWayland |
 
 REAPER 6.68+ is supported.

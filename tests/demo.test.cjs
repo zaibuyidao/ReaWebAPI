@@ -361,3 +361,42 @@ test('a frame never overwrites an active slider drag, and unreadable content is 
   await f.pushFrame({ sequence: 2, lua: 'not json' });
   assert.match(f.element('error').textContent, /ERROR|Unexpected/);
 });
+
+test('native transport still starts with older demo markup', async () => {
+  const directory = path.join(__dirname, '../examples/integrations/native-transport');
+  const html = fs.readFileSync(path.join(directory, 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'app.js'), 'utf8');
+  const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => id);
+  const writeControls = ['apply-fx', 'fx-value'];
+  const addedControls = [...writeControls, 'display-max', 'watch-track', 'unwatch-track', 'track-state',
+    'watch-fx', 'unwatch-fx', 'fx-state', 'fx-chain', 'fx-track', 'fx-take', 'fx-guid', 'fx-index'];
+
+  for (const absent of [[], writeControls, addedControls]) {
+    const elements = new Map(ids.filter(id => !absent.includes(id)).map(id => [id, { value: '', disabled: true }]));
+    const getElementById = id => elements.get(id) ?? null;
+    getElementById('chart').getContext = () => ({ clearRect() {}, fillText() {}, beginPath() {}, stroke() {} });
+    getElementById('mode').setAttribute = () => {};
+    const subscriptions = [];
+    const reaper = {
+      lifecycle: { ready: Promise.resolve() }, window: { getMaxRefreshRate: async () => 120 },
+      audio: { controlTransport() {} },
+      realtime: {
+        getCapabilities: async () => ({ sources: Object.fromEntries(['transport', 'track-controls', 'fx-parameters']
+          .map(source => [source, { available: true }])) }),
+        subscribe: async (source, options) => {
+          subscriptions.push([source, options.updateRate]);
+          return { close: async () => {} };
+        }
+      }
+    };
+    const window = { reaper, addEventListener() {} };
+    const document = { getElementById, documentElement: {}, querySelectorAll: () => [] };
+    vm.runInNewContext(script, { document, window, reaper, performance: { now: () => 0 }, setInterval() {} });
+    await window.demoReady;
+
+    assert.deepEqual(subscriptions, [['transport', 60]]);
+    assert.equal(getElementById('play').disabled, false);
+    if (!absent.includes('watch-track')) assert.equal(getElementById('watch-track').disabled, false);
+    if (!absent.includes('watch-fx')) assert.equal(getElementById('watch-fx').disabled, false);
+  }
+});

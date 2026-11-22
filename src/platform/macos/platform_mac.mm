@@ -925,9 +925,7 @@ class MacPlatform final : public Platform {
   WKWebsiteDataStore* data_;
   WKProcessPool* pool_;
   IdlePool<MacIdleView> idle_;
-public:
-  explicit MacPlatform(const fs::path& path) {
-    // Public WebKit APIs select a persistent profile; WebKit owns its physical storage location.
+  static WKWebsiteDataStore* website_data_store(const fs::path& path) API_AVAILABLE(macos(14.0)) {
     const auto profile = path / "wk-profile-id";
     std::string identifier;
     std::ifstream input(profile);
@@ -941,7 +939,16 @@ public:
       output.close();
       if (!output) throw std::runtime_error("Cannot persist the WKWebView shared profile id");
     }
-    data_ = [WKWebsiteDataStore dataStoreForIdentifier:uuid];
+    @try {
+      return [WKWebsiteDataStore dataStoreForIdentifier:uuid];
+    } @catch (NSException* exception) {
+      throw Error("WEBVIEW_PROFILE_FAILED", exception.reason.UTF8String ?: "Cannot open the WKWebView shared profile");
+    }
+  }
+public:
+  explicit MacPlatform(const fs::path& path) {
+    if (@available(macOS 14.0, *)) data_ = website_data_store(path);
+    else data_ = [WKWebsiteDataStore defaultDataStore];
     pool_ = [WKProcessPool new];
   }
   void desktop(const std::string& method, const Json& args, DesktopReply reply) override {
@@ -1006,5 +1013,7 @@ public:
   }
 };
 }
-std::unique_ptr<Platform> make_platform(const fs::path& data) { return std::make_unique<MacPlatform>(data); }
+std::unique_ptr<Platform> make_platform(const fs::path& data) {
+  @autoreleasepool { return std::make_unique<MacPlatform>(data); }
+}
 }
