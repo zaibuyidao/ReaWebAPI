@@ -5,10 +5,11 @@ const vm = require('node:vm');
 const { webcrypto } = require('node:crypto');
 const methods = [];
 const source = fs.readFileSync('runtime/reaper.js', 'utf8');
-function setup({ required = false, isolated = true, workerMode = 'success', loading = false } = {}) {
+function setup({ required = false, isolated = true, workerMode = 'success', loading = false,
+  wasm = WebAssembly, sharedBuffer = SharedArrayBuffer } = {}) {
   const counts = { workers: 0, terminated: 0, revoked: 0, stopped: 0, fetches: 0 };
   let browser = {}, failure;
-  const window = { isSecureContext: true, crossOriginIsolated: isolated, SharedArrayBuffer,
+  const window = { isSecureContext: true, crossOriginIsolated: isolated, SharedArrayBuffer: sharedBuffer,
     location: { protocol: 'reaweb:', origin: 'reaweb://test' },
     document: { readyState: loading ? 'loading' : 'complete', createElement: () => ({ getContext: () => null }) },
     addEventListener() {}, removeEventListener() {}, stop() { ++counts.stopped; } };
@@ -33,7 +34,7 @@ function setup({ required = false, isolated = true, workerMode = 'success', load
       { webRuntime: { browser } } }));
   } } };
   const context = { window, crypto: webcrypto, console, TextEncoder, TextDecoder, Uint8Array, Uint32Array, Int32Array,
-    Float64Array, ArrayBuffer, SharedArrayBuffer, Atomics, WebAssembly, AbortController, Blob,
+    Float64Array, ArrayBuffer, SharedArrayBuffer: sharedBuffer, Atomics, WebAssembly: wasm, AbortController, Blob,
     URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => ++counts.revoked },
     fetch: async () => { ++counts.fetches; return { ok: true, text: async () => '' }; },
     setTimeout: (fn, ms) => setTimeout(fn, ms === 3000 ? 15 : ms), clearTimeout,
@@ -50,6 +51,26 @@ test('browser probes run once, use actual messages and clean up both Worker form
   assert.equal(a.webRuntime.browser.wasmSharedMemory, true);
   assert.equal(b.webRuntime.browser.webgl2, false);
   assert.deepEqual(env.counts, { workers: 2, terminated: 2, revoked: 1, stopped: 0, fetches: 1 });
+});
+test('non-isolated pages and workers skip shared-memory constructors', async () => {
+  let allocations = 0;
+  class CountAllocation { constructor() { ++allocations; } }
+  const wasm = { Memory: CountAllocation };
+  const env = setup({ isolated: false, wasm, sharedBuffer: CountAllocation });
+  const { webRuntime } = await env.window.reaper.debug.getDiagnostics();
+  assert.equal(webRuntime.browser.sharedArrayBuffer, false);
+  assert.equal(webRuntime.browser.wasmSharedMemory, false);
+  const header = fs.readFileSync('src/web/browser_probe.hpp', 'utf8');
+  const [, script] = header.match(/R"JS\(([\s\S]*?)\)JS"/);
+  let reply;
+  vm.runInNewContext(script + '\nonmessage({ data: { token: "test" } });', {
+    onmessage: null, self: { crossOriginIsolated: false }, WebAssembly: wasm,
+    SharedArrayBuffer: CountAllocation, postMessage(value) { reply = value; }
+  });
+  assert.equal(reply.token, 'test');
+  assert.equal(reply.sharedArrayBuffer, false);
+  assert.equal(reply.wasmSharedMemory, false);
+  assert.equal(allocations, 0);
 });
 test('CSP rejection is false while probe timeout remains unknown', async () => {
   for (const mode of ['blocked', 'timeout']) {

@@ -33,6 +33,7 @@
   const browserBasics = () => {
     const result = { secureContext: window.isSecureContext === true,
       crossOriginIsolated: window.crossOriginIsolated === true, sharedArrayBuffer: false, wasmSharedMemory: false };
+    if (!result.crossOriginIsolated) return result;
     try {
       const view = new Int32Array(new window.SharedArrayBuffer(4));
       Atomics.store(view, 0, 7); result.sharedArrayBuffer = Atomics.load(view, 0) === 7;

@@ -96,6 +96,8 @@ class SdkTests(unittest.TestCase):
                 self.assertIn('ReaWebAPI/SDK/runtime-api.d.ts', files)
                 self.assertIn('ReaWebAPI/docs/runtime-api-inventory.md', files)
                 self.assertIn('ReaWebAPI/SDK/runtime-demo/app.js', files)
+                self.assertEqual({Path(name).name for name in files if name.startswith('ReaWebAPI/SDK/native-transport/')},
+                                 {'index.html', 'reawebapi-native-transport.lua', 'README.md'})
                 self.assertIn('ReaWebAPI/SDK/lua-backend/reawebapi-lua-backend.lua', files)
                 for demo in ('eel-backend', 'eel-mixer'):
                     for name in (f'reawebapi-{demo}.eel', 'index.html', 'app.js', 'style.css', 'app.json', 'README.md', 'README.zh-CN.md'):

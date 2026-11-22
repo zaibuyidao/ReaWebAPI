@@ -27,7 +27,7 @@ def payload(root, version, revision):
             paths[f'ReaWebAPI/SDK/video-preview/{path.name}'] = path
     for name in ('realtime.md', 'realtime.zh-CN.md', 'window-overlay.md', 'window-overlay.zh-CN.md'):
         paths[f'ReaWebAPI/docs/{name}'] = root / 'docs' / name
-    for name in ('reawebapi-native-transport.lua', 'index.html', 'app.js', 'style.css', 'README.md', 'app.json'):
+    for name in ('reawebapi-native-transport.lua', 'index.html', 'README.md'):
         paths[f'ReaWebAPI/SDK/native-transport/{name}'] = root / 'examples/integrations/native-transport' / name
     paths['ReaWebAPI/docs/jsfx-native-channel.md'] = root / 'docs/jsfx-native-channel.md'
     paths['ReaWebAPI/docs/jsfx-webui.zh-CN.md'] = root / 'docs/jsfx-webui.zh-CN.md'
@@ -139,6 +139,8 @@ def stage_sdk(stage, version, revision='local', root=ROOT):
         raise ValueError(f"Unexpected retired paths in staging tree: {kept}")
     for directory in ('ReaWebAPI/SDK/video-preview', 'Scripts/ReaWebAPI/Example/video-preview'):
         (stage / directory / 'ReaWebAPI_VideoPreview.lua').unlink(missing_ok=True)
+    for name in ('app.js', 'style.css', 'app.json'):
+        (stage / 'ReaWebAPI/SDK/native-transport' / name).unlink(missing_ok=True)
     for name, content in files.items():
         path = stage / name
         path.parent.mkdir(parents=True, exist_ok=True)

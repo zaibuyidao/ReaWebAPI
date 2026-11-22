@@ -1,39 +1,410 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Realtime Transport Monitor</title><link rel="stylesheet" href="style.css"><script src="app.js?v=2" defer></script></head>
-<body><main>
-<header><div class="language-control"><label for="language" data-i18n="language">Language</label><select id="language"><option value="en">English</option><option value="zh-CN">简体中文</option></select></div><small>ReaWebAPI · realtime.transport</small><h1 data-i18n="title">Realtime Transport Monitor</h1><p data-i18n="subtitle">Lua opens the window and exits · No defer loop · No position interpolation</p></header>
-<div id="status" role="status">Connecting to REAPER…</div>
-<section class="hero"><div><label data-i18n="position">Play Position / seconds</label><strong id="position">—</strong></div><div><label data-i18n="transport">Transport State</label><strong id="transport">—</strong><span id="bits">—</span></div></section>
-<div class="controls"><select id="mode" aria-label="Subscription mode" disabled><option value="60">Realtime 60 Hz</option><option value="120">Realtime 120 Hz</option><option value="frame" data-i18n="frame">Frame comparison</option></select><button id="play" data-i18n="play" disabled>Play</button><button id="pause" data-i18n="pause" disabled>Pause / Resume</button><button id="stop" data-i18n="stop" disabled>Stop</button><button id="reset" data-i18n="reset">Reset statistics</button><button id="export" data-i18n="export" disabled>Export CSV</button><button id="diagnostics" data-i18n="diagnostics" disabled>Read diagnostics</button></div>
-<section class="grid">
-<article><label data-i18n="arrivalRate">Receive rate · last 5 seconds</label><b id="hz">—</b></article>
-<article><label data-i18n="arrivalInterval">Mean / P95 interval · last 5 seconds</label><b id="interval">—</b></article>
-<article><label data-i18n="nativeRate">Native sample rate · last 5 seconds</label><b id="native-hz">—</b></article>
-<article><label data-i18n="nativeInterval">Native mean / P95 interval</label><b id="native-interval">—</b></article>
-<article><label data-i18n="maxInterval">Maximum interval · this run</label><b id="max">—</b></article>
-<article><label data-i18n="counts">Received packets / sequence gaps</label><b id="counts">0 / 0</b></article>
-<article><label data-i18n="positionRate">Position changes · last 5 seconds</label><b id="position-hz">—</b></article>
-<article><label data-i18n="displayMax">Maximum display refresh rate</label><b id="display-max">—</b></article>
-</section>
-<h2 data-i18n="chart">Packet arrival intervals · last 180 packets, milliseconds</h2><canvas id="chart" width="1000" height="130"></canvas>
-<p class="note" data-i18n="timingNote">Realtime samples on an independent native thread. Scheduling and browser load can delay delivery. Frame is the existing channel used for comparison. Intervals are not end-to-end latency. Host and page clocks cannot be subtracted directly.</p>
-<details open><summary data-i18n="raw">Latest transport snapshot</summary><pre id="raw">Waiting for the first packet…</pre></details>
-<details><summary data-i18n="trackHeading">Track controls</summary>
-<div class="controls"><button id="watch-track" data-i18n="watchTrack" disabled>Observe selected track</button>
-<button id="unwatch-track" data-i18n="unwatchTrack" disabled>Stop observing</button></div>
-<pre id="track-state" aria-live="off"></pre></details>
-<details><summary data-i18n="fxHeading">FX parameters</summary>
-<div class="controls"><label data-i18n="fxChain">FX chain</label><select id="fx-chain" aria-label="FX chain"><option>main</option><option>input</option><option>monitoring</option><option>take</option></select>
-<label><span data-i18n="fxTrack">Track GUID (blank for selected track)</span> <input id="fx-track" size="38"></label>
-<label>Take GUID <input id="fx-take" size="38" disabled></label><label>FX GUID <input id="fx-guid" size="38"></label>
-<label><span data-i18n="parameter">Parameter index</span> <input id="fx-index" type="number" min="0" step="1" value="0"></label>
-<button id="watch-fx" data-i18n="watchFx" disabled>Observe FX on selected track</button>
-<button id="unwatch-fx" data-i18n="unwatchTrack" disabled>Stop observing</button></div>
-<div class="controls"><label><span data-i18n="fxValue">Normalized value</span> <input id="fx-value" type="number" min="0" max="1" step="any" value="0.5" required></label>
-<button id="apply-fx" data-i18n="setFx" disabled>Set FX parameter</button></div>
-<pre id="fx-state" aria-live="off"></pre></details>
-<details><summary data-i18n="native">Native diagnostics</summary><pre id="native">Click “Read diagnostics”. Lua writes should be 0.</pre></details>
-<p class="note" data-i18n="csvNote">CSV contains the latest 20,000 transport samples. All readings come from actual callbacks. Playback controls affect the current project.</p>
-</main></body></html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Realtime Transport Monitor</title>
+
+<!--
+════════════════════════════════════════════════════════════════════════
+    CSS   ·   样式与布局   /   Styles
+════════════════════════════════════════════════════════════════════════
+-->
+<style>
+:root {
+  color-scheme: light;
+  --ink: #172e29;
+  --muted: #566d65;
+  --line: #d6e4dd;
+  --green: #146647;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font: 15px/1.55 system-ui, "Malgun Gothic", "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  background: #f6f9f6;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1080px; margin: auto; padding: clamp(16px, 4vw, 48px); }
+header { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+header small { color: var(--green); font-weight: 650; letter-spacing: .04em; }
+h1 { margin: 8px 0 4px; font-size: clamp(28px, 4vw, 44px); line-height: 1.15; letter-spacing: -.04em; }
+h2 { font-size: 18px; margin: 28px 0 10px; }
+header p, .note, label, .caption, #bits { color: var(--muted); }
+header p { margin: 0; }
+.language-control { float: right; display: flex; gap: 8px; align-items: center; }
+#status { margin-top: 20px; font-size: 14px; color: var(--green); overflow-wrap: anywhere; }
+.hero {
+  display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px;
+  padding: clamp(16px, 3vw, 32px); margin: 10px 0 14px; border-radius: 16px;
+  background: linear-gradient(108deg, #e0f3e9, #eff7ec); border: 1px solid #c9e4d5;
+}
+.caption, label, #bits, .note { font-size: 13px; }
+.caption, #bits { display: block; }
+.hero strong { display: block; font-size: clamp(26px, 4vw, 40px); letter-spacing: -.035em; }
+#position, article b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+button, select, input {
+  min-height: 38px; max-width: 100%; padding: 7px 12px; border: 1px solid #baccbf;
+  border-radius: 8px; background: white; color: var(--ink); font: inherit; font-size: 14px;
+}
+button, select, summary { cursor: pointer; }
+button:hover:enabled { background: #edf5ef; border-color: #8cb6a1; }
+#play { background: var(--green); color: white; border-color: var(--green); }
+#play:hover:enabled { background: #0e5038; }
+:disabled { opacity: .55; cursor: default; }
+:focus-visible { outline: 3px solid #26875f; outline-offset: 2px; }
+.grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  margin: 24px 0;
+}
+article, details, canvas { background: white; border: 1px solid var(--line); border-radius: 12px; }
+article { padding: 14px 18px; }
+article b { display: block; margin-top: 4px; font-size: clamp(17px, 2vw, 23px); font-weight: 600; }
+canvas { display: block; width: 100%; height: 130px; }
+details { margin: 8px 0; padding: 12px 16px; }
+summary { font-weight: 600; }
+details .controls, pre { margin: 12px 0 0; }
+details label { display: grid; gap: 4px; max-width: 100%; }
+pre { overflow: auto; padding: 12px; border-radius: 8px; background: #f1f6f3; font: 13px/1.55 var(--mono); }
+@media (min-width: 900px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .language-control { float: none; justify-content: flex-end; margin-bottom: 12px; }
+  .hero, .grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+
+<!--
+════════════════════════════════════════════════════════════════════════
+    HTML  ·   页面主体     /   Interface
+════════════════════════════════════════════════════════════════════════
+-->
+<body>
+  <main>
+    <header>
+      <div class="language-control">
+        <label for="language" data-i18n="language">Language</label>
+        <select id="language">
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+        </select>
+      </div>
+      <small>ReaWebAPI · realtime.transport</small>
+      <h1 data-i18n="title">Realtime Transport Monitor</h1><p data-i18n="subtitle">Lua opens the window and exits · No defer loop · No position interpolation</p>
+    </header>
+    <div id="status" role="status">Connecting to REAPER…</div>
+    <section class="hero">
+      <div><span class="caption" data-i18n="position">Play Position / seconds</span>
+        <strong id="position">—</strong>
+      </div>
+      <div><span class="caption" data-i18n="transport">Transport State</span>
+        <strong id="transport">—</strong><span id="bits">—</span>
+      </div>
+    </section>
+    <div class="controls">
+      <select id="mode" aria-label="Subscription mode" disabled>
+        <option value="60">Realtime 60 Hz</option>
+        <option value="120">Realtime 120 Hz</option>
+        <option value="frame" data-i18n="frame">Frame comparison</option>
+      </select>
+      <button id="play" data-i18n="play" disabled>Play</button>
+      <button id="pause" data-i18n="pause" disabled>Pause / Resume</button>
+      <button id="stop" data-i18n="stop" disabled>Stop</button>
+      <button id="reset" data-i18n="reset">Reset statistics</button>
+      <button id="export" data-i18n="export" disabled>Export CSV</button>
+      <button id="diagnostics" data-i18n="diagnostics" disabled>Read diagnostics</button>
+    </div>
+    <section class="grid">
+      <article><span class="caption" data-i18n="arrivalRate">Receive rate · last 5 seconds</span><b id="hz">—</b></article>
+      <article><span class="caption" data-i18n="arrivalInterval">Mean / P95 interval · last 5 seconds</span><b id="interval">—</b></article>
+      <article><span class="caption" data-i18n="nativeRate">Native sample rate · last 5 seconds</span><b id="native-hz">—</b></article>
+      <article><span class="caption" data-i18n="nativeInterval">Native mean / P95 interval</span><b id="native-interval">—</b></article>
+      <article><span class="caption" data-i18n="maxInterval">Maximum interval · this run</span><b id="max">—</b></article>
+      <article><span class="caption" data-i18n="counts">Received packets / sequence gaps</span><b id="counts">0 / 0</b></article>
+      <article><span class="caption" data-i18n="positionRate">Position changes · last 5 seconds</span><b id="position-hz">—</b></article>
+      <article><span class="caption" data-i18n="displayMax">Maximum display refresh rate</span><b id="display-max">—</b></article>
+    </section>
+    <h2 data-i18n="chart">Packet arrival intervals · last 180 packets, milliseconds</h2>
+    <canvas id="chart" width="1000" height="130"></canvas>
+    <p class="note" data-i18n="timingNote">Realtime samples on an independent native thread. Scheduling and browser load can delay delivery. Frame is the existing channel used for comparison. Intervals are not end-to-end latency. Host and page clocks cannot be subtracted directly.</p>
+    <details open>
+      <summary data-i18n="raw">Latest transport snapshot</summary>
+      <pre id="raw">Waiting for the first packet…</pre>
+    </details>
+    <details>
+      <summary data-i18n="trackHeading">Track controls</summary>
+      <div class="controls">
+        <button id="watch-track" data-i18n="watchTrack" disabled>Observe selected track</button>
+        <button id="unwatch-track" data-i18n="unwatchTrack" disabled>Stop observing</button>
+      </div>
+      <pre id="track-state" aria-live="off"></pre>
+    </details>
+    <details>
+      <summary data-i18n="fxHeading">FX parameters</summary>
+      <div class="controls">
+        <label for="fx-chain" data-i18n="fxChain">FX chain</label>
+        <select id="fx-chain">
+          <option>main</option>
+          <option>input</option>
+          <option>monitoring</option>
+          <option>take</option>
+        </select>
+        <label><span data-i18n="fxTrack">Track GUID (blank for selected track)</span> <input id="fx-track" size="38"></label>
+        <label>Take GUID <input id="fx-take" size="38" disabled></label>
+        <label>FX GUID <input id="fx-guid" size="38"></label>
+        <label><span data-i18n="parameter">Parameter index</span> <input id="fx-index" type="number" min="0" step="1" value="0"></label>
+        <button id="watch-fx" data-i18n="watchFx" disabled>Observe FX on selected track</button>
+        <button id="unwatch-fx" data-i18n="unwatchTrack" disabled>Stop observing</button>
+      </div>
+      <div class="controls">
+        <label><span data-i18n="fxValue">Normalized value</span> <input id="fx-value" type="number" min="0" max="1" step="any" value="0.5" required></label>
+        <button id="apply-fx" data-i18n="setFx" disabled>Set FX parameter</button>
+      </div>
+      <pre id="fx-state" aria-live="off"></pre>
+    </details>
+    <details>
+      <summary data-i18n="native">Native diagnostics</summary>
+      <pre id="native">Click “Read diagnostics”. Lua writes should be 0.</pre>
+    </details>
+    <p class="note" data-i18n="csvNote">CSV contains the latest 20,000 transport samples. All readings come from actual callbacks. Playback controls affect the current project.</p>
+  </main>
+
+<!--
+════════════════════════════════════════════════════════════════════════
+    JS    ·   交互与订阅   /   JavaScript
+════════════════════════════════════════════════════════════════════════
+-->
+<script>
+'use strict';
+const el = id => document.getElementById(id);
+const messages = {
+  en: {
+    displayMax:'Maximum display refresh rate', unknownRate:'Unknown',
+    fxValue:'Normalized value', setFx:'Set FX parameter', fxChain:'FX chain', fxTrack:'Track GUID (blank for selected track)', fxHeading:'FX parameters', watchFx:'Observe FX on selected track', parameter:'Parameter index',
+    trackHeading:'Track controls', watchTrack:'Observe selected track', unwatchTrack:'Stop observing', noTrack:'Select a project track in REAPER.',
+    language:'Language', title:'Realtime Transport Monitor', subtitle:'Lua opens the window and exits · No defer loop · No position interpolation',
+    position:'Play Position / seconds', transport:'Transport State', mode:'Subscription mode', frame:'Frame comparison',
+    play:'Play', pause:'Pause / Resume', stop:'Stop', reset:'Reset statistics', export:'Export CSV', diagnostics:'Read diagnostics',
+    arrivalRate:'Receive rate · last 5 seconds', arrivalInterval:'Mean / P95 interval · last 5 seconds', nativeRate:'Native sample rate · last 5 seconds',
+    nativeInterval:'Native mean / P95 interval', maxInterval:'Maximum interval · this run', counts:'Received packets / sequence gaps', positionRate:'Position changes · last 5 seconds',
+    chart:'Packet arrival intervals · last 180 packets, milliseconds', raw:'Latest transport snapshot', native:'Native diagnostics',
+    timingNote:'Realtime samples on an independent native thread. Scheduling and browser load can delay delivery. Frame is the existing channel used for comparison. Intervals are not end-to-end latency. Host and page clocks cannot be subtracted directly.',
+    diagnosticsHint:'Click “Read diagnostics”. Lua writes should be 0.', csvNote:'CSV contains the latest 20,000 transport samples. All readings come from actual callbacks. Playback controls affect the current project.',
+    connecting:'Connecting to REAPER…', waitingFirst:'Waiting for the first packet…', unavailable:'Unavailable', paused:'Paused', recordingPaused:'Recording paused', recording:'Recording', playing:'Playing', stopped:'Stopped',
+    bits:'Raw {state} · play {play} / pause {pause} / record {record}', noTimestamp:'No sample timestamp',
+    waiting:'Waiting for data · no update for {seconds} seconds', receiving:'{mode} · {count} packets received · No Lua loop',
+    switching:'Subscription switch in progress', saveTitle:'Save transport CSV', launchError:'Run the Lua launcher in REAPER.',
+    versionError:'Install the ReaWebAPI build supplied with this transport example.', unsupported:'Realtime transport is unavailable on this host.'
+  },
+  'zh-CN': {
+    displayMax:'显示器最高刷新率', unknownRate:'未知',
+    fxValue:'标准化值', setFx:'写入 FX 参数', fxChain:'FX 链', fxTrack:'轨道 GUID（留空使用选中轨道）', fxHeading:'FX 参数', watchFx:'观察选中轨道的 FX', parameter:'参数索引',
+    trackHeading:'轨道控制', watchTrack:'观察当前选中轨道', unwatchTrack:'停止观察', noTrack:'请在 REAPER 中选择一条工程轨道。',
+    language:'语言', title:'实时播放状态', subtitle:'Lua 仅打开窗口后退出 · 无 defer 循环 · 无位置插值',
+    position:'Play Position / 秒', transport:'走带状态', mode:'订阅方式', frame:'Frame 对照',
+    play:'播放', pause:'暂停 / 继续', stop:'停止', reset:'重置统计', export:'导出 CSV', diagnostics:'读取原生诊断',
+    arrivalRate:'实际接收频率 · 最近 5 秒', arrivalInterval:'平均 / P95 间隔 · 最近 5 秒', nativeRate:'原生采样频率 · 最近 5 秒',
+    nativeInterval:'原生平均 / P95 间隔', maxInterval:'最大间隔 · 本次统计', counts:'收到包数 / 序号缺口', positionRate:'播放位置实际变化频率 · 最近 5 秒',
+    chart:'包到达间隔 · 最近 180 次，毫秒', raw:'最新播放状态快照', native:'原生诊断',
+    timingNote:'Realtime 使用独立原生线程采样，系统调度与浏览器负载仍可能延迟交付。Frame 为原有通道对照。采样与接收间隔不代表端到端延迟，宿主时间戳不能直接与网页时钟相减。',
+    diagnosticsHint:'点击「读取原生诊断」。Lua 写入次数应为 0。', csvNote:'CSV 保存最近 20,000 个播放状态样本。所有读数来自真实回调。播放按钮会控制当前工程。',
+    connecting:'正在连接 REAPER…', waitingFirst:'等待第一个数据包…', unavailable:'不可用', paused:'已暂停', recordingPaused:'录音暂停', recording:'录音中', playing:'播放中', stopped:'已停止',
+    bits:'原始值 {state} · play {play} / pause {pause} / record {record}', noTimestamp:'无采样时间戳',
+    waiting:'等待数据 · {seconds} 秒未更新', receiving:'{mode} · 已接收 {count} 个包 · Lua 无循环',
+    switching:'订阅切换中', saveTitle:'保存播放状态 CSV', launchError:'请在 REAPER 中运行 Lua 启动脚本。',
+    versionError:'请安装与本走带示例配套的 ReaWebAPI 扩展。', unsupported:'当前宿主不支持 Realtime transport。'
+  }
+};
+let displayMax = null;
+let language='en', ready=false, lastError=null, diagnosticSnapshot=null;
+const t=(key, values={})=>messages[language][key].replace(/\{(\w+)\}/g,(_,name)=>String(values[name]??''));
+const uiError=key=>Object.assign(new Error(t(key)),{messageKey:key});
+function setLanguage(value) {
+  language=value==='zh-CN'?'zh-CN':'en';document.documentElement.lang=language;document.title=t('title');
+  el('language').value=language;
+  document.querySelectorAll('[data-i18n]').forEach(node=>{node.textContent=t(node.dataset.i18n);});
+  el('mode').setAttribute('aria-label',t('mode'));
+  if(!diagnosticSnapshot)el('native').textContent=t('diagnosticsHint');
+  renderDisplayRate();
+  if(latest)renderTransport();
+  draw();
+}
+function renderTransport() {
+  const state=mode==='frame'?latest.playing:latest.playState;
+  el('position').textContent=fmt(latest.position,6);el('transport').textContent=stateName(state);
+  el('bits').textContent=t('bits',{state,play:state&1?1:0,pause:state&2?1:0,record:state&4?1:0});
+}
+const show = value => JSON.stringify(value, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2);
+const finite = value => typeof value === 'number' && Number.isFinite(value);
+const fmt = (value, n = 2) => finite(value) ? value.toFixed(n) : '—';
+let samples = [], latest = null, dispose = null, previous = null, mode = '60', failed = false;
+let total = 0, gaps = 0, maxGap = 0, started = performance.now(), switching = false;
+function stateName(s) { return t(!Number.isInteger(s)?'unavailable':s&2?(s&4?'recordingPaused':'paused'):s&4?'recording':s&1?'playing':'stopped'); }
+function reset() { samples = []; total = 0; gaps = 0; maxGap = 0; previous = null; latest = null; started = performance.now(); }
+function receive(value) {
+  const now = performance.now(), state = mode === 'frame' ? value.playing : value.playState;
+  const sequence = Number(value.sequence), sampledAt = value.sampledAt ?? null;
+  const dt = previous ? now - previous.receivedMs : null;
+  const missing = previous ? Math.max(0, sequence - previous.sequence - 1) : 0;
+  const row = { receivedMs: now, intervalMs: dt, sampledAt, sampleIntervalMs: previous && sampledAt !== null ? (sampledAt - previous.sampledAt) * 1000 : null,
+    sequence, position: value.position, state, playRate:value.playRate, tempo:value.tempo, beatPosition:value.beatPosition,
+    numerator:value.timeSignature?.numerator, denominator:value.timeSignature?.denominator, missing, projectEpoch: value.projectEpoch?.toString() ?? '' };
+  samples.push(row); if (samples.length > 20000) samples.shift();
+  previous = row; latest = value; total++; gaps += missing; maxGap = Math.max(maxGap, dt ?? 0);
+  renderTransport();
+}
+function metrics(rows, key) {
+  if (rows.length < 2) return {hz:0, mean:null, p95:null, max:null};
+  const intervals = rows.slice(1).map((r,i) => r[key] - rows[i][key]).sort((a,b)=>a-b);
+  const span = rows.at(-1)[key] - rows[0][key];
+  return {hz: span > 0 ? (rows.length-1)*1000/span : 0, mean:span/(rows.length-1),
+    p95: intervals[Math.ceil(intervals.length*.95)-1], max:intervals.at(-1)};
+}
+function csv(rows) {
+  return 'received_page_ms,arrival_interval_ms,sampled_host_seconds,sample_interval_ms,sequence,position_seconds,play_state,sequence_gap,project_epoch,play_rate,tempo_bpm,qn_position,time_signature_numerator,time_signature_denominator\n' +
+    rows.map(r=>[r.receivedMs,r.intervalMs??'',r.sampledAt??'',r.sampleIntervalMs??'',r.sequence,r.position,r.state,r.missing,r.projectEpoch,r.playRate??'',r.tempo??'',r.beatPosition??'',r.numerator??'',r.denominator??''].join(',')).join('\n');
+}
+function report(error) { failed=true;lastError=error;draw(); }
+async function switchMode(next) {
+  if (switching) throw uiError('switching');
+  switching = true; el('mode').disabled = true;
+  try {
+    if (dispose) { const close = dispose; dispose = null; await close(); }
+    mode = next; el('mode').value = next; reset(); failed = false;
+    if (mode === 'frame') dispose = await reaper.events.on('frame', receive);
+    else {
+      const sub = await reaper.realtime.subscribe('transport', { updateRate:Number(mode), onData:receive, onError:report });
+      dispose = () => sub.close();
+    }
+  } finally { switching = false; el('mode').disabled = false; }
+}
+function draw() {
+  const now = performance.now(), rows = samples.filter(r => r.receivedMs >= now-5000);
+  const arrival = metrics(rows,'receivedMs');
+  const native = metrics(rows.filter(r=>r.sampledAt!==null).map(r=>({...r,t:r.sampledAt*1000})),'t');
+  const age = previous ? now-previous.receivedMs : now-started;
+  el('hz').textContent = `${fmt(age>1500?0:arrival.hz,1)} Hz`;
+  el('native-hz').textContent = mode === 'frame' ? t('noTimestamp') : `${fmt(age>1500?0:native.hz,1)} Hz`;
+  el('interval').textContent = `${fmt(arrival.mean)} / ${fmt(arrival.p95)} ms`;
+  el('native-interval').textContent = `${fmt(native.mean)} / ${fmt(native.p95)} ms`;
+  const span = rows.length>1 ? (rows.at(-1).receivedMs-rows[0].receivedMs)/1000 : 0;
+  const changes = rows.slice(1).filter((r,i)=>r.position!==rows[i].position).length;
+  el('position-hz').textContent = `${fmt(age>1500||!span?0:changes/span,1)} Hz`;
+  el('max').textContent = `${fmt(total>1?maxGap:null)} ms`; el('counts').textContent = `${total} / ${gaps}`;
+  el('raw').textContent=latest?show(latest):t('waitingFirst');
+  el('status').textContent=failed?`${lastError.code||'ERROR'}: ${lastError.messageKey?t(lastError.messageKey):lastError.message}`:
+    !ready?t('connecting'):age>1500?t('waiting',{seconds:fmt(age/1000,1)}):t('receiving',{mode:mode==='frame'?t('frame'):'Realtime '+mode+' Hz',count:total});
+  const canvas = el('chart'), ctx = canvas.getContext('2d');
+  const values = samples.slice(-180).map(r=>r.intervalMs).filter(finite), ceiling = Math.max(25,...values)*1.15;
+  ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#566d65';ctx.font='12px Consolas';ctx.fillText(`${ceiling.toFixed(0)} ms`,8,16);
+  ctx.strokeStyle='#18845c';ctx.beginPath();values.forEach((v,i)=>{const x=60+i/179*930,y=120-v/ceiling*100;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();
+}
+const action = fn => async () => {try {await fn();} catch(error) {report(error);}};
+// An older copy of the page can still load this script during an upgrade.
+function bindTrackControls() {
+  const watch = el('watch-track'), stop = el('unwatch-track'), state = el('track-state');
+  if (!watch || !stop || !state) return null;
+  let subscription;
+  watch.onclick = async () => {
+    watch.disabled = true;
+    try {
+      if (subscription) await subscription.close();
+      const ref = await reaper.audio.getSelectedTrackRef();
+      if (!ref) { state.textContent = t('noTrack'); return; }
+      subscription = await reaper.realtime.subscribe('track-controls', {
+        tracks: [ref.guid], onData: snapshot => { state.textContent = show(snapshot.tracks[0]); },
+        onClose: reason => { state.textContent = reason.code; stop.disabled = true; }
+      });
+      stop.disabled = subscription.closed;
+    } catch (error) { state.textContent = error.message; }
+    finally { watch.disabled = false; }
+  };
+  stop.onclick = action(async () => { if (subscription) await subscription.close(); });
+  return watch;
+}
+function bindFxControls() {
+  const watch = el('watch-fx'), stop = el('unwatch-fx'), state = el('fx-state');
+  const chain = el('fx-chain'), trackGuid = el('fx-track'), takeGuid = el('fx-take');
+  const fxGuid = el('fx-guid'), parameter = el('fx-index');
+  if (!watch || !stop || !state || !chain || !trackGuid || !takeGuid || !fxGuid || !parameter) return null;
+  const apply = el('apply-fx'), value = el('fx-value');
+  let subscription, watchedFx;
+  chain.onchange = () => { takeGuid.disabled = chain.value !== 'take'; };
+  if (apply && value) {
+    apply.onclick = action(async () => {
+      if (!watchedFx || !value.reportValidity()) return;
+      const {ref,index} = watchedFx;
+      await reaper.transaction.withUndo(t('setFx'), () =>
+        reaper.audio.setFxParameterLatest(ref,index,value.valueAsNumber));
+    });
+  }
+  watch.onclick = async () => {
+    watch.disabled = true;
+    try {
+      if (subscription) await subscription.close();
+      const track = trackGuid.value.trim() || (await reaper.audio.getSelectedTrackRef())?.guid;
+      if (!track) { state.textContent = t('noTrack'); return; }
+      const binding = {
+        track, chain:chain.value, ...(chain.value === 'take' ? {take:takeGuid.value.trim()} : {}),
+        fx:fxGuid.value.trim()
+      };
+      const index = parameter.valueAsNumber;
+      const ref = await reaper.audio.getFxRef(binding);
+      subscription = await reaper.realtime.subscribe('fx-parameters', {
+        ...binding, parameters:[index],
+        onData: snapshot => { state.textContent = show(snapshot.values); },
+        onClose: reason => {
+          watchedFx = null; state.textContent = reason.code; stop.disabled = true;
+          if (apply) apply.disabled = true;
+        }
+      });
+      watchedFx = {ref,index};
+      stop.disabled = subscription.closed;
+      if (apply && value) apply.disabled = subscription.closed;
+    } catch (error) { state.textContent = error.message; }
+    finally { watch.disabled = false; }
+  };
+  stop.onclick = action(async () => { if (subscription) await subscription.close(); });
+  return watch;
+}
+const trackWatch = bindTrackControls(), fxWatch = bindFxControls();
+el('mode').onchange = action(()=>switchMode(el('mode').value));
+el('reset').onclick = reset;
+for (const command of ['play', 'pause', 'stop'])
+  el(command).onclick = action(() => reaper.audio.controlTransport(command));
+function renderDisplayRate() {
+  const field = el('display-max');
+  if (field) field.textContent = displayMax === null ? t('unknownRate') : `${Number(displayMax.toFixed(2))} Hz`;
+}
+async function refreshDisplayRate() {
+  try { displayMax = await reaper.window.getMaxRefreshRate?.() ?? null; }
+  catch { displayMax = null; }
+  renderDisplayRate();
+}
+async function readDiagnostics() {
+  await refreshDisplayRate();
+  diagnosticSnapshot={realtime:await reaper.realtime.getDiagnostics(),frames:(await reaper.debug.getDiagnostics()).frames};
+  el('native').textContent=show(diagnosticSnapshot);
+}
+el('diagnostics').onclick = action(readDiagnostics);
+el('export').onclick = action(async()=>{const rows=samples.slice();const path=await reaper.dialog.saveFile({title:t('saveTitle')});if(path)await reaper.fs.writeFile(path,csv(rows));});
+window.addEventListener('pagehide',()=>{if(dispose)void dispose().catch(()=>{});});
+el('language').onchange=()=>setLanguage(el('language').value);
+setLanguage('en');
+window.demoReady = (async()=>{
+  if(!window.reaper)throw uiError('launchError');
+  await reaper.lifecycle.ready;
+  if(!reaper.realtime || !reaper.audio?.controlTransport)throw uiError('versionError');
+  const capabilities=await reaper.realtime.getCapabilities();
+  if(!capabilities.sources.transport?.available)throw uiError('unsupported');
+  if (fxWatch) fxWatch.disabled = !capabilities.sources['fx-parameters']?.available;
+  if (trackWatch) trackWatch.disabled = !capabilities.sources['track-controls']?.available;
+  void refreshDisplayRate();
+  await switchMode('60');
+  for(const id of ['play','pause','stop','export','diagnostics'])el(id).disabled=false;
+  ready=true;draw();setInterval(draw,100);
+})();
+window.demoReady.catch(report);
+</script>
+</body>
+</html>

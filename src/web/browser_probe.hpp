@@ -5,6 +5,10 @@ inline constexpr char browser_probe_script[] = R"JS(
 onmessage = ({ data }) => {
   const result = { token: data.token, crossOriginIsolated: self.crossOriginIsolated === true,
     sharedArrayBuffer: false, wasmSharedMemory: false, sharedRoundTrip: null };
+  if (!result.crossOriginIsolated) {
+    postMessage(result);
+    return;
+  }
   try {
     const view = new Int32Array(new SharedArrayBuffer(4));
     Atomics.store(view, 0, 7);

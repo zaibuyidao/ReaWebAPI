@@ -365,7 +365,7 @@ test('a frame never overwrites an active slider drag, and unreadable content is 
 test('native transport still starts with older demo markup', async () => {
   const directory = path.join(__dirname, '../examples/integrations/native-transport');
   const html = fs.readFileSync(path.join(directory, 'index.html'), 'utf8');
-  const script = fs.readFileSync(path.join(directory, 'app.js'), 'utf8');
+  const [, script] = html.match(/<script>([\s\S]*?)<\/script>/);
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => id);
   const writeControls = ['apply-fx', 'fx-value'];
   const addedControls = [...writeControls, 'display-max', 'watch-track', 'unwatch-track', 'track-state',

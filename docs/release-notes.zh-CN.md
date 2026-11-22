@@ -1,4 +1,4 @@
 # ReaWebAPI
 
-- 修复旧版走带监视器页面加载新版脚本时的启动报错。旧版页面可以继续启动走带监视，新版页面使用带版本号的脚本地址。
-- 将 macOS 构建目标降至 13。Ventura 启动 WebView 时使用 WebKit 的默认持久存储，避开 macOS 14 才提供的命名存储接口。macOS 14 及以上继续使用按 UUID 管理的存储。
+- 修复未启用跨源隔离的页面和 Worker 在检测浏览器能力时触发的 SharedArrayBuffer 警告。
+- 实时播放状态 Demo 改用浅色布局，修正表单标签。Lua 启动器打开独立的 HTML 页面，文件内按 CSS、页面主体和 JavaScript 分区。随附精简的英中双语 README。
