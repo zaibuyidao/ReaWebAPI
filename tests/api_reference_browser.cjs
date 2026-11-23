@@ -92,16 +92,37 @@ try {
   fs.mkdirSync(folder);
   fs.copyFileSync(process.argv[2],path.join(folder,'reawebapihelp.html'));
   const driver = path.join(root,'test.html');
-  fs.writeFileSync(driver,'<!doctype html><meta charset="utf-8"><body><output></output><script>' +
-    'const exercise = ' + exercise.toString() + '; async function run(frame){try{await exercise(frame);' +
-    'document.querySelector("output").textContent="PASS"}catch(e){document.querySelector("output").textContent=e.stack}}</script>' +
-    '<iframe width="375" height="680" onload="run(this)" src="./离线 手册/reawebapihelp.html#runtime.realtime.subscribe"></iframe>');
+  // Keep the driver's load event pending until the asynchronous assertions settle.
+  // Headless --dump-dom then captures the result on the browser's real clock.
+  fs.writeFileSync(driver, `<!doctype html><meta charset="utf-8"><body>
+    <iframe hidden id="pending"></iframe><output>Tests did not finish</output>
+    <script>
+      const pending = document.getElementById('pending').contentDocument;
+      pending.open();
+      pending.write('<title>Running tests</title>');
+      const exercise = ${exercise.toString()};
+      async function run(frame) {
+        const output = document.querySelector('output');
+        try {
+          await exercise(frame);
+          output.textContent = 'PASS';
+        } catch (error) {
+          output.textContent = error.stack || String(error);
+        } finally {
+          pending.close();
+        }
+      }
+    </script>
+    <iframe width="375" height="680" onload="run(this)"
+      src="./${path.basename(folder)}/reawebapihelp.html#runtime.realtime.subscribe"></iframe>`);
   const chrome = process.argv[3] || process.env.CHROME_BIN || 'google-chrome';
   const result = spawnSync(chrome, ['--headless','--disable-crashpad-for-testing','--disable-gpu','--no-first-run',
     '--disable-background-networking','--allow-file-access-from-files','--blink-settings=localStorageEnabled=false',
-    '--host-resolver-rules=MAP * ~NOTFOUND','--user-data-dir='+path.join(root,'profile'),'--virtual-time-budget=6000',
+    '--host-resolver-rules=MAP * ~NOTFOUND','--user-data-dir='+path.join(root,'profile'),'--timeout=30000',
     '--dump-dom',pathToFileURL(driver).href],{encoding:'utf8',windowsHide:true,timeout:45000});
-  if (result.error) throw result.error;
+  if (result.error) {
+    throw new Error(`Cannot complete the browser test with ${chrome}: ${result.error.message}\n${result.stderr || ''}`, {cause:result.error});
+  }
   assert.equal(result.status,0,result.stderr);
   const report = result.stdout.match(/<output>([\s\S]*?)<\/output>/);
   assert.equal(report?.[1],'PASS', report?.[1] || result.stderr);
