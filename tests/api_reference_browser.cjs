@@ -116,7 +116,7 @@ try {
     <iframe width="375" height="680" onload="run(this)"
       src="./${path.basename(folder)}/reawebapihelp.html#runtime.realtime.subscribe"></iframe>`);
   const chrome = process.argv[3] || process.env.CHROME_BIN || 'google-chrome';
-  const result = spawnSync(chrome, ['--headless','--disable-crashpad-for-testing','--disable-gpu','--no-first-run',
+  const result = spawnSync(chrome, ['--headless','--disable-gpu','--no-first-run',
     '--disable-background-networking','--allow-file-access-from-files','--blink-settings=localStorageEnabled=false',
     '--host-resolver-rules=MAP * ~NOTFOUND','--user-data-dir='+path.join(root,'profile'),'--timeout=30000',
     '--dump-dom',pathToFileURL(driver).href],{encoding:'utf8',windowsHide:true,timeout:45000});
