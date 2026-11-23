@@ -1,135 +1,68 @@
 # ReaWebAPI
 
-[Native Event 与 Host Service](docs/native-services.zh-CN.md) 提供按订阅启停的原生状态监测和 C/C++ 扩展注册，独立于 Lua 循环，与现有 Lua Backend 共存。
-
 [English](README.md) | **简体中文**
 
-Space 路由的初始值由普通 App 的 `app.json.dawKeyboard` 或 JSFX 的 `JSFX_WebUI.dawKeyboard` 决定，默认值分别为 `false` 和 `true`。两者均支持 [`reaper.window.setDawKeyboard()`](docs/runtime-api.zh-CN.md#space-路由) 动态覆盖，重载恢复 JSON 配置，不回写文件。
+ReaWebAPI 是 REAPER 的原生扩展，可用 HTML、CSS 和 JavaScript 开发可停靠的工具窗口和 JSFX 编辑器。页面在 REAPER 内运行，通过异步接口 `window.reaper` 与宿主交互。
 
-ReaWebAPI 是用于开发 HTML、CSS 和 JavaScript 工具的 REAPER 原生扩展，提供可停靠的 WebView 窗口，并通过 `reaper` 对象异步调用 REAPER API。
+[API 手册](https://zaibuyidao.github.io/ReaWebAPI/reawebapihelp.html) · [开发指南](docs/development.zh-CN.md) · [版本下载](https://github.com/zaibuyidao/ReaWebAPI/releases)
 
-- 使用 `await reaper.window.getMaxRefreshRate()` 读取当前窗口所在显示器在所有可用显示模式中的最高刷新率。
-- [Realtime 订阅](docs/realtime.zh-CN.md)支持在 Windows、macOS 和 Linux 订阅播放状态，以及按 GUID 观察轨道控制和 FX 参数变化。请求频率为 1–120 Hz。 网页可用 `reaper.audio.setFxParameterLatest()` 写入 FX 标准化参数。
-- [帧通道](docs/frame-timer-verification.zh-CN.md)支持原生播放状态采样和可替换的 Lua 内容，在 Windows、macOS、Linux 上独立于 Lua 轮询频率运行。小帧无需工作线程轮转，上一批编码事件投递期间，后续状态更新只保留最新值。
-- [JSFX Web UI](docs/jsfx-webui.zh-CN.md) 托管关联配置的轨道、主轨、Take、输入、监听及嵌套容器 JSFX，通过 `params` 提供实例绑定的参数同步、宿主参数元数据、`enum` 中的已加载实例枚举选项（不可用字段为 `null`）、归一化写入和参数组撤销。`editor` 提供持久保存的共享内容尺寸。可选 EEL SDK 提供 DSP 流、复杂状态、命令和二进制资源。[原生通道](docs/jsfx-native-channel.zh-CN.md) 使用固定大小的暂存程序，降低初始化时的 EEL 编译开销。Windows、macOS 和 Linux 的初始能力与状态读取无需额外等待一次宿主调度。SDK 管理的 DSP 流在 Session 更换或传输恢复时保留原有订阅。
-- 网页通过 `window.reaper` 的运行时命名空间访问宿主。
-- 已认证的外部 WebSocket 客户端可通过 `system.getCapabilities` 查询具名服务、事件和流。
-- 支持 Lua 或 EEL2 后端 + WebView UI，通过 `ReaWeb_Send`、`ReaWeb_Receive`、`reaper.host.send` 和 `message` 事件通信，多窗口公平轮转投递，通信调度预算独立于工程采样。
-- 可选 [External Client](docs/external-clients.zh-CN.md)，通过带认证的本机 WebSocket 访问具名服务、事件和二进制流。服务默认关闭，可在 ReaWebAPI Preferences 中启用，默认地址为 `ws://127.0.0.1:9123`。
-- 可选[透明浮动窗口](docs/host-api.zh-CN.md#透明窗口)，支持桌面 Alpha、原生后端能力检测及原 Dock 偏好保留。
-- [覆盖层与原生鼠标穿透](docs/window-overlay.zh-CN.md)面向浮动 App，提供 JS／Lua 控制和明确的平台要求。
-- [无边框浮动窗口](docs/host-api.zh-CN.md#无边框窗口)支持动态切换标题栏、原生圆角和拖动区，覆盖 Windows、macOS 与 Linux X11/XWayland。关闭时先隐藏原生宿主，再释放 WebView。
-- 15 个 Runtime 命名空间，涵盖窗口、事件、文件、原生对话框、拖放、音频、Undo 和应用服务。
-- 稳定的 App 来源，加载本地资源、模块和 Worker，持久化 App 存储。普通 App 使用 `reaweb://<appId>`，macOS/Linux 的[required 隔离模式](docs/frontend.zh-CN.md#app-级跨源隔离)使用经过认证、持久绑定的回环来源。
-- [浏览器文件与媒体](docs/browser-media.md)，支持可选的 Blob 导出，以及绑定文档生命周期的只读媒体 URL、有界流式读取和跳转。
-- 停靠和浮动 WebView 缩放时保留浏览器画面，原生背景跟随页面 HTML/body 的不透明背景色。Windows、macOS 和 Linux 对[常见计算 sRGB 颜色跳过 Canvas 初始化](docs/frontend.zh-CN.md#普通-web-app)。默认 Windows 窗口取消停靠后的标题栏和边框保留系统样式。
-- Windows 和 macOS 在页面首帧准备完成后显示新窗口，现有 App 无需修改启动代码。
-- Windows、macOS 和 Linux 隐藏 JSFX 原生控件时跳过对已隐藏控件的多余几何查询，并在每次扫描内复用电平表句柄。
-- Windows、macOS 和 Linux 在宿主空闲时准备空白 WebView 容器池，普通 App 与 JSFX 共用。[启动诊断](docs/devtools.zh-CN.md#启动计时)分别记录容器池使用情况、JSFX 初始化与缓存复激活、宿主观察计数、背景同步和原生显示。
-- Windows/Linux [DevTools](docs/devtools.zh-CN.md) 支持可调宽度的右侧面板、浮动模式和布局偏好保存，Ctrl+Shift+I 切换显示。Windows 提供无边框嵌入面板、原生浮动窗口及页面右键菜单控制。
-- macOS [Web Inspector](docs/devtools.zh-CN.md#macos) 支持右侧嵌入面板、原生浮动窗口和布局偏好保存，Option+Command+I 与页面右键菜单控制同一个检查器会话。
-- WebView、标题栏与 Docker 页签右键菜单统一提供停靠、刷新、DevTools、打开 App 文件夹和关闭操作。HTML favicon 或 `reaper.window.setIcon(path)` 设置的 PNG、ICO、SVG 窗口图标在停靠切换和重载后保留，通过 `reaper.window.setIconVisible(boolean)` 即时控制显示，包括默认启动图标。Windows、macOS 和 Linux 的浮动 Docker 标题栏跟随当前 WebView 的图标设置。
-- JavaScript、TypeScript 模板，Runtime Studio 示例和中英文文档。
+## 核心能力
 
-Windows WebView 遵循 **Hide pointer while typing** 设置，输入时隐藏光标，在 REAPER 原生窗口上移动鼠标后恢复。参见[光标行为](docs/frontend.zh-CN.md#文本输入时的鼠标光标)。
+- **应用与窗口**　本地页面可以浮动显示或停靠在 REAPER 中。应用可调用系统文件对话框、读写文件，并在下次启动时保留设置。
+- **工程控制**　读取走带状态，订阅轨道和 FX 变化，调整轨道控件或 FX 参数。通过显式编辑手势，可将多次修改合并为一步撤销。
+- **音频与视频**　通过原生音频流绘制波形、分析频谱和测量响度。工程视频预览的可用性取决于宿主和平台后端。
+- **JSFX 编辑器**　将网页界面与 JSFX 实例关联，即可读写该实例的参数。效果器接入可选的 EEL SDK 后，还可提供 DSP 数据、命令和二进制资源。
 
-Windows FX 链中的 JSFX Web UI 请使用 v0.3.8.28 或更高版本，避免切换窗口焦点时 REAPER 无响应。
+## 工作原理
 
-App 可通过 `app.json.webRuntime.crossOriginIsolation` 选择跨源隔离。实际能力探针与线程 WASM 示例见 [Web Runtime 契约](docs/frontend.zh-CN.md#app-级跨源隔离)。
+ReaScript 启动脚本通过 `ReaWeb_Open` 打开本地 HTML 入口。扩展负责管理窗口，并向页面注入 JavaScript 运行时。`reaper.lifecycle.ready` 就绪后，页面可直接调用运行时 API。如果工程逻辑保留在 Lua 或 EEL2 中，脚本可通过消息与页面通信。对于 JSFX 编辑器，DSP 和参数状态仍由 REAPER 管理。
 
-## 下载与安装
+其他原生扩展可通过 C/C++ SDK 注册具名服务和二进制数据流。外部客户端可通过本机 WebSocket 访问服务、事件和数据流。该服务默认关闭，启用后需要身份验证。
 
-从 [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases) 下载与 **REAPER 进程架构**一致的安装包。
+## 安装
+
+需要 REAPER 6.68 或更高版本。请选择与 **REAPER 进程架构**一致的安装包。
 
 | 平台 | 架构 | 运行环境 |
 | --- | --- | --- |
-| Windows | x64 | Windows 10/11、WebView2 Evergreen、VC++ x64 运行库 |
-| macOS | ARM64、Intel x64 | macOS 13+ |
-| Linux | x64、ARM64 | Ubuntu 24.04 或兼容系统、WebKitGTK 4.1、X11/XWayland |
+| Windows | x64 | Windows 10 或 11、WebView2 Evergreen、Visual C++ x64 运行库 |
+| macOS | Apple Silicon（ARM64）、Intel（x86_64） | macOS 13 或更高版本，系统自带 WKWebView |
+| Linux | x86_64、ARM64 | Ubuntu 24.04 或兼容系统、WebKitGTK 4.1、X11 或 XWayland |
 
-支持 REAPER 6.68+。
+- **通过 ReaPack 安装**　导入 [zaibuyidao 仓库索引](https://github.com/zaibuyidao/ReaScripts/raw/master/index.xml)，安装 `ReaWebAPI: Web Runtime for REAPER`，然后重启 REAPER。示例和离线 API 手册会注册到动作列表。
+- **使用平台 ZIP**　在 REAPER 中通过 **Options → Show REAPER resource path in explorer/finder** 打开资源目录，然后退出 REAPER。将对应平台的 ZIP 完整解压到该目录后重启。Linux 下需保留随包辅助程序的执行权限。平台包包含扩展、示例、SDK 和离线手册。
 
-| 下载项 | 内容 |
+## 运行第一个应用
+
+1. 打开 REAPER **动作列表（Action List）**。通过 ReaPack 安装后，搜索 `ReaWebAPI_Demo`。使用平台 ZIP 安装时，从资源目录加载 `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua`。运行动作即可打开示例。
+2. 开发自己的工具时，将平台包中的 `ReaWebAPI/SDK/` 复制到可写目录，或使用发布页提供的独立 SDK。在动作列表中加载并运行该副本中的 `starter/reawebapi-starter.lua`。在 REAPER 中选择一条轨道，即可在示例窗口看到轨道名称。
+3. 编辑 `starter/index.html` 和 `starter/app.js` 后重新加载页面。JavaScript 模板无需构建。使用 Vite 和 TypeScript 开发时，请选用 `modern/` 模板。
+
+离线查阅 API 时，可直接打开平台包或 SDK 包中的 `ReaWebAPI/docs/reawebapihelp.html`。通过 ReaPack 安装后，可在动作列表中运行 `ReaWebAPI - API Reference`。
+
+## 开发文档
+
+| 主题 | 指南 |
 | --- | --- |
-| 平台 ZIP | 扩展、SDK、示例和文档 |
-| SDK ZIP | TypeScript 类型声明、开发模板和 API 参考 |
-| ReaPack ZIP | 多平台二进制文件、完整 Demo 和 ReaPack 仓库索引元数据 |
+| 应用开发 | [SDK 与模板](runtime/README.zh-CN.md) · [运行时 API](docs/runtime-api.zh-CN.md) · [ReaScript 宿主 API](docs/host-api.zh-CN.md) · [WebView 资源与存储](docs/frontend.zh-CN.md) |
+| 宿主数据与媒体 | [实时订阅](docs/realtime.zh-CN.md) · [原生数据流](docs/native-streams.zh-CN.md) · [工程视频](docs/video-preview.zh-CN.md) |
+| 扩展集成 | [JSFX Web UI](docs/jsfx-webui.zh-CN.md) · [原生服务](docs/native-services.zh-CN.md) · [外部客户端](docs/external-clients.zh-CN.md) |
+| 调试 | [WebView 开发者工具](docs/devtools.zh-CN.md) · [运行时诊断](docs/diagnostics.zh-CN.md) |
 
-在 REAPER 中通过 **Options → Show REAPER resource path in explorer/finder** 打开资源目录。退出 REAPER，将平台 ZIP 解压到该目录，再启动 REAPER。
+[完整文档](docs/README.zh-CN.md) · [示例目录](examples/) · [源码结构](docs/source-layout.md)
 
-手动安装时，将原生扩展放入 `UserPlugins/`。Linux 的同架构 `reawebapi-webview-<arch>` 辅助程序也放在该目录，并赋予执行权限。保留 `reawebapi-video-<arch>/` 子目录，以启用工程视频的本地内存传输。
+## 从源码构建
 
-Linux 的 required 跨源隔离需要兼容引擎。安装包提供 `reawebapi-webkit-<arch>/` 时，应将其保留在辅助程序旁。参见[独立运行库构建](docs/linux-webkit-runtime.zh-CN.md)。
-
-Linux 复用未变化的 X11 几何信息，通过宿主事件循环读取 WebKit 入站消息。WSL 未提供 DRI3 时，辅助进程使用 GTK 图像后备缓冲以减少绘制停顿。显式设置的 `GDK_RENDERING` 优先。
-
-在 Action List 运行 `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` 即可打开示例。
-
-**Preferences > Plug-ins > ReaWebAPI** 提供 **Use sRGB for WebView rendering on Windows** 复选框，默认不勾选。Windows 上勾选后重启 REAPER，将为全部 ReaWebAPI WebView 请求固定 sRGB 显示配置。**Restore defaults** 取消勾选，通过 Apply/OK 保存修改。macOS 和 Linux 上该复选框禁用。参见[色彩配置](docs/frontend.zh-CN.md#webview-色彩配置)。
-
-**Preloaded WebView containers** 设置待命的空闲容器数量，范围为 0..32，默认 2。Apply/OK 后立即生效，0 关闭预加载，Restore defaults 恢复为 2。容器池仅加载空白页，在宿主空闲时补充。App 资源、脚本和 JSFX 状态仍在打开时加载，使用过的容器不会放回池中。没有就绪容器时按原方式创建。预加载会增加内存占用，不能省去页面初始化和首帧准备。
-
-## 开发
-
-同页 **Diagnostics** 提供独立的 App 与 Runtime 调试开关、精确 Target App ID 和日志目录入口，设置应用后即时生效。普通 App 与 JSFX 的主动健康监测仅对这些设置覆盖的实例运行，辅助定位页面无响应、队列积压、JavaScript 异常及流中断。被动错误记录继续保留。参见[运行时诊断](docs/diagnostics.zh-CN.md)。
-
-Lua 通过 `reaper.ReaWeb_Open(path, instanceKey)` 打开应用。传入 `debug.getinfo(1, "S").source` 作为 `instanceKey` 可复用该启动脚本的窗口，省略 key 则每次创建新窗口。JavaScript 等待 `reaper.lifecycle.ready` 后，可调用 `reaper.window`、`reaper.events` 等 Runtime 接口。宿主调用通过 Promise 返回结果。
-
-基础模板位于 `SDK/starter/`，Vite 与 TypeScript 模板位于 `SDK/modern/`。运行 `SDK/runtime-demo/reawebapi-runtime-demo.lua` 可打开 Runtime Studio。
-
-仓库源码中的应用示例统一放在 `examples/`，按 `main-demo`、`templates`、`runtime-features`、`backends`、`integrations`、`windows` 分类，参见[示例目录说明](docs/source-layout.md#app-examples--应用示例)。发布包的安装路径保持不变。
-
-使用 HTML `<title>` 或 `document.title` 设置窗口名称，关闭后恢复停靠的 Docker 标签和单标签浮动 Docker 标题栏同样适用。`reaper.window.setTitle(title)` 可显式覆盖。`instanceKey` 仅控制实例复用。详见[窗口标题](docs/runtime-api.zh-CN.md#窗口标题)。
-
-外部 HTTP、HTTPS、mailto 导航交给系统默认程序打开，App 页面保持不变。其他本地 HTML 使用 `reaper.window.open(path)` 打开。详见[导航行为](docs/frontend.zh-CN.md#导航行为)。
-
-[SDK](runtime/README.zh-CN.md) · [开发指南](docs/development.zh-CN.md) · [Runtime API](docs/runtime-api.zh-CN.md) · [Lua 宿主 API](docs/host-api.zh-CN.md) · [Web 运行环境](docs/frontend.zh-CN.md) · [DevTools](docs/devtools.zh-CN.md)
-
-所有 App 共享 `ReaWebAPI/WebViewData/`，App 身份、私有数据和窗口状态保存在 `ReaWebAPI/Apps/<appId>/`。普通 WebUI 未定义 `app.json.id` 时，在 `<App 根目录>/.reawebapi/identity.json` 持久化随机 ID。移动时保留身份，复制后若原绑定有效则获得独立 ID。升级前没有显式 ID 和标记的应用会创建新身份，不迁移旧 launcher 身份的存储，旧数据继续保留。旧记录兼容边界、App ID、origin 隔离与原生 Cookie 规则见[存储约定](docs/frontend.zh-CN.md#资源来源与存储)。
-
-## 构建
-
-需要 CMake 3.24+、C++17 工具链和 Python 3.10+，测试使用 Node.js。Linux 开发依赖为 `pkg-config`、`libwebkit2gtk-4.1-dev`、`libx11-dev`、`libxext-dev` 和 `libxi-dev`。可选的原生覆盖层测试还需要 `libxtst-dev`。
+需要 CMake 3.24+、C++17 工具链、Python 3.10+ 和 Node.js 22.12+。Windows 使用 MSVC x64。Linux 需安装[构建工作流](.github/workflows/build.yml)中列出的 WebKitGTK 4.1 和 X11 开发包。
 
 ```sh
+npm ci --prefix examples/templates/modern
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 cmake --install build --config Release --prefix stage
 ```
 
-Windows 使用 MSVC x64，并添加 `-A x64`。macOS 使用 `-DCMAKE_OSX_ARCHITECTURES=arm64` 或 `x86_64` 指定架构。
+## 许可证
 
-扩展版本统一由 `CMakeLists.txt` 中的 `project(ReaWebAPI VERSION …)` 定义，支持第四段修订号。推送到默认分支后，工作流会构建全部平台，通过检查后发布 `v<版本号>`。当前更新内容维护在 `docs/release-notes.md`，已发布版本不会被覆盖。
-
-[源码结构](docs/source-layout.md) · [版本更新](docs/release-notes.md) · [第三方声明](THIRD_PARTY.md)
-
-采用 [LGPL-3.0-or-later](LICENSE.md) 许可。
-
-纯 JavaScript 应用使用 Runtime API。需要由 Lua 管理工程逻辑时，参见 [Lua 后端 + WebView 示例](examples/backends/lua-backend/README.md)。平台安装包将其放在 `Scripts/ReaWebAPI/Example/lua-backend`，SDK 提供 `lua-backend/`。
-
-EEL2 后端使用同一消息桥。SDK 提供[最简示例](examples/backends/eel-backend/README.zh-CN.md)和[双向轨道混音示例](examples/backends/eel-mixer/README.zh-CN.md)，分别安装于 `eel-backend/` 和 `eel-mixer/`。两个示例均使用 `ReaWeb_SetFrame` 刷新状态，音量范围为 `0..4`，推子写入包含执行确认、未确认请求限流和最终值保护。
-
-Native Stream 在多路分析间复用轨道采样，支持 `aggregate: true`，用于 Folder 和 Receive Bus 的 pre-FX 源内容同步聚合分析。见 [接口契约](docs/native-streams.zh-CN.md) 和 [Demo](examples/integrations/native-stream/README.md)。在 macOS arm64、Linux x86_64 和 Windows x64 上，扩展识别宿主混音器后，可在 FX 后（推子前）和推子后采集双声道播放流。
-
-路由中的父轨、总线或上游轨道不含媒体时，聚合 RMS/LUFS 历史仍会持续累计。
-
-内置 Meter 提供 Sample/True Peak、独立的 Sample/True Peak 削波计数、每通道及全局峰值最大值、RMS-M/I、LUFS-M/S/I 和 LRA 上下界，支持复位及 Mono 标定，支持 1–32 源通道、精确整数削波计数和可选历史累计策略，分析独立于发布频率。
-
-Windows、macOS 和 Linux 支持原生[隐藏启动](docs/host-api.zh-CN.md#隐藏启动)与后台预加载，参见[示例](examples/runtime-features/hidden-start/README.md)。
-
-[SVG 覆盖层示例](examples/windows/overlay/README.zh-CN.md) 为中英文单文件 HTML，演示原生层级、SVG 参数控件、鼠标路由和 REAPER Main 快捷键。窗口交互模式支持背景拖动与边缘缩放。
-
-## 工程视频
-
-`reaper.video` 通过 Native Streams 提供共享工程视频帧，支持 Windows 视频工作线程直接接收及 Windows D3D11、macOS Metal 原生共享呈现。从 v0.3.9.54 起，Windows x64、macOS arm64 和 Linux x86_64 均在启动时定位视频后端并校验帧缓存布局。安装、API、绘制和平台限制见[视频预览](docs/video-preview.zh-CN.md)。
-
-通过 [顺序分块导出](docs/file-export.zh-CN.md) 写入大文件，并兼容原有 `saveBlob()` 调用。
-
-## 从镜像版升级
-
-关闭 REAPER，备份现有安装文件并保留此前实际安装的同平台版本 ZIP（独立 SDK 使用对应的 SDK ZIP）。将新包解压到 REAPER 资源目录，然后运行下方命令，将两个路径替换为实际位置。工具按旧包逐文件核对内容，只移除匹配的旧镜像文件，遇到用户修改的文件会显示 Preserved。需要回装时，关闭 REAPER，将原版本的平台包和配套 SDK 恢复到同一目录。
-
-```sh
-python "/path/to/resource/ReaWebAPI/SDK/tools/clean_retired_mirror.py" --resource-root "/path/to/resource" --previous-package "/path/to/previous.zip"
-```
+[LGPL-3.0-or-later](LICENSE.md) · [第三方软件声明](THIRD_PARTY.md)

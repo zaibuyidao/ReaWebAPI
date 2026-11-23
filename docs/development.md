@@ -2,6 +2,12 @@
 
 **English** | [简体中文](development.zh-CN.md) · [Documentation](README.md)
 
+## Build the API reference
+
+From the repository root, run `npm ci --prefix examples/templates/modern` once (Node.js 22.12+), then configure CMake for the platform. `cmake --build build --config Release` generates `build/api-reference/reawebapihelp.html`. Run `python tools/api_reference.py --output build/api-reference --verify` to check the version, revision and digest.
+
+Select GitHub Actions under Settings → Pages and allow the release workflow to deploy to the `github-pages` environment. The [online reference](https://zaibuyidao.github.io/ReaWebAPI/reawebapihelp.html) becomes available after the first deployment. Retry a failed deployment from the same released commit. To update ReaPack, sync `ReaWebAPI.ext`, `extension/` and `web/` from the ReaPack ZIP to `ReaWebAPI/` in `zaibuyidao/ReaScripts`, then rebuild the index.
+
 ## Start a tool
 
 Install the extension for your REAPER architecture, then copy the SDK directory to a writable development location. Load its `starter/reawebapi-starter.lua` in the Action List. This opens `index.html` next to the Lua file. The starter reads the selected track. Right-click the page and toggle **Dock <App> in Docker**. The checked state indicates docking.
@@ -92,7 +98,7 @@ Ship the Lua launcher, HTML, built JavaScript, CSS and required assets, preservi
 
 State your minimum REAPER and ReaWebAPI versions. Feature-detect required methods and explain missing dependencies in the UI. Test empty projects, missing selection, Unicode paths, deleted objects, project switches, docking, repeated open/close and each supported OS. Use the larger bundled Demo for bridge diagnostics. A passing simulated ABI test is not proof of all native side effects on real projects.
 
-`ReaWebAPI-ReaPack-v<version>.zip` contains `ReaWebAPI.ext` alongside `extension/` with seven native files and the complete `web/` Demo folder. The SDK ZIP contains development materials.
+`ReaWebAPI-ReaPack-v<version>.zip` contains `ReaWebAPI.ext` alongside `extension/` for native files and `web/` for the Demo and API reference. The SDK ZIP contains development materials.
 
 The descriptor lists every Demo file and installs them under `web/` in the package's Scripts directory. `ReaWebAPI_Demo.lua` is registered in the Action List. Other resources retain their relative paths. The launcher uses `@noindex` to stay part of the extension package.
 

@@ -161,7 +161,7 @@ These functions also support EEL2. Since v0.3.9.14, the optional fourth `ReaWeb_
 | `reaper.ReaWeb_DevTools(id)` | Boolean |
 | `reaper.ReaWeb_SetDocked(id, docked)` | Actual docked state |
 | `reaper.ReaWeb_IsDocked(id)` | Boolean |
-| `reaper.ReaWeb_GetDiagnostics(id)` | JSON string, empty on failure |
+| `reaper.ReaWeb_GetDiagnostics(id)` | JSON string, `{}` on failure |
 | `reaper.ReaWeb_GetLastError()` | Latest synchronous native entry error string |
 
 Lua relative HTML paths resolve from REAPER's `Scripts/` directory. The starter uses its own absolute directory for portability. A positive window ID means the window was created, not that the page is ready. Loading errors can arrive later in the REAPER console and diagnostics. A Lua launcher does not need a defer loop to keep its page alive.

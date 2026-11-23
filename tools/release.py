@@ -13,6 +13,7 @@ import zipfile
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools import api_reference
 from tools.clean_retired_mirror import RETIRED
 from tools.package_sdk import build_sdk
 from tools.version import source_version
@@ -60,8 +61,9 @@ def release_body(repo, version):
             'On Linux, keep the matching WebKit helper beside the extension with execute permission, and retain the `reawebapi-video-<arch>/` and bundled `reawebapi-webkit-<arch>/` subdirectories.\n\n'
             '平台安装包包含扩展、SDK 和示例。解压到 REAPER 资源目录后重启。'
             'Linux 的同架构 WebKit 辅助程序与扩展放在同一目录，并赋予执行权限，保留 `reawebapi-video-<arch>/` 与随包提供的 `reawebapi-webkit-<arch>/` 子目录。\n\n'
-            'The SDK provides type declarations and templates. The ReaPack package provides binaries, the complete Demo and repository metadata.\n\n'
-            'SDK 提供类型声明和开发模板，ReaPack 包提供二进制文件、完整 Demo 和仓库索引元数据。\n\n'
+            'The SDK provides type declarations and templates. The ReaPack package provides binaries, the Demo, offline API reference and repository metadata.\n\n'
+            'SDK 提供类型声明和开发模板，ReaPack 包提供二进制文件、Demo、离线 API 手册和仓库索引元数据。\n\n'
+            f'[API Reference](https://{repo.split("/")[0]}.github.io/{repo.split("/")[1]}/reawebapihelp.html) · '
             f'[Documentation / 文档](https://github.com/{repo}#readme)\n')
 
 
@@ -77,22 +79,30 @@ def demo_entries(directory):
     return entries
 
 
-def descriptor(version, demo_directory=None):
+HELP_LAUNCHER = 'ReaWebAPI - API Reference.lua'
+
+
+def web_entries(demo_directory, reference):
+    files = {path.name: path.read_bytes() for path in demo_entries(demo_directory)}
+    files['api-reference/' + HELP_LAUNCHER] = (api_reference.TEMPLATES / HELP_LAUNCHER).read_bytes()
+    files['api-reference/' + api_reference.NAME] = reference
+    return files
+
+
+def descriptor(version, demo_directory=None, entries=None):
     if demo_directory is None:
         demo_directory = Path(__file__).resolve().parents[1] / 'examples/main-demo'
-    entries = demo_entries(demo_directory)
+    if entries is None:
+        entries = web_entries(demo_directory, b"")
     lines = ['@description ReaWebAPI: Web Runtime for REAPER', f'@version {version}', '@author zaibuyidao',
              '@link https://github.com/zaibuyidao/ReaWebAPI', '@provides']
     for platform, name in native_files():
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/extension/{quote(name, safe="/")}'
         lines.append(f'  [{platform} extension] {name} {url}')
-    for path in entries:
-        if not path.is_file():
-            continue
-        name = path.relative_to(demo_directory).as_posix()
+    for name in entries:
         # An .ext package defaults to extension targets, so the launcher also
         # needs an explicit script type for Action List registration.
-        options = 'script main' if name == 'ReaWebAPI_Demo.lua' else 'script nomain'
+        options = 'script main' if name.endswith('.lua') else 'script nomain'
         url = f'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/web/{quote(name, safe="/")}'
         lines.append(f'  [{options}] web/{name} {url}')
     changes = re.split(r'^## (?:更新|简体中文)\s*$', version_notes(version), maxsplit=1, flags=re.MULTILINE)[0]
@@ -100,14 +110,7 @@ def descriptor(version, demo_directory=None):
     return '\n'.join(lines) + '\n'
 
 
-def add_demo(archive, directory):
-    entries = demo_entries(directory)
-    archive.write(directory, 'web/')
-    for path in entries:
-        archive.write(path, 'web/' + path.relative_to(directory).as_posix())
-
-
-def assemble(directory, version, revision):
+def assemble(directory, version, revision, reference=None):
     assets = []
     for platform, arch, _, binary in TARGETS:
         files = [binary] + ([f'reawebapi-webview-{arch}', f'reawebapi-video-{arch}/reawebapi-video-{arch}.so'] if platform == 'linux' else [])
@@ -122,6 +125,12 @@ def assemble(directory, version, revision):
             expected = dict(version=version, platform=platform, architecture=arch, revision=revision, extension=binary)
             if metadata != expected:
                 raise ValueError(f'Build metadata mismatch: {bundle.name}')
+            page = archive.read(api_reference.INSTALLED)
+            if reference is None:
+                api_reference.validate_page(page, version, revision)
+                reference = page
+            if page != reference:
+                raise ValueError(f'API reference mismatch: {bundle.name}')
             for name in files:
                 file = directory / Path(name).name
                 if not file.is_file() or not file.stat().st_size or archive.read(f'UserPlugins/{name}') != file.read_bytes():
@@ -130,8 +139,10 @@ def assemble(directory, version, revision):
         assets.append(bundle)
     reapack = directory / f'ReaWebAPI-ReaPack-v{version}.zip'
     with zipfile.ZipFile(reapack, 'w', zipfile.ZIP_DEFLATED, strict_timestamps=False) as archive:
-        archive.writestr('ReaWebAPI.ext', descriptor(version).encode('utf-8'))
-        add_demo(archive, Path(__file__).resolve().parents[1] / 'examples/main-demo')
+        entries = web_entries(api_reference.ROOT / 'examples/main-demo', reference)
+        archive.writestr('ReaWebAPI.ext', descriptor(version, entries=entries).encode('utf-8'))
+        for name, contents in entries.items():
+            archive.writestr('web/' + name, contents)
         for _, name in native_files():
             # Preserve executable permission even when Actions normalized downloaded files to 0644.
             info = zipfile.ZipInfo(f'extension/{name}')
@@ -139,7 +150,7 @@ def assemble(directory, version, revision):
             info.external_attr = 0o100755 << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, (directory / Path(name).name).read_bytes())
-    assets += [reapack, build_sdk(directory, version, revision)]
+    assets += [reapack, build_sdk(directory, version, revision, reference=reference)]
     checksums = directory / 'SHA256SUMS.txt'
     checksums.write_text(''.join(f'{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.name}\n'
                                 for file in sorted(assets)), encoding='ascii')
@@ -166,7 +177,7 @@ def publish_once(repo, version, revision, assets):
     release = find_release(repo, tag)
     if release and not release['draft']:
         print(f'{tag} is already published. Increment the version for new binaries.')
-        return
+        return 'skipped'
     # Refuse to attach new binaries to an existing tag for a different commit.
     try:
         tagged = json.loads(gh('api', f'repos/{repo}/commits/{tag}'))['sha']
@@ -187,6 +198,7 @@ def publish_once(repo, version, revision, assets):
     # Publish only after every expected asset has been uploaded successfully.
     gh('release', 'edit', tag, '--repo', repo, '--draft=false', '--latest')
     print(f'Published https://github.com/{repo}/releases/tag/{tag}')
+    return 'published'
 
 
 def publish(repo, version, revision, assets):
@@ -214,16 +226,21 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--assets', type=Path, required=True)
     parser.add_argument('--revision', required=True)
+    parser.add_argument('--reference', type=Path)
     parser.add_argument('--publish', action='store_true')
     parser.add_argument('--repo', default=os.environ.get('GITHUB_REPOSITORY'))
     args = parser.parse_args()
     version = source_version()
-    assets = assemble(args.assets, version, args.revision)
+    reference = api_reference.checked(args.reference, version, args.revision) if args.reference else None
+    assets = assemble(args.assets, version, args.revision, reference)
     print(f'Prepared v{version}: {len(assets)} release assets', flush=True)
     if args.publish:
         if not args.repo:
             parser.error('--repo is required when publishing')
-        publish(args.repo, version, args.revision, assets)
+        status = publish(args.repo, version, args.revision, assets)
+        if output := os.environ.get('GITHUB_OUTPUT'):
+            with open(output, 'a', encoding='utf-8') as stream:
+                print(f'status={status}\ntag=v{version}', file=stream)
 
 
 if __name__ == '__main__':

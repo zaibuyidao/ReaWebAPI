@@ -27,6 +27,8 @@
 !/tools/
 /tools/*
 !/tools/package.py
+!/tools/api_reference.py
+!/tools/api-reference/
 !/tools/package_sdk.py
 !/tools/release.py
 !/tools/version.py

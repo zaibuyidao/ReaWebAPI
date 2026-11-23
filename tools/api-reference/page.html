@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReaWebAPI API Reference</title>
+<style>
+:root{color-scheme:light;--bg:white;--ink:#181818;--link:#0000ad;--rule:#aaa;--muted:#555}
+:root[data-theme=dark]{color-scheme:dark;--bg:#181818;--ink:#eee;--link:#9bbaff;--rule:#666;--muted:#bbb}
+html{background:var(--bg);color:var(--ink);overflow-wrap:anywhere}
+body{margin:8px;font:16px/1.4 Georgia,"Times New Roman",serif}
+h1,h2,h3{line-height:1.15}header{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap}
+h1{margin:.4em 0}header small,.related,small{color:var(--muted)}a{color:var(--link)}
+html:lang(en) .zh,html:lang(zh-CN) .en,[hidden]{display:none!important}
+.controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.6em 0}
+input,select,button{font:inherit;max-width:100%}input{width:20em}
+button{cursor:pointer}#index h3{font-size:1em;margin:.7em 0 .18em}
+.columns{display:grid;grid-auto-flow:column;grid-template-rows:repeat(var(--rows4),auto);grid-auto-columns:minmax(0,max-content);justify-content:start;column-gap:2rem}.columns a{display:block;font:0.88em/1.5 ui-monospace,Consolas,monospace}
+article{border-top:1px solid var(--rule);padding:.9em 0 .65em;scroll-margin-top:.4em}
+article h3{font-size:1.06em;margin:0 0 .45em}article p{margin:.4em 0 .68em}
+.line{margin:.32em 0 .48em}.line code,pre{white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2}
+code,pre{font:0.91em/1.45 ui-monospace,Consolas,monospace}pre code{font:inherit}
+.example{margin:.7em 0}.example pre{display:inline;margin:0}.example small{display:block}
+.copy{margin-left:.45em;padding:0 .18em;border:0;background:transparent;color:var(--muted);font:.84em sans-serif}
+#views button{border:0;padding:0;background:transparent;color:var(--link);text-decoration:underline}#views button[aria-pressed=true]{color:var(--ink);text-decoration:none;font-weight:bold}.copy:hover,.copy:focus-visible{color:var(--link)}.related{font-size:.9em}
+@media(max-width:900px){.columns{grid-template-rows:repeat(var(--rows2),auto)}}@media(max-width:520px){.columns{display:block}header{gap:0}}
+@media print{.controls,.copy,#count{display:none}body{font-size:10pt}}
+</style></head>
+<body><header><h1><span class="en">ReaWebAPI API Reference</span><span class="zh">ReaWebAPI 接口参考</span></h1><small>v@@VERSION@@ · @@REVISION@@</small></header>
+<p><span class="en">JavaScript APIs run inside a ReaWebAPI window. JavaScript signatures use TypeScript notation. Host functions open and control the windows from REAPER. Direct EEL2 calls require REAPER 6.24 or later. The second EEL2 line shows the legacy extension_api form.</span><span class="zh">JavaScript API 在 ReaWebAPI 窗口内运行。JavaScript 签名采用 TypeScript 类型标注。宿主 API 用于从 REAPER 打开和控制窗口。EEL2 直接调用要求 REAPER 6.24 或更高版本，第二行 EEL2 签名显示兼容旧版本的 extension_api 写法。</span></p>
+<nav id="index"><h2><span class="en">API index</span><span class="zh">API 索引</span></h2>
+<div id="views" class="controls" hidden><span class="en">View:</span><span class="zh">查看：</span></div>
+<div class="controls" hidden><input id="query" type="search"><button id="clear"></button><select id="filter"></select><button id="language"></button><button id="theme"></button><span id="count" role="status"></span></div>
+@@INDEX@@</nav><main id="reference">@@BODY@@</main>
+<script type="application/json" id="reference-data">@@DATA@@</script>
+<script>
+'use strict';
+const el = id => document.getElementById(id);
+const entries = JSON.parse(el('reference-data').textContent).entries;
+const sections = [...el('index').querySelectorAll('section')];
+const searchText = new Map(entries.map(e => [e.id,[e.name,e.group,e.en,e.zh,e.note,
+  ...(e.detailEn || []),...(e.detailZh || []),...(e.signatures || []).flatMap(s => [s.text,s.note])].join(' ').toLowerCase()]));
+function saved(key) { try { return localStorage.getItem('ReaWebAPI.reference.' + key); } catch { return null; } }
+function save(key,value) { try { localStorage.setItem('ReaWebAPI.reference.' + key,value); } catch {} }
+let zh = (saved('language') || navigator.language).toLowerCase().startsWith('zh');
+let dark = (saved('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
+const tr = (en,cn) => zh ? cn : en;
+let view = '';
+function accepts(entry) {
+  if (!view) return true;
+  return view === 'JavaScript' ? !['host','guides'].includes(entry.group) : entry.group === 'host';
+}
+const byId = new Map(entries.map(e => [e.id,e]));
+function setView(next) {
+  view = next;
+  for (const article of document.querySelectorAll('article')) {
+    const entry = byId.get(article.id);
+    article.hidden = !accepts(entry);
+    if (entry.group === 'host') {
+      for (const sig of article.querySelectorAll('.line')) sig.hidden = Boolean(view && sig.dataset.lang !== view);
+    }
+  }
+  for (const group of document.querySelectorAll('#reference > section')) group.hidden = !group.querySelector('article:not([hidden])');
+  for (const b of el('views').querySelectorAll('button')) b.setAttribute('aria-pressed', b.value === view);
+  filterIndex();
+}
+function filterIndex() {
+  const query = el('query').value.trim().toLowerCase();
+  let count = 0;
+  for (const group of sections) {
+    let hits = 0;
+    for (const a of group.querySelectorAll('a')) {
+      const matched = accepts(byId.get(a.hash.slice(1))) && (!el('filter').value || el('filter').value === group.dataset.group) && searchText.get(a.hash.slice(1)).includes(query);
+      a.hidden = !matched;
+      if (matched) hits++;
+    }
+    const columns = group.querySelector('.columns');
+    columns.style.setProperty('--rows4', Math.max(1, Math.ceil(hits / 4)));
+    columns.style.setProperty('--rows2', Math.max(1, Math.ceil(hits / 2)));
+    group.hidden = !hits;
+    count += hits;
+  }
+  el('count').textContent = count ? count + tr(' entries',' 个条目') : tr('No matches','没有匹配的条目');
+}
+function preferences() {
+  document.documentElement.lang = zh ? 'zh-CN' : 'en';
+  document.title = tr('ReaWebAPI API Reference','ReaWebAPI 接口参考');
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  el('language').textContent = zh ? 'English' : '中文';
+  el('theme').textContent = dark ? tr('Light theme','浅色主题') : tr('Dark theme','深色主题');
+  el('query').placeholder = tr('Search names and descriptions','搜索名称和说明');
+  el('query').setAttribute('aria-label',el('query').placeholder);
+  el('clear').textContent = tr('Clear','清空');
+  const select = el('filter'), current = select.value;
+  select.setAttribute('aria-label',tr('Index group','索引分组'));
+  el('views').querySelector('button').textContent = tr('All','全部');
+  select.replaceChildren(new Option(tr('All groups','全部分组'),''));
+  for (const group of sections) select.add(new Option(group.querySelector('h3 .' + (zh ? 'zh' : 'en'))?.textContent || group.dataset.group,group.dataset.group));
+  select.value = current;
+  for (const b of document.querySelectorAll('[data-copy]')) {
+    b.title = b.dataset.copy === 'link' ? tr('Copy entry link','复制条目链接') : tr('Copy code','复制代码');
+    b.setAttribute('aria-label',b.title);
+  }
+  filterIndex();
+}
+el('reference').addEventListener('click',async event => {
+  const button = event.target.closest('button[data-copy]');
+  if (!button) return;
+  const url = new URL(location.href); url.hash = button.closest('article').id;
+  const value = button.dataset.copy === 'link' ? url.href : button.parentElement.querySelector('code').innerText;
+  try { await navigator.clipboard.writeText(value); button.title = tr('Copied','已复制'); }
+  catch {
+    const field = document.createElement('textarea');
+    field.readOnly = true; field.value = value; field.setAttribute('aria-label',tr('Select and copy','选择并复制'));
+    button.after(field); field.select(); field.onblur = () => field.remove();
+  }
+});
+el('language').onclick = () => { zh = !zh; save('language',zh ? 'zh' : 'en'); preferences(); };
+el('theme').onclick = () => { dark = !dark; save('theme',dark ? 'dark' : 'light'); preferences(); };
+el('query').oninput = filterIndex;
+el('query').onkeydown = event => {
+  if (event.key === 'Enter') {
+    const hits = [...el('index').querySelectorAll('section:not([hidden]) a:not([hidden])')];
+    const exact = hits.find(a => a.textContent.toLowerCase() === el('query').value.trim().toLowerCase());
+    (exact || hits[0])?.click();
+  }
+  if (event.key === 'Escape') el('clear').click();
+};
+el('filter').onchange = filterIndex;
+el('clear').onclick = () => { el('query').value = ''; el('query').focus(); filterIndex(); };
+for (const value of ['', 'JavaScript', 'C', 'EEL2', 'Lua', 'Python']) {
+  const button = document.createElement('button');
+  button.value = value; button.textContent = value || 'All'; button.onclick = () => setView(value);
+  button.setAttribute('aria-pressed', !value); el('views').append(button);
+}
+function revealAnchor() {
+  const target = el(location.hash.slice(1));
+  if (target?.matches('article[hidden]')) { setView(''); target.scrollIntoView(); }
+}
+window.addEventListener('hashchange', revealAnchor);
+for (const controls of document.querySelectorAll('.controls')) controls.hidden = false;
+preferences();
+</script></body></html>

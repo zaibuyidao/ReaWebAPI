@@ -2,7 +2,7 @@
 
 **English** | [简体中文](eel-backend-compatibility.zh-CN.md)
 
-ReaWebAPI's 16 script-exposed host functions can be called from EEL2 as well as Lua. ReaWebAPI v0.3.9.14 fixes the `ReaWeb_Open` optional fourth-argument binding. Use Lua `false/true` or EEL2 `0/1`. Omitting the argument still means `false`. Native C/C++ callers retain the `const bool*` signature and use `nullptr` for omission.
+ReaWebAPI's 19 script-exposed host functions can be called from EEL2 as well as Lua. ReaWebAPI v0.3.9.14 fixes the `ReaWeb_Open` optional fourth-argument binding. Use Lua `false/true` or EEL2 `0/1`. Omitting the argument still means `false`. Native C/C++ callers retain the `const bool*` signature and use `nullptr` for omission.
 
 ## Calling conventions
 
@@ -30,6 +30,9 @@ ReaWeb_GetLastError(#error);
 | `ReaWeb_DevTools(id)` | Request native developer tools, subject to platform availability |
 | `ReaWeb_Send(id, #text)` | Queue UTF-8 text after readiness |
 | `ReaWeb_Receive(#text, id)` | First output string receives the next message, or empty text |
+| `ReaWeb_SetShortcutRouting(id, enabled)` | Pass 0 or 1. Returns the enabled state. |
+| `ReaWeb_SetMouseMode(id, #mode)` | Set normal, passthrough or regions mouse policy. |
+| `ReaWeb_SetMouseRegions(id, #regionsJson)` | Replace input regions with a JSON rectangle array in viewport CSS pixels. |
 | `ReaWeb_SetFrame(id, #text)` | Replace `frame.lua` text. Empty text clears it |
 | `ReaWeb_GetDiagnostics(#json, id)` | First output string receives diagnostics JSON |
 | `ReaWeb_GetLastError(#error)` | First output string receives the last native error |
@@ -50,7 +53,7 @@ The SDK includes a [minimal request/reply example](../examples/backends/eel-back
 
 Validated with v0.3.9.14 on Windows x64 / REAPER 7.83, macOS ARM64 / REAPER 7.82 and Linux x64 / REAPER 7.82. These results cover the scenarios below, not every possible parameter combination.
 
-The opt-in isolated-host tests cover direct/legacy syntax, Lua controls, optional arguments and window reuse, all 16 script functions, UTF-8 messages, frame delivery, and example UI/lifecycle behavior. Use a fresh output directory:
+The opt-in isolated-host tests cover direct/legacy syntax, Lua controls, optional arguments and window reuse, the 16 script functions available in v0.3.9.14, UTF-8 messages, frame delivery, and example UI/lifecycle behavior. Use a fresh output directory:
 
 ```text
 python tests/eel_api_compatibility.py --reaper <executable> --extension <native-library> --output <new-directory> --suite full --direct

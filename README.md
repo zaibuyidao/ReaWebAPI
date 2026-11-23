@@ -2,135 +2,67 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-ReaWebAPI is a native REAPER extension for building tools with HTML, CSS and JavaScript. It provides dockable WebView windows and asynchronous access to REAPER through the `reaper` object.
+ReaWebAPI is a native REAPER extension for building dockable tools and JSFX editors with HTML, CSS and JavaScript. Pages run inside REAPER and use the asynchronous `window.reaper` API to interact with the host.
 
-Space routing starts from ordinary Apps’ `app.json.dawKeyboard` (default `false`) or JSFX’s `JSFX_WebUI.dawKeyboard` (default `true`). Both support [`reaper.window.setDawKeyboard()`](docs/runtime-api.md#space-routing) for runtime overrides. Reload restores JSON configuration without writing it.
+[API reference](https://zaibuyidao.github.io/ReaWebAPI/reawebapihelp.html) · [Developer guide](docs/development.md) · [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases)
 
-- Read the maximum display refresh rate across the available modes with `await reaper.window.getMaxRefreshRate()`.
-- [Realtime subscriptions](docs/realtime.md) for transport snapshots, track controls and FX parameters by GUID on Windows, macOS and Linux. Requested rates range from 1 to 120 Hz. Web apps can write normalized FX parameters with `reaper.audio.setFxParameterLatest()`.
-- [Frame channel](docs/frame-timer-verification.md) with native transport samples and replaceable Lua content, independent of Lua polling frequency on Windows, macOS and Linux. Small frames avoid worker round-trips, and pending state updates coalesce behind one encoded event batch.
-- Web pages access the host through the runtime namespaces on `window.reaper`.
-- Authenticated external WebSocket clients can discover named services, events and streams through `system.getCapabilities`.
-- Lua or EEL2 backend + WebView UI through `ReaWeb_Send`, `ReaWeb_Receive`, `reaper.host.send` and `message` events, with fair multi-window delivery and bounded communication turns independent of project sampling.
-- Optional [External Clients](docs/external-clients.md) over authenticated localhost WebSocket, with access to named services, events and binary streams.
-- [Native Events and Host Services](docs/native-services.md) with subscription-driven state monitoring and a C/C++ extension registry, independent of Lua loops.
-- [JSFX Web UI](docs/jsfx-webui.md) hosts associated JSFX in track, master, take, input, monitoring and nested container FX, with instance-bound `params`, host parameter metadata, loaded-instance enum choices in `enum` (unavailable fields are `null`), normalized writes and grouped Undo gestures. `editor` provides persistent, shared content sizing. The optional EEL SDK adds DSP streams, structured state, commands and binary resources. The [native channel](docs/jsfx-native-channel.md) uses bounded staging programs to reduce EEL compilation overhead during initialization. Initial capability and state reads avoid an additional host scheduling cycle on Windows, macOS and Linux. SDK-managed DSP streams preserve subscriptions across session replacement and transport recovery.
-- [Overlay layers and native mouse routing](docs/window-overlay.md) for floating Apps, with JS/Lua controls and explicit platform requirements.
-- Optional [transparent floating windows](docs/host-api.md#transparent-windows) with desktop Alpha, explicit backend capability reporting and preserved Dock preferences.
-- [Frameless floating windows](docs/host-api.md#frameless-windows) with live title-bar switching, native corners and drag regions on Windows, macOS and Linux X11/XWayland. Native hosts hide before WebView teardown during close.
-- 15 Runtime namespaces for windows, events, files, native dialogs, drag and drop, audio, Undo and application services.
-- Stable App origins with local resources, modules, Workers and persistent storage. Ordinary Apps use `reaweb://<appId>`, while [required isolation](docs/frontend.md#app-level-cross-origin-isolation) on macOS/Linux uses an authenticated, persistent loopback origin.
-- [Browser files and media](docs/browser-media.md): opt-in Blob exports and document-scoped, read-only media URLs with bounded streaming and seeking.
-- Docked and floating WebViews retain browser content during resizing, with the native background following the page's opaque HTML/body background color. Windows, macOS and Linux [avoid Canvas initialization for common computed sRGB colors](docs/frontend.md#plain-web-apps). Default Windows title bars and borders retain system styling after undocking.
-- New windows prepare their initial rendered page before becoming visible on Windows and macOS. Existing Apps need no startup changes.
-- JSFX native-control concealment skips redundant geometry queries for hidden controls and reuses meter handles within each scan on Windows, macOS and Linux.
-- Windows, macOS and Linux prepare a shared pool of blank WebViews during host idle time, used by both Apps and JSFX. [Startup diagnostics](docs/devtools.md#startup-timing) report pool usage, JSFX initialization, cached reactivation, host-observer counters and background synchronization separately from native presentation.
-- Windows/Linux [DevTools](docs/devtools.md) with a resizable right-hand panel, floating mode and saved layout preferences. Ctrl+Shift+I toggles visibility. Windows offers a borderless embedded panel, native floating window and page context-menu controls.
-- macOS [Web Inspector](docs/devtools.md#macos) supports a right-hand embedded panel, native floating window and saved layout preferences. Option+Command+I and the page context menu control the same inspection session.
-- WebView, title-bar and Docker tab context menus share docking, reload, DevTools, App folder and close actions. PNG, ICO and SVG window icons from HTML favicons or `reaper.window.setIcon(path)` survive docking and reloads, with visibility applied immediately by `reaper.window.setIconVisible(boolean)`, including the default startup icon. Floating Docker title bars follow the active WebView's icon settings on Windows, macOS and Linux.
-- JavaScript and TypeScript templates, Runtime Studio and bilingual documentation.
+## Capabilities
 
-Windows WebViews respect **Hide pointer while typing** and restore the pointer when it moves over REAPER's native windows. See [pointer behavior](docs/frontend.md#mouse-pointer-while-typing).
+- **Apps and windows.** Open local pages in floating or docked windows. Apps can use native file dialogs, read and write files, and retain settings across sessions.
+- **Project control.** Read transport state, observe track and FX changes, and update track controls or FX parameters. Explicit edit gestures can group changes into a single undo step.
+- **Audio and video.** Consume native audio streams for waveforms, spectrum analysis and loudness metering. Project video preview depends on the host and platform backend.
+- **JSFX editors.** Associate a web UI with a JSFX instance to read and edit its parameters. Effects that implement the optional EEL SDK can also expose DSP data, commands and binary resources.
 
-For JSFX Web UI in Windows FX chains, use v0.3.8.28 or later to avoid REAPER hangs when switching window focus.
+## Architecture
 
-App-level cross-origin isolation is opt-in through `app.json.webRuntime.crossOriginIsolation`. Browser capability probes and the threaded WASM example are documented in the [Web Runtime contract](docs/frontend.md#app-level-cross-origin-isolation).
+A ReaScript launcher opens a local HTML entry point with `ReaWeb_Open`. The extension owns the window and injects the JavaScript runtime. Once `reaper.lifecycle.ready` resolves, the page can call the runtime directly. A tool that keeps its project logic in Lua or EEL2 can exchange messages with the page instead. In a JSFX editor, REAPER continues to own the DSP and parameter state.
 
-## Download and install
+Other native extensions can register named services and binary streams through the C/C++ SDK. An optional authenticated localhost WebSocket server exposes services, events and streams to external clients. It is disabled by default.
 
-Download a package matching your **REAPER process architecture** from [Releases](https://github.com/zaibuyidao/ReaWebAPI/releases).
+## Installation
 
-| Platform | Architectures | Requirements |
+Requires REAPER 6.68 or later. Choose a package that matches the **REAPER process architecture**.
+
+| Platform | Architecture | Runtime requirements |
 | --- | --- | --- |
-| Windows | x64 | Windows 10/11, WebView2 Evergreen, VC++ x64 runtime |
-| macOS | ARM64, Intel x64 | macOS 13+ |
-| Linux | x64, ARM64 | Ubuntu 24.04 or compatible, WebKitGTK 4.1, X11/XWayland |
+| Windows | x64 | Windows 10 or 11, WebView2 Evergreen, Visual C++ x64 runtime |
+| macOS | Apple Silicon (ARM64), Intel (x86_64) | macOS 13 or later, system WKWebView |
+| Linux | x86_64, ARM64 | Ubuntu 24.04 or compatible, WebKitGTK 4.1, X11 or XWayland |
 
-REAPER 6.68+ is supported.
+- **ReaPack.** Import the [zaibuyidao repository index](https://github.com/zaibuyidao/ReaScripts/raw/master/index.xml), install `ReaWebAPI: Web Runtime for REAPER` and restart REAPER. The package registers the demo and the offline API reference in the Action List.
+- **Platform ZIP.** Open **Options → Show REAPER resource path in explorer/finder**, then quit REAPER. Extract the entire platform ZIP from Releases into that directory and restart. On Linux, keep the bundled helper executable. The ZIP includes the extension, examples, SDK and offline reference.
 
-| Package | Contents |
+## Run your first app
+
+1. Open REAPER’s **Action List**. After a ReaPack install, search for `ReaWebAPI_Demo`. With a platform ZIP, load `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` from the resource directory. Run the action to open the demo.
+2. To build your own tool, copy `ReaWebAPI/SDK/` from the platform ZIP to a writable location, or use the standalone SDK from Releases. Load and run `starter/reawebapi-starter.lua` from that copy. Select a track in REAPER to see its name in the starter window.
+3. Edit `starter/index.html` and `starter/app.js`, then reload the page. The JavaScript starter needs no build step. For Vite and TypeScript, use the `modern/` template.
+
+For offline API lookup, open `ReaWebAPI/docs/reawebapihelp.html` from the platform or SDK ZIP. With ReaPack, run `ReaWebAPI - API Reference` from the Action List.
+
+## Documentation
+
+| Topic | Guides |
 | --- | --- |
-| Platform ZIP | Extension, SDK, examples and documentation |
-| SDK ZIP | TypeScript declarations, templates and API reference |
-| ReaPack ZIP | Multi-platform binaries, the complete Demo and ReaPack repository metadata |
+| App development | [SDK and templates](runtime/README.md) · [Runtime API](docs/runtime-api.md) · [ReaScript host API](docs/host-api.md) · [WebView resources and storage](docs/frontend.md) |
+| Host data and media | [Realtime subscriptions](docs/realtime.md) · [Native streams](docs/native-streams.md) · [Project video](docs/video-preview.md) |
+| Integration | [JSFX Web UI](docs/jsfx-webui.md) · [Native services](docs/native-services.md) · [External clients](docs/external-clients.md) |
+| Debugging | [WebView developer tools](docs/devtools.md) · [Runtime diagnostics](docs/diagnostics.md) |
 
-Quit REAPER and extract the platform ZIP into its resource directory, available from **Options → Show REAPER resource path in explorer/finder**. Restart REAPER to load the extension.
+[All documentation](docs/README.md) · [Examples](examples/) · [Source layout](docs/source-layout.md)
 
-For manual installation, place the native binary in `UserPlugins/`. On Linux, place the matching `reawebapi-webview-<arch>` helper in the same directory and grant it execute permission. Keep the `reawebapi-video-<arch>/` subdirectory for accelerated project-video transport.
+## Build from source
 
-Required cross-origin isolation on Linux needs a compatible engine. When provided, retain `reawebapi-webkit-<arch>/` beside the helper. See the [private runtime build](docs/linux-webkit-runtime.md).
-
-Linux reuses unchanged X11 geometry and reads incoming WebKit messages through the host event loop. In WSL without DRI3, the helper uses GTK image backing surfaces to reduce drawing stalls. An explicit `GDK_RENDERING` setting takes precedence.
-
-Run `Scripts/ReaWebAPI/Example/ReaWebAPI_Demo.lua` from the Action List to open the example.
-
-**Preferences > Plug-ins > ReaWebAPI** provides **Use sRGB for WebView rendering on Windows**, unchecked by default. On Windows, checking it requests an sRGB display profile for all ReaWebAPI WebViews after restarting REAPER. **Restore defaults** clears the checkbox. Apply/OK saves changes. The checkbox is disabled on macOS and Linux. See [color profiles](docs/frontend.md#webview-color-profile).
-
-**Preloaded WebView containers** sets the number of unused containers to maintain, from 0 to 32, default 2. Apply/OK takes effect immediately. Zero disables preloading, and Restore defaults selects 2. The pool loads only blank pages and replenishes during idle time. App resources, scripts and JSFX state load when opened. Used containers never return to the pool. If none is ready, opening falls back to normal creation. Preloading uses additional memory and does not eliminate page initialization or first-frame preparation.
-
-## Development
-
-**Diagnostics** on the same Preferences page provides independent App and Runtime debug logging, an exact Target App ID and a log-folder shortcut. Settings apply immediately. Shared health monitoring runs only for instances covered by these settings, helping diagnose unresponsive pages, queue pressure, JavaScript failures and interrupted streams. Passive error records remain enabled. See [Runtime Diagnostics](docs/diagnostics.md).
-
-External programs can enable **External Clients** in the same Preferences page and connect to `ws://127.0.0.1:9123`. The server is disabled by default. See the [protocol](docs/external-clients.md) and [standalone browser Demo](examples/integrations/external-client/README.md).
-
-Lua opens an App with `reaper.ReaWeb_Open(path, instanceKey)`. Pass `debug.getinfo(1, "S").source` as `instanceKey` to reuse the launcher's window. Omitting the key creates a new window. In JavaScript, await `reaper.lifecycle.ready`, then call Runtime namespaces such as `reaper.window` and `reaper.events`. Host calls return Promises.
-
-Start with `SDK/starter/reawebapi-starter.lua` or use `SDK/modern/` for Vite and TypeScript. `SDK/runtime-demo/reawebapi-runtime-demo.lua` opens Runtime Studio.
-
-In the source repository, App examples are grouped under `examples/` as `main-demo`, `templates`, `runtime-features`, `backends`, `integrations` and `windows`; see the [example directory guide](docs/source-layout.md#app-examples--应用示例). Release installation paths remain unchanged.
-
-Set the window name with HTML `<title>` or `document.title`, including Docker labels and single-tab floating Docker captions after restoring a closed docked window. `reaper.window.setTitle(title)` explicitly overrides it. `instanceKey` controls reuse only. See [window titles](docs/runtime-api.md#window-titles).
-
-External HTTP, HTTPS and mailto navigation opens in the system default handler while the App stays open. Open other local HTML with `reaper.window.open(path)`. See [navigation behavior](docs/frontend.md#navigation).
-
-[SDK](runtime/README.md) · [Developer guide](docs/development.md) · [Runtime API](docs/runtime-api.md) · [Lua host API](docs/host-api.md) · [Web runtime](docs/frontend.md) · [DevTools](docs/devtools.md)
-
-All Apps share `ReaWebAPI/WebViewData/`. App identities, private data and window state remain under `ReaWebAPI/Apps/<appId>/`. Ordinary WebUIs without `app.json.id` persist random IDs in `<App root>/.reawebapi/identity.json`. Moves preserve identity, and copies receive separate IDs when the original binding remains valid. Upgrading an App without an explicit ID or marker creates a new identity without migrating its old launcher-derived storage. Old data is retained. See the [storage contract](docs/frontend.md#resource-origin-and-storage) for legacy-record limits, App IDs, origin isolation and native cookie behavior.
-
-## Build
-
-Requires CMake 3.24+, a C++17 toolchain and Python 3.10+. Tests use Node.js. Linux development dependencies are `pkg-config`, `libwebkit2gtk-4.1-dev`, `libx11-dev`, `libxext-dev` and `libxi-dev`. The optional native overlay test also requires `libxtst-dev`.
+Requires CMake 3.24+, a C++17 toolchain, Python 3.10+ and Node.js 22.12+. Use MSVC x64 on Windows. On Linux, install the WebKitGTK 4.1 and X11 development packages listed in the [build workflow](.github/workflows/build.yml).
 
 ```sh
+npm ci --prefix examples/templates/modern
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 cmake --install build --config Release --prefix stage
 ```
 
-On Windows, use MSVC x64 with `-A x64`. On macOS, select `-DCMAKE_OSX_ARCHITECTURES=arm64` or `x86_64`.
+## License
 
-The extension version is defined by `project(ReaWebAPI VERSION …)` in `CMakeLists.txt`, including an optional fourth component. Pushing to the default branch builds all platforms and publishes `v<version>` after the checks pass. Maintain the current changes in `docs/release-notes.md`. Published versions are not overwritten.
-
-[Source layout](docs/source-layout.md) · [Release notes](docs/release-notes.md) · [Third-party notices](THIRD_PARTY.md)
-
-Licensed under [LGPL-3.0-or-later](LICENSE.md).
-
-Pure JavaScript apps use the Runtime APIs. For Lua-owned project logic, use the [Lua backend + WebView example](examples/backends/lua-backend/README.md). Platform packages install it under `Scripts/ReaWebAPI/Example/lua-backend`, and the SDK includes `lua-backend/`.
-
-EEL2 backends use the same message bridge. The SDK includes a [minimal example](examples/backends/eel-backend/README.md) and a [bidirectional track mixer](examples/backends/eel-mixer/README.md), installed under `eel-backend/` and `eel-mixer/`. Both examples use `ReaWeb_SetFrame` for state refresh, `0..4` volume gain, and acknowledged slider writes with bounded pending work and final-value protection.
-
-Native Streams share track sampling across analysis views and support `aggregate: true` for synchronized pre-FX source analysis of folders and receive buses: [contract](docs/native-streams.md) · [Demo](examples/integrations/native-stream/README.md). Stereo post-FX and post-fader playback streams are available on macOS arm64, Linux x86_64, and Windows x64 when the extension recognizes the host mixer.
-
-Aggregate RMS/LUFS history continues accumulating when routed folders, buses or upstream tracks contain no media.
-
-The built-in Meter provides Sample/True Peak, separate sample/True Peak clip counts, per-channel and global peak maxima, RMS-M/I, LUFS-M/S/I and LRA bounds, with reset and mono calibration. Meter supports 1–32 source channels, exact integer clip counts and selectable integrated history. Analysis is independent of publication rate.
-
-Native [hidden startup](docs/host-api.md#hidden-startup) supports background preloading on Windows, macOS and Linux. See the [example](examples/runtime-features/hidden-start/README.md).
-
-The [SVG overlay example](examples/windows/overlay/README.md) is a bilingual, single-file HTML demo of native layers, SVG parameter controls, mouse routing and REAPER Main shortcuts. Window mode supports background dragging and edge resizing.
-
-## Project video
-
-`reaper.video` exposes shared project video frames through Native Streams, including direct Windows video-worker delivery and shared native D3D11/Metal presentation on Windows/macOS. Starting with v0.3.9.54, Windows x64, macOS arm64 and Linux x86_64 locate the video backend at startup and validate its frame-cache layout. See [Video Preview](docs/video-preview.md) for installation, API, rendering and platform limits.
-
-Use [sequential file export](docs/file-export.md) for large files while retaining existing `saveBlob()` calls.
-
-## Upgrade from a mirror-enabled version
-
-Close REAPER, back up the installed files, and keep the exact previously installed platform ZIP (or the corresponding standalone SDK ZIP). Extract the new package into the REAPER resource directory. Run the command below with your actual paths. The utility compares each retired file with the previous archive and reports edited files as Preserved. To roll back, close REAPER and restore the original platform package and matching SDK into the same directory.
-
-```sh
-python "/path/to/resource/ReaWebAPI/SDK/tools/clean_retired_mirror.py" --resource-root "/path/to/resource" --previous-package "/path/to/previous.zip"
-```
+[LGPL-3.0-or-later](LICENSE.md) · [Third-party notices](THIRD_PARTY.md)

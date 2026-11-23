@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.9.56 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.9.57 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -68,6 +68,17 @@ configure_file("${reaper_sdk_SOURCE_DIR}/sdk/reaper_plugin_functions.h"
 file(COPY "${wdl_SOURCE_DIR}/WDL/" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/sdk-layout/WDL")
 
 find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+set(REAWEB_REFERENCE_DIR "" CACHE PATH "Directory containing a prebuilt API reference and its manifest")
+if(REAWEB_REFERENCE_DIR)
+  get_filename_component(REAWEB_REFERENCE_DIR "${REAWEB_REFERENCE_DIR}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+  set(reference_args --verify)
+else()
+  set(REAWEB_REFERENCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/api-reference")
+endif()
+add_custom_target(reaweb_api_reference ALL
+  COMMAND "${Python3_EXECUTABLE}" tools/api_reference.py --output "${REAWEB_REFERENCE_DIR}" ${reference_args}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  VERBATIM)
 find_package(Threads REQUIRED)
 set(REAWEB_BRIDGE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/bridge_script.hpp")
 add_custom_command(OUTPUT "${REAWEB_BRIDGE_HEADER}"
@@ -173,6 +184,7 @@ endif()
 if(REAWEB_BUILD_EXTENSION)
 
   add_library(reawebapi MODULE src/plugin/plugin.cpp src/plugin/preferences.cpp src/platform/shared/jsfx_editor.cpp src/platform/shared/jsfx_enum.cpp)
+  add_dependencies(reawebapi reaweb_api_reference)
   target_link_libraries(reawebapi PRIVATE reaweb_runtime)
   target_compile_definitions(reawebapi PRIVATE NOMINMAX)
   target_include_directories(reawebapi PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -257,7 +269,7 @@ if(REAWEB_BUILD_EXTENSION)
   # A single packager keeps installed docs, the standalone SDK and release bundles identical.
   install(CODE "
     execute_process(COMMAND \"${Python3_EXECUTABLE}\" \"${CMAKE_CURRENT_SOURCE_DIR}/tools/package_sdk.py\"
-      --stage \"\${CMAKE_INSTALL_PREFIX}\" RESULT_VARIABLE sdk_result)
+      --stage \"\${CMAKE_INSTALL_PREFIX}\" --reference \"${REAWEB_REFERENCE_DIR}\" RESULT_VARIABLE sdk_result)
     if(NOT sdk_result EQUAL 0)
       message(FATAL_ERROR \"SDK/documentation staging failed\")
     endif()

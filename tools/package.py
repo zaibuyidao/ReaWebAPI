@@ -9,6 +9,7 @@ import zipfile
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools import api_reference
 from tools.package_sdk import stage_sdk
 from tools.version import source_version
 
@@ -16,7 +17,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--stage', type=Path, required=True)
 parser.add_argument('--platform', choices=['windows', 'macos', 'linux'], required=True)
 parser.add_argument('--arch', required=True)
-parser.add_argument('--revision', default='local')
+parser.add_argument('--revision', default=api_reference.revision_id())
+parser.add_argument('--reference', type=Path)
 parser.add_argument('--archive', type=Path)
 parser.add_argument('--release-dir', type=Path)
 args = parser.parse_args()
@@ -50,7 +52,8 @@ if args.platform == 'linux':
 for relative in required:
     if not (args.stage / relative).is_file():
         raise SystemExit(f'Missing bundle file: {relative}')
-stage_sdk(args.stage, version, args.revision)
+reference = api_reference.checked(args.reference, version, args.revision) if args.reference else None
+stage_sdk(args.stage, version, args.revision, reference=reference)
 metadata = {'version': version, 'platform': args.platform, 'architecture': args.arch,
             'revision': args.revision, 'extension': filename}
 (args.stage / 'ReaWebAPI' / 'BUILD.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')

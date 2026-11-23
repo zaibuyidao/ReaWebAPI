@@ -1,4 +1,5 @@
 # ReaWebAPI
 
-- 修复未启用跨源隔离的页面和 Worker 在检测浏览器能力时触发的 SharedArrayBuffer 警告。
-- 实时播放状态 Demo 改用浅色布局，修正表单标签。Lua 启动器打开独立的 HTML 页面，文件内按 CSS、页面主体和 JavaScript 分区。随附精简的英中双语 README。
+## 更新内容
+
+- 新增单页离线 API 手册，支持搜索 Runtime 签名和说明，列出宿主接口的 C、EEL2、Lua 和 Python 写法，并提供 ReaPack Action 入口。

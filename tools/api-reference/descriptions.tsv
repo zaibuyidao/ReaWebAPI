@@ -1,0 +1,143 @@
+# Declaration summaries supplement runtime/*.d.ts. Key, English, Simplified Chinese.
+ReaWebAudioFileInfo	Describes the decoded audio source, including duration, sample rate, channel count and available bit depth.	描述解码器读取的音频源，包括时长、采样率、声道数和可用位深。
+ReaWebBounds	Window bounds in native desktop units, with the current floating or docked mode.	窗口在桌面原生坐标系中的位置、尺寸及停靠状态。
+ReaWebBrowserCapabilities	Results of feature probes for the current WebView document. A null result indicates an untested feature.	当前 WebView 页面的功能探测结果。null 表示该项尚未验证。
+ReaWebCapabilities	Describes the current runtime handshake, supported namespaces, events and request limits.	当前运行时的握手信息、可用命名空间、事件与请求限制。
+ReaWebCleanupEvent	Supplies the reason and time budget to a lifecycle cleanup callback.	传给生命周期清理回调的触发原因与可用时间。
+ReaWebContinuousTrackKey	Track controls accepted by coalesced writes. Custom track color is excluded.	可合并连续写入的轨道控制项，不包含自定义轨道颜色。
+ReaWebDevices	Reports the active audio configuration and enumerates audio and MIDI endpoints.	当前音频设备配置，以及音频和 MIDI 输入输出端点。
+ReaWebDevToolsState	Describes the developer tools layout and the backend’s support for an embedded panel.	开发者工具的布局，以及当前后端对嵌入面板的支持情况。
+ReaWebDiagnostics	Snapshot of the current window, backend, pending calls, queues and diagnostic counters.	当前窗口、后端、待处理调用、队列及诊断计数的快照。
+ReaWebDialogOptions	Options passed to a native file or folder chooser.	传给原生文件或文件夹选择对话框的选项。
+ReaWebDirectoryEntry	A filesystem entry returned by a directory listing. Includes the entry name and file information.	目录枚举返回的一项，包含名称和文件信息。
+ReaWebDisplay	Identifies a monitor and reports its bounds, work area, scale and primary status.	标识一台显示器，并报告其边界、工作区、缩放比例及是否为主显示器。
+ReaWebDropPayload	Data delivered for a native drop, including file paths, text and viewport coordinates.	原生拖放交付的数据，包括文件路径、文本及视口内的落点。
+ReaWebEvents	Maps each event name to the payload its callback receives.	定义每个事件名称及对应回调接收的数据。
+ReaWebFileChange	Notification from a filesystem watcher. A rename can carry both old and new paths.	文件系统监视通知。重命名时可同时携带新旧路径。
+ReaWebFileInfo	Reports whether a path exists, the entry kind and its size when available.	报告路径是否存在、条目类型和可用的大小信息。
+ReaWebFileWriter	A document-owned writer for sequential chunks. Commit publishes the file and abort cancels an unpublished write.	归当前页面所有的顺序写入器。commit 发布文件，abort 取消尚未发布的写入。
+ReaWebFileWriteStatus	Reports writer state, destination, byte count and pending cleanup.	报告写入状态、目标路径、字节数，以及是否仍待清理。
+ReaWebFxParametersSnapshot	Latest normalized values of the requested parameters on one FX instance.	同一 FX 实例中所订阅参数的最新归一化值。
+ReaWebFxRef	Resolved FX identity scoped to a project epoch. Use it for subsequent parameter writes.	已解析的 FX 引用，限定于相应工程代次，用于后续参数写入。
+ReaWebFXState	Identifies the track, item, take, FX and parameter associated with focused or touched FX state.	标识获得焦点或最近触碰的 FX 所在轨道、媒体项、Take、FX 和参数。
+ReaWebFxTarget	Locates an FX by track, FX identity and chain. A take-chain target also supplies the take.	通过轨道、FX 标识与效果链定位 FX。Take 效果链还需提供 Take。
+ReaWebHostMessage	JSON-compatible payload accepted by the host message and service APIs.	宿主消息和服务接口可接收的 JSON 兼容数据。
+ReaWebHostService	Local proxy for a named service. Dispatch resolves the current native registration.	具名服务的本地代理，实际派发时查找当前原生注册。
+ReaWebLogEntry	A diagnostic log record with source, severity and the originating window and document.	含来源、级别、窗口和页面标识的一条诊断日志。
+ReaWebManifestRuntime	Runtime settings that an app can request in its manifest.	应用可在清单中请求的运行时设置。
+ReaWebMouseMode	Selects normal pointer input, pass-through or region-based routing.	选择正常鼠标输入、整窗穿透或按区域路由。
+ReaWebMouseRegion	One rectangular input region in viewport CSS pixels.	一个矩形交互区域，以视口 CSS 像素为单位。
+ReaWebNativeInvalidation	Signals that cached host state should be refreshed. The count accompanies the revision.	通知调用方刷新缓存的宿主状态，并提供相应修订号与数量。
+ReaWebNativeState	Project epoch, revision and availability shared by native state notifications.	原生状态通知共用的工程代次、修订号和可用状态。
+ReaWebOverlayCapabilities	Reports support for the overlay layer and individual native mouse policies.	报告覆盖窗口层及各项原生鼠标策略的支持情况。
+ReaWebOverlaySupport	Availability of one overlay feature, together with its reported reason.	单项覆盖窗口功能的可用状态及原因。
+ReaWebPlatform	Operating system hosting the extension.	运行扩展的操作系统。
+ReaWebRealtimeCapabilities	Available realtime sources and their supported rates, schemas and subscription limits.	可用的实时数据源及其速率范围、数据结构和订阅限制。
+ReaWebRealtimeDiagnostics	Reports sampling and delivery statistics for realtime sources and subscriptions.	报告实时数据源及订阅的采样与交付统计。
+ReaWebRealtimeSubscription	A subscription to a latest-state source. Read the cached snapshot with latest() and release it with close().	实时状态订阅。latest() 读取缓存快照，close() 释放订阅。
+ReaWebRegion	Identifies a project region and its time range, name and color.	工程区域的标识、起止时间、名称及颜色。
+ReaWebRuntimeCapabilities	Feature and limit information grouped by runtime namespace.	按运行时命名空间组织的功能和限制信息。
+ReaWebRuntimeInfo	Describes the document’s resource origin, storage isolation and browser capabilities.	描述当前页面的资源来源、存储隔离方式及浏览器能力。
+ReaWebRuntimeNamespace	Names of public JavaScript namespaces exposed on reaper.	全局 reaper 对象公开的 JavaScript 命名空间名称。
+ReaWebStream	A consumer of a native stream with cached reads, event callbacks and explicit close.	原生数据流的消费端，支持缓存读取、事件回调和主动关闭。
+ReaWebStreamInfo	Stream format, capacity and format-specific metadata advertised to the consumer.	向消费端公布的数据流格式、容量与格式相关元数据。
+ReaWebStreamPacket	One delivered packet with sequence, timestamp and payload views.	一个已交付的数据包，含序号、时间戳和载荷视图。
+ReaWebTheme	Theme colors reported by the host and their corresponding CSS variables.	宿主报告的主题颜色及对应 CSS 变量。
+ReaWebTrackControlsSnapshot	Latest subscribed control values for the requested tracks, identified by GUID.	按轨道 GUID 返回所订阅控制项的最新值。
+ReaWebTrackKey	Host track fields exposed by the typed track API.	类型化轨道接口公开的宿主轨道字段。
+ReaWebTrackMeter	Per-channel linear peaks and their dBFS equivalents. A null dBFS value indicates silence.	各声道的线性峰值及对应 dBFS 数值。dBFS 为 null 表示静音。
+ReaWebTrackProperty	Track properties selectable for a realtime track-controls subscription.	实时轨道控制订阅可选择的轨道属性。
+ReaWebVideoCapabilities	Reports available project video formats, resolution modes and presentation limits.	报告工程视频可用的格式、分辨率模式和显示限制。
+ReaWebVideoDiagnostics	Video state plus capture, delivery and frame-drop measurements.	工程视频状态及捕获、交付和丢帧统计。
+ReaWebVideoOptions	Selects the frame size, format and requested update rate for project video.	设置工程视频的画幅、格式及期望更新速率。
+ReaWebVideoSourceInfo	Reports project video source availability, dimensions and native format information.	报告工程视频源是否可用、原始尺寸及原生格式信息。
+ReaWebVideoState	Current project video capture state, including frame size, rate and subscribers.	工程视频的当前捕获状态，包括帧尺寸、速率和订阅数。
+ReaWebVideoSurfaceDiagnostics	Describes a native presentation surface and its available rendering counters.	描述原生视频显示表面及可用的渲染计数。
+ReaWebVideoSurfaceLayout	Positions and clips the native video surface using viewport CSS pixels.	以视口 CSS 像素设置原生视频表面的位置和裁剪区域。
+ReaWebWaveform	Per-channel minimum and maximum amplitude envelopes for a requested time range.	指定时间范围内各声道的最小、最大振幅包络。
+ReaWebWaveformOptions	Selects the source time range and number of points for a waveform query.	指定波形查询的源文件时间范围和采样点数。
+ReaWebWindowLayer	Chooses the normal or overlay layer for a window.	选择普通窗口层或覆盖窗口层。
+ReaWebWindowOpenOptions	Creation options for a local window, including reuse, initial visibility and appearance.	创建本地窗口时使用的选项，包括实例复用、初始可见性和外观。
+ReaWebWindowState	Current window identity, appearance, dock state, keyboard and pointer policies.	当前窗口的标识、外观、停靠状态及键鼠策略。
+devicesChanged	Notifies listeners when the host’s audio or MIDI device configuration changes.	宿主的音频或 MIDI 设备配置变更时通知订阅方。
+file-change	Reports changes observed by a filesystem watcher. Use its ID to identify the watch.	报告文件监视器观察到的变化，通过 ID 区分监视任务。
+native-timer	Identifies the timer that fired for a scheduled host callback.	通过 ID 标识触发调度回调的原生计时器。
+ReaWebFileWriter.maxChunkBytes	Maximum byte count accepted in one write.	单次写入可接收的最大字节数。
+ReaWebHostService.invoke	Calls a method on the registered service and resolves with its result. Dispatch errors reject the Promise.	调用已注册服务的方法，并异步取得结果。派发错误会使 Promise 拒绝。
+ReaWebHostService.off	Removes registrations of the given callback for this service event.	移除该回调在当前服务事件上的注册。
+ReaWebRealtimeSubscription.latest	Reads the most recent cached snapshot, or null before the first sample arrives.	读取最近缓存的状态快照，首个样本到达前返回 null。
+ReaWebRealtimeSubscription.close	Releases this subscription and stops delivering samples to it.	释放此订阅并停止向它交付样本。
+ReaWebRealtimeSubscription.source	Identifies the realtime source attached to the subscription.	标识此订阅关联的实时数据源。
+ReaWebRealtimeSubscription.updateRate	Reports the update rate for this subscription in Hz.	报告此订阅的更新速率，单位为 Hz。
+ReaWebStream.dropped	Reports the consumer’s dropped-packet count.	报告消费端的丢包计数。
+ReaWebVideoSurface.close	Detaches the native presentation surface from the window.	从窗口解绑原生视频显示表面。
+ReaWebVideoSurface.getDiagnostics	Reads presentation status and the counters available for this renderer.	读取显示状态及当前渲染器提供的计数。
+ReaWebVideoSurface.readablePixels	Always false. The native surface displays video without exposing pixels to the page.	恒为 false。原生表面显示视频，页面无法从该表面读取像素。
+ReaWebVideoSurface.setLayout	Updates the surface rectangle, clipping rectangle and aspect-ratio policy.	更新显示矩形、裁剪矩形和宽高比策略。
+External Clients	Authenticated local WebSocket clients can discover services, events and streams.	本地 WebSocket 客户端通过身份验证后可发现服务、事件和数据流。
+JSFX Web UI SDK	Builds an editor for a bound JSFX instance, including parameters and supported DSP features.	为绑定的 JSFX 实例构建编辑器，访问参数和该效果支持的 DSP 功能。
+Native C/C++ SDK	Registers named native services that WebView applications can call.	注册具名原生服务，供 WebView 应用调用。
+Native Streams	Defines native producers and the packet formats consumed by stream clients.	定义原生生产端及数据流消费端读取的数据包格式。
+reaper.app.getRootPath	Returns the absolute path of the local entry and asset directory.	本地入口／资源根目录的绝对路径
+reaper.audio.applyTrackGain	Sets linear gain for a track in the current project, creates one undo point and reads back the result.	通过当前工程的轨道引用设置线性音量，记录一步撤销并回读结果
+reaper.audio.controlTransport	Controls transport in the current project. Accepts play, pause or stop.	操作当前工程的走带，仅接受 play、pause、stop
+reaper.audio.getFileInfo	Reads audio file metadata.	读取音频元数据
+reaper.audio.getFxRef	Resolves an FX in the current project using its track, FX and optional take GUIDs.	按轨道、FX 和可选 Take GUID 解析当前工程内的 FX
+reaper.audio.getTrackMeter	Reads instantaneous peak values and dBFS levels for each channel of the referenced track.	接受上述工程轨道引用，读取各声道瞬时峰值及 dBFS
+reaper.audio.getTrackMix	Reads the name and linear gain of the referenced track.	通过工程轨道引用读取名称和线性音量
+reaper.audio.getWaveform	Reads per-channel minimum and maximum waveform envelopes.	读取各声道 min/max 波形包络
+reaper.audio.setFxParameterLatest	Coalesces pending updates to one FX parameter. Supports normalized values from 0 to 1 and managed undo.	合并同一 FX 参数的待写入值，支持 0–1 标准化值和托管撤销
+reaper.debug.error	Writes an error to the log.	记录错误日志
+reaper.debug.getLogs	Reads recent log entries for the current window.	读取当前窗口最近日志
+reaper.debug.inspect	Logs a debug preview that supports circular references.	记录支持循环引用的调试预览
+reaper.debug.log	Writes an informational log entry.	记录信息日志
+reaper.debug.warn	Writes a warning to the log.	记录警告日志
+reaper.dialog.selectFolder	Opens the native folder picker. Cancellation returns null.	原生目录选择。取消统一返回 null
+reaper.dialog.openFile	Opens the native file picker.	原生打开文件对话框
+reaper.events.on	Subscribes to a host event and returns an asynchronous unsubscribe function.	订阅宿主事件，返回异步取消订阅函数
+reaper.fs.readBinary	Reads a file as binary data.	读取二进制字节
+reaper.fs.readText	Reads a file as UTF-8 text.	读取 UTF-8 文本
+reaper.fs.writeBinary	Writes binary data to a file.	写入二进制字节
+reaper.fs.writeText	Writes UTF-8 text to a file.	写入 UTF-8 文本
+reaper.system.getArchitecture	Returns the extension process architecture: x64, arm64, x86, arm or unknown.	扩展进程架构：x64、arm64、x86、arm、unknown
+reaper.system.getPlatform	Returns windows, macos or linux.	windows、macos 或 linux
+reaper.theme.getColors	Reads semantic theme colors and CSS variables.	读取语义颜色及 CSS 变量
+reaper.transaction.beginUndo	Starts a managed edit gesture and returns a document-scoped token.	开始托管编辑手势，返回本页 token
+reaper.transaction.endUndo	Ends a managed edit gesture.	结束托管编辑手势
+reaper.transaction.withUndo	Runs the callback and ends the undo gesture in finally, preserving the callback result.	执行回调并在 finally 结束 Undo，保留回调返回值
+reaper.window.getMaxRefreshRate	Returns the highest refresh rate in Hz across display modes for the current screen, or null if unknown.	当前窗口所在屏幕在所有可用显示模式中的最高刷新率（Hz），未知时返回 null
+reaper.window.getPosition	Reads the window position, mode and units.	读取当前窗口位置及模式、单位
+reaper.window.getSize	Reads the outer window dimensions, mode and units.	读取当前窗口外部尺寸及模式、单位
+reaper.window.hide	Hides the current window.	隐藏当前窗口
+reaper.window.reload	Requests cleanup and reloads the current page.	请求清理并重新加载当前页面
+reaper.window.setPosition	Sets the floating window position.	设置浮动窗口位置
+reaper.window.show	Shows the current window.	显示当前窗口
+frame	{ sequence, playing?, position?, tempo?, cursor?, lua?, luaAgeMs? }	报告当前帧序号及可用的走带状态、速度、光标和 Lua 帧数据。
+fxchange	{ projectEpoch, available, focused, touched, changeCount }	报告工程代次、可用状态、焦点 FX、最近触碰的 FX 和变更计数。
+projectchange	{ projectEpoch, changeCount }	报告工程代次和变更计数。
+transportchange	{ projectEpoch, available, state?, position?, cursor?, tempo? }	报告工程代次和走带可用状态，可包含播放状态、位置、光标和速度。
+windowstatechange	ReaWebWindowState	窗口状态变化时提供 ReaWebWindowState。
+reaper.audio.decodeMeter	Decode built-in Meter measurements with exact bigint clip counts	解码内置电平表数据，以 bigint 读取精确的削波计数。
+reaper.audio.openStream	PCM, FFT, Peak/RMS/LUFS or realtime waveform	打开 PCM、FFT、电平测量（Peak/RMS/LUFS）或实时波形数据流。
+reaper.audio.resetMeter	Queue reset of an owned built-in loudness analyzer	将当前窗口所拥有的内置响度分析器重置请求加入队列。
+reaper.clipboard.readBinary	Read a custom binary clipboard format	读取指定自定义格式的剪贴板二进制数据。
+reaper.clipboard.writeBinary	Write a custom binary clipboard format	将二进制数据以自定义格式写入剪贴板。
+reaper.fs.watch	Native coalesced file/directory notifications	监听并合并原生文件或目录变更通知。
+reaper.host.send	Queue a string or JSON-serialized value for Lua ReaWeb_Receive. Receive Lua text through events.on('message', callback)	向 Lua 的 ReaWeb_Receive 队列发送字符串或 JSON 序列化值。通过 events.on('message', callback) 接收 Lua 文本。
+reaper.host.service	Named native service with invoke, send, on and off	按名称获取原生服务，支持 invoke、send、on 和 off。
+reaper.realtime.getCapabilities	Query supported sources and rates; no sampling starts	查询支持的采样源和速率，不启动采样。
+reaper.realtime.getDiagnostics	This window's subscriptions and shared sampling counters	读取当前窗口的订阅和共享采样计数。
+reaper.realtime.subscribe	Subscribe to transport, controls on 1–16 tracks, or 1–32 normalized parameters of one FX instance	订阅走带、1–16 条轨道的控件，或单个 FX 实例的 1–32 个归一化参数。
+reaper.stream.getDiagnostics	Stream allocations, consumers and producer counters	读取数据流分配、消费者和生产者计数。
+reaper.stream.open	Attach a binary consumer. latest() reads local cached data	连接二进制数据消费者。latest() 读取本地缓存。
+reaper.system.getDevices	Active audio hardware and MIDI devices	读取当前音频硬件和 MIDI 设备列表。
+reaper.system.getDisplays	Monitor bounds, work areas and effective DPI	读取显示器边界、工作区和有效 DPI。
+reaper.system.openMIDIInput	Selected input or all inputs (-1)	打开指定 MIDI 输入，传入 -1 表示所有输入。
+reaper.system.schedule	One-shot or repeating native timer	创建单次或重复的原生计时器。
+reaper.video.getCapabilities	Backend compatibility, platform and profile limits	查询后端兼容性、平台和视频配置限制。
+reaper.video.getDiagnostics	Frames, capture timing, drops and subscriptions	读取帧数、采集耗时、丢帧和订阅信息。
+reaper.video.getSourceInfo	Final project frame dimensions and original-output budget availability	读取工程最终视频帧尺寸，以及原始输出所需预算是否可用。
+reaper.video.getState	Source, position, resolution and availability	读取视频源、位置、分辨率和可用状态。
+reaper.video.openStream	Shared current-project RGBA8 video	打开当前工程的共享 RGBA8 视频流。
+reaper.video.openSurface	Shared D3D11 presentation on Windows and Metal presentation on macOS, without JavaScript pixel delivery	在 Windows 上使用共享 D3D11 表面，在 macOS 上使用 Metal 呈现视频，像素无需传入 JavaScript。
+reaper.video.openWorkerStream	WebView2 video with pixel ownership in a dedicated rendering worker	打开 WebView2 视频流，由专用渲染工作线程持有像素。

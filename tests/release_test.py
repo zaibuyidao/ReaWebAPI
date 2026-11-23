@@ -19,11 +19,14 @@ class ReleaseTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.directory = Path(self.temp.name)
         self.version = release.source_version()
+        self.page = (release.api_reference.DATA_MARK + json.dumps(dict(
+            version=self.version, revision='test-sha', entries=[{'id': 'fixture'}])) + '</script>').encode()
         for platform, arch, _, name in release.TARGETS:
             files = [name] + ([f'reawebapi-webview-{arch}', f'reawebapi-video-{arch}/reawebapi-video-{arch}.so'] if platform == 'linux' else [])
             with zipfile.ZipFile(self.directory / f'ReaWebAPI-{platform}-{arch}-v{self.version}.zip', 'w') as bundle:
                 metadata = dict(version=self.version, platform=platform, architecture=arch, revision='test-sha', extension=name)
                 bundle.writestr('ReaWebAPI/BUILD.json', json.dumps(metadata))
+                bundle.writestr(release.api_reference.INSTALLED, self.page)
                 for item in files:
                     data = ('TEST FIXTURE ' + item).encode()
                     (self.directory / Path(item).name).write_bytes(data)
@@ -36,6 +39,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn(self.directory / 'ReaWebAPI.ext', assets)
         self.assertFalse((self.directory / 'ReaWebAPI.ext').exists())
         self.assertIn(self.directory / f'ReaWebAPI-SDK-v{self.version}.zip', assets)
+        with zipfile.ZipFile(self.directory / f'ReaWebAPI-SDK-v{self.version}.zip') as sdk:
+            self.assertEqual(sdk.read(release.api_reference.INSTALLED), self.page)
         checksums = (self.directory / 'SHA256SUMS.txt').read_text(encoding='ascii')
         self.assertEqual({line.split('  ', 1)[1] for line in checksums.splitlines()},
                          {asset.name for asset in assets if asset.name != 'SHA256SUMS.txt'})
@@ -43,6 +48,9 @@ class ReleaseTests(unittest.TestCase):
             demo = Path(__file__).parents[1] / 'examples/main-demo'
             demo_files = {f'web/{name}': (demo / name).read_bytes() for name in
                           ('ReaWebAPI_Demo.lua', 'app.js', 'app.json', 'index.html', 'logo.svg', 'style.css')}
+            demo_files['web/api-reference/' + release.api_reference.NAME] = self.page
+            launcher = release.HELP_LAUNCHER
+            demo_files['web/api-reference/' + launcher] = (release.api_reference.TEMPLATES / launcher).read_bytes()
             files = {entry.filename for entry in bundle.infolist() if not entry.is_dir()}
             self.assertEqual(files, {'ReaWebAPI.ext'} | demo_files.keys() |
                              {f'extension/{name}' for _, name in release.native_files()})
@@ -63,7 +71,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(len(entries), len(demo_files))
             self.assertEqual({target for _, target, _ in entries}, set(demo_files))
             self.assertCountEqual([target for mode, target, _ in entries if mode == 'main'],
-                                 ['web/ReaWebAPI_Demo.lua'])
+                                 ['web/ReaWebAPI_Demo.lua', 'web/api-reference/' + launcher])
             for _, target, url in entries:
                 self.assertEqual(unquote(url),
                                  'https://raw.githubusercontent.com/zaibuyidao/ReaScripts/$commit/ReaWebAPI/' + target)
@@ -93,18 +101,13 @@ class ReleaseTests(unittest.TestCase):
         for name in ('eel-backend', 'lua-backend', 'future-demo'):
             (demo / name).mkdir()
             (demo / name / 'index.html').write_bytes(b'Other Demo')
-        output = self.directory / 'demo-test.zip'
-        with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as bundle:
-            release.add_demo(bundle, demo)
-        with zipfile.ZipFile(output) as bundle:
-            self.assertEqual(set(bundle.namelist()), {'web/'} |
-                             {f'web/{name}' for name in resources})
-            for name, data in resources.items():
-                self.assertEqual(bundle.read(f'web/{name}'), data)
+        entries = release.web_entries(demo, self.page)
+        self.assertEqual({name: data for name, data in entries.items() if '/' not in name}, resources)
+
     def test_missing_demo_is_rejected(self):
-        with zipfile.ZipFile(self.directory / 'demo-test.zip', 'w') as bundle:
-            with self.assertRaisesRegex(ValueError, 'Missing Demo directory'):
-                release.add_demo(bundle, self.directory / 'missing-demo')
+        with self.assertRaisesRegex(ValueError, 'Missing Demo directory'):
+            release.web_entries(self.directory / 'missing-demo', self.page)
+
     def test_descriptor_excludes_unlisted_resources(self):
         demo = self.directory / 'demo'
         (demo / 'assets').mkdir(parents=True)
@@ -115,8 +118,8 @@ class ReleaseTests(unittest.TestCase):
         descriptor = release.descriptor(self.version, demo)
         self.assertNotIn('web/.config', descriptor)
         self.assertNotIn('web/assets/', descriptor)
-        self.assertEqual(descriptor.count('[script nomain]'), 5)
-        self.assertEqual(descriptor.count('[script main]'), 1)
+        self.assertEqual(descriptor.count('[script nomain]'), 6)
+        self.assertEqual(descriptor.count('[script main]'), 2)
     def test_missing_demo_launcher_blocks_descriptor(self):
         demo = self.directory / 'demo'
         demo.mkdir()
@@ -152,6 +155,10 @@ class ReleaseTests(unittest.TestCase):
                 body = release.release_body('test/repo', version)
                 self.assertTrue(body.startswith('## Changes\n\n- Current release.'))
                 self.assertIn(f'/releases/download/v{version}/', body)
+    def test_reference_mismatch_blocks_release(self):
+        with self.assertRaisesRegex(ValueError, 'API reference mismatch'):
+            release.assemble(self.directory, self.version, 'test-sha', self.page + b' ')
+
     def test_missing_helper_blocks_release(self):
         (self.directory / 'reawebapi-webview-aarch64').unlink()
         with self.assertRaises(ValueError): release.assemble(self.directory, self.version, 'test-sha')

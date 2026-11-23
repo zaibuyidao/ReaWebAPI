@@ -11,12 +11,13 @@ import zipfile
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.clean_retired_mirror import clean_stage
+from tools import api_reference
 from tools.version import source_version
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def payload(root, version, revision):
+def payload(root, version, revision, reference=None):
     paths = {f'ReaWebAPI/SDK/{name}': root / 'runtime' / name for name in (
         'reaper.d.ts', 'runtime-api.d.ts', 'app-manifest.schema.json', 'reaper.js', 'browser-files.mjs', 'browser-files.d.mts', 'jsfx-webui.mjs', 'jsfx-webui.d.mts', 'README.md', 'README.zh-CN.md')}
     paths['ReaWebAPI/docs/jsfx-webui.md'] = root / 'docs/jsfx-webui.md'
@@ -123,13 +124,14 @@ def payload(root, version, revision):
             # Source examples are nested; packaged examples remain beside the SDK declarations.
             content = content.replace(b'../../../runtime/', b'../')
         files[name] = content
+    files[api_reference.INSTALLED] = reference if reference is not None else api_reference.render(version, revision)
     metadata = dict(version=version, revision=revision)
     files['ReaWebAPI/SDK/BUILD.json'] = (json.dumps(metadata, indent=2) + '\n').encode()
     return files
 
 
-def stage_sdk(stage, version, revision='local', root=ROOT):
-    files = payload(root, version, revision)
+def stage_sdk(stage, version, revision='local', root=ROOT, reference=None):
+    files = payload(root, version, revision, reference)
     # Remove the old packaged copy when an install prefix is reused. Source notes stay local.
     for pattern in ('VALIDATION*.md', 'SMOKE_TEST*.md', '*-isolation-validation*.md'):
         for path in (stage / 'ReaWebAPI/docs').glob(pattern):
@@ -147,8 +149,8 @@ def stage_sdk(stage, version, revision='local', root=ROOT):
         path.write_bytes(content)
 
 
-def build_sdk(directory, version, revision='local', root=ROOT):
-    files = payload(root, version, revision)
+def build_sdk(directory, version, revision='local', root=ROOT, reference=None):
+    files = payload(root, version, revision, reference)
     files['SHA256SUMS.txt'] = ''.join(f'{hashlib.sha256(data).hexdigest()}  {name}\n'
                                     for name, data in sorted(files.items())).encode('utf-8')
     directory.mkdir(parents=True, exist_ok=True)
@@ -168,14 +170,16 @@ def main():
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument('--stage', type=Path, help='Merge SDK/docs into an install prefix')
     target.add_argument('--output', type=Path, help='Write the standalone SDK ZIP to this directory')
-    parser.add_argument('--revision', default='local')
+    parser.add_argument('--revision', default=api_reference.revision_id())
+    parser.add_argument('--reference', type=Path, help='Verified reference artifact directory')
     args = parser.parse_args()
     version = source_version()
+    reference = api_reference.checked(args.reference, version, args.revision) if args.reference else None
     if args.stage:
-        stage_sdk(args.stage, version, args.revision)
+        stage_sdk(args.stage, version, args.revision, reference=reference)
         print(f'Staged SDK and documentation for v{version}')
     else:
-        print(build_sdk(args.output, version, args.revision))
+        print(build_sdk(args.output, version, args.revision, reference=reference))
 
 
 if __name__ == '__main__':

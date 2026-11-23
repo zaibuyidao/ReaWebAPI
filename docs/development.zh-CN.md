@@ -4,6 +4,12 @@
 
 浏览器标准 WASM 线程须显式开启 [App 跨源隔离](frontend.zh-CN.md#app-级跨源隔离)，并在选择线程构建前检查 `webRuntime.browser`。[示例](../examples/runtime-features/isolation/README.zh-CN.md) 包含 App CSP 和四 Worker 原子计算。
 
+## 构建 API 手册
+
+在仓库根目录执行一次 `npm ci --prefix examples/templates/modern`（Node.js 22.12+），随后按平台配置 CMake。`cmake --build build --config Release` 会生成 `build/api-reference/reawebapihelp.html`。用 `python tools/api_reference.py --output build/api-reference --verify` 校验版本、源码 revision 和文件哈希。
+
+在仓库 Settings → Pages 中选择 GitHub Actions，并允许发布工作流部署到 `github-pages` 环境。首次正式发布后即可访问[在线手册](https://zaibuyidao.github.io/ReaWebAPI/reawebapihelp.html)。部署失败时，可对同一发布提交重新运行工作流。将 ReaPack ZIP 内的 `ReaWebAPI.ext`、`extension/`、`web/` 同步到 `zaibuyidao/ReaScripts` 的 `ReaWebAPI/` 目录，再更新索引。
+
 ## 开始一个工具
 
 安装与 REAPER 架构对应的扩展，将整个 SDK 复制到可写的开发目录。在 Action List 加载并运行其中的 `starter/reawebapi-starter.lua`，它会打开同目录的 `index.html`。模板展示当前选中轨道，在页面右键菜单中切换 **Dock <App> in Docker** 的勾选状态以停靠或取消停靠。
@@ -92,7 +98,7 @@ Linux 几何失效逻辑由 CTest 中的 `linux_geometry` 覆盖。在 X11 显�
 
 注明最低 REAPER 和 ReaWebAPI 版本，通过能力查询检查依赖的方法，并在界面解释缺失依赖。发布前检查空工程、没有选择、Unicode 路径、对象删除、工程切换、停靠、反复开关窗口及各目标系统。完整 Demo 可辅助桥接诊断，模拟 ABI 测试通过不代表已验证所有原生 API 对真实工程的影响。
 
-`ReaWebAPI-ReaPack-v<版本>.zip` 包含 `ReaWebAPI.ext`、存放七个原生文件的 `extension/` 和完整的 `web/` 示例文件夹，三者同级。SDK ZIP 提供开发资料。
+`ReaWebAPI-ReaPack-v<版本>.zip` 包含 `ReaWebAPI.ext`、存放原生文件的 `extension/` 和存放 Demo、API 手册的 `web/`，三者同级。SDK ZIP 提供开发资料。
 
 描述文件自动列出所有 Demo 文件，安装到该包 Scripts 路径下的 `web/` 目录。`ReaWebAPI_Demo.lua` 注册到 Action List，其余资源保留相对路径。启动器通过 `@noindex` 随扩展包统一管理。
 

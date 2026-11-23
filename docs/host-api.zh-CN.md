@@ -161,7 +161,7 @@ v0.3.9.14 起，这些函数也支持 EEL2，`ReaWeb_Open` 可选第四参数在
 | `reaper.ReaWeb_DevTools(id)` | 布尔值 |
 | `reaper.ReaWeb_SetDocked(id, docked)` | 实际停靠状态 |
 | `reaper.ReaWeb_IsDocked(id)` | 布尔值 |
-| `reaper.ReaWeb_GetDiagnostics(id)` | JSON 字符串，失败为空 |
+| `reaper.ReaWeb_GetDiagnostics(id)` | JSON 字符串，失败时为 `{}` |
 | `reaper.ReaWeb_GetLastError()` | 最近一次同步入口错误字符串 |
 
 Lua 相对 HTML 路径从 REAPER 的 `Scripts/` 目录解析，模板使用启动器所在目录的绝对路径。正数窗口 ID 表示窗口已创建，不表示页面就绪。异步加载错误可能稍后出现在 REAPER 控制台和诊断信息中，启动器无需 defer 循环维持页面。

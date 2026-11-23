@@ -1,0 +1,108 @@
+# English declaration and example comments, Simplified Chinese.
+1..8192 peak frames per channel; default 1024.	每声道 1–8192 个峰值帧，默认 1024。
+A detached surface returns only closed: true.	表面分离后仅返回 closed: true。
+Absolute native paths; incoming directories are allowed. No file contents are read.	使用原生绝对路径，支持拖入目录，不读取文件内容。
+Active takes of selected items, not selected MIDI notes.	选中媒体项的活动 Take，不涉及 MIDI 音符选择。
+App-specific writable directory under REAPER's resource directory.	REAPER 资源目录下的 App 专属可写目录。
+Applies variables and follows changes; disposal restores previous inline values.	应用变量并跟随主题变化，取消后恢复原有内联值。
+Architecture of the running extension process (including under emulation).	扩展进程架构，含模拟运行的进程。
+Atomic replacement; overwrite defaults to false. Parent directory must exist. Limit 16 MiB.	原子替换文件。父目录必须存在，默认禁止覆盖，上限为 16 MiB。
+Atomically replace the union of viewport CSS-pixel rectangles.	原子替换交互矩形的并集，坐标以视口 CSS 像素计。
+Audio/MIDI dequeue one block. Other types return latest(). Empty queues return null.	音频和 MIDI 每次出队一个块，其他类型返回 latest() 的结果。空队列返回 null。
+Bridge failures reject with this shape. Native false/0/null results remain results.	桥接调用失败时以此结构拒绝 Promise。原生返回的 false、0 和 null 均保留为正常结果。
+Built-in meter Float32 prefix (7*C+14): samplePeak[C], truePeak[C], channelRms[C], sampleClipCount[C], truePeakClipCount[C], channelMaxSamplePeak[C], channelMaxTruePeak[C], rmsMomentary, rmsIntegrated, maxRmsMomentary, lufsMomentary, lufsShortTerm, lufsIntegrated, loudnessRange, maxLufsMomentary, maxLufsShortTerm, maxSamplePeak, maxTruePeak, processedSeconds, loudnessRangeLow, loudnessRangeHigh. Global peak maxima reduce the channel maxima. A 6*C Float32 suffix preserves uint64 counters as 24/24/16-bit limbs. Use decodeMeter for exact bigint counts. Prefix counter slots are approximate compatibility values. True Peak, RMS-I, LUFS-M/S/I and LRA follow Cockos loudness_meter. Peaks/channel RMS are linear amplitude. Global RMS is dBFS, loudness is LUFS, LRA is LU. Clip counts and maxima accumulate until reset. Channel RMS covers the publication interval. All meter history shares one reset lifecycle. processedSeconds counts processed PCM frames / sample rate.	内置电平表的 Float32 前缀（7*C+14）依次为 samplePeak[C]、truePeak[C]、channelRms[C]、sampleClipCount[C]、truePeakClipCount[C]、channelMaxSamplePeak[C]、channelMaxTruePeak[C]、rmsMomentary、rmsIntegrated、maxRmsMomentary、lufsMomentary、lufsShortTerm、lufsIntegrated、loudnessRange、maxLufsMomentary、maxLufsShortTerm、maxSamplePeak、maxTruePeak、processedSeconds、loudnessRangeLow、loudnessRangeHigh。全局峰值取各声道最大值。6*C 个 Float32 后缀按 24/24/16 位存储 uint64 计数，使用 decodeMeter 可读取精确 bigint 值。前缀计数为兼容用近似值。真峰值、RMS-I、LUFS-M/S/I 和 LRA 遵循 Cockos loudness_meter。峰值和声道 RMS 使用线性幅度，全局 RMS 使用 dBFS，响度使用 LUFS，LRA 使用 LU。削波计数和最大值持续累计，所有历史数据一起复位。声道 RMS 覆盖当前发布周期。processedSeconds 为已处理 PCM 帧数除以采样率。
+CSS viewport coordinates. Zero width or height hides presentation.	使用视口 CSS 坐标。宽或高为零时隐藏画面。
+Callbacks run before document destruction and may return a Promise. Native cleanup still runs after a 2000 ms deadline.	回调在文档销毁前运行，可返回 Promise。超过 2000 毫秒后仍会执行原生清理。
+Chooses a destination; does not write the file.	选择目标路径，文件由调用方写入。
+Complete source length, in seconds.	完整源文件时长，单位为秒。
+Creation-time request. Transparent windows cannot be docked.	创建时请求透明窗口。透明窗口无法停靠。
+Cumulative project quarter-note position, including fractional QN.	工程中累计的四分音符位置，含小数部分。
+Current Space routing state. JSON defaults: ordinary Apps false, JSFX Web UI true.	当前空格键路由状态。普通 App 的 JSON 默认值为 false，JSFX Web UI 为 true。
+Custom ReaWebAPI MIME format. Limit 16 MiB.	ReaWebAPI 自定义 MIME 格式，上限为 16 MiB。
+Decode the built-in Meter's 13*C+14 Float32 payload without modifying it.	只读解码内置电平表的 13*C+14 个 Float32 值。
+Default true. False allows REAPER's normal global shortcut policy for this window.	默认为 true。设为 false 时，此窗口使用 REAPER 常规全局快捷键策略。
+Defaults to true.	默认为 true。
+Detaches this consumer. The native producer and other consumers remain active.	断开当前消费者，原生生产者及其他消费者继续运行。
+Discrete native drops; no initial snapshot or replay.	独立的原生拖放事件，无初始快照或重放。
+Document-bound transactional writer. Parent must exist. Overwrite defaults to false.	绑定当前文档的事务写入器。父目录必须存在，默认禁止覆盖。
+Document-scoped read-only media URL. Release when unused. Reload/close revokes it.	当前文档专用的只读媒体 URL。用完后应释放，页面重载或关闭时自动撤销。
+Drop position in viewport CSS pixels.	拖放位置，以视口 CSS 像素计。
+Embedded panel share of available width: 0.2–0.8, default 0.4.	嵌入面板占可用宽度的比例为 0.2–0.8，默认 0.4。
+Encoding-specific helpers use the same worker and 16 MiB limit as readFile/writeFile.	这些编码辅助函数与 readFile/writeFile 共用工作线程，大小上限均为 16 MiB。
+Explicit coalescing: one in-flight write and the latest waiting value per track/key. Superseded values settle without being sent. Does not create an Undo gesture.	按轨道和键合并写入。每组只保留一个执行中的写入和最新待写值，被替换的值直接完成。此操作不创建撤销手势。
+Explicit native-window override.	显式覆盖原生窗口标题。
+Explicitly trust a loopback HTTP server; regular window.open stays local-file only.	显式信任回环 HTTP 服务器。常规 window.open 仅打开本地文件。
+Files run on the worker, relative to the entry directory. Absolute local paths are allowed.	文件操作在工作线程执行。相对路径以入口目录为基准，也支持本地绝对路径。
+Finite radius 0..64 in logical desktop units. Zero removes custom clipping. Suspended while docked/maximized. macOS/Linux use system corners when framed.	半径为 0–64 的有限值，以桌面逻辑单位计。零表示移除自定义裁剪，停靠或最大化时暂停裁剪。macOS 和 Linux 带边框窗口使用系统圆角。
+Fire-and-forget. Dispatch failures are reported to the Runtime error log.	单向发送，分发失败时写入运行时错误日志。
+Floating windows only. Values are outer dimensions in native desktop units, not CSS pixels.	仅适用于浮动窗口。外部尺寸以原生桌面单位计。
+Frame channel. `pushed` keeps rising while the page is idle; `luaFrameAgeMs` says how stale Lua's content is.	帧通道。页面空闲时 pushed 继续递增，luaFrameAgeMs 表示 Lua 帧数据的年龄。
+Frame dimensions and row stride, supplied for video packets.	视频包的帧尺寸和每行字节数。
+Host monotonic seconds; not directly comparable with performance.now().	宿主单调时钟的秒数，不能与 performance.now() 直接比较。
+I420 is opt-in, source-resolution only, on verified Windows x64, macOS ARM64 and Linux x86_64 converters.	I420 需显式启用，仅支持源分辨率，适用于已验证的 Windows x64、macOS ARM64 和 Linux x86_64 转换器。
+Identifies a track within one project epoch. The index is only a lookup hint.	标识特定工程代次中的轨道。索引仅用于辅助查找。
+Initial dimensions. Dynamic video packets carry the dimensions of their own pixels.	初始尺寸。动态视频包携带各自的像素尺寸。
+JSFX-specific service protocol, when the optional module is registered.	注册可选模块后可用的 JSFX 专用服务协议。
+Last accepted page report. Collection requires matching diagnostic settings and resets on enable/navigation.	最近一次接收的页面报告。采集需要对应的诊断设置，启用或导航时重置。
+Manifest ID or persistent automatic ID for ordinary Apps, fx_ident-derived fallback for JSFX, URL-derived identity in development.	普通 App 使用清单 ID 或持久自动 ID，JSFX 回退到由 fx_ident 派生的 ID，开发模式根据 URL 识别。
+Milliseconds. Repeats skip missed periods. This is not a frame clock.	以毫秒计。重复计时器跳过错过的周期，不适合作为帧时钟。
+Native client-area input policy. A pending pointer gesture retains its current target.	原生客户区输入策略。正在进行的指针手势保留原目标。
+Native copy drag of 1..256 existing regular files. Hold the left mouse button. Relative paths resolve from the entry directory. False means cancelled/rejected.	按住鼠标左键可原生复制拖出 1–256 个已有普通文件。相对路径以入口目录为基准，取消或拒绝时返回 false。
+Native copy drag of nonempty text (at most 16 MiB UTF-8). Requires the same mouse gesture.	使用相同鼠标手势原生复制拖出非空文本，UTF-8 上限为 16 MiB。
+Native desktop Alpha has been established, independently of page CSS.	已建立原生桌面透明通道，与页面 CSS 无关。
+Native host snapshot, not audio-block timing. No interpolation is applied.	原生宿主快照，未经插值，与音频块时钟独立。
+Native video presentation beneath page content. Pixels are not exposed to JavaScript or Canvas.	在页面下方原生显示视频。JavaScript 和 Canvas 无法读取像素。
+No replay. The reserved unloaded event carries EXTENSION_UNLOADED.	不重放事件。保留事件 unloaded 携带 EXTENSION_UNLOADED。
+Null is cancellation, not an error.	取消操作时返回 null。
+Null when the decoder does not expose a meaningful source bit depth.	解码器未提供有效源位深时为 null。
+Observed current-project save; excludes Undo serialization and autosave backups.	观察到当前工程保存，排除撤销序列化和自动备份。
+Opens http/https/mailto using the operating system; never navigates the privileged page.	使用操作系统打开 http、https 或 mailto 链接，当前特权页面保留原位置。
+Opens local HTML; relative paths resolve from the calling page's directory.	打开本地 HTML，相对路径以调用页面所在目录为基准。
+Opt-in Main-section shortcut routing outside editable fields. Standalone Apps only. Defaults off, resets on reload. OS-reserved shortcuts remain with the OS.	独立 App 可显式启用非编辑区域的 REAPER Main 快捷键路由。默认关闭，重载后复位，系统保留快捷键仍由操作系统处理。
+Optional override of the JSON initial value for this page only.	仅对当前页面覆盖 JSON 初始值。
+Original Lua text, FIFO within this document. No snapshot or replay.	按先进先出顺序接收当前文档的 Lua 原始文本，无快照或重放。
+Override the HTML title for this window, including reloads. Requires 1–256 UTF-8 bytes without NUL.	覆盖窗口 HTML 标题，重载后仍有效。标题须为 1–256 字节的 UTF-8 文本，不能包含 NUL。
+Overrides automatic HTML favicon synchronization for this window session, including reloads. PNG, ICO or SVG from an App-root-relative or absolute local path.	覆盖当前窗口会话的 HTML 图标自动同步，重载后仍有效。支持 PNG、ICO、SVG，使用 App 根目录相对路径或本地绝对路径。
+Per-channel linear-amplitude minimum and maximum envelopes.	各声道线性幅度的最小值和最大值包络。
+Playback rate multiplier at position.	当前位置的播放速率倍率。
+Project video invalidation clears frames queued before this packet.	工程视频失效时清除该包之前排队的帧。
+Project-wide invalidation, not a per-object edit log.	整个工程的缓存失效通知，不提供逐对象编辑记录。
+Pushed by the extension from the REAPER timer, independent of how often Lua runs. `lua` is the nonempty UTF-8 text Lua last wrote with ReaWeb_SetFrame, unchanged.	扩展通过 REAPER 计时器推送，与 Lua 的执行频率无关。lua 保留 Lua 最近通过 ReaWeb_SetFrame 写入的非空 UTF-8 原文。
+Queue text for Lua ReaWeb_Receive. Other JSON values are serialized. Resolves true on acceptance. Limit 1 MiB UTF-8, no raw NUL. Invalid values and queue overflow reject.	将文本加入 Lua 的 ReaWeb_Receive 队列，其他 JSON 值先序列化。接受后返回 true。UTF-8 上限为 1 MiB，禁止原始 NUL。值无效或队列溢出时拒绝请求。
+ReaWebAPI Runtime contract 2.	ReaWebAPI 运行时契约第 2 版。
+Reads the consumer's cached data without a native call.	直接读取消费者缓存，无需原生调用。
+Removes all registrations of this callback for this name; absent callbacks are a no-op.	移除此回调在指定事件名下的全部注册。未注册时无操作。
+Requested radius in logical desktop units, 0..64. Zero clears custom clipping.	请求的半径为 0–64 个桌面逻辑单位。设为零可清除自定义裁剪。
+Requires nativePresentation.available. One native surface per window.	要求 nativePresentation.available 为真，每个窗口限一个原生表面。
+Requires the video worker protocol used by the bundled video preview.	需要随附视频预览所用的工作线程协议。
+Reserved Runtime namespace identifiers.	保留的运行时命名空间标识符。
+Reset a built-in meter opened by this window. Resolves when the worker reset is queued.	重置此窗口打开的内置电平表，工作线程的重置请求入队后完成。
+Resolves after the native baseline scan. Changes are coalesced at 250 ms.	原生基线扫描完成后就绪，变更按 250 毫秒合并。
+Resolves after the native protocol handshake. API calls wait for this automatically.	原生协议握手后就绪，API 调用会自动等待。
+Restore the native title bar on the same window.	在同一窗口恢复原生标题栏。
+Return worker-owned native memory before terminating or reusing the worker.	终止或复用工作线程前，应先归还其持有的原生内存。
+Returns the first selected track in the current project, or null for an empty selection.	返回当前工程第一条选中轨道，未选中时返回 null。
+Route unmodified Space outside editable fields to REAPER for this App or JSFX page. Overrides JSON until navigation/reload, without writing configuration or changing keyboard capture.	将 App 或 JSFX 页面非编辑区域中不带修饰键的空格键交给 REAPER。覆盖 JSON 初始值直到导航或重载，不写入配置，也不改变键盘捕获设置。
+Seconds from the beginning of the file.	从文件开头计算的秒数。
+Seconds to cover; defaults to the remainder of the file.	覆盖的时长，以秒计，默认为文件剩余时长。
+Selects an existing local path in the OS file manager. Linux may open its parent instead.	在系统文件管理器中定位已有本地路径。Linux 可能打开其父目录。
+Sequential writes only. Await each write before submitting another.	仅支持顺序写入。请等待每次写入完成后再提交下一次。
+Shared source counters, repeated for surfaces using the same video profile.	共享视频源的计数器。同一视频配置的各表面报告相同计数。
+Show after the App sends its own ui-ready message.	等待 App 发出自己的 ui-ready 消息后显示窗口。
+Shows/hides the title-bar icon and its space, retaining the icon. Defaults to true and survives reloads. Linux decorations depend on the window manager. Resolves to true on success.	显示或隐藏标题栏图标及其占位，保留图标资源。默认显示，重载后保留设置。Linux 外观取决于窗口管理器，成功时返回 true。
+Soft budget. A native call cannot be preempted.	软性时间预算。原生调用无法被抢占。
+Source/fit video can change dimensions within this connection. maxBytes is the frame capacity.	采用 source 或 fit 时，此连接中的视频尺寸可能变化。maxBytes 为帧容量。
+Still safe after off.	调用 off 后仍可安全执行。
+Tempo-map BPM at position, without the playback rate multiplier.	当前位置的速度图 BPM，不含播放速率倍率。
+The creation option is accepted. Check transparency.supported for desktop Alpha.	已接受创建选项。桌面透明支持情况见 transparency.supported。
+Visibility of the inspector managed by this backend.	当前后端管理的检查器是否可见。
+WebView2 video connection. Pixel ownership stays in the dedicated rendering worker.	WebView2 视频连接。像素由专用渲染工作线程持有。
+Whether this backend can open/hide the native inspector programmatically.	当前后端是否支持通过代码打开或隐藏原生检查器。
+Worker operation. Both paths are entry-relative or absolute filenames. Parent must exist. No overwrite by default. Regular files only, no final symlinks. Cross-volume moves copy then delete. FILE_MOVE_PARTIAL means the complete destination exists but removing the source failed.	在工作线程执行。两个文件名均可使用入口目录相对路径或绝对路径。父目录必须存在，默认禁止覆盖。仅支持普通文件，末级路径不能是符号链接。跨卷移动先复制再删除。FILE_MOVE_PARTIAL 表示目标已完整写入，但删除源文件失败。
+app.json name, otherwise the entry directory's name.	读取 app.json 的 name，缺省时使用入口目录名。
+app.json version, or null when absent.	读取 app.json 的 version，缺省时返回 null。
+dBFS; null represents silence. These are instantaneous host peak readings, not RMS/LUFS.	以 dBFS 计，null 表示静音。值为宿主瞬时峰值读数，不代表 RMS 或 LUFS。
+null means the backend has not been verified.	null 表示该后端尚未验证。
+null until the current document reports its state.	当前文档报告状态前为 null。
+safe to repeat	可重复调用
+updateRate follows the project by default, or accepts a fixed finite rate from 1 to 75 FPS.	updateRate 默认跟随工程，也可指定 1–75 FPS 范围内的有限固定值。

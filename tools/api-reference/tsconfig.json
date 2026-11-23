@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "target": "ES2022", "strict": true, "types": [], "noEmit": true },
+  "files": ["../../runtime/reaper.d.ts", "../../runtime/runtime-api.d.ts"]
+}

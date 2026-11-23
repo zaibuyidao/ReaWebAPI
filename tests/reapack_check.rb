@@ -6,13 +6,13 @@ abort 'Incorrect package description' unless header[:description] == 'ReaWebAPI:
 abort 'Incorrect project link' unless text.lines.grep(/^@link /).map(&:strip) == ['@link https://github.com/zaibuyidao/ReaWebAPI']
 items = ReaPack::Index::Provides.parse_each(header[:provides]).to_a
 native, scripts = items.partition { |item| item.type == :extension }
-abort 'Expected seven native files' unless native.size == 7 && native.all?(&:platform)
+abort 'Expected nine native files' unless native.size == 9 && native.all?(&:platform)
 demo_root = File.expand_path('../examples/main-demo', __dir__)
 demo_files = %w[ReaWebAPI_Demo.lua app.js app.json index.html logo.svg style.css]
+help_launcher = "web/api-reference/ReaWebAPI - API Reference.lua"
+demo_files += ["api-reference/reawebapihelp.html", help_launcher.delete_prefix("web/")]
 expected = demo_files.map { |name| "web/#{name}" }.sort
-launchers = %w[
-  web/ReaWebAPI_Demo.lua
-].sort
+launchers = ['web/ReaWebAPI_Demo.lua', help_launcher].sort
 abort 'Missing Demo files' unless scripts.map(&:file_pattern).sort == expected
 scripts.each do |item|
   abort 'Expected script type without platform restriction' unless item.type == :script && !item.platform
@@ -30,8 +30,9 @@ Dir.mktmpdir('reawebapi-index-') do |directory|
   index.commit = 'abc123'
   index.scan('ReaWebAPI/ReaWebAPI.ext', text)
   launchers.each do |launcher|
-    index.scan("ReaWebAPI/#{launcher}",
-               File.read(File.join(demo_root, launcher.delete_prefix('web/')), encoding: 'UTF-8'))
+    source = launcher == help_launcher ? File.join(__dir__, '../tools/api-reference', File.basename(launcher)) :
+                                       File.join(demo_root, launcher.delete_prefix('web/'))
+    index.scan("ReaWebAPI/#{launcher}", File.read(source, encoding: 'UTF-8'))
   end
   index.write!
   xml = Nokogiri::XML(File.read(path))

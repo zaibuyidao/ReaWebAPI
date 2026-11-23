@@ -2,7 +2,7 @@
 
 [English](eel-backend-compatibility.md) | **简体中文**
 
-ReaWebAPI 的 16 个脚本 Host API 可由 EEL2 和 Lua 调用。v0.3.9.14 修复了 `ReaWeb_Open` 可选第四参数的绑定，Lua 使用 `false/true`，EEL2 使用 `0/1`。省略参数仍表示 `false`。原生 C/C++ 调用保持 `const bool*` 签名，省略时传入 `nullptr`。
+ReaWebAPI 的 19 个脚本 Host API 可由 EEL2 和 Lua 调用。v0.3.9.14 修复了 `ReaWeb_Open` 可选第四参数的绑定，Lua 使用 `false/true`，EEL2 使用 `0/1`。省略参数仍表示 `false`。原生 C/C++ 调用保持 `const bool*` 签名，省略时传入 `nullptr`。
 
 ## 调用约定
 
@@ -30,6 +30,9 @@ ReaWeb_GetLastError(#error);
 | `ReaWeb_DevTools(id)` | 请求原生开发工具，受平台可用性限制 |
 | `ReaWeb_Send(id, #text)` | 就绪后将 UTF-8 文本加入队列 |
 | `ReaWeb_Receive(#text, id)` | 第一个输出字符串接收下一条消息或空文本 |
+| `ReaWeb_SetShortcutRouting(id, enabled)` | 传入 0 或 1。返回实际启用状态。 |
+| `ReaWeb_SetMouseMode(id, #mode)` | 鼠标模式为 normal、passthrough 或 regions。 |
+| `ReaWeb_SetMouseRegions(id, #regionsJson)` | 以 JSON 矩形数组替换交互区域，坐标使用视口 CSS 像素。 |
 | `ReaWeb_SetFrame(id, #text)` | 替换 `frame.lua` 文本，空文本清除内容 |
 | `ReaWeb_GetDiagnostics(#json, id)` | 第一个输出字符串接收诊断 JSON |
 | `ReaWeb_GetLastError(#error)` | 第一个输出字符串接收最近的原生错误 |
@@ -50,7 +53,7 @@ SDK 包含[最简请求响应示例](../examples/backends/eel-backend/README.zh-
 
 v0.3.9.14 已在 Windows x64 / REAPER 7.83、macOS ARM64 / REAPER 7.82、Linux x64 / REAPER 7.82 上验证。结果覆盖下列场景，不代表所有参数组合均已测试。
 
-隔离宿主测试覆盖直接调用、旧式调用、Lua 对照、可选参数、窗口复用、全部 16 个脚本接口、UTF-8 消息、帧内容，以及示例 UI 和生命周期。每次使用新的输出目录：
+隔离宿主测试覆盖直接调用、旧式调用、Lua 对照、可选参数、窗口复用、v0.3.9.14 的 16 个脚本接口、UTF-8 消息、帧内容，以及示例 UI 和生命周期。每次使用新的输出目录：
 
 ```text
 python tests/eel_api_compatibility.py --reaper <executable> --extension <native-library> --output <new-directory> --suite full --direct

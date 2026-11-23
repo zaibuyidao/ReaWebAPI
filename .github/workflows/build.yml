@@ -13,7 +13,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Generate and test the offline reference
+        run: |
+          npm ci --prefix examples/templates/modern
+          python tools/api_reference.py --output reference
+          python tools/api_reference.py --output reference --verify
+          node tests/api_reference_browser.cjs reference/reawebapihelp.html
+      - uses: actions/upload-artifact@v6
+        with:
+          name: api-reference
+          path: |
+            reference/reawebapihelp.html
+            reference/reference.json
+          if-no-files-found: error
   build:
+    needs: docs
     name: ${{ matrix.platform }}-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
@@ -36,6 +62,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
+      - uses: actions/download-artifact@v8
+        with:
+          name: api-reference
+          path: reference
       - name: Check SDK types and build modern example
         run: |
           npm ci --prefix examples/templates/modern
@@ -48,13 +78,13 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libx11-dev libxext-dev libxi-dev libxrandr-dev
       - name: Configure Windows
         if: matrix.platform == 'windows'
-        run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON
+        run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DREAWEB_REFERENCE_DIR:PATH=reference
       - name: Configure macOS
         if: matrix.platform == 'macos'
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DBUILD_TESTING=ON
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} -DBUILD_TESTING=ON -DREAWEB_REFERENCE_DIR:PATH=reference
       - name: Configure Linux
         if: matrix.platform == 'linux'
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DREAWEB_REFERENCE_DIR:PATH=reference
       - name: Build
         run: cmake --build build --config Release --parallel 3
       - name: Compile macOS DevTools integration test
@@ -73,7 +103,7 @@ jobs:
         if: matrix.platform == 'macos'
         run: codesign --force --sign - stage/UserPlugins/reaper_reawebapi-${{ matrix.arch }}.dylib
       - name: Package and checksums
-        run: python tools/package.py --stage stage --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --revision ${{ github.sha }} --release-dir release
+        run: python tools/package.py --stage stage --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --revision ${{ github.sha }} --release-dir release --reference reference
       - name: Upload installation bundle
         uses: actions/upload-artifact@v6
         with:
@@ -84,7 +114,10 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: build
+    needs: [docs, build]
+    outputs:
+      status: ${{ steps.publish.outputs.status }}
+      tag: ${{ steps.publish.outputs.tag }}
     if: >-
       github.event_name != 'pull_request' &&
       (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v'))
@@ -107,8 +140,67 @@ jobs:
           pattern: ReaWebAPI-*
           path: release
           merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: api-reference
+          path: reference
       - name: Assemble ReaPack and publish native files
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_REVISION: ${{ github.sha }}
-        run: python tools/release.py --assets release --revision "$BUILD_REVISION" --publish
+        run: python tools/release.py --assets release --revision "$BUILD_REVISION" --reference reference --publish
+
+  pages:
+    needs: release
+    if: >-
+      needs.release.outputs.status == 'published' ||
+      (needs.release.outputs.status == 'skipped' && (github.event_name == 'workflow_dispatch' || github.run_attempt > 1))
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: reawebapi-pages
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check published tag and latest version
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          repo="repos/$GITHUB_REPOSITORY"
+          sha=$(gh api "$repo/commits/$TAG" --jq .sha)
+          newest=$(gh api --paginate "$repo/releases?per_page=100" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | grep -Ex 'v[0-9]+(\.[0-9]+){0,3}' | sort -V | tail -1)
+          if [[ "$sha" == "$GITHUB_SHA" && "$newest" == "$TAG" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v8
+        if: steps.guard.outputs.deploy == 'true'
+        with:
+          name: api-reference
+          path: reference
+      - name: Verify Pages payload
+        if: steps.guard.outputs.deploy == 'true'
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd reference
+          jq -e --arg tag "$TAG" --arg sha "$GITHUB_SHA" '("v" + .version == $tag) and (.revision == $sha)' reference.json
+          echo "$(jq -r .sha256 reference.json)  reawebapihelp.html" | sha256sum --check
+          mkdir ../pages
+          cp reawebapihelp.html ../pages/
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.guard.outputs.deploy == 'true'
+        with:
+          path: pages
+      - uses: actions/deploy-pages@v4
+        if: steps.guard.outputs.deploy == 'true'
+        id: deployment
