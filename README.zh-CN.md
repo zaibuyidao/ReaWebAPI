@@ -49,11 +49,11 @@ ReaScript 启动脚本通过 `ReaWeb_Open` 打开本地 HTML 入口。扩展负�
 | 扩展集成 | [JSFX Web UI](docs/jsfx-webui.zh-CN.md) · [原生服务](docs/native-services.zh-CN.md) · [外部客户端](docs/external-clients.zh-CN.md) |
 | 调试 | [WebView 开发者工具](docs/devtools.zh-CN.md) · [运行时诊断](docs/diagnostics.zh-CN.md) |
 
-[完整文档](docs/README.zh-CN.md) · [示例目录](examples/) · [源码结构](docs/source-layout.md)
+[完整文档](docs/README.zh-CN.md) · [示例目录](https://github.com/zaibuyidao/ReaWebAPI/tree/main/examples) · [源码结构](docs/source-layout.md)
 
 ## 从源码构建
 
-需要 CMake 3.24+、C++17 工具链、Python 3.10+ 和 Node.js 22.12+。Windows 使用 MSVC x64。Linux 需安装[构建工作流](.github/workflows/build.yml)中列出的 WebKitGTK 4.1 和 X11 开发包。
+需要 CMake 3.24+、C++17 工具链、Python 3.10+ 和 Node.js 22.12+。Windows 使用 MSVC x64。Linux 需安装[构建工作流](https://github.com/zaibuyidao/ReaWebAPI/blob/main/.github/workflows/build.yml)中列出的 WebKitGTK 4.1 和 X11 开发包。
 
 ```sh
 npm ci --prefix examples/templates/modern

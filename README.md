@@ -49,11 +49,11 @@ For offline API lookup, open `ReaWebAPI/docs/reawebapihelp.html` from the platfo
 | Integration | [JSFX Web UI](docs/jsfx-webui.md) · [Native services](docs/native-services.md) · [External clients](docs/external-clients.md) |
 | Debugging | [WebView developer tools](docs/devtools.md) · [Runtime diagnostics](docs/diagnostics.md) |
 
-[All documentation](docs/README.md) · [Examples](examples/) · [Source layout](docs/source-layout.md)
+[All documentation](docs/README.md) · [Examples](https://github.com/zaibuyidao/ReaWebAPI/tree/main/examples) · [Source layout](docs/source-layout.md)
 
 ## Build from source
 
-Requires CMake 3.24+, a C++17 toolchain, Python 3.10+ and Node.js 22.12+. Use MSVC x64 on Windows. On Linux, install the WebKitGTK 4.1 and X11 development packages listed in the [build workflow](.github/workflows/build.yml).
+Requires CMake 3.24+, a C++17 toolchain, Python 3.10+ and Node.js 22.12+. Use MSVC x64 on Windows. On Linux, install the WebKitGTK 4.1 and X11 development packages listed in the [build workflow](https://github.com/zaibuyidao/ReaWebAPI/blob/main/.github/workflows/build.yml).
 
 ```sh
 npm ci --prefix examples/templates/modern
