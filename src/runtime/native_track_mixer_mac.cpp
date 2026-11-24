@@ -52,6 +52,27 @@ constexpr Instructions cache_windows[]{
   {0x98, 0x1c, 0xfc65cf1b56e90b0c}, // Indexed cache lists.
   {0x118, 0xa4, 0x308eb9705b950628}, // Match loop (+8), start (+0x18), frames (+0x14) and walk next.
 };
+constexpr Instructions uncached_windows[]{
+  {0x0ac, 76, 0x3b4f12c3f0c81c0c}, // Save the address of the render worker's busy flag.
+  {0x2f8, 12, 0x31c20734b3d5b24e}, // Render worker mutex.
+  {0x308, 16, 0xb8a7d183226d49ea}, // Read the busy flag.
+  {0x344, 12, 0xda9e0020c49910b9}, // Claim the render buffer before releasing the mutex.
+  {0x354, 28, 0xa994ed19bc501b5d}, // Resize the track's uncached PCM buffer.
+  {0x408, 64, 0x58f9184e78eead91}, // Record the render position and loop.
+  {0x44c, 20, 0x3056652149bb4754}, // Record the split-block frame count.
+  {0xbac, 24, 0x9cf8e1439f8118e4}, // Mix from the uncached buffer.
+};
+
+template<size_t N>
+bool matches_windows(uintptr_t entry, const Instructions (&windows)[N]) noexcept {
+  for (const auto& window : windows) {
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    const auto* bytes = reinterpret_cast<const uint8_t*>(entry + window.offset);
+    for (size_t j = 0; j < window.length; ++j) hash = (hash ^ bytes[j]) * 0x100000001b3ULL;
+    if (hash != window.hash) return false;
+  }
+  return true;
+}
 
 template<size_t N>
 uintptr_t unique_function(Region text, uint32_t first, const Instructions (&windows)[N]) noexcept {
@@ -59,15 +80,7 @@ uintptr_t unique_function(Region text, uint32_t first, const Instructions (&wind
   uintptr_t found = 0;
   for (size_t i = 0; i <= text.size && length <= text.size - i; i += sizeof(uint32_t)) {
     const auto entry = text.start + i;
-    if (load<uint32_t>(entry) != first) continue;
-    bool matches = true;
-    for (const auto& window : windows) {
-      uint64_t hash = 0xcbf29ce484222325ULL;
-      const auto* bytes = reinterpret_cast<const uint8_t*>(entry + window.offset);
-      for (size_t j = 0; j < window.length; ++j) hash = (hash ^ bytes[j]) * 0x100000001b3ULL;
-      if (hash != window.hash) { matches = false; break; }
-    }
-    if (matches) {
+    if (load<uint32_t>(entry) == first && matches_windows(entry, windows)) {
       if (found) return 0;
       found = entry;
     }
@@ -109,7 +122,12 @@ NativeTrackCacheLayout resolve_layout(Region text, Region stubs, Region imports)
       load<uint32_t>(render + 0x2f0) != 0xf94033e0 || // Reload the same lock from sp + 0x60.
       !calls_import(render + 0x2f4, stubs, imports, reinterpret_cast<uintptr_t>(&pthread_mutex_unlock)))
     return {};
-  return {reinterpret_cast<NativeTrackCacheLayout::Mix>(mix), 0x35a8, 0x2590, 0xe8};
+  NativeTrackCacheLayout layout{reinterpret_cast<NativeTrackCacheLayout::Mix>(mix), 0x35a8, 0x2590, 0xe8};
+  if (matches_windows(render, uncached_windows) && called_function(render + 0xbc4) == mix &&
+      calls_import(render + 0x304, stubs, imports, reinterpret_cast<uintptr_t>(&pthread_mutex_lock)) &&
+      calls_import(render + 0x350, stubs, imports, reinterpret_cast<uintptr_t>(&pthread_mutex_unlock)))
+    layout.uncached = {0x30a8, 0x3640, 0x3568, 0x320b};
+  return layout;
 }
 }
 

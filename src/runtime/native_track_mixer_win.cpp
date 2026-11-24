@@ -21,7 +21,7 @@ bool instructions(const unsigned char* p, size_t size, uint64_t expected) noexce
   for (size_t i = 0; i < size; ++i) hash = (hash ^ p[i]) * 0x100000001b3ULL;
   return hash == expected;
 }
-bool resolve_mixer(unsigned char* image, uint32_t& result) {
+bool resolve_mixer(unsigned char* image, uint32_t& result, bool& uncached) {
   const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
   if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
   const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(image + dos->e_lfanew);
@@ -81,6 +81,16 @@ bool resolve_mixer(unsigned char* image, uint32_t& result) {
         read<void*>(image + slot) != GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "EnterCriticalSection")) continue;
     if (result) return false;
     result = mix;
+    const auto* enter = image + render + 0x476;
+    uncached = instructions(image + render + 0x467, 15, 0x45eebbaf71a0eab4ULL) &&
+               enter[0] == 0xff && enter[1] == 0x15 &&
+               int64_t(render) + 0x47c + read<int32_t>(enter + 2) == slot &&
+               instructions(image + render + 0x47c, 23, 0x5ea724307ba823ccULL) &&
+               instructions(image + render + 0x4a2, 16, 0x4e940db03e681978ULL) &&
+               instructions(image + render + 0xca1, 41, 0xb5a0d67ff743a510ULL) &&
+               instructions(image + render + 0xdd4, 67, 0xc87c2a41fbcc4bd2ULL) &&
+               instructions(image + render + 0x115b, 36, 0x54d45f50ce517a90ULL) &&
+               callee(render + 0x117f, 1340) == mix;
   }
   return result != 0;
 }
@@ -89,8 +99,11 @@ bool resolve_mixer(unsigned char* image, uint32_t& result) {
 NativeTrackCacheLayout native_track_cache_layout() noexcept {
   auto* image = reinterpret_cast<unsigned char*>(GetModuleHandleW(nullptr));
   uint32_t mix = 0;
-  if (!image || !resolve_mixer(image, mix)) return {};
-  return {reinterpret_cast<NativeTrackCacheLayout::Mix>(image + mix), 0x33b0, 0x2410, 0xe8};
+  bool uncached = false;
+  if (!image || !resolve_mixer(image, mix, uncached)) return {};
+  NativeTrackCacheLayout layout{reinterpret_cast<NativeTrackCacheLayout::Mix>(image + mix), 0x33b0, 0x2410, 0xe8};
+  if (uncached) layout.uncached = {0x2f10, 0x3418, 0x3388, 0x3073};
+  return layout;
 }
 }
 #endif

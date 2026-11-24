@@ -50,10 +50,10 @@ def prepare(root, extension, check_continuity=False):
     for name, amplitude in [('target', 4096), ('other', 2048)]:
         with wave.open(str(root / (name + '.wav')), 'wb') as out:
             out.setparams((2, 2, 48000, 0, 'NONE', ''))
-            cycle = [int(amplitude * math.sin(2 * math.pi * i / 128)) for i in range(128)]
+            cycle = [int(amplitude * math.sin(2 * math.pi * i / 125)) for i in range(125)]
             for scale in (1, 2):
                 out.writeframes(b''.join(struct.pack('<hh', x // scale, -x // (2 * scale))
-                                        for x in cycle) * 3750)
+                                        for x in cycle) * 3840)
     (root / 'index.html').write_text('<!doctype html><meta charset="utf-8"><script src="app.js"></script>', encoding='utf-8')
     (root / 'launch.lua').write_text(LUA, encoding='utf-8')
     (root / 'app.js').write_text(f'const checkContinuity = {json.dumps(check_continuity)};\n' + JS, encoding='utf-8')
@@ -66,14 +66,17 @@ local ok,err=xpcall(function()
   reaper.InsertTrackAtIndex(1,false)
   local target,other=reaper.GetTrack(0,0),reaper.GetTrack(0,1)
   for index, track in ipairs({target,other}) do
-    local item=reaper.AddMediaItemToTrack(track)
-    local take=reaper.AddTakeToMediaItem(item)
-    reaper.SetMediaItemTake_Source(take,reaper.PCM_Source_CreateFromFile(root..(index==1 and 'target.wav' or 'other.wav')))
-    reaper.SetMediaItemInfo_Value(item,'D_LENGTH',20)
-    reaper.SetMediaItemInfo_Value(item,'D_FADEINLEN',0)
-    reaper.SetMediaItemInfo_Value(item,'D_FADEOUTLEN',0)
+    for _,span in ipairs({{0,10},{11,9}}) do
+      local item=reaper.AddMediaItemToTrack(track)
+      local take=reaper.AddTakeToMediaItem(item)
+      reaper.SetMediaItemTake_Source(take,reaper.PCM_Source_CreateFromFile(root..(index==1 and 'target.wav' or 'other.wav')))
+      reaper.SetMediaItemInfo_Value(item,'D_POSITION',span[1])
+      reaper.SetMediaItemInfo_Value(item,'D_LENGTH',span[2])
+      reaper.SetMediaItemTakeInfo_Value(take,'D_STARTOFFS',span[1])
+      reaper.SetMediaItemInfo_Value(item,'D_FADEINLEN',0)
+      reaper.SetMediaItemInfo_Value(item,'D_FADEOUTLEN',0)
+    end
   end
-  assert(reaper.TrackFX_AddByName(target,'JS: rwa_test_gain',false,-1)>=0)
   reaper.SetMediaTrackInfo_Value(target,'D_VOL',0.5)
   reaper.SetMediaTrackInfo_Value(target,'I_PANMODE',3)
   reaper.SetMediaTrackInfo_Value(target,'D_PANLAW',1)
@@ -84,6 +87,10 @@ local ok,err=xpcall(function()
   local id=reaper.ReaWeb_Open(root..'index.html')
   assert(id>0,reaper.ReaWeb_GetLastError())
   local commands={
+    addFX=function() return reaper.TrackFX_AddByName(target,'JS: rwa_test_gain',false,-1) end,
+    removeFX=function() return reaper.TrackFX_Delete(target,0) end,
+    addReceive=function() return reaper.CreateTrackSend(other,target) end,
+    removeReceive=function() return reaper.RemoveTrackSend(other,0,0) end,
     version=reaper.GetAppVersion,
     topology=function()
       local counts={reaper.CountTracks(0)}
@@ -97,6 +104,7 @@ local ok,err=xpcall(function()
     end,
     play=function() reaper.SetEditCurPos(0,false,false); reaper.OnPlayButton(); return true end,
     playing=reaper.GetPlayState,
+    trackPeak=function() return reaper.Track_GetPeakInfo(target,0) end,
     position=reaper.GetPlayPosition2,
     realtime=function() return reaper.SetMediaTrackInfo_Value(target,'I_PERFFLAGS',2) end,
     lower=function() return reaper.SetMediaTrackInfo_Value(target,'D_VOL',0.25) end,
@@ -104,6 +112,8 @@ local ok,err=xpcall(function()
     panCenter=function() return reaper.SetMediaTrackInfo_Value(target,'D_PAN',0) end,
     bypass=function() reaper.TrackFX_SetEnabled(target,0,false); return true end,
     seek=function() reaper.SetEditCurPos(12,false,true); return true end,
+    seekGap=function() reaper.SetEditCurPos(10.25,false,true); return true end,
+    rewind=function() reaper.SetEditCurPos(0,false,true); return true end,
     stop=function() reaper.OnStopButton(); return true end
   }
   local function poll()
@@ -150,7 +160,7 @@ JS = r"""
    const guid=(await reaper.fs.readText('track.txt')).trim();
    const caps=await call('version');
    const taps=['post-fx','post-fader'];
-   async function checkPlaybackWindow(phase) {
+   async function checkPlaybackWindow(phase, multiplier) {
      if (!checkContinuity) return;
      const rate=48000, count=65536;
      assert(Number(checks.audioDevice.SRATE)===rate,'continuity check requires 48 kHz');
@@ -158,7 +168,7 @@ JS = r"""
      assert(first+count<10*rate,'continuity window must precede source level change');
      const results=taps.map(()=>({frames:0,duplicates:0,wrong:0}));
      const detach=taps.map((tap,k)=>{
-       const seen=new Uint8Array(count), result=results[k], gain=k===0?2:1;
+       const seen=new Uint8Array(count), result=results[k], gain=k===0?multiplier:multiplier/2;
        return streams[k].on('data',packet=>{
          streams[k].read();
          const offset=Math.round(packet.timestamp*rate)-first;
@@ -166,7 +176,7 @@ JS = r"""
            const j=offset+i;
            if(seen[j]) result.duplicates++;
            else { seen[j]=1; result.frames++; }
-           const x=Math.trunc(4096*Math.sin(2*Math.PI*((first+j)%128)/128));
+           const x=Math.trunc(4096*Math.sin(2*Math.PI*((first+j)%125)/125));
            if(!(Math.abs(packet.data[2*i]-gain*x/32768)<=1e-6 &&
                 Math.abs(packet.data[2*i+1]-gain*Math.floor(-x/2)/32768)<=1e-6)) result.wrong++;
          }
@@ -200,6 +210,29 @@ JS = r"""
    assert(await call('topology')===topology,'opening track taps changed tracks, routing or FX');
    await call('play');
    await until(async()=>Number(await call('playing'))&1,'playback');
+   checks.emptyTrackPeak=await until(async()=>{
+     const peak=Number(await call('trackPeak'));
+     return peak>.01 && peak;
+   },'REAPER track peak with empty FX chain');
+   await until(()=>{
+     checks.empty=taps.map((_,i)=>peaks(streams[i]));
+     return matches(checks.empty[0],.125)&&matches(checks.empty[1],.0625);
+   },'empty FX chain PCM');
+   await checkPlaybackWindow('emptyContinuity',1);
+   await call('panRight');
+   await until(()=>{
+     checks.emptyPan=taps.map((_,i)=>peaks(streams[i]));
+     const [pre,post]=checks.emptyPan;
+     return pre[0]<.0001 && post[0]<.0001 && near(pre[1],.0625) && near(post[1],.03125);
+   },'empty FX chain balance');
+   await call('panCenter');
+   assert(await call('addReceive')==='0','add test receive');
+   await until(()=>{
+     checks.emptyReceive=taps.map((_,i)=>peaks(streams[i]));
+     return matches(checks.emptyReceive[0],.1875)&&matches(checks.emptyReceive[1],.09375);
+   },'empty FX chain includes its receive');
+   assert(await call('removeReceive')==='true','remove test receive');
+   assert(await call('addFX')==='0','insert test gain');
    const baseline={'post-fx':.25,'post-fader':.125};
    await until(()=>{
      checks.peaks=Object.fromEntries(taps.map((tap,i)=>[tap,peaks(streams[i])]));
@@ -207,10 +240,10 @@ JS = r"""
    },'post-FX and post-fader PCM');
    await until(()=>near(meter.latest()?.data[0],.125)&&spectrum.latest()&&waveform.latest(),'analysis after fader');
    const post=streams[taps.indexOf('post-fader')];
-   await checkPlaybackWindow('normalContinuity');
+   await checkPlaybackWindow('normalContinuity',2);
    peaks(post);
    await call('realtime');
-   await checkPlaybackWindow('realtimeContinuity');
+   await checkPlaybackWindow('realtimeContinuity',2);
    await call('lower');
    await until(()=>{
      checks.fader=peaks(post);
@@ -244,11 +277,27 @@ JS = r"""
      checks.afterSeek=taps.map((_,i)=>peaks(streams[i]));
      return matches(checks.afterSeek[0],.0625)&&matches(checks.afterSeek[1],.015625);
    },'new source PCM after seeking');
+   assert(await call('removeFX')==='true','remove last FX');
+   await call('rewind');
+   await until(()=>{
+     checks.afterRemoval=taps.map((_,i)=>peaks(streams[i]));
+     return matches(checks.afterRemoval[0],.125)&&matches(checks.afterRemoval[1],.03125);
+   },'new PCM after removing the last FX');
+   await call('seekGap');
+   await until(async()=>Number(await call('position'))>=10.5,'seek to silent gap');
+   for (const stream of streams.slice(0,2)) {
+     let packet;
+     while ((packet=stream.read())) {
+       if (packet.timestamp>=10.25 && packet.timestamp<11)
+         assert(packet.data.every(sample=>Math.abs(sample)<.0001),'stale PCM in silent gap');
+     }
+   }
+   await call('rewind');
    const beforeDetach=meter.latest().sequence;
    await post.close();
    await until(()=>{
      const packet=meter.latest();
-     return packet&&packet.sequence>beforeDetach&&near(packet.data[0],.015625);
+     return packet&&packet.sequence>beforeDetach&&near(packet.data[0],.03125);
    },'shared capture survives detach');
    await Promise.all(streams.map(stream=>stream.close()));
    assert(await call('topology')===topology,'closing track taps changed tracks, routing or FX');

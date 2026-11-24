@@ -107,6 +107,29 @@ bool emit_block(State& state, const void* track, const CacheBlock& block) noexce
   }
   return false;
 }
+bool emit_uncached(State& state, void* track, const CacheBlock& block, double end) noexcept {
+  const auto& layout = state.layout.uncached;
+  if (!layout.buffer) return false;
+  // The render worker claims this buffer under a separate mutex before writing it.
+  const TryLock lock(track, layout.mutex);
+  if (!lock || field<uint8_t>(track, layout.busy)) return false;
+  const double position = field<double>(track, layout.position);
+  if (!std::isfinite(position) || std::abs(position - end) > .5 / block.rate ||
+      field<int64_t>(track, layout.position + 8) != block.loop ||
+      field<int>(track, layout.position + 16) != 0 ||
+      std::abs(end - block.position - block.frames / block.rate) > .5 / block.rate) return false;
+  const auto channel_count = state.track_info(track, "I_NCHAN");
+  if (!(channel_count >= 1 && channel_count <= 128)) return false;
+  const auto channels = static_cast<unsigned>(channel_count);
+  const auto* pcm = field<const double*>(track, layout.buffer);
+  const int bytes = block.frames * channels * 2 * sizeof(double);
+  if (!pcm || field<int>(track, layout.buffer + 12) != bytes ||
+      field<int>(track, layout.buffer + 8) < bytes) return false;
+  const Gains gain{state.layout.mix, block.gains.data()};
+  state.observer(state.context, {track, pcm, channels, unsigned(block.frames), block.rate, block.position,
+                                 &gain, false, render_output});
+  return true;
+}
 void retry_before_render(State& state, Pending& pending) noexcept {
   size_t emitted = 0;
   while (emitted < pending.count && emit_block(state, pending.track, pending.deferred[emitted]))
@@ -188,15 +211,20 @@ void NativeTrackMixer::hardware(bool post, void* project, void* track, int frame
       pending->next_position <= block.position) return;
   block.gains[0] = field<double>(track, state->layout.previous_gains);
   block.gains[1] = field<double>(track, state->layout.previous_gains + sizeof(double));
-  TryLock lock(track, state->layout.cache_mutex);
-  if (lock) {
-    // Publish retained older blocks first. Nodes already recycled by the host
-    // cannot be reconstructed from a later block.
-    for (size_t i = 0; i < pending->count; ++i)
-      emit_block(*state, track, pending->deferred[i]);
-    pending->count = 0;
-    if (emit_block(*state, track, block)) return;
+  bool checked_cache = false;
+  {
+    TryLock lock(track, state->layout.cache_mutex);
+    if (lock) {
+      // Publish retained older blocks first. Nodes already recycled by the host
+      // cannot be reconstructed from a later block.
+      for (size_t i = 0; i < pending->count; ++i)
+        emit_block(*state, track, pending->deferred[i]);
+      pending->count = 0;
+      if (emit_block(*state, track, block)) return;
+      checked_cache = true;
+    }
   }
+  if (checked_cache && emit_uncached(*state, track, block, pending->next_position)) return;
   // Keep the completed block's identity and gains if the render worker owns
   // the lock or the PCM is not visible yet. Never retain host PCM pointers.
   if (pending->count == pending->deferred.size()) {

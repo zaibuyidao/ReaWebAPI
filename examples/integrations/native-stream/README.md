@@ -8,4 +8,6 @@ Meter displays Sample/True Peak, Channel RMS, separate sample/True Peak clip cou
 
 The page receives binary packets over the native transport and renders cached data through `requestAnimationFrame`. Detach affects only this page. Device/display queries and native folder watch are low-frequency controls. See [Native Streams](../../../docs/native-streams.md).
 
+ReaWebAPI v0.3.9.60 supports post-FX and post-fader playback analysis of tracks with an empty FX chain on compatible hosts.
+
 ReaWebAPI v0.3.8.2+ skips isolated invalid track PCM blocks and resets analysis after recovery. Persistent invalid PCM closes the source with `NATIVE_ERROR`. For connection failures, inspect `(await reaper.stream.getDiagnostics()).transport` for handshake rejection and expired-ticket counters.

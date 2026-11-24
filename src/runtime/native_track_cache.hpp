@@ -14,6 +14,9 @@ struct NativeTrackCacheLayout {
   using Mix = void (*)(const double*, const NativeTrackMixOutput*, int, int, int, const double*, bool);
   Mix mix = nullptr;
   std::size_t cache_mutex = 0, cache_head = 0, previous_gains = 0;
+  struct {
+    std::size_t buffer = 0, position = 0, mutex = 0, busy = 0;
+  } uncached;
 };
 NativeTrackCacheLayout native_track_cache_layout() noexcept;
 }

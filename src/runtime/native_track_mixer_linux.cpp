@@ -35,6 +35,15 @@ constexpr InstructionBlock cache_blocks[]{
   {0x8d3, 7,  0xdebf3d0f6a344403}, // Store the head of the previously empty list.
   {0x9d4, 69, 0x99d811cb3eb39682}, // Read and advance both previous gains (+0xe8/+0xf0).
 };
+constexpr InstructionBlock uncached_blocks[]{
+  {0x0b0, 17, 0x613bd781ffe177c7}, // Render worker mutex.
+  {0x0c6, 7,  0xeaa5d9662ace0aed}, // Read render worker's busy flag.
+  {0x119, 7,  0xfc50d36058dfe914}, // Claim the render buffer before releasing the mutex.
+  {0x125, 26, 0x1509c88c33c6a3b2}, // Resize the track's uncached PCM buffer.
+  {0x212, 70, 0x1cae48d0a701a7ec}, // Record the render position and loop.
+  {0x25d, 26, 0x02ac738cfaa94527}, // Record the split-block frame count.
+  {0xa2b, 22, 0xf27745b5eaf7ea64}, // Mix from the uncached buffer.
+};
 
 template<size_t N>
 size_t unique_offset(Bytes code, const char (&signature)[N]) noexcept {
@@ -66,6 +75,7 @@ struct Resolved {
   const char* mixer = nullptr;
   const char* lock_plt = nullptr;
   const char* unlock_plt = nullptr;
+  bool uncached = false;
 };
 
 Resolved resolve(Bytes code) noexcept {
@@ -93,7 +103,17 @@ Resolved resolve(Bytes code) noexcept {
            !std::memcmp(code.data() + at, "\xff\x25", 2);
   };
   if (!valid_stub(lock_stub) || !valid_stub(unlock_stub)) return {};
-  return {code.data() + mix, code.data() + lock_stub, code.data() + unlock_stub};
+  bool uncached = false;
+  if (lock >= 0x295 && code.size() - (lock - 0x295) >= 0xa46) {
+    const auto start = lock - 0x295;
+    const auto full_render = code.substr(start);
+    uncached = relative_target(code, start + 0xc2) == lock_stub &&
+               relative_target(code, start + 0x121) == unlock_stub &&
+               relative_target(code, start + 0xa42) == static_cast<int64_t>(mix);
+    for (const auto& block : uncached_blocks)
+      uncached = uncached && instruction_hash(full_render.substr(block.offset, block.length)) == block.hash;
+  }
+  return {code.data() + mix, code.data() + lock_stub, code.data() + unlock_stub, uncached};
 }
 
 bool calls_mutex(const dl_phdr_info& image, const char* plt, int (*function)(pthread_mutex_t*)) noexcept {
@@ -122,9 +142,11 @@ int inspect_host(dl_phdr_info* image, size_t, void* output) {
   const auto found = resolve(text);
   if (found.mixer && calls_mutex(*image, found.lock_plt, pthread_mutex_lock) &&
       calls_mutex(*image, found.unlock_plt, pthread_mutex_unlock)) {
-    *static_cast<NativeTrackCacheLayout*>(output) = {
+    auto& layout = *static_cast<NativeTrackCacheLayout*>(output);
+    layout = {
       reinterpret_cast<NativeTrackCacheLayout::Mix>(found.mixer), 0x33b0, 0x2410, 0xe8,
     };
+    if (found.uncached) layout.uncached = {0x2f10, 0x3418, 0x3388, 0x3073};
   }
   return 1;
 }
