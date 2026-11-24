@@ -627,8 +627,7 @@ public:
       docked_ = request.value("docked", false);
       if (dock_menu_) {
         dock_menu_->set_docked(request.value("docked", false));
-        dock_menu_->folder_enabled = !resource_root.empty() || uri_.rfind("file:", 0) == 0;
-    dock_menu_->set_app_name(request.value("appName", std::string()));
+        dock_menu_->set_app_name(request.value("appName", std::string()));
       }
       const auto parent = request.at("parent").get<unsigned long>();
       const int x = request.at("x"), y = request.at("y");
