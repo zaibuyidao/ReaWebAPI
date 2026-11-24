@@ -45,7 +45,9 @@ await reaper.window.hide();
 
 返回的 `mode` 区分 `floating` 与 `docked`。Docker 布局由 REAPER 控制，停靠时 `setSize/setPosition` 报 `WINDOW_DOCKED`，不会修改 REAPER 主窗口。隐藏只作用于本页容器，显示时激活对应 Docker 标签。窗口支持标题、聚焦、停靠和位置保存。
 
-Windows、macOS、Linux 的 WebView 右键菜单包含 **Dock <App> in Docker**（停靠时勾选）、**Reload**、**Open DevTools** / **Hide DevTools**、**Float DevTools** / **Embed DevTools**、**Open <App> Folder** 和 **Close <App>**。DevTools 隐藏时禁用模式切换。包括 Inspect 在内的浏览器默认菜单项被隐藏，底层能力保持启用。页面的 `contextmenu` 处理和 `preventDefault()` 仍然有效。标题栏与 Docker 页签菜单使用相同操作和停靠状态。应用名称跟随当前窗口标题（`setTitle()` 或 HTML 标题），未设置标题时回退到 `app.json` 名称，再回退到 App 目录名。刷新和关闭沿用现有生命周期。Windows 标题栏系统菜单使用相同的应用名称和停靠状态。所有停靠入口与 `setDocked()` 共用逻辑，切换时保留当前文档。
+Windows、macOS、Linux 的 WebView 右键菜单包含 **Dock <App> in Docker**（停靠时勾选）、**Reload**、**Find**、**Open DevTools** / **Hide DevTools**、**Float DevTools** / **Embed DevTools**、**Open HTML Folder** 和 **Close <App>**。DevTools 隐藏时禁用模式切换。包括 Inspect 在内的浏览器默认菜单项被隐藏，底层能力保持启用。页面的 `contextmenu` 处理和 `preventDefault()` 仍然有效。标题栏与 Docker 页签菜单使用相同操作和停靠状态。应用名称跟随当前窗口标题（`setTitle()` 或 HTML 标题），未设置标题时回退到 `app.json` 名称，再回退到 App 目录名。刷新和关闭沿用现有生命周期。Windows 标题栏系统菜单使用相同的应用名称和停靠状态。所有停靠入口与 `setDocked()` 共用逻辑，切换时保留当前文档。
+
+**Open HTML Folder** 打开当前窗口所显示的本地 HTML 所在目录，包括通过 `reaper.window.open(path)` 打开的子页面。开发服务器 URL 没有本地目录映射。Windows/Linux 使用 Ctrl+R 刷新、Ctrl+F 查找，macOS 使用 Command+R、Command+F。DevTools 显示和隐藏菜单项标注 Ctrl+Shift+I，macOS 标注 Option+Command+I。macOS 也支持上述 Ctrl 组合键。Windows 的 Find 菜单项需要支持 Find API 的 WebView2 运行时。
 
 ### 窗口标题
 

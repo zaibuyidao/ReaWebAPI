@@ -180,8 +180,10 @@ public:
           const int command = message.at("command");
           if (command == 2) {
             if (!it->second.on_reload || !it->second.on_reload()) send({{"id", message.at("id")}, {"op", "reload"}});
-          } else if (command == 5) ShellExecute(nullptr, "open", "explorer.exe", it->second.entry.parent_path().c_str(), nullptr, SW_SHOWNORMAL);
-          else if (command == 6 && it->second.on_close) it->second.on_close();
+          } else if (command == 5) {
+            const auto folder = html_folder(message.value("uri", std::string()), it->second.entry, it->second.resources.get());
+            if (!folder.empty()) ShellExecute(nullptr, "open", "explorer.exe", folder.c_str(), nullptr, SW_SHOWNORMAL);
+          } else if (command == 6 && it->second.on_close) it->second.on_close();
         }
       });
       for (auto it = desktop_.begin(); it != desktop_.end();) {
@@ -379,7 +381,9 @@ public:
         }
         show_window_menu(static_cast<HWND>(window_->handle()), position, options, state, [this](DevToolsAction action) {
           process_->send({{"id", id_}, {"op", "devtools-action"}, {"action", static_cast<int>(action)}});
-        }, [this] { reload(); });
+        }, [this] { reload(); }, [this] { process_->send({{"id", id_}, {"op", "find"}}); },
+          options.resources || options.url.empty() || options.url.rfind("file:", 0) == 0
+            ? std::function<void()>([this] { process_->send({{"id", id_}, {"op", "html-folder"}}); }) : std::function<void()>{});
       } catch (const std::exception& error) { process_->listeners.at(id_).on_error(error.what()); }
     };
   }

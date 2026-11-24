@@ -37,13 +37,13 @@ void check_menus(HWND child, bool docked, NSString* name) {
   inspect_popup = [&](NSMenu* menu) {
     received = true;
     try {
-      require(menu.numberOfItems == 6, "Docker menu item count");
-      NSArray<NSString*>* labels = @[[NSString stringWithFormat:@"Dock %@ in Docker", name], @"Reload", @"Open DevTools",
-        @"Float DevTools", [NSString stringWithFormat:@"Open %@ Folder", name], [NSString stringWithFormat:@"Close %@", name]];
+      require(menu.numberOfItems == 7, "Docker menu item count");
+      NSArray<NSString*>* labels = @[[NSString stringWithFormat:@"Dock %@ in Docker", name], @"Reload", @"Find", @"Open DevTools",
+        @"Float DevTools", @"Open HTML Folder", [NSString stringWithFormat:@"Close %@", name]];
       for (NSInteger i = 0; i < menu.numberOfItems; ++i)
         require([[menu itemAtIndex:i].title isEqual:labels[i]], "Docker menu label");
       require(([menu itemAtIndex:0].state == NSControlStateValueOn) == docked, "Docker menu checked state");
-      require(![menu itemAtIndex:3].enabled, "Hidden DevTools mode must be disabled");
+      require(![menu itemAtIndex:4].enabled, "Hidden DevTools mode must be disabled");
     } catch (const std::exception& failure) { error = failure.what(); }
   };
   const auto method = class_getClassMethod(NSMenu.class, @selector(popUpContextMenu:withEvent:forView:));
@@ -66,10 +66,10 @@ void check_menus(HWND child, bool docked, NSString* name) {
     timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:page_view.window.windowNumber
     context:nil eventNumber:0 clickCount:1 pressure:1];
   [page_view willOpenMenu:menu withEvent:event];
-  require(menu.numberOfItems == 3, "Page menu must contain only host controls");
+  require(menu.numberOfItems == 7, "Page menu must contain only host controls");
   require([[menu itemAtIndex:0].title isEqual:[NSString stringWithFormat:@"Dock %@ in Docker", name]], "Page docking menu label");
   require(([menu itemAtIndex:0].state == NSControlStateValueOn) == docked, "Page docking menu checked state");
-  require([[menu itemAtIndex:1].title isEqual:@"Open DevTools"] && ![menu itemAtIndex:2].enabled, "Page DevTools menu state");
+  require([[menu itemAtIndex:3].title isEqual:@"Open DevTools"] && ![menu itemAtIndex:4].enabled, "Page DevTools menu state");
 }
 #endif
 std::string caption(HWND hwnd) { char text[1024]{}; GetWindowText(hwnd, text, sizeof(text)); return text; }

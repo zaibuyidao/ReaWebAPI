@@ -155,7 +155,7 @@ class MacDevTools {
     catch (const std::exception& error) { error_ = error.what(); }
   }
 public:
-  MacDevTools(WKWebView* view, std::function<void()> focus_page)
+  MacDevTools(WKWebView* view, std::function<void()> focus_page, std::function<void(int)> page_command = {})
     : view_(view), focus_page_(std::move(focus_page)) {
     if (@available(macOS 13.3, *)) view_.inspectable = YES;
     auto preferences = (id<ReaWebDeveloperPreferencesSPI>)view_.configuration.preferences;
@@ -194,9 +194,17 @@ public:
         [responder isKindOfClass:[NSView class]] && [(NSView*)responder isDescendantOf:front];
       const auto modifiers = event.modifierFlags &
         (NSEventModifierFlagControl | NSEventModifierFlagShift | NSEventModifierFlagCommand | NSEventModifierFlagOption);
+      if (page_focused && page_command && (modifiers == NSEventModifierFlagCommand || modifiers == NSEventModifierFlagControl)) {
+        auto key = event.charactersIgnoringModifiers.lowercaseString;
+        if ([key isEqualToString:@"r"] || [key isEqualToString:@"f"]) {
+          if (!event.isARepeat) page_command([key isEqualToString:@"r"] ? 2 : 7);
+          return nil;
+        }
+      }
       if ((page_focused || inspector_focused) &&
           [event.charactersIgnoringModifiers.lowercaseString isEqualToString:@"i"] &&
-          modifiers == (NSEventModifierFlagOption | NSEventModifierFlagCommand)) {
+          (modifiers == (NSEventModifierFlagOption | NSEventModifierFlagCommand) ||
+           modifiers == (NSEventModifierFlagControl | NSEventModifierFlagShift))) {
         if (!event.isARepeat) safely_perform(menu_state().shown ? DevToolsAction::Hide : DevToolsAction::Open);
         return nil;
       }

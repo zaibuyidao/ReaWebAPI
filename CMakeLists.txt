@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.9.58 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.9.59 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -197,8 +197,8 @@ if(REAWEB_BUILD_EXTENSION)
       message(FATAL_ERROR "Windows builds require the MSVC x64 toolchain")
     endif()
     FetchContent_Declare(webview2
-      URL https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40
-      URL_HASH SHA256=ef128016dd1e51c59178c827ed5b8aa3322c57afa8675d930f8109505542ad74
+      URL https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.3405.78
+      URL_HASH SHA256=d035807b2aaba871e8c014759626f566e96934e6ce6f0587056ee81d5228c373
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     FetchContent_MakeAvailable(webview2)
     target_sources(reawebapi PRIVATE src/platform/windows/platform_win.cpp src/platform/windows/win_video_presenter.cpp src/plugin/preferences.rc)

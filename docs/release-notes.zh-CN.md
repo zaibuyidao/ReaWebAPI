@@ -2,4 +2,5 @@
 
 ## 更新内容
 
-- 新增单页离线 API 手册，支持搜索 Runtime 签名和说明，列出宿主接口的 C、EEL2、Lua 和 Python 写法，并提供 ReaPack Action 入口。
+- 新增页内查找，支持快捷键刷新和查找。右键菜单标注刷新、查找及显示或隐藏 DevTools 的快捷键。
+- 文件夹菜单项更名为 Open HTML Folder，按当前窗口显示的本地 HTML 定位目录。

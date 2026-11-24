@@ -59,6 +59,8 @@ private:
   bool isolation_required_ = false;
   std::string authorization_;
 };
+// Resolve a displayed local HTML URL to its directory. Development servers have no disk mapping.
+fs::path html_folder(const std::string& uri, const fs::path& entry, const WebResources* resources);
 // Empty when the manifest does not specify an ID.
 std::string app_identity(const fs::path& root);
 struct AppBinding {

@@ -483,9 +483,11 @@ public:
       catch (const std::exception& error) { fail(error.what()); }
     }) : std::function<void()>{}, [this](DevToolsAction action) { devtools_->perform(action); },
       [this] { return devtools_->menu_state(); }, [this](int command) {
-        try { channel_.send({{"id", id_}, {"op", "window-menu"}, {"command", command}}); }
+        try { channel_.send({{"id", id_}, {"op", "window-menu"}, {"command", command},
+          {"uri", webkit_web_view_get_uri(view_) ? webkit_web_view_get_uri(view_) : ""}}); }
         catch (const std::exception& error) { fail(error.what()); }
       });
+    dock_menu_->folder_enabled = !resource_root.empty() || uri_.rfind("file:", 0) == 0;
     dock_menu_->set_app_name(request.value("appName", std::string()));
     const auto mouse_scale = +[](GObject*, GParamSpec*, gpointer data) {
       auto self = static_cast<Page*>(data);
@@ -586,6 +588,11 @@ public:
       if (resources_) resources_->clear_media();
     } else if (op == "drop-enabled") {
       drag_->enabled(request.at("enabled").get<bool>());
+    } else if (op == "find") {
+      dock_menu_->show_find();
+    } else if (op == "html-folder") {
+      const auto uri = webkit_web_view_get_uri(view_);
+      if (uri) channel_.send({{"id", id_}, {"op", "window-menu"}, {"command", 5}, {"uri", uri}});
     } else if (op == "reload") {
       allow_reload_ = true; webkit_web_view_reload(view_);
     } else if (op == "devtools") {
@@ -620,7 +627,8 @@ public:
       docked_ = request.value("docked", false);
       if (dock_menu_) {
         dock_menu_->set_docked(request.value("docked", false));
-        dock_menu_->set_app_name(request.value("appName", std::string()));
+        dock_menu_->folder_enabled = !resource_root.empty() || uri_.rfind("file:", 0) == 0;
+    dock_menu_->set_app_name(request.value("appName", std::string()));
       }
       const auto parent = request.at("parent").get<unsigned long>();
       const int x = request.at("x"), y = request.at("y");

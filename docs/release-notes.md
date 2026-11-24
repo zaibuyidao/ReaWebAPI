@@ -2,4 +2,5 @@
 
 ## Release Notes
 
-- Added a searchable, single-page offline reference with Runtime signatures, descriptions, and C, EEL2, Lua and Python host bindings, with a ReaPack action to open it.
+- Added page Find and keyboard shortcuts for Reload and Find. Context menus show shortcuts for both commands and the DevTools toggle.
+- Renamed the folder command to Open HTML Folder and made it resolve the displayed local HTML file’s directory.

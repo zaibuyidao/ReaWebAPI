@@ -18,15 +18,15 @@ void native_menu() {
   for (bool docked : {false, true}) for (bool shown : {false, true}) {
     options.is_docked = [docked] { return docked; };
     auto menu = reaweb::create_window_menu(options, {shown, true, true});
-    CHECK(menu && GetMenuItemCount(menu) == 6);
-    const wchar_t* expected[] = {L"Dock Rea&&GBA 音 in Docker", L"Reload",
-      shown ? L"Hide DevTools" : L"Open DevTools", L"Embed DevTools", L"Open Rea&&GBA 音 Folder", L"Close Rea&&GBA 音"};
-    for (int i = 0; i < 6; ++i) {
+    CHECK(menu && GetMenuItemCount(menu) == 7);
+    const wchar_t* expected[] = {L"Dock Rea&&GBA 音 in Docker", L"Reload\tCtrl+R", L"Find\tCtrl+F",
+      shown ? L"Hide DevTools\tCtrl+Shift+I" : L"Open DevTools\tCtrl+Shift+I", L"Embed DevTools", L"Open HTML Folder", L"Close Rea&&GBA 音"};
+    for (int i = 0; i < 7; ++i) {
       wchar_t label[256]{}; GetMenuStringW(menu, i, label, 256, MF_BYPOSITION);
       CHECK(!wcscmp(label, expected[i]));
     }
     CHECK(!!(GetMenuState(menu, 0, MF_BYPOSITION) & MF_CHECKED) == docked);
-    CHECK(!!(GetMenuState(menu, 3, MF_BYPOSITION) & MF_GRAYED) == !shown);
+    CHECK(!!(GetMenuState(menu, 4, MF_BYPOSITION) & MF_GRAYED) == !shown);
     DestroyMenu(menu);
   }
 }
@@ -113,41 +113,32 @@ int main() {
         return S_OK;
       }).Get(), &token);
     bool docked = false;
-    std::wstring app_name = L"ReaGBA";
+    reaweb::WindowOptions options;
+    options.title = "ReaGBA";
     int select = 0;
-    int toggles = 0, requested = 0, page_events = 0, developer_requests = 0, reloads = 0, folders = 0, closes = 0;
+    int toggles = 0, requested = 0, page_events = 0, developer_requests = 0, reloads = 0, finds = 0, folders = 0, closes = 0;
     std::unique_ptr<reaweb::WinDevTools> tools;
     tools = std::make_unique<reaweb::WinDevTools>(host, [&] {
       RECT rect{}; GetClientRect(host, &rect); controller->put_Bounds(tools->layout(rect));
     }, [&] { controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC); });
-    CHECK(SUCCEEDED(reaweb::install_window_menu(view.Get(), [&] { docked = !docked; ++toggles; }, [&] { return docked; },
-      [&](reaweb::DevToolsAction action) { tools->perform(action); ++developer_requests; },
-      [&] { return tools->menu_state(); }, [&] { return L"Dock " + app_name + L" in Docker"; }, [&] { ++reloads; }, [&] { ++folders; }, [&] { ++closes; }, [&] { return app_name; })));
+    options.on_dock_toggle = [&] { docked = !docked; ++toggles; };
+    options.is_docked = [&] { return docked; };
+    options.on_close = [&] { ++closes; };
     std::string error;
-    menus->add_ContextMenuRequested(Callback<ICoreWebView2ContextMenuRequestedEventHandler>(
-      [&](ICoreWebView2*, ICoreWebView2ContextMenuRequestedEventArgs* args) -> HRESULT {
-        args->put_Handled(TRUE);
-        try {
-          ComPtr<ICoreWebView2ContextMenuItemCollection> items; CHECK(SUCCEEDED(args->get_MenuItems(&items)));
-          const auto current = labels(items.Get());
-          CHECK(!defaults.empty() && current.size() == 6);
-          CHECK(current.front() == L"Dock " + app_name + L" in Docker");
-          ComPtr<ICoreWebView2ContextMenuItem> docking; items->GetValueAtIndex(0, &docking);
-          BOOL checked = FALSE; docking->get_IsChecked(&checked); CHECK(!!checked == docked);
-          const auto state = tools->menu_state();
-          CHECK(current[1] == L"Reload" && current[4] == L"Open " + app_name + L" Folder" && current[5] == L"Close " + app_name);
-          CHECK(current[2] == (state.shown ? L"Hide DevTools" : L"Open DevTools"));
-          CHECK(current[3] == (state.floating ? L"Embed DevTools" : L"Float DevTools"));
-          ComPtr<ICoreWebView2ContextMenuItem> mode; items->GetValueAtIndex(3, &mode);
-          BOOL enabled = FALSE; mode->get_IsEnabled(&enabled);
-          CHECK(!!enabled == state.mode_enabled());
-          if (select >= 0) {
-            ComPtr<ICoreWebView2ContextMenuItem> item; items->GetValueAtIndex(select, &item);
-            INT32 command = 0; item->get_CommandId(&command); args->put_SelectedCommandId(command);
-          }
-        } catch (const std::exception& failure) { error = failure.what(); }
-        ++requested; return S_OK;
-      }).Get(), &token);
+    CHECK(SUCCEEDED(reaweb::install_window_menu(view.Get(), [&](POINT point) {
+      try {
+        CHECK(!defaults.empty() && point.x >= 0 && point.y >= 0);
+        const auto state = tools->menu_state();
+        HMENU menu = reaweb::create_window_menu(options, state);
+        CHECK(menu && GetMenuItemCount(menu) == 7);
+        const int command = select < 0 ? 0 : GetMenuItemID(menu, select);
+        DestroyMenu(menu);
+        reaweb::dispatch_window_menu(command, options, state, [&](reaweb::DevToolsAction action) {
+          tools->perform(action); ++developer_requests;
+        }, [&] { ++reloads; }, [&] { ++finds; }, [&] { ++folders; });
+      } catch (const std::exception& failure) { error = failure.what(); }
+      ++requested;
+    })));
     view->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>(
       [&](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs*) -> HRESULT { ++page_events; return S_OK; }).Get(), &token);
     int navigations = 0;
@@ -158,7 +149,7 @@ int main() {
       <script>window.retained=42;addEventListener('contextmenu',e=>{if(window.suppress)e.preventDefault();chrome.webview.postMessage('context');});</script>)HTML");
     pump([&] { return navigations == 1; });
     for (int i = 0; i < 2; ++i) {
-      if (i) app_name = L"Rea&&GBA 音";
+      if (i) options.title = "Rea&GBA 音";
       right_click(view.Get(), 300, 250); pump([&] { return requested == i + 1 && (!error.empty() || toggles == i + 1); });
       CHECK(error.empty());
     }
@@ -178,9 +169,9 @@ int main() {
     auto visible = [&] { return tools->diagnostics()["visible"].get<bool>(); };
     tools->perform(reaweb::DevToolsAction::Float);
     CHECK(tools->state()["mode"] == "embedded" && !tools->menu_state().mode_enabled());
-    choose(2); CHECK(!tools->menu_state().shown && !visible());
+    choose(3); CHECK(!tools->menu_state().shown && !visible());
     tools->toggle(); CHECK(!tools->menu_state().shown && !visible());
-    choose(2);
+    choose(3);
     pump([&] { tools->tick(view.Get()); return visible(); });
     const auto inspector = inspector_for(tools.get());
     if (!inspector || !IsChild(host, inspector)) {
@@ -194,22 +185,22 @@ int main() {
     }
     CHECK(inspector && IsChild(host, inspector));
     for (int i = 0; i < 3; ++i) {
-      choose(3); CHECK(tools->menu_state().floating && visible() && !IsChild(host, inspector));
-      choose(3); CHECK(!tools->menu_state().floating && visible() && IsChild(host, inspector));
-      choose(2); CHECK(!visible());
-      choose(2); CHECK(visible() && inspector_for(tools.get()) == inspector);
+      choose(4); CHECK(tools->menu_state().floating && visible() && !IsChild(host, inspector));
+      choose(4); CHECK(!tools->menu_state().floating && visible() && IsChild(host, inspector));
+      choose(3); CHECK(!visible());
+      choose(3); CHECK(visible() && inspector_for(tools.get()) == inspector);
     }
-    choose(2);
+    choose(3);
     tools->perform(reaweb::DevToolsAction::Float);
     CHECK(!tools->menu_state().floating && !visible() && !tools->menu_state().mode_enabled());
-    choose(2); CHECK(visible() && inspector_for(tools.get()) == inspector);
+    choose(3); CHECK(visible() && inspector_for(tools.get()) == inspector);
     CHECK(IsChild(host, inspector));
     CHECK(toggles == 2 && navigations == 1 && script(view.Get(), L"window.retained") == L"42");
-    for (auto command : {1, 4, 5}) {
+    for (auto command : {1, 2, 5, 6}) {
       select = command; const auto count = requested;
       right_click(view.Get(), 300, 250); pump([&] { return requested > count; }); CHECK(error.empty());
     }
-    pump([&] { return reloads == 1 && folders == 1 && closes == 1; });
+    pump([&] { return reloads == 1 && finds == 1 && folders == 1 && closes == 1; });
     script(view.Get(), L"window.suppress=true");
     const auto before = requested, events = page_events;
     right_click(view.Get(), 300, 250); pump([&] { return page_events > events; });
@@ -230,12 +221,12 @@ int main() {
     {
       tools = std::make_unique<reaweb::WinDevTools>(mixed_host, [] {}, [] {});
       const auto saved = tools->state();
-      choose(2);
+      choose(3);
       pump([&] { tools->tick(view.Get()); return visible(); });
       CHECK(tools->diagnostics()["mode"] == "floating" && tools->diagnostics()["embeddedSupported"] == false);
       CHECK(!tools->diagnostics()["fallbackReason"].get<std::string>().empty() && tools->state() == saved);
-      choose(2); CHECK(!visible());
-      choose(2); CHECK(visible());
+      choose(3); CHECK(!visible());
+      choose(3); CHECK(visible());
       tools->perform(reaweb::DevToolsAction::Embed); CHECK(tools->state() == saved);
       CHECK(script(view.Get(), L"window.retained") == L"42");
       tools.reset();

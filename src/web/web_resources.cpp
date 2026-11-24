@@ -508,6 +508,23 @@ std::string WebResources::entry_url(const fs::path& entry) const {
   if (!contained(root_, resolved)) throw Error("INVALID_PATH", "The entry must be inside the App directory");
   return origin_ + "/" + encode_path(resolved.lexically_relative(root_).generic_u8string());
 }
+fs::path html_folder(const std::string& uri, const fs::path& entry, const WebResources* resources) {
+  if (uri.empty() || entry.empty()) return {};
+  const auto root = resources ? resources->root() : entry.parent_path();
+  if (root.empty()) return {};
+  auto prefix = resources ? resources->origin() : file_uri(root);
+  if (prefix.back() != '/') prefix += '/';
+  if (uri.compare(0, prefix.size(), prefix) != 0) return {};
+  try {
+    const auto end = uri.find_first_of("?#", prefix.size());
+    const auto relative = fs::u8path(decode_path(uri.substr(prefix.size(), end - prefix.size())));
+    if (relative.empty() || relative.has_root_path()) return {};
+    const auto path = resolve_html(root, relative.u8string());
+    if (contained(root, path)) return path.parent_path();
+  } catch (const std::exception&) {}
+  return {};
+}
+
 void WebResources::configure_loopback(const std::string& origin, const std::string& authorization) {
   if (!isolation_required_ || origin.rfind("http://127.0.0.1:", 0) != 0 || authorization.empty())
     throw Error("APP_ORIGIN_INVALID", "Invalid isolated App origin");

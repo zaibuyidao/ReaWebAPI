@@ -160,6 +160,9 @@ void open_external(const std::string& url) {
   std::function<std::string()> appName;
   std::function<NSInteger(NSMenu*, NSInteger)> devtoolsMenu;
   std::function<void(int)> windowMenuAction;
+  std::function<bool()> hasHTMLFolder;
+  NSPopover* findPopover;
+  NSSearchField* findField;
   std::function<void()> videoLayoutChanged;
 }
 @end
@@ -178,6 +181,33 @@ void open_external(const std::string& url) {
   // Keep newly exposed pixels consistent while WebKit's resized tiles arrive.
   if (resizeBackground) self.layer.backgroundColor = resizeBackground.CGColor;
 }
+- (void)showPageFind {
+  if (!findPopover) {
+    findPopover = [NSPopover new];
+    findPopover.behavior = NSPopoverBehaviorTransient;
+    auto controller = [NSViewController new];
+    controller.view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 250, 42)];
+    findField = [[NSSearchField alloc] initWithFrame:NSMakeRect(8, 8, 234, 26)];
+    findField.placeholderString = @"Find in page";
+    findField.target = self;
+    findField.action = @selector(findPageText:);
+    findField.sendsWholeSearchString = YES;
+    [controller.view addSubview:findField];
+    findPopover.contentViewController = controller;
+  }
+  if (!findPopover.shown)
+    [findPopover showRelativeToRect:NSMakeRect(NSMaxX(self.bounds) - 24, self.isFlipped ? 0 : NSMaxY(self.bounds), 1, 1)
+        ofView:self preferredEdge:NSMinYEdge];
+  [findField.window makeFirstResponder:findField];
+  [findField selectText:nil];
+}
+- (void)findPageText:(NSSearchField*)sender {
+  auto config = [WKFindConfiguration new];
+  config.backwards = (NSApp.currentEvent.modifierFlags & NSEventModifierFlagShift) != 0;
+  [self findString:sender.stringValue withConfiguration:config completionHandler:^(WKFindResult* result) {
+    (void)result;
+  }];
+}
 - (void)willOpenMenu:(NSMenu*)menu withEvent:(NSEvent*)event {
   [super willOpenMenu:menu withEvent:event];
   if (sourceClosed || !menu.numberOfItems) return;
@@ -193,11 +223,13 @@ void open_external(const std::string& url) {
   }
   const auto append = [&](const std::string& label, int command) {
     auto item = [[NSMenuItem alloc] initWithTitle:[NSString stringWithUTF8String:label.c_str()] action:@selector(windowActionFromMenu:) keyEquivalent:@""];
+    if (command == 2 || command == 7) item.keyEquivalent = command == 2 ? @"r" : @"f";
+    if (command == 5 && hasHTMLFolder) item.action = hasHTMLFolder() ? @selector(windowActionFromMenu:) : NULL;
     item.tag = command; item.target = self; [menu insertItem:item atIndex:index++];
   };
-  if (windowMenuAction) append("Reload", 2);
+  if (windowMenuAction) { append("Reload", 2); append("Find", 7); }
   if (devtoolsMenu) index = devtoolsMenu(menu, index);
-  if (windowMenuAction) { append("Open " + appName() + " Folder", 5); append("Close " + appName(), 6); }
+  if (windowMenuAction) { append("Open HTML Folder", 5); append("Close " + appName(), 6); }
 }
 - (void)windowActionFromMenu:(NSMenuItem*)sender { if (!sourceClosed && windowMenuAction) windowMenuAction(int(sender.tag)); }
 - (void)toggleDockFromMenu:(id)sender {
@@ -600,12 +632,23 @@ public:
         if (!responder || responder == view.superview || responder == view.window)
           [view.window makeFirstResponder:view];
       }];
-    devtools_ = std::make_unique<MacDevTools>(webview_, [this] { if (!closed()) focus(); });
+    devtools_ = std::make_unique<MacDevTools>(webview_, [this] { if (!closed()) focus(); }, [this](int command) {
+      if (!closed() && webview_->windowMenuAction) webview_->windowMenuAction(command);
+    });
     webview_->devtoolsMenu = [this](NSMenu* menu, NSInteger index) { return devtools_->insert_menu(menu, index); };
-    webview_->windowMenuAction = [this](int command) {
+    const auto current_folder = [this] {
+      const auto& options = delegate_->options;
+      return html_folder(webview_.URL.absoluteString.UTF8String ?: "", options.entry, options.resources.get());
+    };
+    webview_->hasHTMLFolder = [current_folder] { return !current_folder().empty(); };
+    webview_->windowMenuAction = [this, current_folder](int command) {
       const auto& options = delegate_->options;
       if (command == 2) { if (!options.on_reload || !options.on_reload()) reload(); }
-      else if (command == 5) [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:ns(options.entry.parent_path().u8string())]];
+      else if (command == 7) [webview_ showPageFind];
+      else if (command == 5) {
+        const auto folder = current_folder();
+        if (!folder.empty()) [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:ns(folder.u8string())]];
+      }
       else if (command == 6 && options.on_close) options.on_close();
     };
     window_->context_menu = [this](LPARAM position) {
@@ -613,7 +656,8 @@ public:
       try {
         devtools_->tick();
         show_window_menu(static_cast<HWND>(window_->handle()), position, delegate_->options, devtools_->menu_state(),
-          [this](DevToolsAction action) { devtools_->perform(action); }, [this] { reload(); });
+          [this](DevToolsAction action) { devtools_->perform(action); }, [this] { reload(); }, [this] { [webview_ showPageFind]; },
+          webview_->hasHTMLFolder() ? std::function<void()>([this] { webview_->windowMenuAction(5); }) : std::function<void()>{});
       } catch (const std::exception& error) { delegate_->options.on_error(error.what()); }
     };
     if (delegate_->options.url.empty()) {
@@ -634,6 +678,8 @@ public:
     release_dock_icon();
     if (mouse_monitor_) [NSEvent removeMonitor:mouse_monitor_];
     webview_->devtoolsMenu = {};
+    [webview_->findPopover close];
+    webview_->hasHTMLFolder = {};
     webview_->windowMenuAction = {};
     devtools_.reset();
     webview_->sourceClosed = true; webview_->dropEnabled = false; webview_->receiveDrop = {};

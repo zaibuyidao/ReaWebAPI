@@ -154,12 +154,15 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
   WindowOptions options_;
   std::unique_ptr<WinOverlay> overlay_;
   std::string uri_;
+  ComPtr<ICoreWebView2Find> page_find_;
+  ComPtr<ICoreWebView2FindOptions> find_options_;
   HWND hwnd_ = nullptr;
   ComPtr<ICoreWebView2Controller> controller_;
   ComPtr<ICoreWebView2> webview_;
   bool closed_ = false;
   std::unique_ptr<WinDevTools> devtools_;
   static constexpr UINT toggle_devtools_message = DevToolsKeys::toggle_message;
+  static constexpr UINT page_menu_message = WM_APP + 75;
   static constexpr UINT focus_page_message = WM_APP + 74;
   HWND fullscreen_host_ = nullptr, fullscreen_parent_ = nullptr;
   RECT fullscreen_restore_{};
@@ -368,6 +371,15 @@ class WinWindow final : public Window, public std::enable_shared_from_this<WinWi
     if (saved) RestoreDC(dc, saved);
   }
   static constexpr UINT dock_command = 0x1800;
+  std::function<void()> folder_action() const {
+    LPWSTR source = nullptr;
+    if (!webview_ || FAILED(webview_->get_Source(&source))) return {};
+    const auto uri = utf8(source);
+    CoTaskMemFree(source);
+    const auto folder = html_folder(uri, options_.entry, options_.resources.get());
+    if (folder.empty()) return {};
+    return [owner = hwnd_, folder] { ShellExecuteW(owner, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL); };
+  }
   std::wstring dock_label() const {
     const auto name = options_.app_name ? options_.app_name() : options_.title;
     std::string escaped;
@@ -448,11 +460,16 @@ public:
         self->paint_background(dc);
         EndPaint(hwnd, &paint); return 0;
       }
-      if (msg == WM_CONTEXTMENU && self->devtools_) {
+      if ((msg == WM_CONTEXTMENU || msg == page_menu_message) && self->devtools_) {
         auto keep_alive = self->shared_from_this();
         try {
           show_window_menu(hwnd, lp, self->options_, self->devtools_->menu_state(),
-            [self](DevToolsAction action) { self->devtools_->perform(action); }, [self] { self->reload(); });
+            [self](DevToolsAction action) { self->devtools_->perform(action); }, [self] { self->reload(); },
+            self->page_find_ ? std::function<void()>([self] {
+              self->controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+              check(self->page_find_->Start(self->find_options_.Get(), Callback<ICoreWebView2FindStartCompletedHandler>(
+                [](HRESULT) -> HRESULT { return S_OK; }).Get()), "Show Find");
+            }) : std::function<void()>{}, self->folder_action(), msg == page_menu_message);
         } catch (const std::exception& error) { self->options_.on_error(error.what()); }
         return 0;
       }
@@ -685,35 +702,30 @@ public:
         }
         return S_OK;
       }).Get(), &fullscreen_token), "WebView2 fullscreen");
-    check(install_window_menu(webview_.Get(), options_.on_dock_toggle ? std::function<void()>([weak] {
-      if (auto self = weak.lock(); self && !self->closed_) self->options_.on_dock_toggle();
-    }) : std::function<void()>(), [weak] {
-      auto self = weak.lock();
-      return self && !self->closed_ && self->options_.is_docked && self->options_.is_docked();
-    }, [weak](DevToolsAction action) {
-      if (auto self = weak.lock(); self && !self->closed_) self->devtools_->perform(action);
-    }, [weak] {
-      auto self = weak.lock();
-      return self && !self->closed_ ? self->devtools_->menu_state() : DevToolsMenuState{};
-    }, [weak] {
-      auto self = weak.lock();
-      return self ? self->dock_label() : std::wstring();
-    }, [weak] {
-      if (auto self = weak.lock(); self && !self->closed_)
-        if (!self->options_.on_reload || !self->options_.on_reload()) self->reload();
-    }, [weak] {
-      if (auto self = weak.lock(); self && !self->closed_)
-        ShellExecuteW(self->hwnd_, L"open", self->options_.entry.parent_path().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    }, [weak] {
-      if (auto self = weak.lock(); self && !self->closed_ && self->options_.on_close) self->options_.on_close();
-    }, [weak] {
-      auto self = weak.lock();
-      return self ? wide(self->options_.app_name ? self->options_.app_name() : self->options_.title) : std::wstring();
+    ComPtr<ICoreWebView2_28> find_view;
+    ComPtr<ICoreWebView2Environment15> find_environment;
+    ComPtr<ICoreWebView2Environment> environment_find;
+    if (SUCCEEDED(webview_.As(&find_view)) && SUCCEEDED(find_view->get_Environment(&environment_find)) && SUCCEEDED(environment_find.As(&find_environment)) &&
+        SUCCEEDED(find_environment->CreateFindOptions(&find_options_))) find_view->get_Find(&page_find_);
+    check(install_window_menu(webview_.Get(), [weak](POINT point) {
+      if (auto self = weak.lock(); self && !self->closed_) {
+        RECT bounds{};
+        HWND parent = nullptr;
+        if (FAILED(self->controller_->get_Bounds(&bounds)) || FAILED(self->controller_->get_ParentWindow(&parent))) return;
+        point.x += bounds.left; point.y += bounds.top;
+        ClientToScreen(parent, &point);
+        PostMessageW(self->hwnd_, page_menu_message, reinterpret_cast<WPARAM>(self->hwnd_), MAKELPARAM(point.x, point.y));
+      }
     }), "Install window context menu");
     check(controller_->add_AcceleratorKeyPressed(Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
       [weak](ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
         UINT key = 0; COREWEBVIEW2_KEY_EVENT_KIND kind{}; COREWEBVIEW2_PHYSICAL_KEY_STATUS status{};
         args->get_VirtualKey(&key); args->get_KeyEventKind(&kind); args->get_PhysicalKeyStatus(&status);
+        if ((key == 'F' || key == 'R') && (GetKeyState(VK_CONTROL) & 0x8000) &&
+            !(GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000)) {
+          ComPtr<ICoreWebView2AcceleratorKeyPressedEventArgs2> browser_key;
+          if (SUCCEEDED(args->QueryInterface(IID_PPV_ARGS(&browser_key)))) browser_key->put_IsBrowserAcceleratorKeyEnabled(TRUE);
+        }
         if (key == 'I' && (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000)) {
           args->put_Handled(TRUE);
           if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN && !status.WasKeyDown)
