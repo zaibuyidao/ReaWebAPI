@@ -101,6 +101,7 @@ process = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subproces
 jitter = sys.argv[-1] == 'jitter'
 burst = sys.argv[-1] == 'burst'
 video = len(sys.argv) > 2 and sys.argv[2].startswith('video')
+audio_burst = len(sys.argv) > 2 and sys.argv[2] == 'audio-burst'
 shared_slots = [0]
 try:
     first, second = json.loads(process.stdout.readline())
@@ -110,12 +111,19 @@ try:
     a, b = connect(first), connect(second)
     assert a is not None and b is not None
     assert connect(first) is None, 'tickets must be single use'
-    if len(sys.argv) > 2 and sys.argv[2] in ('frame-max', 'video-4k'):
-        # Finish the ticket checks before queuing large frames on sockets that are not yet being read.
+    if len(sys.argv) > 2 and sys.argv[2] in ('frame-max', 'video-4k', 'audio-burst'):
+        # Finish the ticket checks before starting publication.
         process.stdin.write('start\n')
         process.stdin.flush()
     seq_a, seq_b = receive(a), receive(b)
-    if burst:
+    if audio_burst:
+        assert seq_a == seq_b == 1
+        for expected in range(2, first['capacity'] + 1):
+            ack(b)
+            seq_b = receive(b)
+            assert seq_b == expected, (seq_b, expected)
+        process.stdin.write('close\n'); process.stdin.flush()
+    elif burst:
         ack(a); ack(b)
         for first_sequence in range(2, 98, 3):
             process.stdin.write(str(first_sequence)+'\n'); process.stdin.flush()
@@ -190,7 +198,8 @@ try:
     assert process.wait(timeout=5) == 0
     diagnostics = json.loads(process.stdout.readline())
     assert diagnostics['streams'] == []
-    assert 0 < diagnostics['frameLatencyMs'] < 30000
+    if not audio_burst:
+        assert 0 < diagnostics['frameLatencyMs'] < 30000
     assert diagnostics['transport'] == {'connections': 2, 'handshakeFailures': 2,
                                         'expiredTickets': 0, 'lastHandshakeError': 'TICKET_USED'}
     print('Binary transport, authentication, independent consumers and producer close passed')

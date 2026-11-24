@@ -193,7 +193,9 @@ int main(int argc, char** argv) {
         shortcut(window, keys); pump([&] { return tools.visible(); });
         tools.perform(DevToolsAction::Embed); pump(embedded); settle(); check_session();
         tools.open(); settle(); check_session();
-        shortcut(window, NSEventModifierFlagControl | NSEventModifierFlagShift); CHECK(tools.visible());
+        const auto alternate_keys = NSEventModifierFlagControl | NSEventModifierFlagShift;
+        shortcut(window, alternate_keys); pump([&] { return !tools.visible(); });
+        shortcut(window, alternate_keys); pump(embedded); check_session();
         [window setContentSize:NSMakeSize(1400, 800)]; settle();
         pump([&] { return std::abs(front.frame.size.width - 700) < 1; }); check_session();
         evaluate(front, @"InspectorFrontendHost.setAttachedWindowWidth(650)"); settle();

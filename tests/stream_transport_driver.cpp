@@ -4,6 +4,8 @@
 using namespace reaweb;
 int main(int argc,char** argv) {
   const bool timing_packets=argc>1 && std::string(argv[1])=="timing";
+  const bool audio_burst = argc > 1 && std::string(argv[1]) == "audio-burst";
+  const auto kind = audio_burst ? REAWEB_AUDIO : REAWEB_FRAME;
   const bool video=argc>1 && std::string(argv[1]).rfind("video",0)==0;
   const bool dynamic_video=argc>1 && std::string(argv[1]).rfind("video-dynamic",0)==0;
   const bool shared_video=argc>1 && (std::string(argv[1])=="video-shared" || std::string(argv[1])=="video-dynamic-shared");
@@ -12,7 +14,7 @@ int main(int argc,char** argv) {
   const bool video_4k = argc > 1 && std::string(argv[1]) == "video-4k";
   const bool jitter=argc>2 && std::string(argv[2])=="jitter";
   const bool burst=argc>2 && std::string(argv[2])=="burst";
-  const char* name = video ? "reaweb.video.project.test" : "test.frame";
+  const char* name = audio_burst ? "test.audio" : video ? "reaweb.video.project.test" : "test.frame";
   StreamHub hub; ReaWeb_StreamDesc desc{}; desc.size = sizeof(desc); desc.abi_version = 1;
   desc.format = REAWEB_PIXEL_RGBA8; desc.width = 240; desc.height = 160; desc.stride = 960;
   if(video) { desc.width=1280;desc.height=720;desc.stride=5120; }
@@ -23,8 +25,14 @@ int main(int argc,char** argv) {
   if(dynamic_video) { desc.width=4;desc.height=4;desc.stride=16; }
   desc.max_bytes = desc.stride * desc.height; desc.capacity = 3; desc.update_rate = 60;
   if(pressure) { desc.width=3840;desc.height=2160;desc.stride=15360;desc.max_bytes=desc.stride*desc.height; }
+  if (audio_burst) {
+    desc = {};
+    desc.size = sizeof(desc); desc.abi_version = 1; desc.format = REAWEB_FLOAT32;
+    desc.channels = 2; desc.sample_rate = 48000; desc.block_frames = 256;
+    desc.max_bytes = desc.channels * desc.block_frames * sizeof(float); desc.capacity = 16;
+  }
   uint64_t handle = 0;
-  const auto created=timing_packets?hub.create_jsfx(REAWEB_FRAME,name,&desc,&handle,1,0,{{"sessionId","test"}}):hub.create(REAWEB_FRAME,name,&desc,&handle,video,{{"dynamicResolution",dynamic_video}});
+  const auto created=timing_packets?hub.create_jsfx(REAWEB_FRAME,name,&desc,&handle,1,0,{{"sessionId","test"}}):hub.create(kind,name,&desc,&handle,video,{{"dynamicResolution",dynamic_video}});
   if(created)return 1;
   struct Memory : VideoMemory {
     std::vector<unsigned char> storage;
@@ -34,7 +42,7 @@ int main(int argc,char** argv) {
   auto tickets = Json::array({hub.attach(name, 1, 0, "http://127.0.0.1:9000", memory), hub.attach(name, timing_packets?1:2, 0, "http://127.0.0.1:9000")});
   if(pressure) for(int window=3;window<=8;++window) tickets.push_back(hub.attach(name,window,0,"http://127.0.0.1:9000"));
   std::cout << tickets.dump() << std::endl;
-  if (max_frame || video_4k) {
+  if (max_frame || video_4k || audio_burst) {
     std::string command;
     if (!std::getline(std::cin, command) || command != "start") return 3;
   }
@@ -54,7 +62,14 @@ int main(int argc,char** argv) {
     }
     return true;
   };
-  if (jitter || burst || pressure) {
+  if (audio_burst) {
+    for (unsigned sequence = 1; sequence <= desc.capacity; ++sequence) {
+      std::fill(pixels.begin(), pixels.end(), static_cast<unsigned char>(sequence));
+      if (hub.publish(kind, handle, pixels.data(), desc.max_bytes, sequence, (sequence - 1) * 256. / 48000) != REAWEB_OK) return 2;
+    }
+    std::string command;
+    if (!std::getline(std::cin, command) || command != "close") return 3;
+  } else if (jitter || burst || pressure) {
     if (!publish(1)) return 2;
     std::string command;
     while (std::getline(std::cin, command) && command != "close") {

@@ -372,6 +372,8 @@ int main(int argc, char** argv) {
     CHECK(!visible(first) && GetAncestor(inspector, GA_ROOT) == inspector);
     first->devtools(); pump(windows, [&] { return visible(first); });
     pump(windows, [&] { return IsZoomed(inspector); }, "Restored maximized inspector");
+    first->devtools();
+    CHECK(IsZoomed(inspector));
     ShowWindow(inspector, SW_RESTORE);
     first->restore_devtools({{"mode", "embedded"}});
     pump(windows, [&] { return fills_panel(panel, inspector); });

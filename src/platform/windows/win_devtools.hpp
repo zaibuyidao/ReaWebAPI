@@ -140,7 +140,7 @@ class WinDevTools {
     } else {
       ShowWindow(panel_, SW_HIDE); changed_();
       ShowWindow(window_, IsIconic(window_) ? SW_RESTORE :
-        (maximize_on_show_ ? SW_SHOWMAXIMIZED : SW_SHOWNOACTIVATE));
+        (maximize_on_show_ ? SW_SHOWMAXIMIZED : SW_SHOWNA));
       maximize_on_show_ = false;
     }
     if (activate) focus_inspector();

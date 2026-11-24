@@ -121,6 +121,7 @@ struct StreamTransport::Impl {
     std::deque<Time::time_point> frame_started;
   };
   StreamHub& hub;
+  static constexpr size_t max_waiting_packets = 8;
   Socket listener = invalid_socket;
   uint16_t port = 0;
   std::atomic<bool> stopping{false};
@@ -435,7 +436,20 @@ struct StreamTransport::Impl {
           }
           StreamBuffer::Packet ordinary_packet;
           auto& packet = buffer->project_video ? video_packet : ordinary_packet;
-          for (int i = 0; i < 64 && buffer->consume(packet); ++i) {
+          size_t batch = 64;
+          if (buffer->kind == REAWEB_AUDIO) {
+            // Leave a capture burst in the producer FIFO until at least one reader
+            // can accept it. A slower reader must not hold up a faster one.
+            size_t free_slots = 0;
+            bool subscribed = false;
+            for (const auto& client : clients) {
+              if (client.stream != buffer || !client.upgraded || client.failed) continue;
+              subscribed = true;
+              free_slots = std::max<size_t>(free_slots, max_waiting_packets - client.waiting.size());
+            }
+            if (subscribed) batch = free_slots;
+          }
+          for (size_t i = 0; i < batch && buffer->consume(packet); ++i) {
             const size_t packet_bytes = packet.data.size();
             if (!buffer->closed && native != native_groups.end()) for (auto& entry : native->second)
               present(entry.second, {packet.data.data(), packet_bytes, packet.sequence, packet.timestamp, packet.discontinuity, packet.layout.width, packet.layout.height, packet.layout.stride});
@@ -468,7 +482,7 @@ struct StreamTransport::Impl {
                 }
               } else if (buffer->kind != REAWEB_AUDIO && buffer->kind != REAWEB_MIDI) { client.waiting.clear(); client.queued_bytes = 0; }
               const auto queued_cost = packet_bytes + (buffer->project_video ? 66 : 0);
-              if (client.waiting.size() >= 8 || client.queued_bytes + queued_cost > (buffer->project_video ? 2ull * (buffer->max_bytes() + 66) : 16ull * 1024 * 1024)) continue;
+              if (client.waiting.size() >= max_waiting_packets || client.queued_bytes + queued_cost > (buffer->project_video ? 2ull * (buffer->max_bytes() + 66) : 16ull * 1024 * 1024)) continue;
               if (!message) message = packet_frame(packet, buffer->kind);
               client.waiting.push_back(message); client.queued_bytes += message->size();
             }
