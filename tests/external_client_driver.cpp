@@ -61,7 +61,8 @@ int main(int argc, char** argv) {
     host.project_name = [](void*) { return std::string("Test project"); };
     host.play_state = [] { return 0; };
     host.get_track = [&](void*, int index) -> void* { return index == 0 ? &track : nullptr; };
-    host.count_selected_tracks = [](void*) { return 1; };
+    int selected_count = 1;
+    host.count_selected_tracks = [&](void*) { return selected_count; };
     host.get_selected_track = host.get_track;
     host.valid_track = [&](void*, void* value) { return value == &track; };
     host.track_guid = [](void*) { return Guid{}; };
@@ -134,6 +135,7 @@ int main(int argc, char** argv) {
           else if (cmd == "enabled") { settings.enabled = command.at("value"); runtime.configure_external(settings); result = true; }
           else if (cmd == "port") { auto candidate = settings; candidate.port = command.at("value"); runtime.configure_external(candidate); settings = candidate; result = true; }
           else if (cmd == "generation") { ++generation; result = true; }
+          else if (cmd == "selection") { selected_count = command.at("count").get<int>(); result = true; }
           else if (cmd == "publish") { unsigned char bytes[] = {0, 255, 128, 1}; result = runtime.streams().publish(REAWEB_BINARY, stream, bytes, sizeof(bytes), 1, 1.25); }
           else if (cmd == "emit") { result = runtime.services().emit(service, command.value("target", false) ? window_id : 0, "update", "{\"value\":1}"); }
           else if (cmd == "complete") result = runtime.services().complete(service, pending, "42", REAWEB_OK, nullptr);

@@ -281,9 +281,8 @@ interface ReaWebEvents {
   devicesChanged: ReaWebEvents['devices-changed'];
   'file-change': ReaWebFileChange;
   'native-timer': { id: number };
-  'track-selection-invalidated': ReaWebNativeInvalidation;
-  /** @deprecated Use `track-selection-invalidated`. */
-  trackSelectionChanged: ReaWebEvents['track-selection-invalidated'];
+  /** @deprecated Use `track-selection-changed` for new subscriptions. This name retains the Native Monitor payload in WebUI. */
+  trackSelectionChanged: ReaWebNativeInvalidation;
   'track-state-changed': ReaWebNativeInvalidation;
   /** @deprecated Use `track-state-changed`. */
   trackStateChanged: ReaWebEvents['track-state-changed'];

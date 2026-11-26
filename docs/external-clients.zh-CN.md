@@ -54,13 +54,13 @@ Service 复用现有 Registry、ABI、1 MiB payload/result 限制、30 秒 invok
 
 Native Event 共用现有 Monitor source，保留 snapshot、`projectEpoch`、`revision`、`available`、合并和失效通知规则：
 
-`track-selection-invalidated`、`track-state-changed`、`transport-state-changed`、`open-projects-state-changed`、`marker-list-changed`、`region-list-changed`、`current-region-changed`、`loop-points-changed`、`time-selection-changed`。
+`track-selection-changed`、`track-state-changed`、`transport-state-changed`、`open-projects-state-changed`、`marker-list-changed`、`region-list-changed`、`current-region-changed`、`loop-points-changed`、`time-selection-changed`。
 
 ```json
 {"type":"event","subscriptionId":"<opaque>","event":"transport-state-changed","data":{"available":true,"projectEpoch":1,"revision":2}}
 ```
 
-新订阅推荐使用上述 9 个名称，旧名称仍可兼容使用。每项订阅有独立 ID，通知使用订阅时请求的名称。
+新订阅推荐使用上述 9 个名称，旧名称仍可兼容使用。每项订阅有独立 ID，通知使用订阅时请求的名称。`track-selection-changed` 和 `trackSelectionChanged` 返回相同的 Native Monitor 数据，包括 `invalidated` 和 `available`。
 
 Service Event 额外包含 `service`。Service 卸载时拒绝待完成 invoke，发送 `unloaded` 并移除相关订阅。收到 `open-projects-state-changed` 时，若有活动工程，`activeProject` 对应 `projects[]` 中的一项 ID。ID 仅在当前连接内可比对，重新加载工程或重连后须使用新快照中的 ID。每个 Session 最多 256 项订阅。
 

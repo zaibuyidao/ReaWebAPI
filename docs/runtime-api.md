@@ -102,14 +102,14 @@ On Windows, macOS and Linux, a floating Docker title bar follows the active WebV
 
 Event names are validated against the handshake `capabilities.events`. An unadvertised name rejects with `UNKNOWN_EVENT`, and a missing event list rejects with `SCHEMA_MISMATCH`. The `frame` event has no initial snapshot or replay. See the [frame channel contract](host-api.md).
 
-`await reaper.events.on(name, callback)` returns an async disposer. Use the recommended kebab-case names from v0.3.9.63 onward. Compatibility names remain available and use the same event source as their recommended names. Each subscribed name receives its own callback and can be unsubscribed independently.
+`await reaper.events.on(name, callback)` returns an async disposer. Use the recommended kebab-case names from v0.3.9.63 onward. Compatibility names remain available with their existing payloads and behavior. Each subscribed name receives its own callback and can be unsubscribed independently.
 
 The event catalogue includes:
 
 | Name | Meaning |
 | --- | --- |
 | `track-added`, `track-deleted` | Changes to current-project track GUID sets, after establishing a baseline |
-| `track-selection-changed` | Selected-track count and revision. `selectionchange` and `track-selected` remain available as compatibility names. For the distinct invalidation payload, see `track-selection-invalidated` in [Native state events](native-services.md#native-state-events). |
+| `track-selection-changed` | WebUI receives the project epoch, selected-track count and revision. `selectionchange` and `track-selected` remain available. External Clients can subscribe under the same name and receive the Native Monitor payload. The WebUI compatibility name `trackSelectionChanged` still returns that payload. |
 | `item-changed`, `take-changed` | Project-wide cache invalidation, not a per-object edit journal; may include unrelated edits |
 | `playback-state-changed` | Play-state changes separate from continuously moving position |
 | `tempo-changed` | Current master tempo, not individual tempo-map edits |

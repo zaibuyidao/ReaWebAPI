@@ -42,7 +42,7 @@ callback 应及时返回。不依赖 REAPER 的耗时工作放入扩展工作线
 
 | 事件 | 内容 |
 | --- | --- |
-| `track-selection-invalidated` | 比较完整有序选轨集合，包括空选区、多选和首条不变的集合替换。返回数量与失效通知。 |
+| `track-selection-changed` | 外部客户端收到 Native Monitor 的数据，包括 `count` 和 `invalidated: true`。监测器比较完整有序选轨集合，覆盖空选和数量不变的轨道替换。WebUI 使用此名称时继续返回原有字段。 |
 | `track-state-changed` | 轨道列表及顺序、名称、颜色、mute、solo、arm、TCP/MCP 可见状态。返回数量与失效通知。 |
 | `transport-state-changed` | 播放状态、播放/暂停/录制标记、播放位置、编辑光标、播放速率、循环开关。 |
 | `open-projects-state-changed` | 活动工程、工程列表、路径、dirty、修改计数和载入代次。覆盖打开、关闭、切换和另存路径变化。 |

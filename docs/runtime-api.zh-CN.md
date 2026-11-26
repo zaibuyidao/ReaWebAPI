@@ -128,12 +128,12 @@ await stop();
 
 JavaScript 通过 `reaper.events.on` 订阅宿主事件。事件只用于更新界面，不是完整编辑历史；忙碌时同名通知可能合并，不能把 GUID 列表当作无遗漏的增量日志。
 
-从 v0.3.9.63 起推荐使用小写连字符命名。兼容名称仍可用，并与对应推荐名共用事件源。每个已订阅名称独立触发回调，也可独立取消。
+从 v0.3.9.63 起推荐使用小写连字符命名。兼容名称仍可用，并保留原有返回字段和行为。每个已订阅名称独立触发回调，也可独立取消。
 
 | 事件 | 含义 |
 | --- | --- |
 | `track-added` / `track-deleted` | 当前工程轨道 GUID 集合的增减；初次扫描建立基线，不把已有轨道当作新增 |
-| `track-selection-changed` | 返回选中轨道数和修订号。`selectionchange` 和 `track-selected` 作为兼容名称保留。需要选轨失效通知时，见[状态事件](native-services.zh-CN.md#状态事件)中的 `track-selection-invalidated`。 |
+| `track-selection-changed` | WebUI 收到工程代次、选中轨道数和修订号。`selectionchange` 和 `track-selected` 继续可用。外部客户端可用同名订阅 Native Monitor 数据。WebUI 的兼容名称 `trackSelectionChanged` 仍返回这份数据。 |
 | `item-changed` / `take-changed` | 当前工程内容变化使 Item/Take 缓存失效，`scope: 'project'`；可能包含与该缓存无关的编辑，不返回虚构的逐对象差异 |
 | `playback-state-changed` | 播放状态位变化，独立于连续播放位置更新 |
 | `tempo-changed` | 当前主速度值变化；不表示整个速度图的逐标记差异 |

@@ -136,6 +136,33 @@ def project_snapshot(client, subscription, after_epoch=0, event_name='open-proje
     raise AssertionError(f'Missing {event_name} snapshot after epoch {after_epoch}')
 
 
+def selection_snapshot(client, subscription, event_name, count=1):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        client.call('system.getInfo')
+        for event in reversed(client.events):
+            if event.get('subscriptionId') != subscription:
+                continue
+            assert event['event'] == event_name
+            data = event['data']
+            if data['count'] == count:
+                assert data['projectEpoch'] >= 1 and data['revision'] >= 1
+                assert data['invalidated'] is True and data['available'] is True
+                return data
+        time.sleep(0.025)
+    raise AssertionError(f'Missing {event_name} selection snapshot for {count} tracks')
+
+
+def web_selection_snapshot(command, event_name):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        data = command('web', method='ReaWeb_Subscribe', args=[event_name])['result']
+        if data is not None:
+            return data
+        time.sleep(0.025)
+    raise AssertionError(f'Missing {event_name} WebUI selection snapshot')
+
+
 def main():
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', 0))
@@ -180,7 +207,7 @@ def main():
             assert a.call('service.invoke', {'service': 'runtime', 'method': 'getHostVersion'}) == '7.external-test'
             capabilities = check_external_methods(a)
             monitor_names = {
-                'trackSelectionChanged': 'track-selection-invalidated',
+                'trackSelectionChanged': 'track-selection-changed',
                 'trackStateChanged': 'track-state-changed',
                 'transportChanged': 'transport-state-changed',
                 'projectChanged': 'open-projects-state-changed',
@@ -194,7 +221,24 @@ def main():
             for event in capabilities['events']:
                 event_sub = a.call('events.subscribe', {'event': event})['subscriptionId']
                 assert a.call('events.unsubscribe', {'subscriptionId': event_sub}) is True
-            a.call('events.subscribe', {'event': 'track-selection-changed'}, error='INVALID_ARGUMENT')
+            a.call('events.subscribe', {'event': 'selectionchange'}, error='INVALID_ARGUMENT')
+            selection = 'track-selection-changed'
+            previous_selection = 'trackSelectionChanged'
+            selection_sub = a.call('events.subscribe', {'event': selection})['subscriptionId']
+            first_selection = selection_snapshot(a, selection_sub, selection)
+            previous_sub = a.call('events.subscribe', {'event': previous_selection})['subscriptionId']
+            assert selection_snapshot(a, previous_sub, previous_selection) == first_selection
+            command('selection', count=0)
+            next_selection = selection_snapshot(a, selection_sub, selection, count=0)
+            assert next_selection['projectEpoch'] == first_selection['projectEpoch']
+            assert next_selection['revision'] > first_selection['revision']
+            assert selection_snapshot(a, previous_sub, previous_selection, count=0) == next_selection
+            assert a.call('events.unsubscribe', {'subscriptionId': selection_sub}) is True
+            a.events.clear()
+            command('selection', count=1)
+            assert selection_snapshot(a, previous_sub, previous_selection)['revision'] > next_selection['revision']
+            assert all(event.get('subscriptionId') != selection_sub for event in a.events)
+            assert a.call('events.unsubscribe', {'subscriptionId': previous_sub}) is True
             a.call('system.getInfo', {'extra': True}, error='INVALID_ARGUMENT')
             a.call('window.close', error='UNKNOWN_METHOD')
             with socket.socket() as occupied:
@@ -213,6 +257,14 @@ def main():
             assert command('web', method='ReaWeb_Batch', args=[[]])['error']['code'] == 'UNKNOWN_API'
             assert 'result' in command('web', method='ReaWeb_Subscribe', args=['trackStateChanged'])
             assert command('web', method='ReaWeb_Unsubscribe', args=['trackStateChanged'])['result'] is True
+            web_selection = web_selection_snapshot(command, selection)
+            assert set(web_selection) == {'projectEpoch', 'count', 'revision'} and web_selection['count'] == 1
+            for event in ('selectionchange', 'track-selected'):
+                assert web_selection_snapshot(command, event) == web_selection
+            web_previous = web_selection_snapshot(command, previous_selection)
+            assert web_previous['invalidated'] is True and web_previous['available'] is True and web_previous['count'] == 1
+            for event in (selection, 'selectionchange', 'track-selected', previous_selection):
+                assert command('web', method='ReaWeb_Unsubscribe', args=[event])['result'] is True
             subscription = a.call('service.subscribe', dict(service='test', event='update'))['subscriptionId']
             command('emit', target=True)
             a.call('system.getInfo')

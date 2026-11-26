@@ -118,7 +118,7 @@ updateRate follows the project by default, or accepts a fixed finite rate from 1
 @deprecated Use `take-selection-changed`.	兼容名称，不推荐使用。请使用 `take-selection-changed`。
 @deprecated Use `time-selection-changed`.	兼容名称，不推荐使用。请使用 `time-selection-changed`。
 @deprecated Use `track-selection-changed`.	兼容名称，不推荐使用。请使用 `track-selection-changed`。
-@deprecated Use `track-selection-invalidated`.	兼容名称，不推荐使用。请使用 `track-selection-invalidated`。
+@deprecated Use `track-selection-changed` for new subscriptions. This name retains the Native Monitor payload in WebUI.	兼容名称，不推荐用于新订阅。请使用 `track-selection-changed`。WebUI 通过此兼容名称订阅时仍收到 Native Monitor 的原有数据。
 @deprecated Use `track-state-changed`.	兼容名称，不推荐使用。请使用 `track-state-changed`。
 @deprecated Use `transport-changed`.	兼容名称，不推荐使用。请使用 `transport-changed`。
 @deprecated Use `transport-state-changed`.	兼容名称，不推荐使用。请使用 `transport-state-changed`。

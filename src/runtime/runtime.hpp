@@ -93,6 +93,7 @@ private:
   void sync_external();
   void stop_external();
   bool dispatch_external();
+  static const std::string& external_event_source(const std::string& name);
   void external_event(const std::string& name, const Json& data);
   void external_service_event(uint64_t handle, const std::string& service, int window, const std::string& name, const Json& data);
   Json external_event_data(ExternalSession& session, const std::string& name, Json data);

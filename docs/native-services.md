@@ -48,7 +48,7 @@ Subscribe through `reaper.events.on/off` or the [External Client](external-clien
 
 | Event | Payload beyond `projectEpoch`, `revision`, `available` |
 | --- | --- |
-| `track-selection-invalidated` | `count`, `invalidated: true`. Compares the complete ordered selection, including empty and same-count replacements. |
+| `track-selection-changed` | External Clients receive the Native Monitor payload with `count` and `invalidated: true`. The monitor compares the complete ordered selection, including empty and same-count replacements. WebUI keeps its existing payload under this name. |
 | `track-state-changed` | `count`, `invalidated: true`. Track list/order, names, color, mute, solo, record arm and TCP/MCP visibility. |
 | `transport-state-changed` | `state`, `playing`, `paused`, `recording`, `position`, `cursor`, `rate`, `loop`. Times are seconds. |
 | `open-projects-state-changed` | `activeProject`, `projects: [{id, path, dirty}]`, `changeCount`, `generation`. Tab additions/removals, switches, file loads and path/dirty changes. External Client project IDs are opaque and scoped to the connection. |

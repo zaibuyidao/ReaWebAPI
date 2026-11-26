@@ -2,5 +2,4 @@
 
 ## 版本更新
 
-- 为 WebUI 和外部客户端新增小写连字符事件名，两个入口均兼容原有事件名。
-- 在 API 参考中标明不推荐使用的兼容名称，移除旧式 EEL2 调用签名，并更新事件示例。
+- WebUI 和外部客户端统一推荐使用 `track-selection-changed` 订阅选轨事件，WebUI 保留原有返回字段，并继续兼容 `selectionchange`、`track-selected` 和 `trackSelectionChanged`。

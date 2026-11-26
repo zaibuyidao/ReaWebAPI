@@ -78,7 +78,7 @@ void Runtime::observe_native(Clock::time_point deadline) {
     for (const auto& name : item.second->subscriptions) ++counts[runtime_event_source(name)];
   for (const auto& item : external_sessions_) if (item.second->connection->alive && item.second->connection->authenticated)
     for (const auto& subscription : item.second->subscriptions)
-      if (subscription.second.service.empty()) ++counts[runtime_event_source(subscription.second.event)];
+      if (subscription.second.service.empty()) ++counts[external_event_source(subscription.second.event)];
   monitors_.subscriptions(counts);
   monitors_.tick(project_epoch_, deadline, [this](const auto& name, Json data) {
     for (const auto& item : sessions_) emit(*item.second, name, data);

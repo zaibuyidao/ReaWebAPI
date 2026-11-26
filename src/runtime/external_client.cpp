@@ -4,9 +4,10 @@
 
 namespace reaweb {
 namespace {
+constexpr char track_selection_event[] = "track-selection-changed";
 const std::vector<std::string>& external_events() {
   static const auto names = with_runtime_event_aliases({"trackSelectionChanged", "trackStateChanged", "transportChanged",
-    "projectChanged", "markersChanged", "regionsChanged", "currentRegionChanged", "loopPointsChanged", "timeSelectionChanged"});
+    "projectChanged", "markersChanged", "regionsChanged", "currentRegionChanged", "loopPointsChanged", "timeSelectionChanged", track_selection_event});
   return names;
 }
 const std::vector<std::string> methods = {"auth.authenticate", "system.getInfo", "system.getCapabilities",
@@ -78,8 +79,13 @@ void Runtime::sync_external() {
     external_sessions_.emplace(session->id, std::move(session));
   }
 }
+const std::string& Runtime::external_event_source(const std::string& name) {
+  static const std::string native_selection = "trackSelectionChanged";
+  return name == track_selection_event ? native_selection : runtime_event_source(name);
+}
+
 Json Runtime::external_event_data(ExternalSession& session, const std::string& event, Json data) {
-  if (runtime_event_source(event) == "projectChanged" && data.contains("projects")) {
+  if (external_event_source(event) == "projectChanged" && data.contains("projects")) {
     const auto active = data.value("activeProject", "");
     data["activeProject"] = "";
     std::map<std::string, std::string> live_ids;
@@ -100,7 +106,7 @@ void Runtime::external_event(const std::string& event, const Json& data) {
   for (auto& item : external_sessions_) {
     auto& session = *item.second;
     for (const auto& subscription : session.subscriptions)
-      if (subscription.second.service.empty() && runtime_event_source(subscription.second.event) == event)
+      if (subscription.second.service.empty() && external_event_source(subscription.second.event) == event)
         session.events[subscription.first] = data;
   }
 }
@@ -194,7 +200,7 @@ bool Runtime::dispatch_external() {
         const auto event = name(params, "event"), service_name = service ? name(params, "service") : "";
         if (jsfx_service_ && service_name == "jsfx") throw Error("FX_UNBOUND", "JSFX events require a bound Hosted WebView");
         uint64_t handle = service ? services_.lookup(service_name) : 0;
-        const auto& source = service ? event : runtime_event_source(event);
+        const auto& source = service ? event : external_event_source(event);
         const auto& names = external_events();
         if (!service && (std::find(names.begin(), names.end(), event) == names.end() || !monitors_.contains(source)))
           throw Error("INVALID_ARGUMENT", "Unknown Native Event");
