@@ -11,6 +11,7 @@ struct JsfxAssociation {
   bool daw_keyboard = true;
 };
 std::optional<JsfxAssociation> jsfx_association(const fs::path& effects, const std::string& ident);
+std::string jsfx_display_name(const fs::path& source);
 
 class JsfxBinding {
   Host& host_;

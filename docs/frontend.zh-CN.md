@@ -120,11 +120,13 @@ console.log(webRuntime.crossOriginIsolation, webRuntime.browser);
 
 对应入口为 `reaweb://timefold/index.html`，`reaper.app.getId()` 返回 `timefold`。ID 仅允许小写 ASCII `a-z`、`0-9` 和 `-`。显示名称与目录名称不参与身份计算。复制模板创建新 App 时应更换 ID。
 
-未定义 `id` 时，普通 WebUI 使用持久化随机 ID，格式为 `app-<32 位小写十六进制字符>`，保存在 `<App 根目录>/.reawebapi/identity.json`，内容为 `{"schema":1,"appId":"app-…"}`。该目录随 App 移动，不通过 Web 资源响应暴露，解析后的别名路径也受保护。标记创建与绑定检查串行执行。标记无法读取或损坏时返回 `APP_IDENTITY_INVALID`，无法创建或更新时返回 `APP_IDENTITY_UNAVAILABLE`，不回退到临时 ID。不修改 `app.json`。
+未定义 `id` 时，普通 WebUI 使用持久化随机 ID，格式为 `app-<名称>-<16 位随机十六进制码>`，保存在 `<App 根目录>/.reawebapi/identity.json`，内容为 `{"schema":1,"appId":"app-…"}`。该目录随 App 移动，不通过 Web 资源响应暴露，解析后的别名路径也受保护。标记创建与绑定检查串行执行。标记无法读取或损坏时返回 `APP_IDENTITY_INVALID`，无法创建或更新时返回 `APP_IDENTITY_UNAVAILABLE`，不回退到临时 ID。不修改 `app.json`。
 
 移动目录并保留标记时身份不变。完整复制目录后，若标记中的 ID 已绑定另一个有效安装，副本自动获得新 ID。旧绑定失效时沿用既有恢复规则。文件系统状态不明、绑定损坏，或仍有窗口使用已失效的旧绑定时继续报错。删除标记后，下次打开会初始化新身份。
 
 Lua source 与 `instanceKey` 保留路径解析和窗口复用职责，不再生成 App ID。JSFX WebUI 继续通过 `fx_ident` 派生回退 ID，包括存在 `app.json` 但未定义 `id` 的情况。两类 WebUI 均优先使用有效的显式 `app.json.id`。`app.json.entry` 声明 HTML 入口，不是 App ID。
+
+新建 JSFX 的自动 ID 为 `jsfx-<名称>-<fx_ident 的 16 位十六进制哈希>`，首次分配的 ID 保存在 `Apps/.jsfx-identities/`。两类应用的数据目录均为 `Apps/<appId>/`。改名后，下次启动时更新 `origin.json.displayName`。既有 `app-<32 位码>` 和 `jsfx-<16 位码>-0` 保留原 ID、来源和数据目录。ID 的名称部分最多 40 个 ASCII 字符，非 ASCII 字符以 `u` 加 Unicode 码点的十六进制表示。
 
 **升级行为：**普通 WebUI 没有显式 ID 和身份标记时，首次打开生成新的随机 ID。不查询、回退或迁移旧 launcher 派生 ID。原有 localStorage、IndexedDB、Data 和 WindowState 保留，但不自动关联到新身份。显式 ID 应用不受影响。
 

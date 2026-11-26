@@ -432,7 +432,7 @@ interface ReaWebAPI {
   readonly app: {
     /** Manifest ID or persistent automatic ID for ordinary Apps, fx_ident-derived fallback for JSFX, URL-derived identity in development. */
     getId(): Promise<string>;
-    /** app.json name, otherwise the entry directory's name. */
+    /** Manifest name, entry HTML title (Web) or first JSFX desc, then entry directory name. */
     getName(): Promise<string>;
     /** app.json version, or null when absent. */
     getVersion(): Promise<string | null>;

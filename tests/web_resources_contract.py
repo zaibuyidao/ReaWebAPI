@@ -490,13 +490,13 @@ class ResourceTests(unittest.TestCase):
         (self.root / 'Wrong.lua').write_text('-- Never infer identity from directory contents')
         fallback = self.base / 'fallback'
         origin = self.launch(profile=fallback).stdout.strip()
-        self.assertRegex(origin, r'^reaweb://app-[0-9a-f]{32}$')
+        self.assertRegex(origin, r'^reaweb://app-ignored-display-name-[0-9a-f]{16}$')
         for source in ('@/Scripts/Renamed.lua', r'C:\Scripts\Zaibuyidao ReaGBA.LUA', '', 'opaque key'):
             self.assertEqual(self.launch(profile=fallback, source=source).stdout.strip(), origin)
         copy = self.base / 'OtherRoot'
         shutil.copytree(self.root, copy)
         copied = self.launch(root=copy, profile=fallback).stdout.strip()
-        self.assertRegex(copied, r'^reaweb://app-[0-9a-f]{32}$')
+        self.assertRegex(copied, r'^reaweb://app-ignored-display-name-[0-9a-f]{16}$')
         self.assertNotEqual(copied, origin)
 
     def test_invalid_ids_are_not_silently_rewritten(self):

@@ -682,7 +682,11 @@ int main() {
         const auto count = windows.size();
         jsfx_runtime->initialize_jsfx(auto_discovery);
         until(*jsfx_runtime, [&] { return windows.size() > count; });
-        CHECK(windows.back().lock()->options.url == "reaweb://jsfx-" + state_key("Test/test.jsfx", 0) + "/index.html");
+        const auto profile_id = "jsfx-jsfx-without-explicit-id-" + state_key("Test/test.jsfx", 0).substr(0, 16);
+        CHECK(windows.back().lock()->options.url == "reaweb://" + profile_id + "/index.html");
+        const auto profile = resource / "ReaWebAPI" / "Apps" / profile_id;
+        CHECK(fs::is_directory(profile / "Data"));
+        CHECK(Json::parse(std::ifstream(profile / "origin.json")).at("displayName") == (with_manifest ? "JSFX without explicit ID" : "Test"));
         CHECK(!fs::exists(directory / ".reawebapi"));
       }
     }

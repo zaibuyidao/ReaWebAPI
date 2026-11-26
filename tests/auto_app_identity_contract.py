@@ -38,7 +38,7 @@ class AutoIdentityTests(unittest.TestCase):
     def identity(self, root=None):
         data = json.loads(self.marker(root).read_text())
         self.assertEqual(data['schema'], 1)
-        self.assertRegex(data['appId'], r'^app-[0-9a-f]{32}$')
+        self.assertRegex(data['appId'], r'^app-(?:[0-9a-f]{32}|[a-z0-9-]{1,40}-[0-9a-f]{16})$')
         return data['appId']
 
     def command(self, root=None, source='@Same.lua', entry='index.html'):
@@ -88,6 +88,54 @@ class AutoIdentityTests(unittest.TestCase):
         self.assertEqual(manifest.read_bytes(), before)
         record = json.loads((self.apps / identity / 'origin.json').read_text())
         self.assertEqual(record['entry'], 'launch.htm')
+        self.assertRegex(identity, r'^app-tool-[0-9a-f]{16}$')
+        self.assertEqual(record['displayName'], 'Tool')
+
+    def test_entry_title_and_stable_profile(self):
+        page = self.root / 'index.html'
+        page.write_text('<!-- <title>Wrong</title> --><script>"<title>Wrong</title>"</script>'
+                        '<TITLE data-title=">">Mix &amp; &#x97F3;</TITLE>', encoding='utf-8')
+        identity = self.opened()
+        self.assertRegex(identity, r'^app-mix-u97f3-[0-9a-f]{16}$')
+        record = self.apps / identity / 'origin.json'
+        self.assertEqual(json.loads(record.read_bytes())['displayName'], 'Mix & 音')
+        page.write_text('<title>Renamed</title>')
+        self.assertEqual(self.opened(), identity)
+        self.assertEqual(json.loads(record.read_bytes())['displayName'], 'Renamed')
+        (self.root / 'child.htm').write_text('<title>Child</title>')
+        self.assertEqual(self.opened(entry='child.htm'), identity)
+        self.assertEqual(json.loads(record.read_bytes())['displayName'], 'Renamed')
+
+    def test_title_character_references(self):
+        page = self.root / 'index.html'
+        for title, expected in [
+            ('Caf&eacute; Mixer', 'Café Mixer'),
+            ('&CounterClockwiseContourIntegral; &NotEqualTilde;', '∳ ≂\u0338'),
+            ('&notin; &notit; &amp;copy; &unknown;', '∉ ¬it; &copy; &unknown;'),
+            ('  A&Tab; &NewLine; B&nbsp;C ', 'A B\xa0C'),
+            ('&#x80 &#128512; &#0; &#xD800; &#9999999999999;', '€ 😀 � � �'),
+        ]:
+            with self.subTest(title=title):
+                page.write_text('<title>' + title + '</title>', encoding='utf-8')
+                identity = self.opened()
+                record = self.apps / identity / 'origin.json'
+                self.assertEqual(json.loads(record.read_bytes())['displayName'], expected)
+
+    def test_title_outside_nested_templates(self):
+        page = self.root / 'index.html'
+        page.write_text('<head><template><template><!-- </template> --></template>'
+                        '<script>"</template>"</script><body><title>Preset</title></body>'
+                        '</template><title>Mixer</title></head>')
+        identity = self.opened()
+        self.assertRegex(identity, r'^app-mixer-[0-9a-f]{16}$')
+        record = self.apps / identity / 'origin.json'
+        self.assertEqual(json.loads(record.read_bytes())['displayName'], 'Mixer')
+        page.write_text('<title>Caf&eacute; Mixer</title>')
+        self.assertEqual(self.opened(), identity)
+        self.assertEqual(json.loads(record.read_bytes())['displayName'], 'Café Mixer')
+        (self.root / 'app.json').write_text('{"name":"Manifest name"}')
+        self.assertEqual(self.opened(), identity)
+        self.assertEqual(json.loads(record.read_bytes())['displayName'], 'Manifest name')
 
     def test_independent_and_complete_copies(self):
         plain = self.copy('Plain')

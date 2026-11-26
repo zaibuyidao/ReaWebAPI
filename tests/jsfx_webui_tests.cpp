@@ -1,4 +1,5 @@
 #include "runtime/jsfx_webui.hpp"
+#include "web/web_resources.hpp"
 #include <cstring>
 #include <chrono>
 #include <fstream>
@@ -98,8 +99,24 @@ int main() {
     effects.pop_back(); rejects([&] { binding.set(0, 0.9, true); }); CHECK(writes == 2);
     const auto root = fs::temp_directory_path() / ("reaweb-jsfx-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     fs::create_directories(root / "Utility");
-    std::ofstream(root / "Utility/utility.jsfx") << "desc:Utility\nslider1:0.5<0,1>Gain\n@sample\nspl0 *= slider1;";
+    const auto source = root / "Utility/utility.jsfx";
+    std::ofstream(source) << "// metadata\ndesc:Utility EQ\ndesc:Second name\n@sample\nspl0 *= slider1;";
     std::ofstream(root / "Utility/index.html") << "<!doctype html>";
+    const auto apps = root / "Apps";
+    const std::string legacy = "jsfx-1aa152a394a48d8b-0";
+    const std::string named = "jsfx-utility-eq-1aa152a394a48d8b";
+    const auto open = [&](const fs::path& profiles) {
+      return open_app_binding(root / "Utility", profiles, "index.html", legacy, {}, jsfx_display_name(source));
+    };
+    CHECK(open(apps).id == named);
+    CHECK(Json::parse(std::ifstream(apps / named / "origin.json")).at("displayName") == "Utility EQ");
+    std::ofstream(source) << "desc:Renamed\n";
+    CHECK(open(apps).id == named);
+    CHECK(Json::parse(std::ifstream(apps / named / "origin.json")).at("displayName") == "Renamed");
+    const auto old_apps = root / "OldApps";
+    fs::create_directories(old_apps / legacy / "Data");
+    CHECK(open(old_apps).id == legacy);
+    CHECK(fs::exists(old_apps / legacy / "origin.json") && !fs::exists(old_apps / named));
     CHECK(!jsfx_association(root, "Utility/utility.jsfx"));
     std::ofstream(root / "Utility/utility.json") << R"({"schema":1,"JSFX_WebUI":{"entry":"index.html"}})";
     CHECK(jsfx_association(root, "Utility/utility.jsfx").has_value());

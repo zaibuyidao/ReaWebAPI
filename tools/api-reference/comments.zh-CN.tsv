@@ -98,7 +98,7 @@ Visibility of the inspector managed by this backend.	当前后端管理的检查
 WebView2 video connection. Pixel ownership stays in the dedicated rendering worker.	WebView2 视频连接。像素由专用渲染工作线程持有。
 Whether this backend can open/hide the native inspector programmatically.	当前后端是否支持通过代码打开或隐藏原生检查器。
 Worker operation. Both paths are entry-relative or absolute filenames. Parent must exist. No overwrite by default. Regular files only, no final symlinks. Cross-volume moves copy then delete. FILE_MOVE_PARTIAL means the complete destination exists but removing the source failed.	在工作线程执行。两个文件名均可使用入口目录相对路径或绝对路径。父目录必须存在，默认禁止覆盖。仅支持普通文件，末级路径不能是符号链接。跨卷移动先复制再删除。FILE_MOVE_PARTIAL 表示目标已完整写入，但删除源文件失败。
-app.json name, otherwise the entry directory's name.	读取 app.json 的 name，缺省时使用入口目录名。
+Manifest name, entry HTML title (Web) or first JSFX desc, then entry directory name.	优先使用清单名称，其次使用入口 HTML 标题或 JSFX 的第一条 desc，最后回退到入口目录名。
 app.json version, or null when absent.	读取 app.json 的 version，缺省时返回 null。
 dBFS; null represents silence. These are instantaneous host peak readings, not RMS/LUFS.	以 dBFS 计，null 表示静音。值为宿主瞬时峰值读数，不代表 RMS 或 LUFS。
 null means the backend has not been verified.	null 表示该后端尚未验证。

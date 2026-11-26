@@ -62,14 +62,17 @@ private:
 // Resolve a displayed local HTML URL to its directory. Development servers have no disk mapping.
 fs::path html_folder(const std::string& uri, const fs::path& entry, const WebResources* resources);
 // Empty when the manifest does not specify an ID.
-std::string app_identity(const fs::path& root);
+std::string app_identity(const fs::path& root, std::string* name = nullptr);
 struct AppBinding {
   std::string id;
   std::shared_ptr<void> lease;
+  std::string name;
 };
 AppBinding open_app_binding(const fs::path& root, const fs::path& apps, const fs::path& entry,
-  const std::string& fallback_id = {}, const std::function<void(const std::string&)>& prepare = {});
+  const std::string& fallback_id = {}, const std::function<void(const std::string&)>& prepare = {},
+  const std::string& jsfx_name = {});
 // Retain the lease while windows use this binding, including asynchronous startup.
 std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& profile,
-  const std::string& app_id, const fs::path& entry, bool* valid_root_conflict = nullptr);
+  const std::string& app_id, const fs::path& entry, bool* valid_root_conflict = nullptr,
+  const std::string& name = {}, const std::string& type = {});
 }

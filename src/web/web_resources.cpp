@@ -1,5 +1,6 @@
 #include <httplib.h>
 #include "web/web_resources.hpp"
+#include "web/app_name.hpp"
 #include "web/browser_probe.hpp"
 #include "core/worker.hpp"
 #include "core/file_time.hpp"
@@ -178,7 +179,7 @@ void write_identity_record(const fs::path& record, const Json& data, const char*
     throw Error(code, record.u8string() + ": " + error.what());
   }
 }
-std::string read_auto_identity(const fs::path& record) {
+std::string read_auto_identity(const fs::path& record, const std::string& jsfx_code) {
   try {
     const auto status = fs::symlink_status(record);
     if (!fs::exists(status)) return {};
@@ -196,7 +197,13 @@ std::string read_auto_identity(const fs::path& record) {
         data["schema"] != 1 || !data.at("appId").is_string())
       throw std::runtime_error("Invalid identity marker schema");
     const auto id = data["appId"].get<std::string>();
-    if (id.size() != 36 || id.compare(0, 4, "app-") != 0 || id.substr(4).find_first_not_of("0123456789abcdef") != std::string::npos)
+    const std::string prefix = jsfx_code.empty() ? "app-" : "jsfx-";
+    const auto split = id.rfind('-');
+    const auto hex = [](const std::string& value) { return value.find_first_not_of("0123456789abcdef") == std::string::npos; };
+    const bool legacy = jsfx_code.empty() && id.size() == 36 && hex(id.substr(4));
+    const bool named = split != std::string::npos && split > prefix.size() && split - prefix.size() <= 40 &&
+      id.size() - split == 17 && hex(id.substr(split + 1)) && (jsfx_code.empty() || id.substr(split + 1) == jsfx_code);
+    if (!valid_id(id) || id.compare(0, prefix.size(), prefix) != 0 || (!legacy && !named))
       throw std::runtime_error("Invalid automatic App ID");
     return id;
   } catch (const std::exception& error) {
@@ -205,13 +212,14 @@ std::string read_auto_identity(const fs::path& record) {
 }
 }
 
-std::string app_identity(const fs::path& root) {
+std::string app_identity(const fs::path& root, std::string* name) {
   const auto manifest = root / "app.json";
   if (fs::exists(manifest)) {
     Json value;
     try { value = read_record(manifest); }
     catch (const std::exception& error) { throw Error("APP_MANIFEST_INVALID", error.what()); }
     if (!value.is_object()) throw Error("APP_MANIFEST_INVALID", "app.json must contain a JSON object");
+    if (name && value.value("name", Json()).is_string()) *name = value.at("name").get<std::string>();
     if (value.contains("id")) {
       if (!value["id"].is_string() || !valid_id(value["id"].get<std::string>()))
         throw Error("APP_MANIFEST_INVALID", "app.json.id must contain only lowercase a-z, 0-9 and -");
@@ -222,25 +230,36 @@ std::string app_identity(const fs::path& root) {
 }
 
 AppBinding open_app_binding(const fs::path& root, const fs::path& apps, const fs::path& entry,
-    const std::string& fallback_id, const std::function<void(const std::string&)>& prepare) {
+    const std::string& fallback_id, const std::function<void(const std::string&)>& prepare,
+    const std::string& jsfx_name) {
   const auto canonical_root = fs::canonical(root);
   const auto html = resolve_html(canonical_root, entry.u8string());
   if (!binding_contains(canonical_root, html)) throw Error("INVALID_PATH", "HTML entry escapes App root");
-  auto id = app_identity(canonical_root);
-  if (id.empty()) id = fallback_id;
+  std::string name;
+  auto id = app_identity(canonical_root, &name);
+  const bool jsfx = !fallback_id.empty();
+  if (name.empty()) name = jsfx ? jsfx_name : app_names::html_title(html);
+  if (name.empty()) name = canonical_root.filename().u8string();
+  const auto bind = [&](bool* duplicate = nullptr) -> AppBinding {
+    return {id, bind_app_identity(canonical_root, apps / id, id, html, duplicate, name, jsfx ? "jsfx" : "ordinary"), name};
+  };
+  const auto code = jsfx ? fallback_id.substr(5, 16) : std::string();
+  const auto directory = jsfx ? apps / ".jsfx-identities" : canonical_root / ".reawebapi";
+  const auto marker = directory / (jsfx ? code + ".json" : "identity.json");
+  if (id.empty() && jsfx && !fs::exists(fs::symlink_status(marker)) && fs::is_directory(apps / fallback_id))
+    id = fallback_id;
   if (!id.empty()) {
     if (prepare) prepare(id);
-    return {id, bind_app_identity(canonical_root, apps / id, id, html)};
+    return bind();
   }
-  const auto directory = canonical_root / ".reawebapi";
-  const auto marker = directory / "identity.json";
   std::unique_ptr<IdentityLock> lock;
   try {
+    if (jsfx) fs::create_directories(apps);
     fs::create_directory(directory);
     const auto status = fs::symlink_status(directory);
-    if (!fs::is_directory(status) || !same_binding_path(fs::canonical(directory), directory))
-      throw std::runtime_error("Identity directory must be local to this App root");
-    const auto lock_path = directory / ".identity.lock";
+    if (!fs::is_directory(status) || !same_binding_path(fs::canonical(directory), fs::canonical(directory.parent_path()) / directory.filename()))
+      throw std::runtime_error("Identity directory must be local to its parent");
+    const auto lock_path = directory / (jsfx ? code + ".lock" : ".identity.lock");
     const auto lock_status = fs::symlink_status(lock_path);
     if (fs::exists(lock_status) && !fs::is_regular_file(lock_status))
       throw std::runtime_error("Invalid identity lock file");
@@ -249,17 +268,18 @@ AppBinding open_app_binding(const fs::path& root, const fs::path& apps, const fs
   } catch (const std::exception& error) {
     throw Error("APP_IDENTITY_UNAVAILABLE", "Cannot persist App identity at " + marker.u8string() + ": " + error.what());
   }
-  id = read_auto_identity(marker);
+  id = read_auto_identity(marker, code);
   bool save = id.empty();
   for (int attempt = 0; attempt < 8; ++attempt) {
-    if (save) id = "app-" + external_token().substr(0, 32);
+    if (save) id = (jsfx ? "jsfx-" : "app-") + app_names::slug(name) + "-" +
+      (jsfx ? code : external_token().substr(0, 16));
     if (prepare) prepare(id);
     // Persist before binding/navigation. A retry after interruption uses the same ID.
     if (save) write_identity_record(marker, {{"schema", 1}, {"appId", id}}, "APP_IDENTITY_UNAVAILABLE");
     bool duplicate = false;
-    try { return {id, bind_app_identity(canonical_root, apps / id, id, html, &duplicate)}; }
+    try { return bind(&duplicate); }
     catch (const Error& error) {
-      if (error.code != "APP_ID_CONFLICT" || !duplicate) throw;
+      if (jsfx || error.code != "APP_ID_CONFLICT" || !duplicate) throw;
       save = true;
     }
   }
@@ -267,7 +287,8 @@ AppBinding open_app_binding(const fs::path& root, const fs::path& apps, const fs
 }
 
 std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& profile,
-    const std::string& app_id, const fs::path& entry, bool* valid_root_conflict) {
+    const std::string& app_id, const fs::path& entry, bool* valid_root_conflict,
+    const std::string& name, const std::string& type) {
   if (valid_root_conflict) *valid_root_conflict = false;
   if (!valid_id(app_id)) throw Error("APP_MANIFEST_INVALID", "Invalid App ID");
   const auto canonical_root = fs::canonical(root);
@@ -347,12 +368,16 @@ std::shared_ptr<void> bind_app_identity(const fs::path& root, const fs::path& pr
         data["schema"] = 2; data["appId"] = app_id; data["origin"] = "reaweb://" + app_id; data.erase("port");
       }
       // Keep the original entry when opening another document in the same App.
-      if (same && schema == 2 && !old_entry.empty()) return std::make_shared<IdentityLock>(active, false);
+      if (same && schema == 2 && !old_entry.empty() &&
+          (!same_binding_path(old_entry, fs::u8path(relative_entry)) || name.empty() ||
+           (data.value("displayName", Json()) == name && data.value("appType", Json()) == type)))
+        return std::make_shared<IdentityLock>(active, false);
     }
   } catch (const Error&) { throw; }
   catch (const std::exception& error) { throw Error("APP_ORIGIN_INVALID", error.what()); }
   data["root"] = identity;
   data["entry"] = relative_entry;
+  if (!name.empty()) { data["displayName"] = name; data["appType"] = type; }
   write_identity_record(record, data, "APP_DATA_UNAVAILABLE");
   replacement.reset();
   return std::make_shared<IdentityLock>(active, false);

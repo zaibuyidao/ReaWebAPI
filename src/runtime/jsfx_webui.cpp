@@ -53,6 +53,34 @@ std::vector<int> JsfxTarget::indices(const Host& host) const {
   }
   return result;
 }
+std::string jsfx_display_name(const fs::path& source) {
+  std::ifstream input(source, std::ios::binary);
+  std::string header(65536, '\0');
+  input.read(header.data(), static_cast<std::streamsize>(header.size()));
+  header.resize(static_cast<size_t>(input.gcount()));
+  size_t start = header.compare(0, 3, "\xEF\xBB\xBF") == 0 ? 3 : 0;
+  while (start < header.size()) {
+    const auto end = header.find_first_of("\r\n", start);
+    if (end == std::string::npos && !input.eof()) break;
+    const auto line = header.substr(start, end - start);
+    const auto first = line.find_first_not_of(" \t");
+    if (first != std::string::npos) {
+      if (line[first] == '@') break;
+      if (line.compare(first, 5, "desc:") == 0) {
+        const auto name = line.find_first_not_of(" \t", first + 5);
+        if (name == std::string::npos) break;
+        const auto value = line.substr(name, line.find_last_not_of(" \t") - name + 1);
+        if (value.size() <= 1024 && value.find('\0') == std::string::npos) {
+          try { Json(value).dump(); return value; } catch (const Json::type_error&) {}
+        }
+        break;
+      }
+    }
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return {};
+}
 std::optional<JsfxAssociation> jsfx_association(const fs::path& effects, const std::string& ident) {
   if (ident.empty() || ident.find('\0') != std::string::npos) return {};
   std::error_code error;

@@ -93,8 +93,10 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     app = apps_[(dev_url.empty() ? "app:" : "dev:") + id].lock();
     if (!app) info = app_info(fs::canonical(entry.parent_path()), apps / id / "Data", id);
   };
+  const auto ident = jsfx ? jsfx->instance->binding->ident() : std::string();
   auto binding = dev_url.empty() ? open_app_binding(entry.parent_path(), apps, entry,
-    jsfx ? "jsfx-" + state_key(jsfx->instance->binding->ident(), 0) : "", prepare) :
+    jsfx ? "jsfx-" + state_key(ident, 0) : "", prepare,
+    jsfx ? jsfx_display_name(resource_ / "Effects" / fs::u8path(ident)) : "") :
     AppBinding{"dev-" + state_key(dev_url, 0), {}};
   const auto& app_id = binding.id;
   if (!dev_url.empty()) prepare(app_id);
@@ -108,6 +110,7 @@ int Runtime::open_impl(const std::string& path, const fs::path& base, const std:
     app->mode = dev_url.empty() ? "app-virtual" : "dev-http";
     app->launcher_source = launcher_source;
     app->info = std::move(info);
+    if (!binding.name.empty()) app->info["name"] = binding.name;
     if (dev_url.empty()) {
       app->binding = std::move(binding.lease);
       app->resources = std::make_shared<WebResources>(entry.parent_path(), app_id, app_cross_origin_isolation(entry.parent_path()));

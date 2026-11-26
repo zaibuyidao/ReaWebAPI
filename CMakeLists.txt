@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ReaWebAPI VERSION 0.3.9.68 LANGUAGES C CXX)
+project(ReaWebAPI VERSION 0.3.9.69 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -87,7 +87,12 @@ add_custom_command(OUTPUT "${REAWEB_BRIDGE_HEADER}"
   DEPENDS tools/bridge_script.py runtime/reaper.js
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" VERBATIM)
 add_custom_target(reaweb_bridge_script DEPENDS "${REAWEB_BRIDGE_HEADER}")
+set(html_entities_header "${CMAKE_CURRENT_BINARY_DIR}/generated/html_entities.hpp")
+add_custom_command(OUTPUT "${html_entities_header}"
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/html_entities.py" "${html_entities_header}"
+  DEPENDS tools/html_entities.py VERBATIM)
 add_library(reaweb_core STATIC
+  "${html_entities_header}"
   src/core/core.cpp
   src/core/binary.cpp
   src/core/runtime_calls.cpp
