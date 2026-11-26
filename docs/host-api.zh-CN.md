@@ -54,7 +54,7 @@
 
 | 事件 | 回调数据 |
 | --- | --- |
-| `project-changed` | `{ projectEpoch, changeCount }`。活动工程代次或变更计数变化时触发。 |
+| `project-changed` | `{ projectEpoch, changeCount }`。活动工程代次或变更计数变化时触发。工程编辑导致计数变化时，可用此事件刷新 Item 或 Take 数据。 |
 | `track-selection-changed` | `{ projectEpoch, revision, count }`，count 是选中轨道数 |
 | `item-selection-changed` | `{ projectEpoch, revision, count }`，选中 Item |
 | `take-selection-changed` | `{ projectEpoch, revision, count }`，统计选中 Item 的活动 Take |

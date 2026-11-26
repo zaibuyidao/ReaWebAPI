@@ -317,9 +317,6 @@ interface ReaWebEvents {
   'track-deleted': { projectEpoch: number; revision: number; guids: string[] };
   /** @deprecated Use `track-selection-changed`. */
   'track-selected': ReaWebEvents['track-selection-changed'];
-  /** Project-wide invalidation, not a per-object edit log. */
-  'item-changed': { projectEpoch: number; changeCount: number; scope: 'project'; invalidated: true };
-  'take-changed': ReaWebEvents['item-changed'];
   'playback-state-changed': { projectEpoch: number; available: boolean; state?: number };
   'tempo-changed': { projectEpoch: number; available: boolean; tempo?: number };
   'marker-changed': { projectEpoch: number; revision: number; invalidated: true };

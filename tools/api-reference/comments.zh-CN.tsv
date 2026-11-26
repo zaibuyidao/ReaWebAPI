@@ -66,7 +66,6 @@ Overrides automatic HTML favicon synchronization for this window session, includ
 Per-channel linear-amplitude minimum and maximum envelopes.	各声道线性幅度的最小值和最大值包络。
 Playback rate multiplier at position.	当前位置的播放速率倍率。
 Project video invalidation clears frames queued before this packet.	工程视频失效时清除该包之前排队的帧。
-Project-wide invalidation, not a per-object edit log.	整个工程的缓存失效通知，不提供逐对象编辑记录。
 Pushed by the extension from the REAPER timer, independent of how often Lua runs. `lua` is the nonempty UTF-8 text Lua last wrote with ReaWeb_SetFrame, unchanged.	扩展通过 REAPER 计时器推送，与 Lua 的执行频率无关。lua 保留 Lua 最近通过 ReaWeb_SetFrame 写入的非空 UTF-8 原文。
 Queue text for Lua ReaWeb_Receive. Other JSON values are serialized. Resolves true on acceptance. Limit 1 MiB UTF-8, no raw NUL. Invalid values and queue overflow reject.	将文本加入 Lua 的 ReaWeb_Receive 队列，其他 JSON 值先序列化。接受后返回 true。UTF-8 上限为 1 MiB，禁止原始 NUL。值无效或队列溢出时拒绝请求。
 ReaWebAPI Runtime contract 2.	ReaWebAPI 运行时契约第 2 版。

@@ -87,7 +87,7 @@ try {
   await reaper.events.on('theme-changed', draw);
   await selectedTrack();
   await reaper.events.on('track-selection-changed', async () => { await selectedTrack(); });
-  for (const name of ['track-added','track-deleted','item-changed','take-changed','playback-state-changed','tempo-changed','marker-changed','fx-changed','project-loaded','project-saved'])
+  for (const name of ['track-added','track-deleted','project-changed','playback-state-changed','tempo-changed','marker-changed','fx-changed','project-loaded','project-saved'])
     await reaper.events.on(name, event => { el('event').textContent = `${name}: ${JSON.stringify(event)}`; });
   await reaper.lifecycle.on('cleanup', event => { localStorage.setItem('lastCleanup', JSON.stringify({reason:event.reason,time:Date.now()})); });
   el('status').textContent = `Connected to ReaWebAPI ${capabilities.version}. Previous cleanup: ${localStorage.getItem('lastCleanup') || 'none'}`;

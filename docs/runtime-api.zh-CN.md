@@ -134,7 +134,7 @@ JavaScript 通过 `reaper.events.on` 订阅宿主事件。事件只用于更新�
 | --- | --- |
 | `track-added` / `track-deleted` | 当前工程轨道 GUID 集合的增减；初次扫描建立基线，不把已有轨道当作新增 |
 | `track-selection-changed` | WebUI 收到工程代次、选中轨道数和修订号。`selectionchange` 和 `track-selected` 继续可用。外部客户端可用同名订阅 Native Monitor 数据。WebUI 的兼容名称 `trackSelectionChanged` 仍返回这份数据。 |
-| `item-changed` / `take-changed` | 当前工程内容变化使 Item/Take 缓存失效，`scope: 'project'`；可能包含与该缓存无关的编辑，不返回虚构的逐对象差异 |
+| `project-changed` | 当前工程变化时按需刷新 Item 或 Take 数据。回调返回工程代次和变更计数，不区分具体编辑的对象。 |
 | `playback-state-changed` | 播放状态位变化，独立于连续播放位置更新 |
 | `tempo-changed` | 当前主速度值变化；不表示整个速度图的逐标记差异 |
 | `marker-changed` | REAPER 标记/区域原生通知，提示重新读取列表 |

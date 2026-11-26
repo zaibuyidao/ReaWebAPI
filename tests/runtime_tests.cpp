@@ -1326,11 +1326,13 @@ int main() {
         for (size_t i = after; i < window->responses.size(); ++i) if (window->responses[i].value("event", "") == event) return true;
         return false;
       };
-      for (const auto* event : {"track-added", "track-deleted", "marker-changed", "item-changed", "take-changed", "project-loaded", "project-saved", "playback-state-changed", "tempo-changed"})
+      for (const auto* event : {"track-added", "track-deleted", "marker-changed", "project-changed", "project-loaded", "project-saved", "playback-state-changed", "tempo-changed"})
         result(runtime, *window, window->send("ReaWeb_Subscribe", {event}));
+      for (const auto* event : {"item-changed", "take-changed"})
+        CHECK(result(runtime, *window, window->send("ReaWeb_Subscribe", {event}))["error"]["code"] == "UNKNOWN_EVENT");
       until(runtime, [&] { return saw("marker-changed", 0); });
       auto before = window->responses.size(); tracks.push_back("{track-b}"); ++markers; ++changes;
-      until(runtime, [&] { return saw("track-added", before) && saw("item-changed", before) && saw("take-changed", before); });
+      until(runtime, [&] { return saw("track-added", before) && saw("project-changed", before); });
       before = window->responses.size(); tracks.erase(tracks.begin());
       until(runtime, [&] { return saw("track-deleted", before); });
       before = window->responses.size(); saved["serialization"] = 1; saved["dirty"] = true;

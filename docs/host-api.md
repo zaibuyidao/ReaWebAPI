@@ -54,7 +54,7 @@ Window placement and docking are persisted by entry file and instance slot. At m
 
 | Event | Callback payload |
 | --- | --- |
-| `project-changed` | `{ projectEpoch, changeCount }`. Reports changes to the active project epoch or change count. |
+| `project-changed` | `{ projectEpoch, changeCount }`. Reports changes to the active project epoch or change count. Use it to refresh Item or Take data after project edits that change this count. |
 | `track-selection-changed` | `{ projectEpoch, revision, count }`, where count is selected tracks |
 | `item-selection-changed` | `{ projectEpoch, revision, count }`, selected items |
 | `take-selection-changed` | `{ projectEpoch, revision, count }` for active takes of selected items |

@@ -2,4 +2,4 @@
 
 ## Release Notes
 
-- Unified transport state notifications for WebUI and external clients under `transport-state-changed`, including master tempo (BPM). Kept `transportchange` and `transportChanged` compatible.
+- Removed `item-changed` and `take-changed`. Use `project-changed` to refresh Item or Take data.

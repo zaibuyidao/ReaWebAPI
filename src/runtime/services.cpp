@@ -46,7 +46,7 @@ std::vector<std::string> with_runtime_event_aliases(std::vector<std::string> nam
 const std::vector<std::string>& runtime_events() {
   static const auto names = with_runtime_event_aliases({"projectchange", "selectionchange", "itemselectionchange",
     "takeselectionchange", "transportchange", "fxchange", "windowstatechange", "track-added", "track-deleted",
-    "track-selected", "item-changed", "take-changed", "playback-state-changed", "tempo-changed",
+    "track-selected", "playback-state-changed", "tempo-changed",
     "marker-changed", "fx-changed", "project-loaded", "project-saved", "theme-changed", "native-drop", "message",
     "trackSelectionChanged", "trackStateChanged", "transportChanged", "transport-state-changed", "projectChanged", "markersChanged",
     "regionsChanged", "currentRegionChanged", "loopPointsChanged", "timeSelectionChanged", "devicesChanged", "file-change", "native-timer",

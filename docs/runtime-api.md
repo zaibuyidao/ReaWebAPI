@@ -110,7 +110,7 @@ The event catalogue includes:
 | --- | --- |
 | `track-added`, `track-deleted` | Changes to current-project track GUID sets, after establishing a baseline |
 | `track-selection-changed` | WebUI receives the project epoch, selected-track count and revision. `selectionchange` and `track-selected` remain available. External Clients can subscribe under the same name and receive the Native Monitor payload. The WebUI compatibility name `trackSelectionChanged` still returns that payload. |
-| `item-changed`, `take-changed` | Project-wide cache invalidation, not a per-object edit journal; may include unrelated edits |
+| `project-changed` | Refresh Item or Take data when the active project changes. Callbacks report the project epoch and change count, without identifying individual edits. |
 | `playback-state-changed` | Play-state changes separate from continuously moving position |
 | `tempo-changed` | Current master tempo, not individual tempo-map edits |
 | `marker-changed`, `fx-changed` | Native change notifications requiring a refresh; not every plugin-internal mutation |

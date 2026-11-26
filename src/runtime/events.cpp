@@ -141,10 +141,6 @@ void Runtime::observe_extra(Clock::time_point deadline, int changes) {
   const bool changed = extra_change_ != changes;
   extra_change_ = changes;
   if (changed) track_scan_.clear();
-  // Content notifications deliberately invalidate project-wide caches. They
-  // are not an edit journal and do not fabricate an affected Item/Take.
-  for (const char* name : {"item-changed", "take-changed"}) if (wanted(name) && (changed || !extra_events_.count(name)))
-    publish(name, {{"projectEpoch", project_epoch_}, {"changeCount", changes}, {"scope", "project"}, {"invalidated", true}});
   if ((wanted("track-added") || wanted("track-deleted")) && host_.track_count && host_.track_identity) {
     int count = host_.track_count();
     const bool count_changed = count != track_scan_count_;

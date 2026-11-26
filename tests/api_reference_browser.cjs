@@ -22,6 +22,7 @@ async function exercise(frame) {
   const {entries} = JSON.parse(el('reference-data').textContent);
   const ids = new Set(entries.map(e => e.id));
   check(ids.size === entries.length && entries.every(e => e.related.every(id => ids.has(id))), 'Internal links');
+  check(!ids.has('event.item-changed') && !ids.has('event.take-changed'), 'Removed Item/Take events');
   check(doc.querySelectorAll('article:not([hidden])').length === entries.length, 'Every entry in the document');
   check([...ids].every(id => el(id)?.matches('article')), 'Real entry anchors');
   check([...doc.querySelectorAll('article')].every(a => a.querySelector('p:not(.related)')), 'Description for each entry');
@@ -46,6 +47,11 @@ async function exercise(frame) {
     check(compatibility.includes('track-selection-changed') &&
       compatibility.includes(language === 'en' ? '@deprecated' : '不推荐使用'), 'Localized event compatibility guidance');
     check(!el('event.track-selection-changed').innerText.includes('@deprecated'), 'The recommended name stays current');
+    for (const search of ['Item', 'Take']) {
+      query(search);
+      check([...visibleIndex()].some(a => a.hash === '#event.project-changed'), 'Project event search for ' + search);
+    }
+    query('');
     if (language === 'en') {
       check(!/\p{Script=Han}/u.test(el('reference').innerText), 'Chinese text in English reference');
       check(el('runtime.audio.getTrackMix').innerText.includes('linear gain'), 'English inventory description');
