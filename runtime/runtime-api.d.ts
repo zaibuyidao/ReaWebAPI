@@ -276,27 +276,48 @@ interface ReaWebEvents {
    * `lua` is the nonempty UTF-8 text Lua last wrote with ReaWeb_SetFrame, unchanged. */
   frame: { sequence: number; playing?: number; position?: number; tempo?: number; cursor?: number;
     lua?: string; luaAgeMs?: number };
-  devicesChanged: ReaWebDevices;
+  'devices-changed': ReaWebDevices;
+  /** @deprecated Use `devices-changed`. */
+  devicesChanged: ReaWebEvents['devices-changed'];
   'file-change': ReaWebFileChange;
   'native-timer': { id: number };
-  trackSelectionChanged: ReaWebNativeInvalidation;
-  trackStateChanged: ReaWebNativeInvalidation;
-  markersChanged: ReaWebNativeInvalidation;
-  regionsChanged: ReaWebNativeInvalidation;
-  transportChanged: ReaWebNativeState & { state?: number; playing?: boolean; paused?: boolean; recording?: boolean;
+  'track-selection-invalidated': ReaWebNativeInvalidation;
+  /** @deprecated Use `track-selection-invalidated`. */
+  trackSelectionChanged: ReaWebEvents['track-selection-invalidated'];
+  'track-state-changed': ReaWebNativeInvalidation;
+  /** @deprecated Use `track-state-changed`. */
+  trackStateChanged: ReaWebEvents['track-state-changed'];
+  'marker-list-changed': ReaWebNativeInvalidation;
+  /** @deprecated Use `marker-list-changed`. */
+  markersChanged: ReaWebEvents['marker-list-changed'];
+  'region-list-changed': ReaWebNativeInvalidation;
+  /** @deprecated Use `region-list-changed`. */
+  regionsChanged: ReaWebEvents['region-list-changed'];
+  'transport-state-changed': ReaWebNativeState & { state?: number; playing?: boolean; paused?: boolean; recording?: boolean;
     position?: number; cursor?: number; rate?: number; loop?: boolean };
-  projectChanged: ReaWebNativeState & { activeProject?: string; projects?: { id: string; path: string; dirty: boolean }[];
+  /** @deprecated Use `transport-state-changed`. */
+  transportChanged: ReaWebEvents['transport-state-changed'];
+  'open-projects-state-changed': ReaWebNativeState & { activeProject?: string; projects?: { id: string; path: string; dirty: boolean }[];
     changeCount?: number; generation?: number };
-  currentRegionChanged: ReaWebNativeState & { region?: ReaWebRegion | null };
-  loopPointsChanged: ReaWebNativeState & { start?: number; end?: number };
-  timeSelectionChanged: ReaWebEvents['loopPointsChanged'];
+  /** @deprecated Use `open-projects-state-changed`. */
+  projectChanged: ReaWebEvents['open-projects-state-changed'];
+  'current-region-changed': ReaWebNativeState & { region?: ReaWebRegion | null };
+  /** @deprecated Use `current-region-changed`. */
+  currentRegionChanged: ReaWebEvents['current-region-changed'];
+  'loop-points-changed': ReaWebNativeState & { start?: number; end?: number };
+  /** @deprecated Use `loop-points-changed`. */
+  loopPointsChanged: ReaWebEvents['loop-points-changed'];
+  'time-selection-changed': ReaWebEvents['loop-points-changed'];
+  /** @deprecated Use `time-selection-changed`. */
+  timeSelectionChanged: ReaWebEvents['time-selection-changed'];
   /** Original Lua text, FIFO within this document. No snapshot or replay. */
   message: string;
   /** Discrete native drops; no initial snapshot or replay. */
   'native-drop': ReaWebDropPayload;
   'track-added': { projectEpoch: number; revision: number; guids: string[] };
   'track-deleted': { projectEpoch: number; revision: number; guids: string[] };
-  'track-selected': ReaWebEvents['selectionchange'];
+  /** @deprecated Use `track-selection-changed`. */
+  'track-selected': ReaWebEvents['track-selection-changed'];
   /** Project-wide invalidation, not a per-object edit log. */
   'item-changed': { projectEpoch: number; changeCount: number; scope: 'project'; invalidated: true };
   'take-changed': ReaWebEvents['item-changed'];

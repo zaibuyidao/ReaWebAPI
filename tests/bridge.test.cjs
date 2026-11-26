@@ -10,13 +10,16 @@ const flush = () => new Promise(setImmediate);
 // The host owns the event list and advertises it in the handshake. A second
 // hardcoded copy in the browser used to drift from it, and the mismatch only
 // surfaced as "UNKNOWN_EVENT" in the page at runtime.
-const hostEvents = [...fs.readFileSync(path.join(__dirname, '../src/runtime/services.cpp'), 'utf8')
-  .match(/static const std::vector<std::string> names = \{([\s\S]*?)\};/)[1]
-  .matchAll(/"([^"]+)"/g)].map(match => match[1]);
+const eventSource = fs.readFileSync(path.join(__dirname, '../src/runtime/services.cpp'), 'utf8');
+const hostEvents = [
+  ...[...eventSource.match(/with_runtime_event_aliases\(\{([\s\S]*?)\}\)/)[1].matchAll(/"([^"]+)"/g)].map(match => match[1]),
+  ...[...eventSource.match(/aliases = \{([\s\S]*?)\};/)[1].matchAll(/\{"[^"]+", "([^"]+)"\}/g)].map(match => match[1])
+];
 const bridgeSource = fs.readFileSync(path.join(__dirname, '../runtime/reaper.js'), 'utf8');
 
 test('the browser holds no event list of its own', () => {
-  assert.ok(hostEvents.length > 30, 'the host event list was not parsed');
+  assert.ok(hostEvents.includes('track-selection-changed') && hostEvents.includes('track-selected'));
+  assert.equal(new Set(hostEvents).size, hostEvents.length);
   // A literal list here is the defect: it silently disagrees with the host.
   assert.equal(/const eventNames = \[/.test(bridgeSource), false,
     'runtime/reaper.js must not hardcode event names; read capabilities.events instead');
@@ -448,6 +451,22 @@ test('old document replies are ignored, project errors retain details and update
   assert.equal(t.messages[2].project, 2);
   t.reply(2, { result: 4 }); assert.equal(await next, 4);
 });
+test('project alias updates the epoch before snapshot and live callbacks', async () => {
+  const t = await connected(), api = t.window.reaper;
+  const projects = [];
+  const dispose = await answer(t, 'ReaWeb_Subscribe', ['project-changed'], { projectEpoch: 2, changeCount: 0 },
+    api.events.on('project-changed', () => { projects.push(api.window.getState()); }));
+  await flush();
+  assert.equal(t.messages.at(-1).project, 2);
+  t.reply(t.messages.length - 1, { result: {} });
+  t.event('project-changed', 1, { projectEpoch: 3, changeCount: 0 });
+  await flush();
+  assert.equal(t.messages.at(-1).project, 3);
+  t.reply(t.messages.length - 1, { result: {} });
+  await Promise.all(projects);
+  await answer(t, 'ReaWeb_Unsubscribe', ['project-changed'], true, dispose());
+});
+
 test('host messages serialize explicitly and reject invalid values before dispatch', async () => {
   const t = await connected();
   for (const value of ['鼓组 🎛️', '{"text":true}', '', {type:'setVolume',value:0.5}, [1,null,true], false, 0, null]) {

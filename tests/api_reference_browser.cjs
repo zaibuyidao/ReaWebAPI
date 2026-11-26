@@ -26,7 +26,11 @@ async function exercise(frame) {
   check([...ids].every(id => el(id)?.matches('article')), 'Real entry anchors');
   check([...doc.querySelectorAll('article')].every(a => a.querySelector('p:not(.related)')), 'Description for each entry');
   const open = el('host.ReaWeb_Open');
-  check(open.querySelectorAll('.line').length === 5 && open.innerText.includes('instanceKey'), 'Host bindings and semantics');
+  check(open.querySelectorAll('.line').length === 4 && open.innerText.includes('instanceKey'), 'Host bindings and semantics');
+  check(!doc.documentElement.textContent.includes('extension_api'), 'Legacy EEL2 syntax omitted');
+  el('views').querySelector('[value="EEL2"]').click();
+  const eelLines = open.querySelectorAll('.line:not([hidden])');
+  check(eelLines.length === 1 && eelLines[0].innerText.includes('ReaWeb_Open('), 'Direct EEL2 signature');
   el('views').querySelector('[value="Lua"]').click();
   check(!open.hidden && open.querySelectorAll('.line:not([hidden])').length === 1 && el('runtime.lifecycle.ready').hidden, 'Language view');
   el('views').querySelector('[value=""]').click();
@@ -38,6 +42,10 @@ async function exercise(frame) {
     check(doc.documentElement.lang === language, 'Document language');
     const articles = [...doc.querySelectorAll('article')];
     check(articles.every(a => [...a.querySelectorAll('p:not(.related)')].some(p => p.getClientRects().length)), 'Visible description for every entry');
+    const compatibility = el('event.track-selected').innerText;
+    check(compatibility.includes('track-selection-changed') &&
+      compatibility.includes(language === 'en' ? '@deprecated' : '不推荐使用'), 'Localized event compatibility guidance');
+    check(!el('event.track-selection-changed').innerText.includes('@deprecated'), 'The recommended name stays current');
     if (language === 'en') {
       check(!/\p{Script=Han}/u.test(el('reference').innerText), 'Chinese text in English reference');
       check(el('runtime.audio.getTrackMix').innerText.includes('linear gain'), 'English inventory description');

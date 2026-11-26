@@ -145,7 +145,7 @@ tick()
             sub_a, sub_b = subscribe_projects(a), subscribe_projects(b)
             old_a, old_b = project_snapshot(a, sub_a), project_snapshot(b, sub_b)
             assert old_a['activeProject'] != old_b['activeProject']
-            event = a.call('events.subscribe', {'event': 'trackStateChanged'})['subscriptionId']
+            event = a.call('events.subscribe', {'event': 'track-state-changed'})['subscriptionId']
             (root / 'add-track').touch()
             legacy = root / 'event.json'
             deadline = time.monotonic() + 8

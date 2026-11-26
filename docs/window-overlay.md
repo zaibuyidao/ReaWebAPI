@@ -40,7 +40,7 @@ Lua setters return Boolean and provide diagnostics through `ReaWeb_GetLastError(
 
 ## Lifecycle and capabilities
 
-`getState()` and `windowstatechange` include `layer`, `layerActive`, `mouseMode` and `mouseModeActive`. Active flags describe establishment of the requested native policy, independently of visibility. They can be false during initialization or a deferred mode change. Reload retains layer and mode but clears old document regions. Closing and reopening uses the new creation options. Policies are not persisted across REAPER launches.
+`getState()` and `window-state-changed` include `layer`, `layerActive`, `mouseMode` and `mouseModeActive`. Active flags describe establishment of the requested native policy, independently of visibility. They can be false during initialization or a deferred mode change. Reload retains layer and mode but clears old document regions. Closing and reopening uses the new creation options. Policies are not persisted across REAPER launches.
 
 Overlay or non-normal mouse policies reject docking with `DOCK_UNAVAILABLE`. Creation temporarily bypasses saved docking without overwriting that preference. Runtime changes on a docked window must first be preceded by explicit undocking. Hosted JSFX editors reject policy setters with `WINDOW_HOSTED`.
 

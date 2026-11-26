@@ -18,5 +18,5 @@ element('radius').onchange = () => run(async () => render(await reaper.window.se
 run(async () => {
   await reaper.lifecycle.ready;
   render(await reaper.window.getState());
-  await reaper.events.on('windowstatechange', render);
+  await reaper.events.on('window-state-changed', render);
 });

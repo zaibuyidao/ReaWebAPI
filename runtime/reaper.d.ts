@@ -78,14 +78,27 @@ interface ReaWebWindowState {
   mouseModeActive: boolean;
 }
 interface ReaWebEvents {
-  projectchange: { projectEpoch: number; changeCount: number };
-  selectionchange: { projectEpoch: number; revision: number; count: number };
-  itemselectionchange: { projectEpoch: number; revision: number; count: number };
-  /** Active takes of selected items, not selected MIDI notes. */
-  takeselectionchange: { projectEpoch: number; revision: number; count: number };
-  transportchange: { projectEpoch: number; available: boolean; state?: number; position?: number; cursor?: number; tempo?: number };
-  fxchange: { projectEpoch: number; changeCount: number; available: boolean; focused: ReaWebFXState | null; touched: ReaWebFXState | null };
-  windowstatechange: ReaWebWindowState;
+  'project-changed': { projectEpoch: number; changeCount: number };
+  /** @deprecated Use `project-changed`. */
+  projectchange: ReaWebEvents['project-changed'];
+  'track-selection-changed': { projectEpoch: number; revision: number; count: number };
+  /** @deprecated Use `track-selection-changed`. */
+  selectionchange: ReaWebEvents['track-selection-changed'];
+  'item-selection-changed': { projectEpoch: number; revision: number; count: number };
+  /** @deprecated Use `item-selection-changed`. */
+  itemselectionchange: ReaWebEvents['item-selection-changed'];
+  'take-selection-changed': { projectEpoch: number; revision: number; count: number };
+  /** @deprecated Use `take-selection-changed`. */
+  takeselectionchange: ReaWebEvents['take-selection-changed'];
+  'transport-changed': { projectEpoch: number; available: boolean; state?: number; position?: number; cursor?: number; tempo?: number };
+  /** @deprecated Use `transport-changed`. */
+  transportchange: ReaWebEvents['transport-changed'];
+  'fx-focus-touch-state-changed': { projectEpoch: number; changeCount: number; available: boolean; focused: ReaWebFXState | null; touched: ReaWebFXState | null };
+  /** @deprecated Use `fx-focus-touch-state-changed`. */
+  fxchange: ReaWebEvents['fx-focus-touch-state-changed'];
+  'window-state-changed': ReaWebWindowState;
+  /** @deprecated Use `window-state-changed`. */
+  windowstatechange: ReaWebEvents['window-state-changed'];
 }
 interface ReaWebDiagnostics {
   video: ReaWebVideoDiagnostics;

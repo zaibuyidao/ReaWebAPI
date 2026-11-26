@@ -57,7 +57,7 @@ action('count', async () => log('Track count', (await projectSummary()).trackCou
 action('project', async () => log('Project and transport', await projectSummary()));
 action('service', async () => log('runtime.getInfo', await call('service.invoke', {service: 'runtime', method: 'getInfo'})));
 action('subscribe', async () => {
-  const result = await call('events.subscribe', {event: 'transportChanged'});
+  const result = await call('events.subscribe', {event: 'transport-state-changed'});
   subscriptions.add(result.subscriptionId); log('Subscribed', result);
 });
 action('unsubscribe', async () => {

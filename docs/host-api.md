@@ -54,13 +54,13 @@ Window placement and docking are persisted by entry file and instance slot. At m
 
 | Event | Callback payload |
 | --- | --- |
-| `projectchange` | `{ projectEpoch, changeCount }` |
-| `selectionchange` | `{ projectEpoch, revision, count }`, where count is selected tracks |
-| `itemselectionchange` | `{ projectEpoch, revision, count }`, selected items |
-| `takeselectionchange` | Same shape, active takes of selected items |
-| `transportchange` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }` |
-| `fxchange` | `{ projectEpoch, available, focused, touched, changeCount }` |
-| `windowstatechange` | `ReaWebWindowState` |
+| `project-changed` | `{ projectEpoch, changeCount }`. Reports changes to the active project epoch or change count. |
+| `track-selection-changed` | `{ projectEpoch, revision, count }`, where count is selected tracks |
+| `item-selection-changed` | `{ projectEpoch, revision, count }`, selected items |
+| `take-selection-changed` | `{ projectEpoch, revision, count }` for active takes of selected items |
+| `transport-changed` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }`. Reports playback state, positions and master tempo. |
+| `fx-focus-touch-state-changed` | `{ projectEpoch, available, focused, touched, changeCount }`. Reports changes to FX focus, the last touched parameter snapshot or the project change count. |
+| `window-state-changed` | Returns a `ReaWebWindowState` snapshot when the window state changes. |
 | `frame` | `{ sequence, playing?, position?, tempo?, cursor?, lua?, luaAgeMs? }` |
 
 `frame` works differently from the rest. The extension pushes it on its own, without waiting for Lua, from the timer callback the extension registers with REAPER.
@@ -254,7 +254,7 @@ assert(id > 0, reaper.ReaWeb_GetLastError())
 const id = await reaper.window.open('other/index.html', {frameless:true, resizable:false});
 ```
 
-`getState()` and `windowstatechange` include `frameless`, `resizable` and `framelessActive`. `frameless` is the current session preference and `resizable` is the creation flag. The last identifies an independently hosted frameless window and is false in all Docker containers, including floating Dockers and pending saved Dock restoration. Dock/Undock retains the WebView document, handles and subscriptions. Native title and icon APIs keep their existing meaning.
+`getState()` and `window-state-changed` include `frameless`, `resizable` and `framelessActive`. `frameless` is the current session preference and `resizable` is the creation flag. The last identifies an independently hosted frameless window and is false in all Docker containers, including floating Dockers and pending saved Dock restoration. Dock/Undock retains the WebView document, handles and subscriptions. Native title and icon APIs keep their existing meaning.
 
 Use `data-reaweb-drag` and `data-reaweb-no-drag` for [native drag regions](frontend.md#native-drag-regions). `setFrameless(boolean)` retains the host, document, outer bounds, visibility and Docker membership. The client viewport adjusts to the native title bar without navigation. `resizable` remains creation-only. The [runnable Demo](../examples/windows/frameless/README.md) includes resizable/fixed launchers and a lifecycle-aware close button. After close lifecycle handling, native hosts hide before WebView teardown on all three platforms.
 
@@ -264,7 +264,7 @@ Use `data-reaweb-drag` and `data-reaweb-no-drag` for [native drag regions](front
 
 Since v0.3.9.2, `window.setFrameless(boolean)` and `window.setCornerRadius(radius)` resolve to `ReaWebWindowState`. Both settings survive reload and Dock/Undock within the session. Docker changes are deferred until floating. JSFX-hosted editors reject these methods with `WINDOW_HOSTED`.
 
-`radius` must be finite and in `0..64`, measured in logical desktop units (96-DPI units on Windows, points on macOS, GDK units on Linux). `0` removes custom clipping. `getState()` and `windowstatechange` include `cornerRadius` and `cornerRadiusActive`. Custom clipping is suspended while docked or maximized and reapplied when floating normally. Native rounding does not require transparent page CSS.
+`radius` must be finite and in `0..64`, measured in logical desktop units (96-DPI units on Windows, points on macOS, GDK units on Linux). `0` removes custom clipping. `getState()` and `window-state-changed` include `cornerRadius` and `cornerRadiusActive`. Custom clipping is suspended while docked or maximized and reapplied when floating normally. Native rounding does not require transparent page CSS.
 
 Windows supports custom radii with or without a title bar. macOS and Linux retain system-managed corners for titled windows and apply the stored radius when frameless. Check `capabilities.runtime.window.setFrameless` and `cornerRadius.{supported,framed,frameless,max}`. Linux requires GDK3/X11 window shaping and decoration support from the window manager. Fractional radii are accepted, with native pixel rounding where required.
 
@@ -291,7 +291,7 @@ assert(id > 0, reaper.ReaWeb_GetLastError())
 const id = await reaper.window.open('panel.html', {frameless:true, transparent:true});
 ```
 
-`getState()` and `windowstatechange` expose the requested `transparent` flag and `transparentActive`, which reports established native desktop Alpha independently of CSS. Pending native initialization can report `false`. The page must explicitly use transparent CSS. Opaque CSS remains opaque. Transparent pixels retain rectangular mouse hit testing.
+`getState()` and `window-state-changed` expose the requested `transparent` flag and `transparentActive`, which reports established native desktop Alpha independently of CSS. Pending native initialization can report `false`. The page must explicitly use transparent CSS. Opaque CSS remains opaque. Transparent pixels retain rectangular mouse hit testing.
 
 `capabilities.runtime.window.transparent` means the option is accepted. Check `transparency.supported`, `framed`, `frameless`, `backend` and `reason` for the current native path. Windows uses the HWND WebView2 controller with DWM Alpha and requires Controller2. macOS uses a non-opaque AppKit host and WKWebView background control. Linux requires GDK3/X11, a 32-bit RGBA visual, an active compositor and REAPER/SWELL `SWELLGdkAlphaChannel` support. Native Wayland is unsupported. A hidden Linux window establishes its native host on first Show.
 

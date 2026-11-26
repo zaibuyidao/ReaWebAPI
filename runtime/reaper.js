@@ -198,7 +198,7 @@
         if (message.sequence <= eventSequence) return;
         eventSequence = message.sequence;
       }
-      if (message.event === 'projectchange') projectEpoch = message.data.projectEpoch;
+      if (message.event === 'projectchange' || message.event === 'project-changed') projectEpoch = message.data.projectEpoch;
       const entry = subscriptions.get(message.event);
       if (entry) {
         if (!discreteEvents.has(message.event)) entry.last = message.data;
@@ -408,7 +408,11 @@
     try {
       const initial = await entry.initial;
       if (closed) throw failure('WINDOW_CLOSED', 'The WebView document was closed');
-      if (!disposed && !discreteEvents.has(name) && (entry.last ?? initial)) notify(listener, entry.last ?? initial);
+      const snapshot = entry.last ?? initial;
+      if (!disposed && !discreteEvents.has(name) && snapshot) {
+        if (name === 'project-changed') projectEpoch = Math.max(projectEpoch, snapshot.projectEpoch);
+        notify(listener, snapshot);
+      }
     } catch (error) {
       disposed = true;
       entry.listeners.delete(listener);

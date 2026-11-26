@@ -24,7 +24,7 @@ Use `transaction.withUndo` to group related edits into one undo step.
 
 ## Window and lifecycle
 
-On Windows and macOS, new windows automatically become visible after their initial native frame is prepared. `getState().visible` stays false while presentation is pending, independently of `reaper.lifecycle.ready`. A pending `hide()` suppresses automatic display until `show()` or `focus()`. Closing cancels pending display, including during lifecycle cleanup. Existing `windowstatechange` events report the eventual visibility change. Linux retains the v0.3.8.10 window display behavior without a pending first-frame stage.
+On Windows and macOS, new windows automatically become visible after their initial native frame is prepared. `getState().visible` stays false while presentation is pending, independently of `reaper.lifecycle.ready`. A pending `hide()` suppresses automatic display until `show()` or `focus()`. Closing cancels pending display, including during lifecycle cleanup. The `window-state-changed` event reports the eventual visibility change. Linux retains the v0.3.8.10 window display behavior without a pending first-frame stage.
 
 `reaper.window` provides `open(path)`, `openDev(url)`, `getSize`, `setSize(width,height)`, `getPosition`, `setPosition(x,y)`, `show`, `hide`, `getState`, `setTitle`, `setIcon`, `setIconVisible`, `focus`, `setDocked`, `isDocked`, `setKeyboardCapture`, `setDawKeyboard`, `setShortcutRouting`, `close` and `reload`. Use `setDocked(true)` to dock and `setDocked(false)` to undock; both return the actual docked state, so successful undocking returns false. New-window methods resolve to a window ID; controls act on the calling window without an ID. Bounds are outer window dimensions and screen coordinates in native desktop units, not CSS pixels. Size limits are 100–16384; coordinates are -1000000–1000000, clamped to the desktop work area except for frameless Linux overlays, which permit display overscan. Docker geometry belongs to REAPER: setters reject with `WINDOW_DOCKED`. Hiding affects the App container, not the entire REAPER window.
 
@@ -102,17 +102,19 @@ On Windows, macOS and Linux, a floating Docker title bar follows the active WebV
 
 Event names are validated against the handshake `capabilities.events`. An unadvertised name rejects with `UNKNOWN_EVENT`, and a missing event list rejects with `SCHEMA_MISMATCH`. The `frame` event has no initial snapshot or replay. See the [frame channel contract](host-api.md).
 
-`await reaper.events.on(name, callback)` returns an async disposer. The event catalogue includes:
+`await reaper.events.on(name, callback)` returns an async disposer. Use the recommended kebab-case names from v0.3.9.63 onward. Compatibility names remain available and use the same event source as their recommended names. Each subscribed name receives its own callback and can be unsubscribed independently.
+
+The event catalogue includes:
 
 | Name | Meaning |
 | --- | --- |
 | `track-added`, `track-deleted` | Changes to current-project track GUID sets, after establishing a baseline |
-| `track-selected` | Track-selection snapshot, equivalent to `selectionchange` |
+| `track-selection-changed` | Selected-track count and revision. `selectionchange` and `track-selected` remain available as compatibility names. For the distinct invalidation payload, see `track-selection-invalidated` in [Native state events](native-services.md#native-state-events). |
 | `item-changed`, `take-changed` | Project-wide cache invalidation, not a per-object edit journal; may include unrelated edits |
 | `playback-state-changed` | Play-state changes separate from continuously moving position |
 | `tempo-changed` | Current master tempo, not individual tempo-map edits |
 | `marker-changed`, `fx-changed` | Native change notifications requiring a refresh; not every plugin-internal mutation |
-| `project-loaded` | Host-observed project load generation; tab switches use `projectchange` |
+| `project-loaded` | Host-observed project load generation; tab switches use `project-changed` |
 | `project-saved` | Observed current project file update and clean state, excluding Undo-only serialization and backup files; not exactly-once delivery |
 | `theme-changed` | Theme colors and CSS variables |
 
@@ -203,7 +205,7 @@ Native Streams and platform additions: [English](native-streams.md) · [中文](
 
 `reaper.window.open(path, {hidden:true})` preloads a new child window. `show()` displays without forcing focus and `focus()` displays and focuses. Both retain their existing return types. See [hidden startup](host-api.md#hidden-startup) for capabilities, Dock restoration and readiness.
 
-`window.open(path, options?)` also accepts initial `frameless` and `resizable` flags. `getState()` and `windowstatechange` report these flags and `framelessActive`. See [frameless windows](host-api.md#frameless-windows) for native drag regions, capabilities and Docker behavior.
+`window.open(path, options?)` also accepts initial `frameless` and `resizable` flags. `getState()` and `window-state-changed` report these flags and `framelessActive`. See [frameless windows](host-api.md#frameless-windows) for native drag regions, capabilities and Docker behavior.
 
 `window.open(path, {transparent:true})` requests creation-only desktop Alpha. Window state includes `transparent` and `transparentActive`. Inspect `capabilities.runtime.window.transparency` before creating a window. See [transparent windows](host-api.md#transparent-windows) for native requirements, failures and Dock persistence.
 

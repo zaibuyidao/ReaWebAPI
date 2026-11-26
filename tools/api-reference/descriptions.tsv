@@ -74,7 +74,7 @@ ReaWebVideoSurface.close	Detaches the native presentation surface from the windo
 ReaWebVideoSurface.getDiagnostics	Reads presentation status and the counters available for this renderer.	读取显示状态及当前渲染器提供的计数。
 ReaWebVideoSurface.readablePixels	Always false. The native surface displays video without exposing pixels to the page.	恒为 false。原生表面显示视频，页面无法从该表面读取像素。
 ReaWebVideoSurface.setLayout	Updates the surface rectangle, clipping rectangle and aspect-ratio policy.	更新显示矩形、裁剪矩形和宽高比策略。
-External Clients	Authenticated local WebSocket clients can discover services, events and streams.	本地 WebSocket 客户端通过身份验证后可发现服务、事件和数据流。
+External Clients	Authenticated local WebSocket clients can discover services, events and streams. The nine built-in events support their recommended kebab-case names and previous names.	本地 WebSocket 客户端通过身份验证后可发现服务、事件和数据流。9 个内置事件支持推荐的小写连字符名称，并兼容旧名称。
 JSFX Web UI SDK	Builds an editor for a bound JSFX instance, including parameters and supported DSP features.	为绑定的 JSFX 实例构建编辑器，访问参数和该效果支持的 DSP 功能。
 Native C/C++ SDK	Registers named native services that WebView applications can call.	注册具名原生服务，供 WebView 应用调用。
 Native Streams	Defines native producers and the packet formats consumed by stream clients.	定义原生生产端及数据流消费端读取的数据包格式。
@@ -141,3 +141,4 @@ reaper.video.getState	Source, position, resolution and availability	读取视频
 reaper.video.openStream	Shared current-project RGBA8 video	打开当前工程的共享 RGBA8 视频流。
 reaper.video.openSurface	Shared D3D11 presentation on Windows and Metal presentation on macOS, without JavaScript pixel delivery	在 Windows 上使用共享 D3D11 表面，在 macOS 上使用 Metal 呈现视频，像素无需传入 JavaScript。
 reaper.video.openWorkerStream	WebView2 video with pixel ownership in a dedicated rendering worker	打开 WebView2 视频流，由专用渲染工作线程持有像素。
+devices-changed	Reports changes to audio or MIDI device information.	音频或 MIDI 设备信息变化时返回设备快照。

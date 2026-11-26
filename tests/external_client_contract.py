@@ -113,17 +113,18 @@ def check_external_methods(client):
     return caps
 
 
-def subscribe_projects(client):
-    return client.call('events.subscribe', {'event': 'projectChanged'})['subscriptionId']
+def subscribe_projects(client, event='open-projects-state-changed'):
+    return client.call('events.subscribe', {'event': event})['subscriptionId']
 
 
-def project_snapshot(client, subscription, after_epoch=0):
+def project_snapshot(client, subscription, after_epoch=0, event_name='open-projects-state-changed'):
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         client.call('system.getInfo')
         for event in reversed(client.events):
             if event.get('subscriptionId') != subscription:
                 continue
+            assert event['event'] == event_name
             data = event['data']
             if data['projectEpoch'] <= after_epoch:
                 continue
@@ -132,7 +133,7 @@ def project_snapshot(client, subscription, after_epoch=0):
             assert len(ids) == len(set(ids)) and data['revision'] >= 1
             return data
         time.sleep(0.025)
-    raise AssertionError(f'Missing projectChanged snapshot after epoch {after_epoch}')
+    raise AssertionError(f'Missing {event_name} snapshot after epoch {after_epoch}')
 
 
 def main():
@@ -178,7 +179,22 @@ def main():
             a.call('service.invoke', dict(runtime_query, payload={'name': 'GetTrack'}), error='INVALID_ARGUMENT')
             assert a.call('service.invoke', {'service': 'runtime', 'method': 'getHostVersion'}) == '7.external-test'
             capabilities = check_external_methods(a)
-            assert len(capabilities['events']) == 9
+            monitor_names = {
+                'trackSelectionChanged': 'track-selection-invalidated',
+                'trackStateChanged': 'track-state-changed',
+                'transportChanged': 'transport-state-changed',
+                'projectChanged': 'open-projects-state-changed',
+                'markersChanged': 'marker-list-changed',
+                'regionsChanged': 'region-list-changed',
+                'currentRegionChanged': 'current-region-changed',
+                'loopPointsChanged': 'loop-points-changed',
+                'timeSelectionChanged': 'time-selection-changed',
+            }
+            assert sorted(capabilities['events']) == sorted([*monitor_names, *monitor_names.values()])
+            for event in capabilities['events']:
+                event_sub = a.call('events.subscribe', {'event': event})['subscriptionId']
+                assert a.call('events.unsubscribe', {'subscriptionId': event_sub}) is True
+            a.call('events.subscribe', {'event': 'track-selection-changed'}, error='INVALID_ARGUMENT')
             a.call('system.getInfo', {'extra': True}, error='INVALID_ARGUMENT')
             a.call('window.close', error='UNKNOWN_METHOD')
             with socket.socket() as occupied:
@@ -195,6 +211,8 @@ def main():
             a.call('service.invoke', dict(service='test', method='absent'), error='METHOD_NOT_FOUND')
             assert command('web')['error']['code'] == 'UNKNOWN_API'
             assert command('web', method='ReaWeb_Batch', args=[[]])['error']['code'] == 'UNKNOWN_API'
+            assert 'result' in command('web', method='ReaWeb_Subscribe', args=['trackStateChanged'])
+            assert command('web', method='ReaWeb_Unsubscribe', args=['trackStateChanged'])['result'] is True
             subscription = a.call('service.subscribe', dict(service='test', event='update'))['subscriptionId']
             command('emit', target=True)
             a.call('system.getInfo')
@@ -202,18 +220,20 @@ def main():
             command('emit')
             a.call('system.getInfo')
             assert any(e.get('subscriptionId') == subscription and e.get('service') == 'test' for e in a.events)
-            sub_a, sub_b = subscribe_projects(a), subscribe_projects(b)
-            old_a, old_b = project_snapshot(a, sub_a), project_snapshot(b, sub_b)
+            legacy_project_event = 'projectChanged'
+            sub_a, sub_b = subscribe_projects(a, legacy_project_event), subscribe_projects(b, legacy_project_event)
+            old_a = project_snapshot(a, sub_a, event_name=legacy_project_event)
+            old_b = project_snapshot(b, sub_b, event_name=legacy_project_event)
             assert old_a['activeProject'] != old_b['activeProject']
             second = subscribe_projects(a)
-            assert project_snapshot(a, second)['activeProject'] == old_a['activeProject']
-            assert a.call('events.unsubscribe', dict(subscriptionId=second)) is True
+            assert project_snapshot(a, second) == old_a
+            assert a.call('events.unsubscribe', dict(subscriptionId=sub_a)) is True
             a.events.clear()
             command('generation')  # Reload at the same native project address.
-            new_a = project_snapshot(a, sub_a, old_a['projectEpoch'])['activeProject']
-            new_b = project_snapshot(b, sub_b, old_b['projectEpoch'])['activeProject']
+            new_a = project_snapshot(a, second, old_a['projectEpoch'])['activeProject']
+            new_b = project_snapshot(b, sub_b, old_b['projectEpoch'], event_name=legacy_project_event)['activeProject']
             assert len({new_a, new_b, old_a['activeProject'], old_b['activeProject']}) == 4
-            assert all(e.get('subscriptionId') != second for e in a.events)
+            assert all(e.get('subscriptionId') != sub_a for e in a.events)
             b.call('service.unsubscribe', dict(subscriptionId=subscription), error='INVALID_ARGUMENT')
             stream = a.call('stream.open', dict(name='test.binary'))
             stream_socket = WebSocket(stream['endpoint'], 'http://arbitrary.external.origin')

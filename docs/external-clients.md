@@ -54,13 +54,15 @@ Services share the existing registry and ABI, 1 MiB payload/result limit, 30-sec
 
 Native Events share the existing monitor sources, snapshots, `projectEpoch`, `revision`, `available` and coalescing/invalidation behavior:
 
-`trackSelectionChanged`, `trackStateChanged`, `transportChanged`, `projectChanged`, `markersChanged`, `regionsChanged`, `currentRegionChanged`, `loopPointsChanged`, `timeSelectionChanged`.
+`track-selection-invalidated`, `track-state-changed`, `transport-state-changed`, `open-projects-state-changed`, `marker-list-changed`, `region-list-changed`, `current-region-changed`, `loop-points-changed`, `time-selection-changed`.
 
 ```json
-{"type":"event","subscriptionId":"<opaque>","event":"transportChanged","data":{"available":true,"projectEpoch":1,"revision":2}}
+{"type":"event","subscriptionId":"<opaque>","event":"transport-state-changed","data":{"available":true,"projectEpoch":1,"revision":2}}
 ```
 
-Service events also include `service`. A service unload rejects pending invokes and emits `unloaded` before removing its subscriptions. For External `projectChanged` events, `activeProject` matches an ID in `projects[]` when a project is active. IDs are opaque and scoped to the connection. Project loads and reconnects invalidate prior IDs. Each session supports at most 256 subscriptions.
+Use the nine names above for new subscriptions. Their previous names are also accepted for compatibility. Each subscription has its own ID and notifications use the name requested at subscription time.
+
+Service events also include `service`. A service unload rejects pending invokes and emits `unloaded` before removing its subscriptions. For External `open-projects-state-changed` events, `activeProject` matches an ID in `projects[]` when a project is active. IDs are opaque and scoped to the connection. Project loads and reconnects invalidate prior IDs. Each session supports at most 256 subscriptions.
 
 ## Binary streams and lifecycle
 

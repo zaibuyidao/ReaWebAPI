@@ -49,8 +49,8 @@
     // Do not put the first visible track read behind presentation/subscriptions.
     void refresh();
     // Refresh catches its own asynchronous errors. Initial snapshots also refresh.
-    await reaper.events.on('selectionchange', () => { void refresh(true); });
-    await reaper.events.on('projectchange', state => {
+    await reaper.events.on('track-selection-changed', () => { void refresh(true); });
+    await reaper.events.on('project-changed', state => {
       const switched = projectEpoch !== state.projectEpoch;
       projectEpoch = state.projectEpoch;
       void refresh(switched);

@@ -69,6 +69,7 @@ int main(int argc, char** argv) {
     host.get_track_value = [](void*, const std::string&) { return 0.5; };
     host.set_track_value = [](void*, const std::string&, double value) { return value != 9; };
     host.track_color = [](void*) { return 0; };
+    host.count_markers = [](void*) { return Json::array({0, 0, 0}); };
     host.change_count = [](void*) { return 0; };
     host.project_generation = [&] { return generation; };
     adapter::connect(host);

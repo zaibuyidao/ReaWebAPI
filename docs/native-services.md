@@ -44,24 +44,24 @@ Errors include `SERVICE_NOT_FOUND`, `METHOD_NOT_FOUND`, `INVALID_ARGUMENT`, `EXT
 
 ## Native state events
 
-New sources use the existing `events.on/off` signatures and disposal behavior. A shared monitor manager activates on the first subscription and stops polling after the last. Selection, track, marker and transport callbacks invalidate snapshots. A 100 ms fallback observes changes without suitable callbacks. Track and marker scans advance at most 64 entries per timer pass within the Runtime budget. Delivery coalesces state changes, so these describe current state rather than an edit journal. Multiple windows share each monitor. Positions use the bounded polling cadence, not a binary streaming channel.
+Subscribe through `reaper.events.on/off` or the [External Client](external-clients.md). A shared monitor manager activates on the first subscription and stops polling after the last. Selection, track, marker and transport callbacks invalidate snapshots. A 100 ms fallback observes changes without suitable callbacks. Track and marker scans advance at most 64 entries per timer pass within the Runtime budget. Delivery coalesces state changes, so these describe current state rather than an edit journal. Multiple windows share each monitor. Positions use the bounded polling cadence, not a binary streaming channel.
 
 | Event | Payload beyond `projectEpoch`, `revision`, `available` |
 | --- | --- |
-| `trackSelectionChanged` | `count`, `invalidated: true`. Compares the complete ordered selection, including empty and same-count replacements. |
-| `trackStateChanged` | `count`, `invalidated: true`. Track list/order, names, color, mute, solo, record arm and TCP/MCP visibility. |
-| `transportChanged` | `state`, `playing`, `paused`, `recording`, `position`, `cursor`, `rate`, `loop`. Times are seconds. |
-| `projectChanged` | `activeProject`, `projects: [{id, path, dirty}]`, `changeCount`, `generation`. Tab additions/removals, switches, file loads and path/dirty changes. IDs are opaque session identities, not Mirror handles. |
-| `markersChanged`, `regionsChanged` | `count`, `invalidated: true`. Includes position, length, name, ID and native color changes. |
-| `currentRegionChanged` | `region: {id, start, end, name, color}` or `null`. Uses play position while playing, otherwise edit cursor. |
-| `loopPointsChanged`, `timeSelectionChanged` | `start`, `end` in seconds. |
+| `track-selection-invalidated` | `count`, `invalidated: true`. Compares the complete ordered selection, including empty and same-count replacements. |
+| `track-state-changed` | `count`, `invalidated: true`. Track list/order, names, color, mute, solo, record arm and TCP/MCP visibility. |
+| `transport-state-changed` | `state`, `playing`, `paused`, `recording`, `position`, `cursor`, `rate`, `loop`. Times are seconds. |
+| `open-projects-state-changed` | `activeProject`, `projects: [{id, path, dirty}]`, `changeCount`, `generation`. Tab additions/removals, switches, file loads and path/dirty changes. External Client project IDs are opaque and scoped to the connection. |
+| `marker-list-changed`, `region-list-changed` | `count`, `invalidated: true`. Includes position, length, name, ID and native color changes. |
+| `current-region-changed` | `region: {id, start, end, name, color}` or `null`. Uses play position while playing, otherwise edit cursor. |
+| `loop-points-changed`, `time-selection-changed` | `start`, `end` in seconds. |
 
 An initial snapshot is emitted after subscription. `available: false` means required host functions are unavailable. Unchanged snapshots do not increment revision. Project changes invalidate partial scans. Payloads exclude FX, routing, state chunks and full track/marker lists. Refresh only the data your UI needs:
 
 - For the selected track, obtain a track reference with `reaper.audio.getSelectedTrackRef()` and read its name and volume with `reaper.audio.getTrackMix(ref)`.
 - For project name, track count and play state, invoke `getProjectSummary` on the `runtime` service. Native extensions and Lua backends can use the official SDK or ReaScript API for additional project details.
 
-Existing events retain their original names and payloads. Clipboard, native drag/drop, window/dock/focus, platform/architecture and device queries continue through existing Runtime namespaces.
+WebUI and External Clients accept previous names for compatibility. Use the names in the table for new subscriptions.
 
 ## Verification
 

@@ -42,17 +42,17 @@ callback 应及时返回。不依赖 REAPER 的耗时工作放入扩展工作线
 
 | 事件 | 内容 |
 | --- | --- |
-| `trackSelectionChanged` | 比较完整有序选轨集合，包括空选区、多选和首条不变的集合替换。返回数量与失效通知。 |
-| `trackStateChanged` | 轨道列表及顺序、名称、颜色、mute、solo、arm、TCP/MCP 可见状态。返回数量与失效通知。 |
-| `transportChanged` | 播放状态、播放/暂停/录制标记、播放位置、编辑光标、播放速率、循环开关。 |
-| `projectChanged` | 活动工程、工程列表、路径、dirty、修改计数和载入代次。覆盖打开、关闭、切换和另存路径变化。 |
-| `markersChanged`、`regionsChanged` | 数量与失效通知，比较位置、长度、名称、编号和颜色。 |
-| `currentRegionChanged` | 当前 Region 的编号、起止位置、名称和颜色，或 `null`。播放时使用播放位置，否则使用编辑光标。 |
-| `loopPointsChanged`、`timeSelectionChanged` | 以秒为单位的 `start`、`end`。 |
+| `track-selection-invalidated` | 比较完整有序选轨集合，包括空选区、多选和首条不变的集合替换。返回数量与失效通知。 |
+| `track-state-changed` | 轨道列表及顺序、名称、颜色、mute、solo、arm、TCP/MCP 可见状态。返回数量与失效通知。 |
+| `transport-state-changed` | 播放状态、播放/暂停/录制标记、播放位置、编辑光标、播放速率、循环开关。 |
+| `open-projects-state-changed` | 活动工程、工程列表、路径、dirty、修改计数和载入代次。覆盖打开、关闭、切换和另存路径变化。 |
+| `marker-list-changed`、`region-list-changed` | 数量与失效通知，比较位置、长度、名称、编号和颜色。 |
+| `current-region-changed` | 当前 Region 的编号、起止位置、名称和颜色，或 `null`。播放时使用播放位置，否则使用编辑光标。 |
+| `loop-points-changed`、`time-selection-changed` | 以秒为单位的 `start`、`end`。 |
 
-新事件共用 `projectEpoch`、`revision`、`available`。订阅后提供初始快照，无变化不增加 revision。失效通知包含 `count`、`invalidated: true`，不携带 FX、路由、State Chunk 或完整列表。通过 `reaper.audio.getSelectedTrackRef()` 与 `getTrackMix(ref)` 读取当前轨道，工程名称、轨道数和播放状态可通过 `runtime.getProjectSummary` 获取。工程 ID 是会话内不透明标识，不是 Mirror 句柄。完整字段和控制 API 对照见 [English contract](native-services.md)。
+新事件共用 `projectEpoch`、`revision`、`available`。订阅后提供初始快照，无变化不增加 revision。失效通知包含 `count`、`invalidated: true`，不携带 FX、路由、State Chunk 或完整列表。通过 `reaper.audio.getSelectedTrackRef()` 与 `getTrackMix(ref)` 读取当前轨道，工程名称、轨道数和播放状态可通过 `runtime.getProjectSummary` 获取。外部客户端的工程 ID 是当前连接内的不透明标识。完整字段和控制 API 对照见 [English contract](native-services.md)。
 
-现有旧事件、Clipboard、Drag & Drop、Window/Dock/Focus、System 与设备查询保留原实现和接口。高频二进制 Stream 不属于本版本。
+通过 `reaper.events.on/off` 或[外部客户端](external-clients.zh-CN.md)订阅。两个入口均兼容旧名称，新订阅推荐使用表中的名称。
 
 ## 验证
 

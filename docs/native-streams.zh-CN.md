@@ -104,7 +104,7 @@ meter.on('data', ({ data }) => {
 
 Meter 的 `updateRate` 仅控制发布频率，历史指标不依赖刷新率。`samplePeak`、`truePeak` 和 Channel RMS 保留发布间隔语义。Meter 使用独立的连续源采样，其他音频分析流保留原有采样方式。Native Stream ABI 1、`CreateMeterStream`、`PublishMeter` 和第三方自定义 Meter 布局保持不变。完整偏移表见 [English contract](native-streams.md#built-in-meter--loudness-analyzer)。
 
-MIDI 通过 `system.openMIDIInput(device)` 消费原始事件，`-1` 表示所有输入。`system.getDevices` 与 `devicesChanged` 提供设备信息。显示器几何、工作区和有效 DPI 通过 `system.getDisplays` 获取，CPU 和 Stream 统计通过 `debug.getDiagnostics` 获取。
+MIDI 通过 `system.openMIDIInput(device)` 消费原始事件，`-1` 表示所有输入。`system.getDevices` 与 `devices-changed` 提供设备信息。显示器几何、工作区和有效 DPI 通过 `system.getDisplays` 获取，CPU 和 Stream 统计通过 `debug.getDiagnostics` 获取。
 
 `fs.watch` 在原生 worker 每 250 ms 比较文件状态，报告创建、修改、重命名、删除和溢出。短时变化可能合并，页面无需扫描目录。`clipboard.readBinary/writeBinary` 使用自定义 MIME 格式，不自动转换系统图片格式。`system.schedule` 提供一次性和重复原生定时器，适合后台刷新与延时任务，不充当帧时钟。页面关闭或导航后自动释放 consumer、监听和定时器。
 

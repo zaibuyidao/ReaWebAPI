@@ -54,13 +54,13 @@
 
 | 事件 | 回调数据 |
 | --- | --- |
-| `projectchange` | `{ projectEpoch, changeCount }` |
-| `selectionchange` | `{ projectEpoch, revision, count }`，count 是选中轨道数 |
-| `itemselectionchange` | `{ projectEpoch, revision, count }`，选中 Item |
-| `takeselectionchange` | 同结构，选中 Item 的活动 Take |
-| `transportchange` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }` |
-| `fxchange` | `{ projectEpoch, available, focused, touched, changeCount }` |
-| `windowstatechange` | `ReaWebWindowState` |
+| `project-changed` | `{ projectEpoch, changeCount }`。活动工程代次或变更计数变化时触发。 |
+| `track-selection-changed` | `{ projectEpoch, revision, count }`，count 是选中轨道数 |
+| `item-selection-changed` | `{ projectEpoch, revision, count }`，选中 Item |
+| `take-selection-changed` | `{ projectEpoch, revision, count }`，统计选中 Item 的活动 Take |
+| `transport-changed` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }`。返回播放状态、位置、编辑光标与主速度。 |
+| `fx-focus-touch-state-changed` | `{ projectEpoch, available, focused, touched, changeCount }`。FX 焦点、最近触碰参数的快照或工程变更计数变化时触发。 |
+| `window-state-changed` | 窗口状态变化时返回 `ReaWebWindowState` 快照。 |
 | `frame` | `{ sequence, playing?, position?, tempo?, cursor?, lua?, luaAgeMs? }` |
 
 `frame` 和上面这些事件不一样。它由扩展主动推送，不等 Lua，走的是扩展注册给 REAPER 的定时器回调。
@@ -254,7 +254,7 @@ assert(id > 0, reaper.ReaWeb_GetLastError())
 const id = await reaper.window.open('other/index.html', {frameless:true, resizable:false});
 ```
 
-`getState()` 和 `windowstatechange` 增加 `frameless`、`resizable` 与 `framelessActive`。`frameless` 表示当前会话配置，`resizable` 表示创建配置，`framelessActive` 仅在独立无边框宿主内为 `true`。所有 Docker、浮动 Docker 和待恢复的保存停靠状态均为 `false`。Dock/Undock 保留 WebView 文档、句柄和订阅，原生标题和图标 API 的含义不变。
+`getState()` 和 `window-state-changed` 增加 `frameless`、`resizable` 与 `framelessActive`。`frameless` 表示当前会话配置，`resizable` 表示创建配置，`framelessActive` 仅在独立无边框宿主内为 `true`。所有 Docker、浮动 Docker 和待恢复的保存停靠状态均为 `false`。Dock/Undock 保留 WebView 文档、句柄和订阅，原生标题和图标 API 的含义不变。
 
 使用 `data-reaweb-drag` 与 `data-reaweb-no-drag` 声明[原生拖动区](frontend.zh-CN.md#原生拖动区)。`setFrameless(boolean)` 保留宿主、文档、窗口外部尺寸位置、可见状态和停靠关系。客户区随原生标题栏调整，不触发导航。`resizable` 仍仅在创建时设置。[可运行示例](../examples/windows/frameless/README.md)提供可缩放与固定尺寸启动脚本，以及使用既有生命周期的关闭按钮。三个平台均在关闭生命周期处理完成后，先隐藏原生宿主，再释放 WebView。
 
@@ -264,7 +264,7 @@ const id = await reaper.window.open('other/index.html', {frameless:true, resizab
 
 v0.3.9.2 起，`window.setFrameless(boolean)` 和 `window.setCornerRadius(radius)` 返回 `ReaWebWindowState`。配置在当前会话的重载和停靠切换中保留。在 Docker 内调用只记录浮动配置。JSFX 托管编辑器返回 `WINDOW_HOSTED`。
 
-`radius` 接受 `0..64` 的有限数值，单位为逻辑桌面单位，Windows 使用 96 DPI 单位，macOS 使用点，Linux 使用 GDK 单位。`0` 取消自定义裁剪。`getState()` 和 `windowstatechange` 包含 `cornerRadius` 与 `cornerRadiusActive`。停靠或最大化时暂停裁剪，恢复普通浮动后重新应用。原生圆角无需透明页面 CSS。
+`radius` 接受 `0..64` 的有限数值，单位为逻辑桌面单位，Windows 使用 96 DPI 单位，macOS 使用点，Linux 使用 GDK 单位。`0` 取消自定义裁剪。`getState()` 和 `window-state-changed` 包含 `cornerRadius` 与 `cornerRadiusActive`。停靠或最大化时暂停裁剪，恢复普通浮动后重新应用。原生圆角无需透明页面 CSS。
 
 Windows 的有标题栏与无标题栏窗口均支持自定义半径。macOS 和 Linux 的有标题栏窗口使用系统圆角，切换为无标题栏后应用保存的半径。通过 `capabilities.runtime.window.setFrameless` 和 `cornerRadius.{supported,framed,frameless,max}` 检测能力。Linux 要求 GDK3/X11 窗口形状支持，装饰切换效果取决于窗口管理器。支持小数半径，必要时按原生像素取整。
 
@@ -291,7 +291,7 @@ assert(id > 0, reaper.ReaWeb_GetLastError())
 const id = await reaper.window.open('panel.html', {frameless:true, transparent:true});
 ```
 
-`getState()` 与 `windowstatechange` 返回请求值 `transparent` 及原生桌面 Alpha 状态 `transparentActive`。后者不依赖页面 CSS，原生初始化尚未完成时可以为 `false`。页面需显式设置透明 CSS，不透明 CSS 仍显示不透明内容。透明像素保留矩形鼠标命中区域。
+`getState()` 与 `window-state-changed` 返回请求值 `transparent` 及原生桌面 Alpha 状态 `transparentActive`。后者不依赖页面 CSS，原生初始化尚未完成时可以为 `false`。页面需显式设置透明 CSS，不透明 CSS 仍显示不透明内容。透明像素保留矩形鼠标命中区域。
 
 `capabilities.runtime.window.transparent` 表示接受该选项。实际支持情况通过 `transparency.supported`、`framed`、`frameless`、`backend` 与 `reason` 判断。Windows 使用 HWND WebView2 控制器与 DWM Alpha，要求 Controller2。macOS 使用非不透明 AppKit 宿主及 WKWebView 背景控制。Linux 要求 GDK3/X11、32 位 RGBA 视觉格式、活动合成器，以及 REAPER/SWELL 的 `SWELLGdkAlphaChannel` 支持，不支持原生 Wayland。Linux 隐藏窗口在首次 Show 时建立原生宿主。
 

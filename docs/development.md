@@ -56,7 +56,7 @@ Read the project name and track count with `reaper.host.service('runtime').invok
 ## Events, UI and storage
 
 ```javascript
-const stop = await reaper.events.on('selectionchange', state => {
+const stop = await reaper.events.on('track-selection-changed', state => {
   console.log('Selected tracks:', state.count);
 });
 // When this UI component is removed:

@@ -5,8 +5,8 @@ const write = (name, data) => {
   lines.push(`${name}: ${JSON.stringify(data)}`);
   log.textContent = lines.slice(-100).join('\n'); log.scrollTop = log.scrollHeight;
 };
-const names = ['trackSelectionChanged','trackStateChanged','transportChanged','projectChanged',
-  'markersChanged','regionsChanged','currentRegionChanged','loopPointsChanged','timeSelectionChanged'];
+const names = ['track-selection-invalidated','track-state-changed','transport-state-changed','open-projects-state-changed',
+  'marker-list-changed','region-list-changed','current-region-changed','loop-points-changed','time-selection-changed'];
 let disposers = [], serviceDisposers = [], busy = false;
 const run = async action => {
   try { await action(); } catch (error) { write(error.code || 'ERROR', error.message); }

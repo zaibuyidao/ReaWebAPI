@@ -374,15 +374,16 @@ Json Runtime::host_call(int id, const std::string& method, const Json& args) {
       method == "ReaWeb_ClipboardWriteText" || method == "ReaWeb_OpenExternal")
     throw Error("INVALID_REQUEST", "This host operation requires asynchronous dispatch");
   if (!args[0].is_string()) throw Error("INVALID_ARGUMENT", "Expected an event name");
-  auto name = args[0].get<std::string>();
-  if (std::find(runtime_events().begin(), runtime_events().end(), name) == runtime_events().end())
+  const auto& requested = args[0].get_ref<const std::string&>();
+  if (std::find(runtime_events().begin(), runtime_events().end(), requested) == runtime_events().end())
     throw Error("UNKNOWN_EVENT", "Unknown host event");
+  const auto& name = runtime_event_source(requested);
   if (method == "ReaWeb_Unsubscribe") {
     if (name == "native-drop") s.window->set_drop_enabled(false);
-    s.subscriptions.erase(name); s.events.erase(name); return true;
+    s.subscriptions.erase(requested); s.events.erase(requested); return true;
   }
   if (name == "native-drop") s.window->set_drop_enabled(true);
-  s.subscriptions.insert(name);
+  s.subscriptions.insert(requested);
   if (monitors_.contains(name)) return monitors_.snapshot(name);
   next_observation_ = Clock::now();
   if (name == "windowstatechange") return window_state(s);

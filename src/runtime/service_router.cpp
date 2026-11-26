@@ -75,10 +75,10 @@ void Runtime::service_event(uint64_t handle, const std::string& service, int win
 void Runtime::observe_native(Clock::time_point deadline) {
   std::map<std::string, size_t> counts;
   for (const auto& item : sessions_) if (item.second->ready && !item.second->closing && !item.second->window->closed())
-    for (const auto& name : item.second->subscriptions) ++counts[name];
+    for (const auto& name : item.second->subscriptions) ++counts[runtime_event_source(name)];
   for (const auto& item : external_sessions_) if (item.second->connection->alive && item.second->connection->authenticated)
     for (const auto& subscription : item.second->subscriptions)
-      if (subscription.second.service.empty()) ++counts[subscription.second.event];
+      if (subscription.second.service.empty()) ++counts[runtime_event_source(subscription.second.event)];
   monitors_.subscriptions(counts);
   monitors_.tick(project_epoch_, deadline, [this](const auto& name, Json data) {
     for (const auto& item : sessions_) emit(*item.second, name, data);

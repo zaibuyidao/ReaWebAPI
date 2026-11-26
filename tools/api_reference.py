@@ -87,7 +87,6 @@ def hosts():
         signatures = [
             ('C', f'{returns} {name}({c_args})'),
             ('EEL2', f'{eel_result} {name}({", ".join(eel_args)})'),
-            ('EEL2', f'{eel_result} extension_api({", ".join([chr(34) + name + chr(34), *eel_args])})'),
             ('Lua', f'{lua_types[returns]} reaper.{name}({", ".join(lua_args)})'),
             ('Python', python)
         ]

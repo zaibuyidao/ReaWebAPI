@@ -28,7 +28,7 @@ v0.3.8.21 新增 `reaper.fs.openMedia(path)`，返回 `{url, size, type, close()
 
 无边框 Linux 覆盖层允许边界超出显示器，以支持整屏覆盖时的边缘扩展。普通窗口保留原有边界限制。
 
-Windows 和 macOS 新窗口在原生首帧准备完成后自动显示。等待期间 `getState().visible` 为 false，与 `reaper.lifecycle.ready` 独立。此时调用 `hide()` 会阻止自动显示，直到调用 `show()` 或 `focus()`。关闭窗口会取消待显示状态，包括生命周期清理期间。最终可见状态变化通过现有 `windowstatechange` 事件报告。Linux 保留 v0.3.8.10 的窗口显示行为，不设首帧等待阶段。
+Windows 和 macOS 新窗口在原生首帧准备完成后自动显示。等待期间 `getState().visible` 为 false，与 `reaper.lifecycle.ready` 独立。此时调用 `hide()` 会阻止自动显示，直到调用 `show()` 或 `focus()`。关闭窗口会取消待显示状态，包括生命周期清理期间。最终可见状态变化通过 `window-state-changed` 事件报告。Linux 保留 v0.3.8.10 的窗口显示行为，不设首帧等待阶段。
 
 ```js
 await reaper.window.setSize(900, 700);
@@ -128,16 +128,18 @@ await stop();
 
 JavaScript 通过 `reaper.events.on` 订阅宿主事件。事件只用于更新界面，不是完整编辑历史；忙碌时同名通知可能合并，不能把 GUID 列表当作无遗漏的增量日志。
 
+从 v0.3.9.63 起推荐使用小写连字符命名。兼容名称仍可用，并与对应推荐名共用事件源。每个已订阅名称独立触发回调，也可独立取消。
+
 | 事件 | 含义 |
 | --- | --- |
 | `track-added` / `track-deleted` | 当前工程轨道 GUID 集合的增减；初次扫描建立基线，不把已有轨道当作新增 |
-| `track-selected` | 轨道选择快照，与 `selectionchange` 等价 |
+| `track-selection-changed` | 返回选中轨道数和修订号。`selectionchange` 和 `track-selected` 作为兼容名称保留。需要选轨失效通知时，见[状态事件](native-services.zh-CN.md#状态事件)中的 `track-selection-invalidated`。 |
 | `item-changed` / `take-changed` | 当前工程内容变化使 Item/Take 缓存失效，`scope: 'project'`；可能包含与该缓存无关的编辑，不返回虚构的逐对象差异 |
 | `playback-state-changed` | 播放状态位变化，独立于连续播放位置更新 |
 | `tempo-changed` | 当前主速度值变化；不表示整个速度图的逐标记差异 |
 | `marker-changed` | REAPER 标记/区域原生通知，提示重新读取列表 |
 | `fx-changed` | REAPER FX 链、参数等原生通知，提示刷新；不保证捕获每个插件内部状态变化 |
-| `project-loaded` | 当前宿主检测到工程加载后的代次通知；普通标签切换继续使用 `projectchange` |
+| `project-loaded` | 当前宿主检测到工程加载后的代次通知；普通标签切换继续使用 `project-changed` |
 | `project-saved` | 观察到当前工程文件更新且工程变为已保存状态；排除仅 Undo 序列化及自动备份文件，不承诺每次保存恰好一条 |
 | `theme-changed` | 当前主题颜色和 CSS 变量快照 |
 
@@ -250,7 +252,7 @@ Native Streams and platform additions: [English](native-streams.md) · [中文](
 
 `reaper.window.open(path, {hidden:true})` 预加载新的子窗口。`show()` 显示但不强制聚焦，`focus()` 显示并聚焦，返回类型保持不变。能力检测、Dock 恢复和就绪语义参见[隐藏启动](host-api.zh-CN.md#隐藏启动)。
 
-`window.open(path, options?)` 还接受初始 `frameless` 和 `resizable` 配置。`getState()` 与 `windowstatechange` 返回这两个配置及 `framelessActive`，原生拖动区、能力检测和 Docker 行为见[无边框窗口](host-api.zh-CN.md#无边框窗口)。
+`window.open(path, options?)` 还接受初始 `frameless` 和 `resizable` 配置。`getState()` 与 `window-state-changed` 返回这两个配置及 `framelessActive`，原生拖动区、能力检测和 Docker 行为见[无边框窗口](host-api.zh-CN.md#无边框窗口)。
 
 `window.open(path, {transparent:true})` 请求仅在创建时生效的桌面 Alpha。窗口状态包含 `transparent` 与 `transparentActive`。创建前可检查 `capabilities.runtime.window.transparency`，原生要求、失败处理及 Dock 持久化规则见[透明窗口](host-api.zh-CN.md#透明窗口)。
 

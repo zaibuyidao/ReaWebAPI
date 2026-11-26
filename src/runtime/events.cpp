@@ -4,7 +4,10 @@
 
 namespace reaweb {
 void Runtime::emit(Session& session, const std::string& name, Json data) {
-  if (session.ready && !session.closing && (name == "projectchange" || session.subscriptions.count(name)))
+  if (!session.ready || session.closing) return;
+  if (const auto* alias = runtime_event_alias(name); alias && session.subscriptions.count(*alias))
+    session.events[*alias] = data;
+  if (name == "projectchange" || session.subscriptions.count(name))
     session.events[name] = std::move(data);
 }
 
@@ -38,7 +41,7 @@ void Runtime::observe(Clock::time_point deadline) {
     item_index_ = 0; item_count_ = -1;
   }
   bool wanted = false;
-  for (const auto& item : sessions_) wanted = wanted || item.second->subscriptions.count("selectionchange") || item.second->subscriptions.count("track-selected");
+  for (const auto& item : sessions_) wanted = wanted || item.second->subscribed("selectionchange") || item.second->subscriptions.count("track-selected");
   // Control-surface callbacks only increment an atomic revision. Observe their
   // final state on the next main-thread tick, without waiting for the fallback
   // poll. Restart partial scans when another selection change arrives.
@@ -71,8 +74,8 @@ void Runtime::observe(Clock::time_point deadline) {
   // More expensive project-wide scans retain a bounded polling cadence.
   if (!poll) return;
   observe_extra(deadline, changes);
-  auto subscribed = [&](const char* name) {
-    for (const auto& item : sessions_) if (item.second->subscriptions.count(name)) return true;
+  auto subscribed = [&](const std::string& name) {
+    for (const auto& item : sessions_) if (item.second->subscribed(name)) return true;
     return false;
   };
   if (host_.event_snapshot) for (const auto* name : {"transportchange", "fxchange"}) {
@@ -122,8 +125,8 @@ void Runtime::observe(Clock::time_point deadline) {
   next_observation_ = Clock::now() + std::chrono::milliseconds(100);
 }
 void Runtime::observe_extra(Clock::time_point deadline, int changes) {
-  auto wanted = [&](const char* name) {
-    for (const auto& item : sessions_) if (item.second->subscriptions.count(name)) return true;
+  auto wanted = [&](const std::string& name) {
+    for (const auto& item : sessions_) if (item.second->subscribed(name)) return true;
     return false;
   };
   auto publish = [&](const std::string& name, Json data) {

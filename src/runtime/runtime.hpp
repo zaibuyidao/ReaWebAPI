@@ -128,6 +128,11 @@ private:
     std::deque<std::string> to_web, to_host;
     size_t message_bytes = 0, web_messages = 0;
     std::set<std::string> subscriptions;
+    bool subscribed(const std::string& source) const {
+      if (subscriptions.count(source)) return true;
+      const auto* alias = runtime_event_alias(source);
+      return alias && subscriptions.count(*alias);
+    }
     std::map<uint64_t, std::set<std::string>> service_subscriptions;
     std::map<std::string, Json> events;
     Json last_state, saved_state, pending_state;

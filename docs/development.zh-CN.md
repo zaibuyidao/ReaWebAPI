@@ -58,7 +58,7 @@ if (track) {
 ## 事件、界面和存储
 
 ```javascript
-const stop = await reaper.events.on('selectionchange', state => {
+const stop = await reaper.events.on('track-selection-changed', state => {
   console.log('选中轨道数：', state.count);
 });
 // 界面组件卸载时：

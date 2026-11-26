@@ -44,7 +44,7 @@ ReaScript 启动脚本通过 `ReaWeb_Open` 打开本地 HTML 入口。扩展负�
 
 | 主题 | 指南 |
 | --- | --- |
-| 应用开发 | [SDK 与模板](runtime/README.zh-CN.md) · [运行时 API](docs/runtime-api.zh-CN.md) · [ReaScript 宿主 API](docs/host-api.zh-CN.md) · [WebView 资源与存储](docs/frontend.zh-CN.md) |
+| 应用开发 | [SDK 与模板](runtime/README.zh-CN.md) · [运行时 API](docs/runtime-api.zh-CN.md) · [宿主事件](docs/runtime-api.zh-CN.md#events) · [ReaScript 宿主 API](docs/host-api.zh-CN.md) · [WebView 资源与存储](docs/frontend.zh-CN.md) |
 | 宿主数据与媒体 | [实时订阅](docs/realtime.zh-CN.md) · [原生数据流](docs/native-streams.zh-CN.md) · [工程视频](docs/video-preview.zh-CN.md) |
 | 扩展集成 | [JSFX Web UI](docs/jsfx-webui.zh-CN.md) · [原生服务](docs/native-services.zh-CN.md) · [外部客户端](docs/external-clients.zh-CN.md) |
 | 调试 | [WebView 开发者工具](docs/devtools.zh-CN.md) · [运行时诊断](docs/diagnostics.zh-CN.md) |

@@ -40,7 +40,7 @@ Lua 设置接口返回 Boolean，诊断由 `ReaWeb_GetLastError()` 提供。无�
 
 ## 生命周期与能力
 
-`getState()` 和 `windowstatechange` 包含 `layer`、`layerActive`、`mouseMode`、`mouseModeActive`。Active 字段表示请求策略已在原生层建立，与可见性独立。初始化或等待手势结束时可为 false。重载保留层级和模式，清空旧文档区域。关闭后重新创建采用新选项，不跨 REAPER 启动持久化。
+`getState()` 和 `window-state-changed` 包含 `layer`、`layerActive`、`mouseMode`、`mouseModeActive`。Active 字段表示请求策略已在原生层建立，与可见性独立。初始化或等待手势结束时可为 false。重载保留层级和模式，清空旧文档区域。关闭后重新创建采用新选项，不跨 REAPER 启动持久化。
 
 覆盖层或非 normal 鼠标策略以 `DOCK_UNAVAILABLE` 拒绝停靠。创建时暂时绕过已保存的停靠位置，同时保留原停靠偏好。停靠窗口需要先显式取消停靠，再修改鼠标模式。嵌入式 JSFX 编辑器以 `WINDOW_HOSTED` 拒绝策略设置。
 

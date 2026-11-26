@@ -106,3 +106,20 @@ null means the backend has not been verified.	null 表示该后端尚未验证�
 null until the current document reports its state.	当前文档报告状态前为 null。
 safe to repeat	可重复调用
 updateRate follows the project by default, or accepts a fixed finite rate from 1 to 75 FPS.	updateRate 默认跟随工程，也可指定 1–75 FPS 范围内的有限固定值。
+@deprecated Use `current-region-changed`.	兼容名称，不推荐使用。请使用 `current-region-changed`。
+@deprecated Use `devices-changed`.	兼容名称，不推荐使用。请使用 `devices-changed`。
+@deprecated Use `fx-focus-touch-state-changed`.	兼容名称，不推荐使用。请使用 `fx-focus-touch-state-changed`。
+@deprecated Use `item-selection-changed`.	兼容名称，不推荐使用。请使用 `item-selection-changed`。
+@deprecated Use `loop-points-changed`.	兼容名称，不推荐使用。请使用 `loop-points-changed`。
+@deprecated Use `marker-list-changed`.	兼容名称，不推荐使用。请使用 `marker-list-changed`。
+@deprecated Use `open-projects-state-changed`.	兼容名称，不推荐使用。请使用 `open-projects-state-changed`。
+@deprecated Use `project-changed`.	兼容名称，不推荐使用。请使用 `project-changed`。
+@deprecated Use `region-list-changed`.	兼容名称，不推荐使用。请使用 `region-list-changed`。
+@deprecated Use `take-selection-changed`.	兼容名称，不推荐使用。请使用 `take-selection-changed`。
+@deprecated Use `time-selection-changed`.	兼容名称，不推荐使用。请使用 `time-selection-changed`。
+@deprecated Use `track-selection-changed`.	兼容名称，不推荐使用。请使用 `track-selection-changed`。
+@deprecated Use `track-selection-invalidated`.	兼容名称，不推荐使用。请使用 `track-selection-invalidated`。
+@deprecated Use `track-state-changed`.	兼容名称，不推荐使用。请使用 `track-state-changed`。
+@deprecated Use `transport-changed`.	兼容名称，不推荐使用。请使用 `transport-changed`。
+@deprecated Use `transport-state-changed`.	兼容名称，不推荐使用。请使用 `transport-state-changed`。
+@deprecated Use `window-state-changed`.	兼容名称，不推荐使用。请使用 `window-state-changed`。

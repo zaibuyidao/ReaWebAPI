@@ -1134,7 +1134,9 @@ int main() {
       until(runtime, [&] { for (const auto& r : first->responses) if (r.value("event", "") == "selectionchange") return true; return false; });
       auto before = first->responses.size(); ++guid[0]; ++changes;
       until(runtime, [&] { for (size_t i = before; i < first->responses.size(); ++i) if (first->responses[i].value("event", "") == "selectionchange") return true; return false; });
-      result(runtime, *first, first->send("ReaWeb_Subscribe", {"track-selected"}));
+      const auto old_selection = result(runtime, *first, first->send("ReaWeb_Subscribe", {"track-selected"}))["result"];
+      const auto alias_selection = result(runtime, *first, first->send("ReaWeb_Subscribe", {"track-selection-changed"}))["result"];
+      CHECK(alias_selection == old_selection && alias_selection["count"] == 1);
       auto selection_event = [&](size_t start, const char* name, int count) {
         for (size_t i = start; i < first->responses.size(); ++i)
           if (first->responses[i].value("event", "") == name && first->responses[i]["data"]["count"] == count) return true;
@@ -1143,8 +1145,9 @@ int main() {
       // Same-count selection changes need no project edit or 100 ms wait.
       before = first->responses.size(); ++guid[0]; ++selection_signal;
       auto reads = selected_reads;
-      runtime.tick(); CHECK(selected_reads > reads);
-      until(runtime, [&] { return selection_event(before, "selectionchange", 1) && selection_event(before, "track-selected", 1); });
+      runtime.tick(); CHECK(selected_reads == reads + 1);
+      until(runtime, [&] { return selection_event(before, "selectionchange", 1) && selection_event(before, "track-selected", 1) &&
+        selection_event(before, "track-selection-changed", 1); });
       // Deselect-all is also observed on the next tick.
       before = first->responses.size(); selected_count = 0; ++selection_signal;
       auto checks = selection_checks;
@@ -1163,6 +1166,11 @@ int main() {
       until(runtime, [&] { return selection_event(before, "track-selected", 1); });
       // A project edit also invalidates immediately, without a surface callback.
       reads = selected_reads; ++changes; runtime.tick(); CHECK(selected_reads > reads);
+      for (auto name : {"selectionchange", "track-selected"})
+        CHECK(result(runtime, *first, first->send("ReaWeb_Unsubscribe", {name}))["result"] == true);
+      before = first->responses.size(); ++guid[0]; ++selection_signal;
+      until(runtime, [&] { return selection_event(before, "track-selection-changed", 1); });
+      CHECK(!selection_event(before, "selectionchange", 1) && !selection_event(before, "track-selected", 1));
       const auto queued = first->send("ReaWeb_TransportControl", Json::array({"stop"}), 1);
       current = &other;
       CHECK(result(runtime, *first, queued)["error"]["code"] == "PROJECT_CHANGED");

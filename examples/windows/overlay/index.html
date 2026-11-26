@@ -594,7 +594,7 @@
           document.body.toggleAttribute("data-reaweb-drag", movable);
           renderState();
         };
-        await reaper.events.on("windowstatechange", applyState);
+        await reaper.events.on("window-state-changed", applyState);
         await reaper.window.setShortcutRouting(true);
         applyState(await reaper.window.getState());
         const platform = await reaper.system.getPlatform();

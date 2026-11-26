@@ -12,6 +12,6 @@ document.querySelector('#reload').onclick = () => reaper.window.reload().catch(r
 document.querySelector('#dock').onclick = () => reaper.window.setDocked(true).catch(report);
 (async () => {
   await reaper.lifecycle.ready;
-  await reaper.events.on('windowstatechange', showState);
+  await reaper.events.on('window-state-changed', showState);
   showState(await reaper.window.getState());
 })().catch(report);

@@ -44,7 +44,7 @@ For offline API lookup, open `ReaWebAPI/docs/reawebapihelp.html` from the platfo
 
 | Topic | Guides |
 | --- | --- |
-| App development | [SDK and templates](runtime/README.md) · [Runtime API](docs/runtime-api.md) · [ReaScript host API](docs/host-api.md) · [WebView resources and storage](docs/frontend.md) |
+| App development | [SDK and templates](runtime/README.md) · [Runtime API](docs/runtime-api.md) · [Host events](docs/runtime-api.md#events) · [ReaScript host API](docs/host-api.md) · [WebView resources and storage](docs/frontend.md) |
 | Host data and media | [Realtime subscriptions](docs/realtime.md) · [Native streams](docs/native-streams.md) · [Project video](docs/video-preview.md) |
 | Integration | [JSFX Web UI](docs/jsfx-webui.md) · [Native services](docs/native-services.md) · [External clients](docs/external-clients.md) |
 | Debugging | [WebView developer tools](docs/devtools.md) · [Runtime diagnostics](docs/diagnostics.md) |

@@ -6,6 +6,9 @@
 
 namespace reaweb {
 const std::vector<std::string>& runtime_events();
+const std::string* runtime_event_alias(const std::string& source);
+const std::string& runtime_event_source(const std::string& name);
+std::vector<std::string> with_runtime_event_aliases(std::vector<std::string> names);
 Json theme_colors(const Host& host);
 Json app_info(const fs::path& root, const fs::path& data, const std::string& id);
 bool app_daw_keyboard(const fs::path& root);

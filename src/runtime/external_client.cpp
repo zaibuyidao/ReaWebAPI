@@ -4,8 +4,11 @@
 
 namespace reaweb {
 namespace {
-const std::vector<std::string> events = {"trackSelectionChanged", "trackStateChanged", "transportChanged", "projectChanged",
-  "markersChanged", "regionsChanged", "currentRegionChanged", "loopPointsChanged", "timeSelectionChanged"};
+const std::vector<std::string>& external_events() {
+  static const auto names = with_runtime_event_aliases({"trackSelectionChanged", "trackStateChanged", "transportChanged",
+    "projectChanged", "markersChanged", "regionsChanged", "currentRegionChanged", "loopPointsChanged", "timeSelectionChanged"});
+  return names;
+}
 const std::vector<std::string> methods = {"auth.authenticate", "system.getInfo", "system.getCapabilities",
   "service.invoke", "service.send", "service.subscribe", "service.unsubscribe", "events.subscribe", "events.unsubscribe", "stream.open", "stream.close"};
 void shape(const Json& params, std::initializer_list<const char*> required, std::initializer_list<const char*> optional = {}) {
@@ -76,7 +79,7 @@ void Runtime::sync_external() {
   }
 }
 Json Runtime::external_event_data(ExternalSession& session, const std::string& event, Json data) {
-  if (event == "projectChanged" && data.contains("projects")) {
+  if (runtime_event_source(event) == "projectChanged" && data.contains("projects")) {
     const auto active = data.value("activeProject", "");
     data["activeProject"] = "";
     std::map<std::string, std::string> live_ids;
@@ -97,7 +100,7 @@ void Runtime::external_event(const std::string& event, const Json& data) {
   for (auto& item : external_sessions_) {
     auto& session = *item.second;
     for (const auto& subscription : session.subscriptions)
-      if (subscription.second.service.empty() && subscription.second.event == event)
+      if (subscription.second.service.empty() && runtime_event_source(subscription.second.event) == event)
         session.events[subscription.first] = data;
   }
 }
@@ -173,7 +176,7 @@ bool Runtime::dispatch_external() {
       } else if (method == "system.getCapabilities") {
         shape(params, {});
         result = {{"protocolVersion", 1}, {"methods", methods},
-          {"services", services_.info()}, {"events", events}, {"stream", streams_.info()},
+          {"services", services_.info()}, {"events", external_events()}, {"stream", streams_.info()},
           {"limits", {{"messageBytes", message_limit},
             {"connections", ExternalTransport::connection_limit}, {"pendingRequests", ExternalTransport::pending_limit},
             {"subscriptions", 256}, {"servicePayloadBytes", host_message_limit}, {"serviceTimeoutMs", 30000},
@@ -191,12 +194,15 @@ bool Runtime::dispatch_external() {
         const auto event = name(params, "event"), service_name = service ? name(params, "service") : "";
         if (jsfx_service_ && service_name == "jsfx") throw Error("FX_UNBOUND", "JSFX events require a bound Hosted WebView");
         uint64_t handle = service ? services_.lookup(service_name) : 0;
-        if (!service && !monitors_.contains(event)) throw Error("INVALID_ARGUMENT", "Unknown Native Event");
+        const auto& source = service ? event : runtime_event_source(event);
+        const auto& names = external_events();
+        if (!service && (std::find(names.begin(), names.end(), event) == names.end() || !monitors_.contains(source)))
+          throw Error("INVALID_ARGUMENT", "Unknown Native Event");
         if (session->subscriptions.size() >= 256) throw Error("QUEUE_LIMIT", "Too many subscriptions");
         const auto subscription = session->identity + ":s" + std::to_string(++session->sequence);
         session->subscriptions.emplace(subscription, ExternalSession::Subscription{event, service_name, handle});
-        if (!service) { const auto snapshot = monitors_.snapshot(event); if (!snapshot.is_null() &&
-          (event != "projectChanged" || snapshot.at("projectEpoch") == project_epoch_)) session->events[subscription] = snapshot; }
+        if (!service) { const auto snapshot = monitors_.snapshot(source); if (!snapshot.is_null() &&
+          (source != "projectChanged" || snapshot.at("projectEpoch") == project_epoch_)) session->events[subscription] = snapshot; }
         result = {{"subscriptionId", subscription}};
       } else if (method == "events.unsubscribe" || method == "service.unsubscribe") {
         shape(params, {"subscriptionId"}); const auto subscription = identifier(params, "subscriptionId");
