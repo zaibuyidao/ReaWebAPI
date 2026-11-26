@@ -60,6 +60,14 @@ int main(int argc, char** argv) {
     host.count_tracks = [](void*) { return 1; };
     host.project_name = [](void*) { return std::string("Test project"); };
     host.play_state = [] { return 0; };
+    host.play_position = [] { return 6.5; };
+    host.cursor_position = [] { return 3.; };
+    host.tempo = [] { return 128.; };
+    host.event_snapshot = [](const std::string& event) -> Json {
+      if (event == "transportchange")
+        return {{"available", true}, {"state", 0}, {"position", 6.5}, {"cursor", 3.}, {"tempo", 128.}};
+      return nullptr;
+    };
     host.get_track = [&](void*, int index) -> void* { return index == 0 ? &track : nullptr; };
     int selected_count = 1;
     host.count_selected_tracks = [&](void*) { return selected_count; };
@@ -79,6 +87,8 @@ int main(int argc, char** argv) {
         if (path && capacity) path[0] = '\0'; return index <= 0 ? adapter::host->current_project() : nullptr;
       });
       if (std::string(name) == "IsProjectDirty") return reinterpret_cast<void*>(+[](void*) { return 0; });
+      if (std::string(name) == "Master_GetPlayRate") return reinterpret_cast<void*>(+[](void*) { return 0.75; });
+      if (std::string(name) == "GetSetRepeat") return reinterpret_cast<void*>(+[](int) { return 1; });
       return adapter::resolve(name);
     };
     Runtime runtime(host, root, [](const std::string& error) { std::cerr << error << '\n'; });

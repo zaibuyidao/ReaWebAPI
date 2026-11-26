@@ -6,7 +6,7 @@ namespace reaweb {
 namespace {
 constexpr char track_selection_event[] = "track-selection-changed";
 const std::vector<std::string>& external_events() {
-  static const auto names = with_runtime_event_aliases({"trackSelectionChanged", "trackStateChanged", "transportChanged",
+  static const auto names = with_runtime_event_aliases({"trackSelectionChanged", "trackStateChanged", "transportChanged", "transport-state-changed",
     "projectChanged", "markersChanged", "regionsChanged", "currentRegionChanged", "loopPointsChanged", "timeSelectionChanged", track_selection_event});
   return names;
 }

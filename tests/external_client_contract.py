@@ -153,14 +153,14 @@ def selection_snapshot(client, subscription, event_name, count=1):
     raise AssertionError(f'Missing {event_name} selection snapshot for {count} tracks')
 
 
-def web_selection_snapshot(command, event_name):
+def web_event_snapshot(command, event_name):
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         data = command('web', method='ReaWeb_Subscribe', args=[event_name])['result']
         if data is not None:
             return data
         time.sleep(0.025)
-    raise AssertionError(f'Missing {event_name} WebUI selection snapshot')
+    raise AssertionError(f'Missing {event_name} WebUI snapshot')
 
 
 def main():
@@ -222,6 +222,40 @@ def main():
                 event_sub = a.call('events.subscribe', {'event': event})['subscriptionId']
                 assert a.call('events.unsubscribe', {'subscriptionId': event_sub}) is True
             a.call('events.subscribe', {'event': 'selectionchange'}, error='INVALID_ARGUMENT')
+            transport = 'transport-state-changed'
+            legacy_transport = 'transportChanged'
+            a.call('events.subscribe', {'event': 'transport-changed'}, error='INVALID_ARGUMENT')
+            a.call('events.subscribe', {'event': 'transportchange'}, error='INVALID_ARGUMENT')
+            transport_subscriptions = {
+                a.call('events.subscribe', {'event': name})['subscriptionId']: name
+                for name in (transport, legacy_transport)
+            }
+            external_transport = {}
+            deadline = time.monotonic() + 5
+            while len(external_transport) < len(transport_subscriptions) and time.monotonic() < deadline:
+                a.call('system.getInfo')
+                for event in a.events:
+                    name = transport_subscriptions.get(event.get('subscriptionId'))
+                    if name:
+                        assert event['event'] == name
+                        snapshot = event['data']
+                        assert snapshot['revision'] >= 1 and snapshot['projectEpoch'] >= 1
+                        external_transport[name] = snapshot
+                if len(external_transport) < len(transport_subscriptions):
+                    time.sleep(0.025)
+            transport_fields = dict(available=True, state=0, position=6.5, cursor=3)
+            native_fields = dict(transport_fields, playing=False, paused=False, recording=False, rate=0.75, loop=True)
+            for name, expected in ((transport, dict(native_fields, tempo=128)), (legacy_transport, native_fields)):
+                snapshot = external_transport[name]
+                assert {key: value for key, value in snapshot.items() if key not in ('projectEpoch', 'revision')} == expected
+                assert web_event_snapshot(command, name) == snapshot
+                assert command('web', method='ReaWeb_Unsubscribe', args=[name])['result'] is True
+            web_legacy_transport = web_event_snapshot(command, 'transportchange')
+            assert web_legacy_transport.pop('projectEpoch') >= 1
+            assert web_legacy_transport == dict(transport_fields, tempo=128)
+            assert command('web', method='ReaWeb_Unsubscribe', args=['transportchange'])['result'] is True
+            for subscription in transport_subscriptions:
+                assert a.call('events.unsubscribe', {'subscriptionId': subscription}) is True
             selection = 'track-selection-changed'
             previous_selection = 'trackSelectionChanged'
             selection_sub = a.call('events.subscribe', {'event': selection})['subscriptionId']
@@ -257,11 +291,11 @@ def main():
             assert command('web', method='ReaWeb_Batch', args=[[]])['error']['code'] == 'UNKNOWN_API'
             assert 'result' in command('web', method='ReaWeb_Subscribe', args=['trackStateChanged'])
             assert command('web', method='ReaWeb_Unsubscribe', args=['trackStateChanged'])['result'] is True
-            web_selection = web_selection_snapshot(command, selection)
+            web_selection = web_event_snapshot(command, selection)
             assert set(web_selection) == {'projectEpoch', 'count', 'revision'} and web_selection['count'] == 1
             for event in ('selectionchange', 'track-selected'):
-                assert web_selection_snapshot(command, event) == web_selection
-            web_previous = web_selection_snapshot(command, previous_selection)
+                assert web_event_snapshot(command, event) == web_selection
+            web_previous = web_event_snapshot(command, previous_selection)
             assert web_previous['invalidated'] is True and web_previous['available'] is True and web_previous['count'] == 1
             for event in (selection, 'selectionchange', 'track-selected', previous_selection):
                 assert command('web', method='ReaWeb_Unsubscribe', args=[event])['result'] is True

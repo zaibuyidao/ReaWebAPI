@@ -90,9 +90,8 @@ interface ReaWebEvents {
   'take-selection-changed': { projectEpoch: number; revision: number; count: number };
   /** @deprecated Use `take-selection-changed`. */
   takeselectionchange: ReaWebEvents['take-selection-changed'];
-  'transport-changed': { projectEpoch: number; available: boolean; state?: number; position?: number; cursor?: number; tempo?: number };
-  /** @deprecated Use `transport-changed`. */
-  transportchange: ReaWebEvents['transport-changed'];
+  /** @deprecated Use `transport-state-changed`. */
+  transportchange: { projectEpoch: number; available: boolean; state?: number; position?: number; cursor?: number; tempo?: number };
   'fx-focus-touch-state-changed': { projectEpoch: number; changeCount: number; available: boolean; focused: ReaWebFXState | null; touched: ReaWebFXState | null };
   /** @deprecated Use `fx-focus-touch-state-changed`. */
   fxchange: ReaWebEvents['fx-focus-touch-state-changed'];

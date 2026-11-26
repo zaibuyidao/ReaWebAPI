@@ -58,7 +58,7 @@ Window placement and docking are persisted by entry file and instance slot. At m
 | `track-selection-changed` | `{ projectEpoch, revision, count }`, where count is selected tracks |
 | `item-selection-changed` | `{ projectEpoch, revision, count }`, selected items |
 | `take-selection-changed` | `{ projectEpoch, revision, count }` for active takes of selected items |
-| `transport-changed` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }`. Reports playback state, positions and master tempo. |
+| `transport-state-changed` | `{ projectEpoch, revision, available, state?, playing?, paused?, recording?, position?, cursor?, tempo?, rate?, loop? }`. Reports playback flags, positions, master tempo (BPM), playback rate and repeat. Legacy `transportchange` remains supported with its original payload. |
 | `fx-focus-touch-state-changed` | `{ projectEpoch, available, focused, touched, changeCount }`. Reports changes to FX focus, the last touched parameter snapshot or the project change count. |
 | `window-state-changed` | Returns a `ReaWebWindowState` snapshot when the window state changes. |
 | `frame` | `{ sequence, playing?, position?, tempo?, cursor?, lua?, luaAgeMs? }` |

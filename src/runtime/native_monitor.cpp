@@ -21,6 +21,7 @@ void NativeMonitorManager::subscriptions(const std::map<std::string, size_t>& co
   }
 }
 void NativeMonitorManager::tick(uint64_t epoch, Clock::time_point deadline, const Emit& emit) {
+  transport_sample_ = nullptr;
   for (size_t n = 0; n < monitors_.size() && Clock::now() < deadline; ++n) {
     auto it = monitors_.upper_bound(cursor_);
     if (it == monitors_.end()) it = monitors_.begin();
@@ -154,6 +155,21 @@ Json current_region(const Host& host) {
   return {{"available", true}, {"region", value}};
 }
 }
+void NativeMonitorManager::add_transport(const Host& host) {
+  const auto sample = [this, &host](Clock::time_point) {
+    if (transport_sample_.is_null()) transport_sample_ = transport(host);
+    return transport_sample_;
+  };
+  const auto revision = [&host] { return host.event_revision ? host.event_revision("transport") : 0; };
+  add("transportChanged", sample, revision);
+  add("transport-state-changed", [&host, sample](auto deadline) {
+    auto snapshot = sample(deadline);
+    if (snapshot.value("available", false)) {
+      if (auto tempo = api<double (*)()>(host, "Master_GetTempo")) snapshot["tempo"] = tempo();
+    }
+    return snapshot;
+  }, revision);
+}
 void register_native_monitors(NativeMonitorManager& manager, const Host& host) {
   auto revision = [&host](const std::string& name) { return [&host, name] { return host.event_revision ? host.event_revision(name) : 0; }; };
   for (const char* name : {"trackSelectionChanged", "trackStateChanged", "markersChanged", "regionsChanged"}) {
@@ -162,7 +178,7 @@ void register_native_monitors(NativeMonitorManager& manager, const Host& host) {
       revision(std::string(name).rfind("track", 0) == 0 ? "track-selected" : "marker-changed"), true,
       [scan] { scan->index = 0; scan->values = Json::array(); });
   }
-  manager.add("transportChanged", [&host](auto) { return transport(host); }, revision("transport"));
+  manager.add_transport(host);
   manager.add("projectChanged", [&host](auto) { return projects(host); });
   manager.add("loopPointsChanged", [&host](auto) { return range(host, true); });
   manager.add("timeSelectionChanged", [&host](auto) { return range(host, false); });

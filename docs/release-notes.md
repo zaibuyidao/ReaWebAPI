@@ -2,4 +2,4 @@
 
 ## Release Notes
 
-- Made `track-selection-changed` the recommended track-selection event for WebUI and External Clients. WebUI keeps its existing payload. Legacy names `selectionchange`, `track-selected`, and `trackSelectionChanged` remain supported.
+- Unified transport state notifications for WebUI and external clients under `transport-state-changed`, including master tempo (BPM). Kept `transportchange` and `transportChanged` compatible.

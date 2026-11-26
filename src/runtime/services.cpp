@@ -8,11 +8,9 @@ const std::map<std::string, std::string> aliases = {
   {"selectionchange", "track-selection-changed"},
   {"itemselectionchange", "item-selection-changed"},
   {"takeselectionchange", "take-selection-changed"},
-  {"transportchange", "transport-changed"},
   {"fxchange", "fx-focus-touch-state-changed"},
   {"windowstatechange", "window-state-changed"},
   {"trackStateChanged", "track-state-changed"},
-  {"transportChanged", "transport-state-changed"},
   {"projectChanged", "open-projects-state-changed"},
   {"markersChanged", "marker-list-changed"},
   {"regionsChanged", "region-list-changed"},
@@ -50,7 +48,7 @@ const std::vector<std::string>& runtime_events() {
     "takeselectionchange", "transportchange", "fxchange", "windowstatechange", "track-added", "track-deleted",
     "track-selected", "item-changed", "take-changed", "playback-state-changed", "tempo-changed",
     "marker-changed", "fx-changed", "project-loaded", "project-saved", "theme-changed", "native-drop", "message",
-    "trackSelectionChanged", "trackStateChanged", "transportChanged", "projectChanged", "markersChanged",
+    "trackSelectionChanged", "trackStateChanged", "transportChanged", "transport-state-changed", "projectChanged", "markersChanged",
     "regionsChanged", "currentRegionChanged", "loopPointsChanged", "timeSelectionChanged", "devicesChanged", "file-change", "native-timer",
     "frame"});
   return names;

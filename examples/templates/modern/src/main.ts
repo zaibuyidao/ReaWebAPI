@@ -37,9 +37,9 @@ async function main() {
   action('copy', () => r.clipboard.writeText(projectName));
   action('paste', () => r.clipboard.readText());
   action('docs', () => r.system.openExternal('https://www.reaper.fm/sdk/reascript/reascripthelp.html'));
-  disposers.push(await r.events.on('transport-changed', state => {
+  disposers.push(await r.events.on('transport-state-changed', state => {
     if (!state.available) { el('transport').textContent = 'Transport state unavailable'; return; }
-    el('transport').textContent = 'State ' + state.state + ' · ' + (state.position ?? 0).toFixed(2) + ' s · ' + state.tempo + ' BPM';
+    el('transport').textContent = 'State ' + state.state + ' · ' + (state.position ?? 0).toFixed(2) + ' s' + (state.tempo === undefined ? '' : ' · ' + state.tempo + ' BPM');
   }));
   disposers.push(await r.events.on('project-changed', () => { el('status').textContent = 'Project changed. Reload this example to refresh the project info.'; }));
   const response = await fetch('./data.json');

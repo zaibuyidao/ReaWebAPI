@@ -50,7 +50,7 @@ Subscribe through `reaper.events.on/off` or the [External Client](external-clien
 | --- | --- |
 | `track-selection-changed` | External Clients receive the Native Monitor payload with `count` and `invalidated: true`. The monitor compares the complete ordered selection, including empty and same-count replacements. WebUI keeps its existing payload under this name. |
 | `track-state-changed` | `count`, `invalidated: true`. Track list/order, names, color, mute, solo, record arm and TCP/MCP visibility. |
-| `transport-state-changed` | `state`, `playing`, `paused`, `recording`, `position`, `cursor`, `rate`, `loop`. Times are seconds. |
+| `transport-state-changed` | `state` is the REAPER play-state bitmask. `playing`, `paused` and `recording` come from that bitmask. `position` and `cursor` are in seconds. Also reports `rate`, `loop` and `tempo` (master BPM when available). Legacy `transportChanged` keeps its original payload and notifications. |
 | `open-projects-state-changed` | `activeProject`, `projects: [{id, path, dirty}]`, `changeCount`, `generation`. Tab additions/removals, switches, file loads and path/dirty changes. External Client project IDs are opaque and scoped to the connection. |
 | `marker-list-changed`, `region-list-changed` | `count`, `invalidated: true`. Includes position, length, name, ID and native color changes. |
 | `current-region-changed` | `region: {id, start, end, name, color}` or `null`. Uses play position while playing, otherwise edit cursor. |

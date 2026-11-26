@@ -11,6 +11,7 @@ public:
   using Read = std::function<std::optional<Json>(Clock::time_point)>;
   using Emit = std::function<void(const std::string&, Json)>;
   void add(std::string name, Read read, std::function<uint64_t()> revision = {}, bool invalidate = false, std::function<void()> reset = {});
+  void add_transport(const Host& host);
   bool contains(const std::string& name) const;
   Json snapshot(const std::string& name) const;
   void subscriptions(const std::map<std::string, size_t>& counts);
@@ -28,6 +29,7 @@ private:
   };
   std::map<std::string, Monitor> monitors_;
   std::string cursor_;
+  Json transport_sample_;
 };
 void register_native_monitors(NativeMonitorManager& manager, const Host& host);
 }

@@ -58,7 +58,7 @@
 | `track-selection-changed` | `{ projectEpoch, revision, count }`，count 是选中轨道数 |
 | `item-selection-changed` | `{ projectEpoch, revision, count }`，选中 Item |
 | `take-selection-changed` | `{ projectEpoch, revision, count }`，统计选中 Item 的活动 Take |
-| `transport-changed` | `{ projectEpoch, available, state?, position?, cursor?, tempo? }`。返回播放状态、位置、编辑光标与主速度。 |
+| `transport-state-changed` | `{ projectEpoch, revision, available, state?, playing?, paused?, recording?, position?, cursor?, tempo?, rate?, loop? }`。返回播放状态、播放位置、编辑光标、工程主速度（BPM）、播放速率和循环开关。旧名称 `transportchange` 仍返回原有字段。 |
 | `fx-focus-touch-state-changed` | `{ projectEpoch, available, focused, touched, changeCount }`。FX 焦点、最近触碰参数的快照或工程变更计数变化时触发。 |
 | `window-state-changed` | 窗口状态变化时返回 `ReaWebWindowState` 快照。 |
 | `frame` | `{ sequence, playing?, position?, tempo?, cursor?, lua?, luaAgeMs? }` |

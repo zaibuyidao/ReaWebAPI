@@ -293,9 +293,9 @@ interface ReaWebEvents {
   /** @deprecated Use `region-list-changed`. */
   regionsChanged: ReaWebEvents['region-list-changed'];
   'transport-state-changed': ReaWebNativeState & { state?: number; playing?: boolean; paused?: boolean; recording?: boolean;
-    position?: number; cursor?: number; rate?: number; loop?: boolean };
+    position?: number; cursor?: number; tempo?: number; rate?: number; loop?: boolean };
   /** @deprecated Use `transport-state-changed`. */
-  transportChanged: ReaWebEvents['transport-state-changed'];
+  transportChanged: Omit<ReaWebEvents['transport-state-changed'], 'tempo'>;
   'open-projects-state-changed': ReaWebNativeState & { activeProject?: string; projects?: { id: string; path: string; dirty: boolean }[];
     changeCount?: number; generation?: number };
   /** @deprecated Use `open-projects-state-changed`. */

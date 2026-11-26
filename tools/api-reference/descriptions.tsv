@@ -115,7 +115,8 @@ reaper.window.show	Shows the current window.	显示当前窗口
 frame	{ sequence, playing?, position?, tempo?, cursor?, lua?, luaAgeMs? }	报告当前帧序号及可用的走带状态、速度、光标和 Lua 帧数据。
 fxchange	{ projectEpoch, available, focused, touched, changeCount }	报告工程代次、可用状态、焦点 FX、最近触碰的 FX 和变更计数。
 projectchange	{ projectEpoch, changeCount }	报告工程代次和变更计数。
-transportchange	{ projectEpoch, available, state?, position?, cursor?, tempo? }	报告工程代次和走带可用状态，可包含播放状态、位置、光标和速度。
+transportchange	Legacy WebUI transport event. Reports the project epoch, playback availability, state, positions and master tempo when available.	旧版 WebUI 走带事件。返回工程代次和走带可用状态，并在可获取时返回播放状态、播放位置、编辑光标和工程主速度。
+transportChanged	Legacy Native Monitor transport event. Reports playback state, positions, playback rate and repeat.	旧版 Native Monitor 走带事件。返回播放状态、播放位置、编辑光标、播放速率和循环开关。
 windowstatechange	ReaWebWindowState	窗口状态变化时提供 ReaWebWindowState。
 reaper.audio.decodeMeter	Decode built-in Meter measurements with exact bigint clip counts	解码内置电平表数据，以 bigint 读取精确的削波计数。
 reaper.audio.openStream	PCM, FFT, Peak/RMS/LUFS or realtime waveform	打开 PCM、FFT、电平测量（Peak/RMS/LUFS）或实时波形数据流。

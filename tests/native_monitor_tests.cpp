@@ -7,8 +7,9 @@ using namespace reaweb;
 namespace {
 std::vector<int> selection;
 int changes = 0, state = 0, dirty = 0, color = 0;
-bool extra_project = false;
-double position = 0, rate = 1, end = 1;
+bool extra_project = false, tempo_available = true;
+int transport_reads = 0;
+double position = 0, rate = 1, end = 1, tempo = 120;
 std::string marker_name = "marker", region_name = "region", project_path = "project.rpp";
 void* resolve(const char* name) {
 #define FN(n, f) if (!std::strcmp(name,n)) return reinterpret_cast<void*>(+f)
@@ -17,7 +18,8 @@ void* resolve(const char* name) {
   FN("GetTrackName", [](void*,char* name,int) { std::strcpy(name,"track"); return true; });
   FN("GetTrackColor", [](void*) { return color; });
   FN("GetMediaTrackInfo_Value", [](void*,const char*) { return 0.; });
-  FN("GetPlayState", [] { return state; });
+  FN("GetPlayState", [] { ++transport_reads; return state; });
+  if (tempo_available) { FN("Master_GetTempo", [] { return tempo; }); }
   FN("GetPlayPosition", [] { return position; });
   FN("GetCursorPosition", [] { return 0.; });
   FN("Master_GetPlayRate", [](void*) { return rate; });
@@ -69,7 +71,24 @@ int main() {
     manager.subscriptions({}); selection[0]=2;
     manager.subscriptions({{"trackSelectionChanged",2}}); tick(); tick(); tick();
     CHECK(manager.snapshot("trackSelectionChanged")["count"] == 130);
-    manager.subscriptions({{"trackStateChanged",1},{"transportChanged",1},{"projectChanged",1},{"markersChanged",1},
+    manager.subscriptions({{"transportChanged",1},{"transport-state-changed",1}});
+    tick();
+    CHECK(transport_reads == 1);
+    const auto legacy_transport = events.at("transportChanged");
+    CHECK(!legacy_transport.contains("tempo"));
+    const auto initial_transport = events.at("transport-state-changed");
+    CHECK(initial_transport.at("tempo") == 120);
+    tempo = 128; ++revision; tick();
+    const auto updated_transport = events.at("transport-state-changed");
+    CHECK(updated_transport.at("tempo") == 128);
+    CHECK(updated_transport.at("revision") != initial_transport.at("revision"));
+    CHECK(events.at("transportChanged") == legacy_transport);
+    CHECK(transport_reads == 2);
+    tempo_available = false; ++revision; tick();
+    CHECK(events.at("transport-state-changed").at("available") == true);
+    CHECK(!events.at("transport-state-changed").contains("tempo"));
+    tempo_available = true;
+    manager.subscriptions({{"trackStateChanged",1},{"transportChanged",1},{"transport-state-changed",1},{"projectChanged",1},{"markersChanged",1},
       {"regionsChanged",1},{"currentRegionChanged",1},{"loopPointsChanged",1},{"timeSelectionChanged",1}});
     tick(); CHECK(events["trackStateChanged"]["count"] == 3 && events["markersChanged"]["count"] == 1);
     CHECK(events["regionsChanged"]["count"] == 1 && events["currentRegionChanged"]["region"]["name"] == "region");
@@ -79,6 +98,9 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(105)); tick();
     for (const auto& item : events) if (item.first != "trackSelectionChanged") CHECK(item.second != before.at(item.first));
     CHECK(events["transportChanged"]["recording"] == true && events["transportChanged"]["rate"] == 0.5);
+    const auto& transport = events.at("transport-state-changed");
+    CHECK(transport.at("state") == 5 && transport.at("playing") == true && transport.at("recording") == true && transport.at("paused") == false);
+    CHECK(transport.at("position") == 11 && transport.at("rate") == 0.5 && transport.at("tempo") == 128);
     CHECK(events["projectChanged"]["projects"].size() == 2 && events["projectChanged"]["projects"][0]["dirty"] == true);
     CHECK(events["currentRegionChanged"]["region"].is_null());
     CHECK(events["timeSelectionChanged"]["end"] == 2 && events["loopPointsChanged"]["end"] == 2);

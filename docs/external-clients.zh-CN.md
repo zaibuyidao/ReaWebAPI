@@ -57,10 +57,12 @@ Native Event 共用现有 Monitor source，保留 snapshot、`projectEpoch`、`r
 `track-selection-changed`、`track-state-changed`、`transport-state-changed`、`open-projects-state-changed`、`marker-list-changed`、`region-list-changed`、`current-region-changed`、`loop-points-changed`、`time-selection-changed`。
 
 ```json
-{"type":"event","subscriptionId":"<opaque>","event":"transport-state-changed","data":{"available":true,"projectEpoch":1,"revision":2}}
+{"type":"event","subscriptionId":"<opaque>","event":"transport-state-changed","data":{"available":true,"projectEpoch":1,"revision":2,"state":1,"playing":true,"paused":false,"recording":false,"position":8.5,"cursor":4,"rate":1,"loop":false,"tempo":120}}
 ```
 
 新订阅推荐使用上述 9 个名称，旧名称仍可兼容使用。每项订阅有独立 ID，通知使用订阅时请求的名称。`track-selection-changed` 和 `trackSelectionChanged` 返回相同的 Native Monitor 数据，包括 `invalidated` 和 `available`。
+
+订阅 `transport-state-changed` 时，能获取工程主速度时会返回 `tempo`（BPM）。旧名称 `transportChanged` 保留原有字段和通知行为。
 
 Service Event 额外包含 `service`。Service 卸载时拒绝待完成 invoke，发送 `unloaded` 并移除相关订阅。收到 `open-projects-state-changed` 时，若有活动工程，`activeProject` 对应 `projects[]` 中的一项 ID。ID 仅在当前连接内可比对，重新加载工程或重连后须使用新快照中的 ID。每个 Session 最多 256 项订阅。
 
