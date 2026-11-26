@@ -5,7 +5,7 @@ const write = (name, data) => {
   lines.push(`${name}: ${JSON.stringify(data)}`);
   log.textContent = lines.slice(-100).join('\n'); log.scrollTop = log.scrollHeight;
 };
-const names = ['track-selection-changed','track-state-changed','transport-state-changed','open-projects-state-changed',
+const names = ['track-selection-changed','track-state-changed','transport-state-changed','projects-state-changed',
   'marker-list-changed','region-list-changed','current-region-changed','loop-points-changed','time-selection-changed'];
 let disposers = [], serviceDisposers = [], busy = false;
 const run = async action => {

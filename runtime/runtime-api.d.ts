@@ -296,10 +296,10 @@ interface ReaWebEvents {
     position?: number; cursor?: number; tempo?: number; rate?: number; loop?: boolean };
   /** @deprecated Use `transport-state-changed`. */
   transportChanged: Omit<ReaWebEvents['transport-state-changed'], 'tempo'>;
-  'open-projects-state-changed': ReaWebNativeState & { activeProject?: string; projects?: { id: string; path: string; dirty: boolean }[];
+  'projects-state-changed': ReaWebNativeState & { activeProject?: string; projects?: { id: string; path: string; dirty: boolean }[];
     changeCount?: number; generation?: number };
-  /** @deprecated Use `open-projects-state-changed`. */
-  projectChanged: ReaWebEvents['open-projects-state-changed'];
+  /** @deprecated Use `projects-state-changed`. */
+  projectChanged: ReaWebEvents['projects-state-changed'];
   'current-region-changed': ReaWebNativeState & { region?: ReaWebRegion | null };
   /** @deprecated Use `current-region-changed`. */
   currentRegionChanged: ReaWebEvents['current-region-changed'];

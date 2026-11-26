@@ -113,11 +113,11 @@ def check_external_methods(client):
     return caps
 
 
-def subscribe_projects(client, event='open-projects-state-changed'):
+def subscribe_projects(client, event='projects-state-changed'):
     return client.call('events.subscribe', {'event': event})['subscriptionId']
 
 
-def project_snapshot(client, subscription, after_epoch=0, event_name='open-projects-state-changed'):
+def project_snapshot(client, subscription, after_epoch=0, event_name='projects-state-changed'):
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         client.call('system.getInfo')
@@ -210,7 +210,7 @@ def main():
                 'trackSelectionChanged': 'track-selection-changed',
                 'trackStateChanged': 'track-state-changed',
                 'transportChanged': 'transport-state-changed',
-                'projectChanged': 'open-projects-state-changed',
+                'projectChanged': 'projects-state-changed',
                 'markersChanged': 'marker-list-changed',
                 'regionsChanged': 'region-list-changed',
                 'currentRegionChanged': 'current-region-changed',

@@ -45,7 +45,7 @@ callback 应及时返回。不依赖 REAPER 的耗时工作放入扩展工作线
 | `track-selection-changed` | 外部客户端收到 Native Monitor 的数据，包括 `count` 和 `invalidated: true`。监测器比较完整有序选轨集合，覆盖空选和数量不变的轨道替换。WebUI 使用此名称时继续返回原有字段。 |
 | `track-state-changed` | 轨道列表及顺序、名称、颜色、mute、solo、arm、TCP/MCP 可见状态。返回数量与失效通知。 |
 | `transport-state-changed` | `state` 是 REAPER 播放状态位掩码，`playing`、`paused` 和 `recording` 由它解析。播放位置 `position` 和编辑光标 `cursor` 以秒为单位。还提供播放速率 `rate`、循环开关 `loop`，以及可获取时的工程主速度 `tempo`（BPM）。旧名称 `transportChanged` 保留原有字段和通知行为。 |
-| `open-projects-state-changed` | 活动工程、工程列表、路径、dirty、修改计数和载入代次。覆盖打开、关闭、切换和另存路径变化。 |
+| `projects-state-changed` | 活动工程、工程列表、路径、dirty、修改计数和载入代次。覆盖打开、关闭、切换和另存路径变化。 |
 | `marker-list-changed`、`region-list-changed` | 数量与失效通知，比较位置、长度、名称、编号和颜色。 |
 | `current-region-changed` | 当前 Region 的编号、起止位置、名称和颜色，或 `null`。播放时使用播放位置，否则使用编辑光标。 |
 | `loop-points-changed`、`time-selection-changed` | 以秒为单位的 `start`、`end`。 |

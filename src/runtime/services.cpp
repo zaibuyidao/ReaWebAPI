@@ -11,7 +11,7 @@ const std::map<std::string, std::string> aliases = {
   {"fxchange", "fx-focus-touch-state-changed"},
   {"windowstatechange", "window-state-changed"},
   {"trackStateChanged", "track-state-changed"},
-  {"projectChanged", "open-projects-state-changed"},
+  {"projectChanged", "projects-state-changed"},
   {"markersChanged", "marker-list-changed"},
   {"regionsChanged", "region-list-changed"},
   {"currentRegionChanged", "current-region-changed"},

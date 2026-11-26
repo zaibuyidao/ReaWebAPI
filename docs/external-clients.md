@@ -54,7 +54,7 @@ Services share the existing registry and ABI, 1 MiB payload/result limit, 30-sec
 
 Native Events share the existing monitor sources, snapshots, `projectEpoch`, `revision`, `available` and coalescing/invalidation behavior:
 
-`track-selection-changed`, `track-state-changed`, `transport-state-changed`, `open-projects-state-changed`, `marker-list-changed`, `region-list-changed`, `current-region-changed`, `loop-points-changed`, `time-selection-changed`.
+`track-selection-changed`, `track-state-changed`, `transport-state-changed`, `projects-state-changed`, `marker-list-changed`, `region-list-changed`, `current-region-changed`, `loop-points-changed`, `time-selection-changed`.
 
 ```json
 {"type":"event","subscriptionId":"<opaque>","event":"transport-state-changed","data":{"available":true,"projectEpoch":1,"revision":2,"state":1,"playing":true,"paused":false,"recording":false,"position":8.5,"cursor":4,"rate":1,"loop":false,"tempo":120}}
@@ -64,7 +64,7 @@ Use the nine names above for new subscriptions. Their previous names are also ac
 
 Transport subscriptions to `transport-state-changed` include the master tempo in BPM when available. The legacy `transportChanged` subscription keeps its original fields and notifications.
 
-Service events also include `service`. A service unload rejects pending invokes and emits `unloaded` before removing its subscriptions. For External `open-projects-state-changed` events, `activeProject` matches an ID in `projects[]` when a project is active. IDs are opaque and scoped to the connection. Project loads and reconnects invalidate prior IDs. Each session supports at most 256 subscriptions.
+Service events also include `service`. A service unload rejects pending invokes and emits `unloaded` before removing its subscriptions. For External `projects-state-changed` events, `activeProject` matches an ID in `projects[]` when a project is active. IDs are opaque and scoped to the connection. Project loads and reconnects invalidate prior IDs. Each session supports at most 256 subscriptions.
 
 ## Binary streams and lifecycle
 

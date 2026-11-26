@@ -2,4 +2,4 @@
 
 ## Release Notes
 
-- Fixed missing post-FX and post-fader track audio when Master FX introduce plug-in delay compensation.
+- The event for changes to the open project list or active project is now named `projects-state-changed`.

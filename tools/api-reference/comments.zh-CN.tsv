@@ -111,7 +111,7 @@ updateRate follows the project by default, or accepts a fixed finite rate from 1
 @deprecated Use `item-selection-changed`.	兼容名称，不推荐使用。请使用 `item-selection-changed`。
 @deprecated Use `loop-points-changed`.	兼容名称，不推荐使用。请使用 `loop-points-changed`。
 @deprecated Use `marker-list-changed`.	兼容名称，不推荐使用。请使用 `marker-list-changed`。
-@deprecated Use `open-projects-state-changed`.	兼容名称，不推荐使用。请使用 `open-projects-state-changed`。
+@deprecated Use `projects-state-changed`.	兼容名称，不推荐使用。请使用 `projects-state-changed`。
 @deprecated Use `project-changed`.	兼容名称，不推荐使用。请使用 `project-changed`。
 @deprecated Use `region-list-changed`.	兼容名称，不推荐使用。请使用 `region-list-changed`。
 @deprecated Use `take-selection-changed`.	兼容名称，不推荐使用。请使用 `take-selection-changed`。
