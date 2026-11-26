@@ -4,6 +4,7 @@
 #include "runtime/native_track_cache.hpp"
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstring>
 #if REAWEB_TRACK_WINDOWS_X64
@@ -25,7 +26,7 @@ struct CacheBlock {
 };
 struct Pending {
   const void* track = nullptr;
-  const void* project = nullptr;
+  void* project = nullptr;
   uint64_t cycle = 0;
   double next_position = 0;
   bool capturing = false;
@@ -41,6 +42,10 @@ struct State {
   int64_t (*loop)(void*, int64_t*);
   int (*playing)();
   double (*track_info)(void*, const char*);
+  void* (*master_track)(void*);
+  bool (*fx_config)(void*, int, const char*, char*, int);
+  uint64_t pdc_cycle = 0;
+  int master_pdc = 0;
   std::array<Pending, 8> pending{};
 };
 struct Gains {
@@ -107,17 +112,37 @@ bool emit_block(State& state, const void* track, const CacheBlock& block) noexce
   }
   return false;
 }
-bool emit_uncached(State& state, void* track, const CacheBlock& block, double end) noexcept {
+int master_pdc_samples(State& state, void* project, uint64_t cycle) noexcept {
+  if (state.pdc_cycle == cycle) return state.master_pdc;
+  state.pdc_cycle = cycle;
+  state.master_pdc = 0;
+  if (state.master_track && state.fx_config) {
+    auto* master = state.master_track(project);
+    char value[32]{};
+    if (master && state.fx_config(master, 0, "chain_pdc_actual", value, sizeof(value))) {
+      int samples = 0;
+      const auto parsed = std::from_chars(value, value + sizeof(value) - 1, samples);
+      if (parsed.ec == std::errc{} && *parsed.ptr == '\0' && samples > 0)
+        state.master_pdc = samples;
+    }
+  }
+  return state.master_pdc;
+}
+bool emit_uncached(State& state, void* track, const Pending& pending) noexcept {
   const auto& layout = state.layout.uncached;
   if (!layout.buffer) return false;
+  const auto& block = pending.current;
+  const double end = pending.next_position;
+  if (std::abs(end - block.position - block.frames / block.rate) > .5 / block.rate) return false;
+  // The uncached render runs ahead of the playback clock by the applied master chain latency.
+  const double offset = master_pdc_samples(state, pending.project, pending.cycle) / block.rate;
   // The render worker claims this buffer under a separate mutex before writing it.
   const TryLock lock(track, layout.mutex);
   if (!lock || field<uint8_t>(track, layout.busy)) return false;
   const double position = field<double>(track, layout.position);
-  if (!std::isfinite(position) || std::abs(position - end) > .5 / block.rate ||
+  if (!std::isfinite(position) || std::abs(position - (end + offset)) > .5 / block.rate ||
       field<int64_t>(track, layout.position + 8) != block.loop ||
-      field<int>(track, layout.position + 16) != 0 ||
-      std::abs(end - block.position - block.frames / block.rate) > .5 / block.rate) return false;
+      field<int>(track, layout.position + 16) != 0) return false;
   const auto channel_count = state.track_info(track, "I_NCHAN");
   if (!(channel_count >= 1 && channel_count <= 128)) return false;
   const auto channels = static_cast<unsigned>(channel_count);
@@ -126,7 +151,7 @@ bool emit_uncached(State& state, void* track, const CacheBlock& block, double en
   if (!pcm || field<int>(track, layout.buffer + 12) != bytes ||
       field<int>(track, layout.buffer + 8) < bytes) return false;
   const Gains gain{state.layout.mix, block.gains.data()};
-  state.observer(state.context, {track, pcm, channels, unsigned(block.frames), block.rate, block.position,
+  state.observer(state.context, {track, pcm, channels, unsigned(block.frames), block.rate, block.position + offset,
                                  &gain, false, render_output});
   return true;
 }
@@ -154,6 +179,8 @@ bool NativeTrackMixer::initialize(const Host& host, void* context, Observer obse
   state->loop = reinterpret_cast<decltype(state->loop)>(host.native_function("GetPlayLoopCnt"));
   state->playing = reinterpret_cast<decltype(state->playing)>(host.native_function("GetPlayState"));
   state->track_info = reinterpret_cast<decltype(state->track_info)>(host.native_function("GetMediaTrackInfo_Value"));
+  state->master_track = reinterpret_cast<decltype(state->master_track)>(host.native_function("GetMasterTrack"));
+  state->fx_config = reinterpret_cast<decltype(state->fx_config)>(host.native_function("TrackFX_GetNamedConfigParm"));
   if (!state->position || !state->loop || !state->playing || !state->track_info) return false;
   state_ = state.release();
   return true;
@@ -224,7 +251,7 @@ void NativeTrackMixer::hardware(bool post, void* project, void* track, int frame
       checked_cache = true;
     }
   }
-  if (checked_cache && emit_uncached(*state, track, block, pending->next_position)) return;
+  if (checked_cache && emit_uncached(*state, track, *pending)) return;
   // Keep the completed block's identity and gains if the render worker owns
   // the lock or the PCM is not visible yet. Never retain host PCM pointers.
   if (pending->count == pending->deferred.size()) {

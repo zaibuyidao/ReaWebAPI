@@ -23,7 +23,7 @@ await stream.close();
 
 内建 `audio.openStream` 提供 PCM、FFT、Peak/RMS/LUFS 和实时 min/max 波形。`master` 采集硬件输出，`input` 采集硬件输入。Meter 保留实际通道布局，最多 32 通道。其他分析类型保留原有双声道行为。`selected-track` 或 `track:<GUID>` 默认使用绑定轨道的 **pre-FX Audio Accessor**，不代表轨道 FX 后或实时输入电平。Accessor 在主线程采样，分析和传输在原生线程执行。已有 `audio.getTrackMeter` 保留 REAPER 瞬时 Peak 语义。文件概览、缓存峰值与缩放查询继续使用 `audio.getWaveform`。
 
-macOS arm64、Linux x86_64 和 Windows x64 支持轨道采样点 `tap: "post-fx"`（FX 后、推子前）和 `tap: "post-fader"`（推子后）。post-fx 读取送入父轨混音器、尚未应用推子增益的信号。轨道声像或平衡可能已经生效，因此硬右平衡可使两个采样点的左声道都静音。两者在播放期间从轨道到父轨的混音路径采集通道 1/2，支持 PCM、频谱、波形和电平表。仅 FX 前采样支持 `aggregate: true`。扩展启动时以 REAPER 7.86 的实现为参照，定位宿主混音函数并校验渲染数据布局。播放时，扩展从轨道缓存或通过校验的非缓存渲染缓冲区读取当前播放块，支持空 FX 链轨道。推子后采样使用 REAPER 的块增益生成双声道信号。若宿主混音函数或轨道缓存布局未通过校验，打开任一采样点都会返回 `API_UNAVAILABLE`。
+macOS arm64、Linux x86_64 和 Windows x64 支持轨道采样点 `tap: "post-fx"`（FX 后、推子前）和 `tap: "post-fader"`（推子后）。post-fx 读取送入父轨混音器、尚未应用推子增益的信号。轨道声像或平衡可能已经生效，因此硬右平衡可使两个采样点的左声道都静音。两者在播放期间从轨道到父轨的混音路径采集通道 1/2，支持 PCM、频谱、波形和电平表。仅 FX 前采样支持 `aggregate: true`。扩展启动时以 REAPER 7.86 的实现为参照，定位宿主混音函数并校验渲染数据布局。播放时，扩展从轨道缓存或通过校验的非缓存渲染缓冲区读取当前播放块，支持空 FX 链轨道。Master FX 链引入延迟时，非缓存块按 REAPER 实际应用的延迟补偿匹配。推子后采样使用 REAPER 的块增益生成双声道信号。若宿主混音函数或轨道缓存布局未通过校验，打开任一采样点都会返回 `API_UNAVAILABLE`。
 
 轨道 Source 支持 `aggregate: true`，适用于 `audio`、`spectrum`、`meter` 和 `waveform`：
 

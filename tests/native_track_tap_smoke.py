@@ -12,7 +12,7 @@ import time
 import wave
 
 
-def prepare(root, extension, check_continuity=False):
+def prepare(root, extension, check_continuity=False, master_pdc=None, block_size=None):
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
     plugins = root / 'UserPlugins'
     plugins.mkdir()
@@ -38,15 +38,22 @@ def prepare(root, extension, check_continuity=False):
             if (profile / name).is_file():
                 shutil.copy2(profile / name, root / name)
     elif sys.platform.startswith('linux'):
-        settings += 'linux_audio_mode=3\nlinux_audio_srate=48000\nlinux_audio_bsize=256\nlinux_audio_nch_out=2\n'
+        settings += f'linux_audio_mode=3\nlinux_audio_srate=48000\nlinux_audio_bsize={block_size or 256}\nlinux_audio_nch_out=2\n'
     else:
         settings += '[audioconfig]\nmode=4\n'
-        if check_continuity:
-            settings += 'dummy_srate=48000\ndummy_blocksize=1024\n'
+        if check_continuity or master_pdc or block_size:
+            settings += f'dummy_srate=48000\ndummy_blocksize={block_size or 1024}\n'
     (root / 'reaper.ini').write_text(settings, encoding='utf-8')
     (root / 'Effects').mkdir()
     (root / 'Effects' / 'rwa_test_gain').write_text(
         'desc:Track capture test gain\n@sample\nspl0*=2; spl1*=2;\n', encoding='utf-8')
+    if master_pdc:
+        (root / 'master-pdc.txt').write_text(master_pdc, encoding='ascii')
+    if master_pdc == 'jsfx':
+        (root / 'Effects' / 'rwa_test_pdc').write_text(
+            'desc:Track capture test delay\n@init\npdc_delay=64; pdc_bot_ch=0; pdc_top_ch=2;\n'
+            '@sample\nl=2*i; r=l+1; dl=l[0]; dr=r[0]; l[0]=spl0; r[0]=spl1; '
+            'spl0=dl; spl1=dr; i=(i+1)%64;\n', encoding='ascii')
     for name, amplitude in [('target', 4096), ('other', 2048)]:
         with wave.open(str(root / (name + '.wav')), 'wb') as out:
             out.setparams((2, 2, 48000, 0, 'NONE', ''))
@@ -56,7 +63,9 @@ def prepare(root, extension, check_continuity=False):
                                         for x in cycle) * 3840)
     (root / 'index.html').write_text('<!doctype html><meta charset="utf-8"><script src="app.js"></script>', encoding='utf-8')
     (root / 'launch.lua').write_text(LUA, encoding='utf-8')
-    (root / 'app.js').write_text(f'const checkContinuity = {json.dumps(check_continuity)};\n' + JS, encoding='utf-8')
+    (root / 'app.js').write_text(
+        f'const checkContinuity = {json.dumps(check_continuity)}, masterPdc = {json.dumps(master_pdc)}, '
+        f'blockSize = {json.dumps(block_size)};\n' + JS, encoding='utf-8')
 
 
 LUA = r"""
@@ -80,7 +89,14 @@ local ok,err=xpcall(function()
   reaper.SetMediaTrackInfo_Value(target,'D_VOL',0.5)
   reaper.SetMediaTrackInfo_Value(target,'I_PANMODE',3)
   reaper.SetMediaTrackInfo_Value(target,'D_PANLAW',1)
-  reaper.SetMediaTrackInfo_Value(reaper.GetMasterTrack(0),'D_VOL',0.25)
+  local master=reaper.GetMasterTrack(0)
+  reaper.SetMediaTrackInfo_Value(master,'D_VOL',0.25)
+  local masterPdc=io.open(root..'master-pdc.txt','r')
+  if masterPdc then
+    local plugin=masterPdc:read('*a')=='jsfx' and 'JS: rwa_test_pdc' or 'ReaLimit (Cockos)'
+    masterPdc:close()
+    assert(reaper.TrackFX_AddByName(master,plugin,false,-1)==0,'Could not add '..plugin)
+  end
   reaper.SetOnlyTrackSelected(target)
   local guid=assert(io.open(root..'track.txt','w'))
   guid:write(reaper.GetTrackGUID(target));guid:close()
@@ -106,6 +122,11 @@ local ok,err=xpcall(function()
     playing=reaper.GetPlayState,
     trackPeak=function() return reaper.Track_GetPeakInfo(target,0) end,
     position=reaper.GetPlayPosition2,
+    masterPdc=function()
+      local ok, value=reaper.TrackFX_GetNamedConfigParm(master,0,'chain_pdc_actual')
+      return ok and value or '-1'
+    end,
+    bypassMaster=function() reaper.TrackFX_SetEnabled(master,0,false); return true end,
     realtime=function() return reaper.SetMediaTrackInfo_Value(target,'I_PERFFLAGS',2) end,
     lower=function() return reaper.SetMediaTrackInfo_Value(target,'D_VOL',0.25) end,
     panRight=function() return reaper.SetMediaTrackInfo_Value(target,'D_PAN',1) end,
@@ -191,6 +212,7 @@ JS = r"""
 
    checks.version=caps;
    checks.audioDevice=(await reaper.system.getDevices()).audio;
+   if (blockSize) assert(Number(checks.audioDevice.BSIZE)===blockSize,'unexpected device block size');
    const topology=await call('topology');
    for(const tap of taps) {
      const stream=await reaper.audio.openStream('audio',{source:tap==='post-fx'?'selected-track':'track:'+guid,tap});
@@ -214,11 +236,22 @@ JS = r"""
      const peak=Number(await call('trackPeak'));
      return peak>.01 && peak;
    },'REAPER track peak with empty FX chain');
+   if (masterPdc) {
+     await until(async()=>{
+       checks.masterPdc=Number(await call('masterPdc'));
+       return checks.masterPdc>0;
+     },'active Master PDC');
+   }
    await until(()=>{
      checks.empty=taps.map((_,i)=>peaks(streams[i]));
      return matches(checks.empty[0],.125)&&matches(checks.empty[1],.0625);
    },'empty FX chain PCM');
    await checkPlaybackWindow('emptyContinuity',1);
+   if (masterPdc) {
+     await call('bypassMaster');
+     await until(async()=>Number(await call('masterPdc'))===0,'bypassed Master PDC');
+     await checkPlaybackWindow('bypassedMasterContinuity',1);
+   }
    await call('panRight');
    await until(()=>{
      checks.emptyPan=taps.map((_,i)=>peaks(streams[i]));
@@ -316,9 +349,11 @@ if __name__ == '__main__':
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--check-continuity', action='store_true', help='Verify both stereo taps frame by frame at 48 kHz')
+    parser.add_argument('--master-pdc', choices=('realimit', 'jsfx'), help='Exercise Master PDC with an empty target FX chain')
+    parser.add_argument('--block-size', type=int, help='Set the dummy audio buffer size on Windows or Linux')
     args = parser.parse_args()
     root = args.output.resolve()
-    prepare(root, args.extension, args.check_continuity)
+    prepare(root, args.extension, args.check_continuity, args.master_pdc, args.block_size)
     command = [str(args.reaper.resolve()), '-newinst', '-cfgfile', str(root / 'reaper.ini'),
                '-new', '-ignoreerrors', '-nosplash', str(root / 'launch.lua')]
     if args.prepare_only:

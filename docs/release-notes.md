@@ -2,4 +2,4 @@
 
 ## Release Notes
 
-- Removed `item-changed` and `take-changed`. Use `project-changed` to refresh Item or Take data.
+- Fixed missing post-FX and post-fader track audio when Master FX introduce plug-in delay compensation.
